@@ -13,6 +13,7 @@ members = [
     "crates/board-plugin-evals",
     "crates/board-plugin-github",
     "crates/board-plugin-jira",
+    "crates/board-plugin-map",
     "crates/board-plugin-notes",
     "crates/board-plugin-params",
     "crates/board-plugin-places",
@@ -61,6 +62,7 @@ board-plugin-changes = { path = "crates/board-plugin-changes", version = "0.0.0"
 board-plugin-evals = { path = "crates/board-plugin-evals", version = "0.0.0" }
 board-plugin-github = { path = "crates/board-plugin-github", version = "0.0.0" }
 board-plugin-jira = { path = "crates/board-plugin-jira", version = "0.0.0" }
+board-plugin-map = { path = "crates/board-plugin-map", version = "0.0.0" }
 board-plugin-notes = { path = "crates/board-plugin-notes", version = "0.0.0" }
 board-plugin-params = { path = "crates/board-plugin-params", version = "0.0.0" }
 board-plugin-places = { path = "crates/board-plugin-places", version = "0.0.0" }

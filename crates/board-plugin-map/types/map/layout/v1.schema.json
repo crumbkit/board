@@ -1,0 +1,354 @@
+{
+  "$defs": {
+    "Anchor": {
+      "description": "What a note belongs to: an item, with the note's start offset from the\nitem's centre, or a line, with a point along it and an offset across it.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "item": {
+              "$ref": "#/$defs/ItemAnchor"
+            }
+          },
+          "required": [
+            "item"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "line": {
+              "$ref": "#/$defs/LineAnchor"
+            }
+          },
+          "required": [
+            "line"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "At": {
+      "additionalProperties": false,
+      "description": "An item's stored centre and who set it.",
+      "properties": {
+        "set": {
+          "description": "engine when placement chose the position, which a later run with\nrelayout may move, and pinned when a person or agent set it, which\nplacement never moves.",
+          "enum": [
+            "engine",
+            "pinned"
+          ],
+          "type": "string"
+        },
+        "x": {
+          "description": "The centre's x.",
+          "format": "double",
+          "type": "number"
+        },
+        "y": {
+          "description": "The centre's y.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "set"
+      ],
+      "type": "object"
+    },
+    "Item": {
+      "additionalProperties": false,
+      "description": "One thing the map shows, drawn as a round mark with a label of one or\nmore lines beside it.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/At",
+          "description": "The mark's stored centre; left out until it is placed."
+        },
+        "id": {
+          "description": "The item's name, unique among the map's items, which lines and notes\nname.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "label": {
+          "description": "The label's lines, first the name and then any detail, such as\n`[\"Board\", \"records in git\"]`.",
+          "items": {
+            "minLength": 1,
+            "type": "string",
+            "x-board-prose": true
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "radius": {
+          "description": "The mark's radius; 8 when left out.",
+          "format": "double",
+          "minimum": 1,
+          "type": "number"
+        },
+        "region": {
+          "description": "The region the item belongs to; left out when it belongs to none.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "side": {
+          "description": "The side of the mark the label sits on; right when left out.",
+          "enum": [
+            "right",
+            "left",
+            "below",
+            "above"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ],
+      "type": "object"
+    },
+    "ItemAnchor": {
+      "additionalProperties": false,
+      "description": "A note's start, offset from an item's centre.",
+      "properties": {
+        "dx": {
+          "description": "How far right of the centre the text starts.",
+          "format": "double",
+          "type": "number"
+        },
+        "dy": {
+          "description": "How far below the centre the text's baseline sits.",
+          "format": "double",
+          "type": "number"
+        },
+        "id": {
+          "description": "The item.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "dx",
+        "dy"
+      ],
+      "type": "object"
+    },
+    "Line": {
+      "additionalProperties": false,
+      "description": "A line from one item to another, drawn between the edges of their\nmarks.",
+      "properties": {
+        "from": {
+          "description": "The item the line starts at.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the line means, such as `library` or `after`, which the page\ngives a style of its own.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "to": {
+          "description": "The item the line ends at.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "LineAnchor": {
+      "additionalProperties": false,
+      "description": "A note's place on a line: a fraction of the way from `from` to `to`,\nthen `offset` units across the line, to the right of the line where\n`offset` is positive.",
+      "properties": {
+        "along": {
+          "description": "How far along the line, from 0 at `from` to 1 at `to`.",
+          "format": "double",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "from": {
+          "description": "The line's first item.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "offset": {
+          "description": "How far across the line; 9 when left out.",
+          "format": "double",
+          "type": "number"
+        },
+        "to": {
+          "description": "The line's second item.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "along"
+      ],
+      "type": "object"
+    },
+    "Note": {
+      "additionalProperties": false,
+      "description": "A short text that belongs to an item or to a line, placed from its\nanchor's position whenever the map is drawn, so it moves with what it\ndescribes.",
+      "properties": {
+        "anchor": {
+          "$ref": "#/$defs/Anchor",
+          "description": "What the note belongs to."
+        },
+        "text": {
+          "description": "The note's text.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "text",
+        "anchor"
+      ],
+      "type": "object"
+    },
+    "Region": {
+      "additionalProperties": false,
+      "description": "A titled rectangle that groups items. Its title sits in its top left\ncorner, and a label of an item in it must stay inside it.",
+      "properties": {
+        "height": {
+          "description": "The height.",
+          "format": "double",
+          "minimum": 1,
+          "type": "number"
+        },
+        "id": {
+          "description": "The region's name, unique among the map's regions, which an item's\n`region` names.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "title": {
+          "description": "The title drawn in the region's top left corner.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "width": {
+          "description": "The width.",
+          "format": "double",
+          "minimum": 1,
+          "type": "number"
+        },
+        "x": {
+          "description": "The left edge.",
+          "format": "double",
+          "type": "number"
+        },
+        "y": {
+          "description": "The top edge.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "Sheet": {
+      "additionalProperties": false,
+      "description": "The drawing area, from (0, 0) to (width, height).",
+      "properties": {
+        "height": {
+          "description": "The sheet's height.",
+          "format": "double",
+          "minimum": 1,
+          "type": "number"
+        },
+        "width": {
+          "description": "The sheet's width.",
+          "format": "double",
+          "minimum": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`map/layout/v1` at `/maps/<name>`: one map's sheet, regions, items,\nlines and notes, with each item's stored position and label side.\n\nPositions and sizes are in layout units, one unit to a CSS pixel when\nthe page draws the sheet at its own size, with x to the right and y\ndown from the sheet's top left corner. An item with no `at` has no\nstored position yet, so the map does not draw it.",
+  "properties": {
+    "$type": {
+      "const": "map/layout/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "items": {
+      "description": "What the map draws a mark and a label for.",
+      "items": {
+        "$ref": "#/$defs/Item"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "lines": {
+      "description": "Lines between items; left out when the map has none.",
+      "items": {
+        "$ref": "#/$defs/Line"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "notes": {
+      "description": "Short texts placed beside an item or along a line; left out when the\nmap has none.",
+      "items": {
+        "$ref": "#/$defs/Note"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "regions": {
+      "description": "Titled rectangles that group items, such as one per system or one\nlane per stream of work; left out when the map has none.",
+      "items": {
+        "$ref": "#/$defs/Region"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "sheet": {
+      "$ref": "#/$defs/Sheet",
+      "description": "The sheet every label must stay on."
+    },
+    "title": {
+      "description": "The map's title, such as `Services and their links`.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    }
+  },
+  "required": [
+    "$type",
+    "title",
+    "sheet",
+    "items"
+  ],
+  "title": "LayoutRecord",
+  "type": "object",
+  "x-board-folder": "/maps/"
+}

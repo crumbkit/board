@@ -21,6 +21,8 @@ pub const BUILT_IN: BuiltIn = BuiltIn(&[
     &board_plugin_github::Github,
     #[cfg(feature = "jira")]
     &board_plugin_jira::Jira,
+    #[cfg(feature = "map")]
+    &board_plugin_map::MapPlugin,
     #[cfg(feature = "notes")]
     &board_plugin_notes::Notes,
     #[cfg(feature = "params")]

@@ -1,0 +1,419 @@
+{
+  "services-placed": [
+    [
+      "label-nearer-other",
+      "the label of alder is nearer the mark of dogwood than its own"
+    ],
+    [
+      "label-nearer-other",
+      "the label of ginkgo is nearer the mark of fir than its own"
+    ],
+    [
+      "label-nearer-other",
+      "the label of ivy is nearer the mark of larch than its own"
+    ],
+    [
+      "label-nearer-other",
+      "the label of larch is nearer the mark of kapok than its own"
+    ],
+    [
+      "label-overlap",
+      "the label of alder overlaps the label of cedar"
+    ],
+    [
+      "label-overlap",
+      "the label of alder overlaps the label of dogwood"
+    ],
+    [
+      "label-overlap",
+      "the label of alder overlaps the mark of dogwood"
+    ],
+    [
+      "label-overlap",
+      "the label of ginkgo overlaps the mark of fir"
+    ],
+    [
+      "label-overlap",
+      "the label of ivy overlaps the label of larch"
+    ],
+    [
+      "label-overlap",
+      "the label of ivy overlaps the mark of larch"
+    ],
+    [
+      "label-overlap",
+      "the label of kapok overlaps the label of larch"
+    ],
+    [
+      "label-overlap",
+      "the label of larch overlaps the mark of kapok"
+    ],
+    [
+      "line-through-item",
+      "the line alder→ivy passes over the mark of birch"
+    ],
+    [
+      "line-through-item",
+      "the line elm→ivy passes over the mark of fir"
+    ],
+    [
+      "line-through-item",
+      "the line hazel→ivy passes over the mark of ginkgo"
+    ],
+    [
+      "line-through-label",
+      "the line alder→ivy crosses the label of cedar"
+    ],
+    [
+      "line-through-label",
+      "the line birch→alder crosses the label of cedar"
+    ],
+    [
+      "line-through-label",
+      "the line cedar→alder crosses the label of cedar"
+    ],
+    [
+      "line-through-label",
+      "the line dogwood→alder crosses the label of alder"
+    ],
+    [
+      "line-through-label",
+      "the line dogwood→birch crosses the label of alder"
+    ],
+    [
+      "line-through-label",
+      "the line elm→alder crosses the label of alder"
+    ],
+    [
+      "line-through-label",
+      "the line elm→fir crosses the label of hazel"
+    ],
+    [
+      "line-through-label",
+      "the line elm→ginkgo crosses the label of ginkgo"
+    ],
+    [
+      "line-through-label",
+      "the line elm→ginkgo crosses the label of hazel"
+    ],
+    [
+      "line-through-label",
+      "the line elm→hazel crosses the label of hazel"
+    ],
+    [
+      "line-through-label",
+      "the line elm→ivy crosses the label of ginkgo"
+    ],
+    [
+      "line-through-label",
+      "the line elm→ivy crosses the label of hazel"
+    ],
+    [
+      "line-through-label",
+      "the line elm→kapok crosses the label of larch"
+    ],
+    [
+      "line-through-label",
+      "the line fir→ginkgo crosses the label of ginkgo"
+    ],
+    [
+      "line-through-label",
+      "the line fir→ivy crosses the label of ginkgo"
+    ],
+    [
+      "line-through-label",
+      "the line hazel→fir crosses the label of hazel"
+    ],
+    [
+      "line-through-label",
+      "the line hazel→kapok crosses the label of ginkgo"
+    ],
+    [
+      "line-through-label",
+      "the line hazel→kapok crosses the label of larch"
+    ],
+    [
+      "line-through-label",
+      "the line hazel→larch crosses the label of ginkgo"
+    ],
+    [
+      "line-through-label",
+      "the line hazel→larch crosses the label of ivy"
+    ],
+    [
+      "lines-share-angle",
+      "the lines alder→ivy and birch→alder leave one item at nearly one angle"
+    ],
+    [
+      "lines-share-angle",
+      "the lines elm→fir and elm→ginkgo leave one item at nearly one angle"
+    ],
+    [
+      "lines-share-angle",
+      "the lines elm→ivy and elm→fir leave one item at nearly one angle"
+    ],
+    [
+      "lines-share-angle",
+      "the lines elm→ivy and elm→ginkgo leave one item at nearly one angle"
+    ],
+    [
+      "lines-share-angle",
+      "the lines fir→ivy and elm→ivy leave one item at nearly one angle"
+    ],
+    [
+      "lines-share-angle",
+      "the lines ginkgo→ivy and hazel→ivy leave one item at nearly one angle"
+    ],
+    [
+      "note-nearer-other",
+      "the note \"prair\" on the line ginkgo→ivy is nearer the line alder→ivy"
+    ],
+    [
+      "note-nearer-other",
+      "the note \"quarr\" on the line fir→ivy is nearer the line hazel→kapok"
+    ],
+    [
+      "note-nearer-other",
+      "the note \"summi\" on the line hazel→ivy is nearer the line fir→ginkgo"
+    ],
+    [
+      "note-nearer-other",
+      "the note \"tundra upland valley wil\" is nearer the mark of birch than its own item"
+    ],
+    [
+      "note-overlap",
+      "the note \"prair\" overlaps the line alder→ivy"
+    ],
+    [
+      "note-overlap",
+      "the note \"quarr\" overlaps the label of ginkgo"
+    ],
+    [
+      "note-overlap",
+      "the note \"summi\" overlaps the label of ginkgo"
+    ],
+    [
+      "note-overlap",
+      "the note \"summi\" overlaps the line elm→ginkgo"
+    ],
+    [
+      "note-overlap",
+      "the note \"summi\" overlaps the line fir→ginkgo"
+    ],
+    [
+      "note-overlap",
+      "the note \"summi\" overlaps the line hazel→larch"
+    ],
+    [
+      "note-overlap",
+      "the note \"tundra upland valley wil\" overlaps the label of birch"
+    ],
+    [
+      "note-overlap",
+      "the note \"tundra upland valley wil\" overlaps the line alder→ivy"
+    ],
+    [
+      "note-overlap",
+      "the note \"tundra upland valley wil\" overlaps the line dogwood→birch"
+    ],
+    [
+      "note-overlap",
+      "the note \"tundra upland valley wil\" overlaps the mark of birch"
+    ]
+  ],
+  "services-final": [],
+  "work-placed": [
+    [
+      "label-nearer-other",
+      "the label of ivy is nearer the mark of elm than its own"
+    ],
+    [
+      "label-nearer-other",
+      "the label of larch is nearer the mark of maple than its own"
+    ],
+    [
+      "label-off-sheet",
+      "the label of maple leaves the sheet"
+    ],
+    [
+      "label-outside-region",
+      "the label of maple leaves its region"
+    ],
+    [
+      "label-overlap",
+      "the label of elm overlaps the label of ivy"
+    ],
+    [
+      "label-overlap",
+      "the label of ivy overlaps the mark of elm"
+    ],
+    [
+      "label-overlap",
+      "the label of kapok overlaps the label of larch"
+    ],
+    [
+      "label-overlap",
+      "the label of larch overlaps the label of maple"
+    ],
+    [
+      "line-through-item",
+      "the line ginkgo→alder passes over the mark of birch"
+    ],
+    [
+      "line-through-label",
+      "the line alder→cedar crosses the label of alder"
+    ],
+    [
+      "lines-share-angle",
+      "the lines ginkgo→alder and birch→alder leave one item at nearly one angle"
+    ],
+    [
+      "note-overlap",
+      "the note \"upland valley willowx\" overlaps the label of larch"
+    ]
+  ],
+  "work-final": [],
+  "queue-placed": [
+    [
+      "label-nearer-other",
+      "the label of birch is nearer the mark of alder than its own"
+    ],
+    [
+      "label-nearer-other",
+      "the label of fir is nearer the mark of dogwood than its own"
+    ],
+    [
+      "label-nearer-other",
+      "the label of ginkgo is nearer the mark of hazel than its own"
+    ],
+    [
+      "label-nearer-other",
+      "the label of jasmine is nearer the mark of ivy than its own"
+    ],
+    [
+      "label-nearer-other",
+      "the label of larch is nearer the mark of ivy than its own"
+    ],
+    [
+      "label-nearer-other",
+      "the label of maple is nearer the mark of kapok than its own"
+    ],
+    [
+      "label-overlap",
+      "the label of alder overlaps the label of birch"
+    ],
+    [
+      "label-overlap",
+      "the label of alder overlaps the label of cedar"
+    ],
+    [
+      "label-overlap",
+      "the label of birch overlaps the mark of alder"
+    ],
+    [
+      "label-overlap",
+      "the label of dogwood overlaps the label of fir"
+    ],
+    [
+      "label-overlap",
+      "the label of fir overlaps the mark of dogwood"
+    ],
+    [
+      "label-overlap",
+      "the label of ginkgo overlaps the label of hazel"
+    ],
+    [
+      "label-overlap",
+      "the label of ginkgo overlaps the mark of hazel"
+    ],
+    [
+      "label-overlap",
+      "the label of ivy overlaps the label of jasmine"
+    ],
+    [
+      "label-overlap",
+      "the label of ivy overlaps the label of larch"
+    ],
+    [
+      "label-overlap",
+      "the label of jasmine overlaps the label of kapok"
+    ],
+    [
+      "label-overlap",
+      "the label of jasmine overlaps the label of larch"
+    ],
+    [
+      "label-overlap",
+      "the label of jasmine overlaps the label of maple"
+    ],
+    [
+      "label-overlap",
+      "the label of kapok overlaps the label of maple"
+    ],
+    [
+      "label-overlap",
+      "the label of larch overlaps the mark of ivy"
+    ],
+    [
+      "label-overlap",
+      "the label of maple overlaps the mark of kapok"
+    ],
+    [
+      "line-through-label",
+      "the line birch→alder crosses the label of birch"
+    ],
+    [
+      "line-through-label",
+      "the line cedar→alder crosses the label of alder"
+    ],
+    [
+      "line-through-label",
+      "the line cedar→alder crosses the label of birch"
+    ],
+    [
+      "line-through-label",
+      "the line fir→dogwood crosses the label of fir"
+    ],
+    [
+      "line-through-label",
+      "the line jasmine→ivy crosses the label of jasmine"
+    ],
+    [
+      "line-through-label",
+      "the line jasmine→ivy crosses the label of larch"
+    ],
+    [
+      "line-through-label",
+      "the line kapok→ivy crosses the label of jasmine"
+    ],
+    [
+      "line-through-label",
+      "the line kapok→ivy crosses the label of larch"
+    ],
+    [
+      "line-through-label",
+      "the line kapok→ivy crosses the label of maple"
+    ],
+    [
+      "line-through-label",
+      "the line larch→ivy crosses the label of larch"
+    ],
+    [
+      "line-through-label",
+      "the line maple→jasmine crosses the label of jasmine"
+    ],
+    [
+      "line-through-label",
+      "the line maple→kapok crosses the label of maple"
+    ],
+    [
+      "line-through-label",
+      "the line nutmeg→dogwood crosses the label of fir"
+    ],
+    [
+      "note-overlap",
+      "the note \"inlet juniper kestrel lagoon meadow nectar\" overlaps the label of alder"
+    ]
+  ],
+  "queue-final": []
+}
