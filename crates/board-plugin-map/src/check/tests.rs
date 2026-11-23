@@ -170,7 +170,7 @@ fn the_schema_refuses_a_negative_column() {
     );
 }
 
-/// A line_kinds entry names a kind some line has; an entry for a kind no
+/// A `line_kinds` entry names a kind some line has; an entry for a kind no
 /// line has is refused, and its twin naming a kind a line has is admitted.
 #[test]
 fn a_line_kind_no_line_uses_is_refused_and_its_twin_is_admitted() {

@@ -420,9 +420,7 @@ fn pinned_map(spots: &[(&str, f64, f64)]) -> Value {
         json!({"id": id, "label": [format!("item {id}")], "side": "right",
                "at": {"x": x, "y": y, "set": "pinned"}})
     };
-    let mut items: Vec<Value> = (spots.iter())
-        .map(|&(id, x, y)| item(id, x, y))
-        .collect();
+    let mut items: Vec<Value> = (spots.iter()).map(|&(id, x, y)| item(id, x, y)).collect();
     items.push(item("far", 600.0, 400.0));
     json!({
         "$type": "map/layout/v1",
@@ -434,7 +432,10 @@ fn pinned_map(spots: &[(&str, f64, f64)]) -> Value {
 
 /// The side of the item `id`.
 fn side_of(map: &LayoutRecord, id: &str) -> Option<Side> {
-    map.items.iter().find(|item| item.id == id).and_then(|item| item.side)
+    map.items
+        .iter()
+        .find(|item| item.id == id)
+        .and_then(|item| item.side)
 }
 
 /// Two pinned items on one spot leave a finding no side clears, so the run
@@ -473,6 +474,9 @@ fn a_run_after_a_person_moves_a_pinned_item_chooses_sides_near_it_again() {
     }
     let changed = run.sides_changed(&map);
     assert!(!changed.is_empty(), "a side changed");
-    assert!(changed.iter().all(|id| id == "a" || id == "b"), "{changed:?}");
+    assert!(
+        changed.iter().all(|id| id == "a" || id == "b"),
+        "{changed:?}"
+    );
     assert_eq!(side_of(&map, "far"), Some(Side::Right));
 }

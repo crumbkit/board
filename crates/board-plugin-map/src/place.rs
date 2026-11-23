@@ -214,7 +214,11 @@ impl Run {
     /// The items that had no stored position and now have one.
     fn placed(&self, map: &LayoutRecord) -> Vec<String> {
         (self.unplaced.iter())
-            .filter(|id| map.items.iter().any(|item| item.id == **id && item.at.is_some()))
+            .filter(|id| {
+                map.items
+                    .iter()
+                    .any(|item| item.id == **id && item.at.is_some())
+            })
             .cloned()
             .collect()
     }
@@ -223,7 +227,11 @@ impl Run {
     /// no spot their region, lane and columns allow was left.
     fn stranded(&self, map: &LayoutRecord) -> Vec<String> {
         (self.unplaced.iter())
-            .filter(|id| map.items.iter().any(|item| item.id == **id && item.at.is_none()))
+            .filter(|id| {
+                map.items
+                    .iter()
+                    .any(|item| item.id == **id && item.at.is_none())
+            })
             .cloned()
             .collect()
     }
