@@ -17,7 +17,8 @@ use crate::plan::Answers;
 use crate::records::{Route, Subject};
 
 pub(crate) use read::{
-    FlowSummary, asked_for, blob_at, chosen, of_change, version_line, version_path, version_write,
+    FlowSummary, Flows, asked_for, blob_at, chosen, of_change, version_line, version_path,
+    version_write,
 };
 pub(crate) use valid::{problems, refuse_invalid, refuse_without_repository};
 

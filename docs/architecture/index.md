@@ -57,12 +57,12 @@ seconds for the lock. If the wait runs out, it runs in an index in memory, so
 the index lock never refuses a `query` or a `call`. A
 JSON or Markdown file of up to 16 MiB is parsed from the bytes hashed, so a cold refresh
 opens each file once. The walk lists directories and reads each entry's stat
-on up to four threads, as many as there are cores, never listing an ignored
+on up to four threads, one per core, never listing an ignored
 directory, then hashes the files whose stat the index does not hold on as
 many new threads; the entries and the index are the same whatever the count.
 A cold refresh compiles each schema once: the compilation that judges the
 schema also validates the records of its type.
-A file that is read again, such as a larger one, and that changed after hashing
+A file read again that changed after hashing
 is `board::repo::unreadable` until the next run, and so are the records of a
 schema that changed. `check`, `refs`, `query` and `ls` use the index; `get`
 resolves directly.
@@ -70,8 +70,9 @@ resolves directly.
 Once the index has doubled in pages since its last prune or first refresh, a
 refresh that writes also prunes: it deletes the fact rows that neither the
 working tree, `HEAD`'s tree nor a mounted commit reaches, and gives the freed
-pages back. A query that another process prunes under runs again, at most
-three times.
+pages back. A query another process prunes under runs again, at most
+three times. A plugin call takes at most one snapshot of each kind
+(performance/budgets.md).
 
 ## Commands that read it
 
