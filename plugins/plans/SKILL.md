@@ -101,14 +101,14 @@ project with no mounted repository has no change, so it has no such record.
 
 - A project with no mounted repository keeps its plan in the Markdown body
   of its project task, a `tasks/task/v2` with `kind: project`.
-- The body holds a `## Steps` list, then a `## Decisions` and a
-  `## Questions` list, each item a board path.
+- The body holds a `## Steps` list only. It lists no decision or question:
+  each decision names the project task in `refs` and each question names
+  it in `blocks`, so `board refs <project task>` lists them.
 - Start the project with its first plan as the body:
 
       board -C <board> tasks add --title '<project title>' --kind project --text "$(cat plan.md)"
 
   It prints the project task's path.
-- Write each decision and ask each question before the body names it.
 - A decision names the project task in `refs`.
 - A question names the project task in `blocks`.
 - `board -C <board> refs <project task>` lists the decisions and questions
@@ -130,5 +130,24 @@ project with no mounted repository has no change, so it has no such record.
 - A project task in a mounted notes repository refuses this `put` with
   `board::put::through_mount`. Edit it as the tasks skill's Edit section
   says.
+
+## A question for another board
+
+A record never names a path in another board. When the answer must come
+from another board, such as a team board's lead:
+
+1. Write a request in your own words, as docs/guide/exchange.md describes:
+   one subject line, a body under 800 words, and no path from this board.
+2. Check it with `board --personal boundary check`, action
+   `exchange.request`. When no boundary covers it, write nothing and ask
+   the owner a question here instead.
+3. Write the request at `/exchange/<role>/<id>.md` in the other board, then
+   your copy at `/exchange/sent/<id>.md` in the task's own repository.
+4. Name the copy on the waiting task:
+
+       board -C <board> tasks ref --path <task> --add /exchange/sent/<id>.md
+
+5. When a reply arrives, check it with action `exchange.receive`, copy it
+   under `/exchange/sent/<id>/replies/`, and add that copy the same way.
 
 The plugin's README.md gives every field of the three record types.

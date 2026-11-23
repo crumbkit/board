@@ -282,6 +282,26 @@ fn a_merged_change_with_an_open_task_is_owed_and_moves_once_the_task_is_done() {
 }
 
 #[test]
+fn a_merged_change_with_an_open_v3_task_is_owed() {
+    let board = gh();
+    let v3 = task("open").replace("tasks/task/v2", "tasks/task/v3");
+    board.write("tasks/left.md", &v3);
+    board.change_at(
+        "changes/merged.json",
+        "build",
+        &json!({"pull_request": pull(1), "records": ["/tasks/left.md"]}),
+    );
+    board.answers(
+        1,
+        &json!({"state": "closed", "merged": true, "merge_commit_sha": MERGE}),
+    );
+    let owed = board.call("sync", &json!({}))["changes"][0].clone();
+    assert_eq!(owed["status"], "owed", "{owed}");
+    board.write("tasks/left.md", &v3.replace("status: open", "status: done"));
+    assert_eq!(board.call("sync", &json!({}))["changes"][0]["to"], "done");
+}
+
+#[test]
 fn a_gh_failure_refuses_the_whole_sync_and_writes_nothing() {
     let board = gh();
     pulls(&board);

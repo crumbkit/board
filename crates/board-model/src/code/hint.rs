@@ -411,6 +411,9 @@ fn generic(code: Code) -> &'static str {
         Code::RefDangling => {
             "create what the reference names, or change the reference; `board refs <path>` lists them"
         }
+        Code::RefThroughMount => {
+            "this field names only files in the record's own board; a crossing between boards is an exchange message (docs/guide/exchange.md), so name your own copy of the request or reply, or remove the reference"
+        }
         Code::MountInvalid => {
             "a link holds `$type` `board/mount/v1` and `path`; a mount holds `repo`, `follow` and `commit`; a `board/repo/v1` record holds `remote`, in the form `owner/name` for GitHub, and may hold a `checkout` of `repo`, `follow` and `commit`"
         }

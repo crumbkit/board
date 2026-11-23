@@ -107,12 +107,20 @@ it.
 4. See a project whole with `tasks.tree --path <path>`, or every tree with
    `tasks.tree --root true`. When `blocked_by` of a parent is empty, every
    task under it is finished: mark it done.
+5. A task names the records and files it depends on in `refs`, never as
+   paths in its body: `tasks.ref --path <task> --add <path>`, and
+   `--remove <path>` to drop one. A ref names a file in the task's own
+   repository only. For something in another board, send an exchange
+   message (docs/guide/exchange.md) and name your copy of it. On
+   `tasks::ref::not_v3`, run `board tasks migrate`, then `--yes`.
 
 ## Edit
 
 1. Run `board -C <board> --json get <path>`, which gives the task's `text`
    and `blob`.
 2. Change the text as the person says, keeping the frontmatter valid.
+   Change `refs` with `tasks.ref` instead, and never add a path in another
+   board.
 3. Write it with `board -C <board> put --batch`, one JSON line on stdin:
    `{"path": "<path>", "expect": "<blob>", "text": "<new text>"}`. On
    `board::put::stale`, or `board::mount::stale` in `fields.refusals`, run

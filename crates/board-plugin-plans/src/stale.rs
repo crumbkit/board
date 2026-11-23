@@ -364,7 +364,7 @@ fn evals(host: &dyn Host, given: &Input) -> Result<Vec<Candidate>, PluginError> 
 
 fn tasks(host: &dyn Host, given: &Input) -> Result<Vec<Candidate>, PluginError> {
     let sql = "SELECT logical, source, path, json_extract(body, '$.reviewed') FROM records \
-               WHERE type = 'tasks/task/v2' AND '/' || path IN (logical, logical || '.json') \
+               WHERE type IN ('tasks/task/v2', 'tasks/task/v3') AND '/' || path IN (logical, logical || '.json') \
                AND json_extract(body, '$.status') = 'open' \
                AND json_extract(body, '$.owner') IS NULL \
                AND json_extract(body, '$.defer') IS NULL \

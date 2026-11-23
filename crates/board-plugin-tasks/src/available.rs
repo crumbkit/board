@@ -87,7 +87,8 @@ pub(crate) struct Input {
 ///
 /// `parent` is the parent's path in the board, or null when it has none,
 /// names no task in its repo, or is where a loop was cut. `tree_path` joins
-/// the slugs from its root to it.
+/// the slugs from its root to it. `refs` holds the first 10 of the task's
+/// refs, as paths in the board, and `refs_total` counts them all.
 #[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub(crate) struct SweptTask {
@@ -104,6 +105,8 @@ pub(crate) struct SweptTask {
     pub(crate) parent: Option<String>,
     pub(crate) subtasks: Subtasks,
     pub(crate) tree_path: String,
+    pub(crate) refs: Vec<String>,
+    pub(crate) refs_total: usize,
 }
 
 /// At most 100 tasks of a section, by repo then title, and how many it
@@ -313,6 +316,7 @@ pub(crate) fn sweep(
             && task
                 .reviewed
                 .is_none_or(|reviewed| reviewed < day.plus(-STALE));
+        let (refs, refs_total) = task.shown_refs();
         let item = SweptTask {
             repo: task.repo.clone(),
             path: task.path.clone(),
@@ -327,6 +331,8 @@ pub(crate) fn sweep(
             parent: places.tree.parents.get(&task.path).cloned(),
             subtasks: subtasks(places.tree, places.nodes, &task.path),
             tree_path: tree_path(places.tree, &task.path),
+            refs,
+            refs_total,
         };
         let due = task.due.is_some_and(|due| due <= day.plus(DUE_SOON));
         let held =

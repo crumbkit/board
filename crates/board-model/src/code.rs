@@ -55,6 +55,7 @@ codes! {
     PathShadowed => "board::path::shadowed",
     PathCaseCollision => "board::path::case_collision",
     RefDangling => "board::ref::dangling",
+    RefThroughMount => "board::ref::through_mount",
     MountInvalid => "board::mount::invalid",
     MountRepoMissing => "board::mount::repo_missing",
     MountCommitMissing => "board::mount::commit_missing",

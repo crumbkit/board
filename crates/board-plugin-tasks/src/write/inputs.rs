@@ -76,6 +76,41 @@ pub(crate) struct MoveInput {
     pub(crate) parent: String,
 }
 
+/// The task whose refs to change, the path to add and the path to remove.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RefInput {
+    #[schemars(
+        regex(pattern = r"^/.*\.md$"),
+        description = "The task's path in the board, such as /tasks/call-the-bank.md or \
+                       /repos/personal/tasks/x.md."
+    )]
+    pub(crate) path: String,
+    #[schemars(
+        regex(pattern = r"^/"),
+        description = "The board path, in the task's own repo, of a record or file to add to \
+                       the end of refs, such as /exchange/sent/20261122T0329Z-lead-scope.md; \
+                       one already there stays where it is."
+    )]
+    pub(crate) add: Option<String>,
+    #[schemars(
+        regex(pattern = r"^/"),
+        description = "The board path of an entry to remove from refs."
+    )]
+    pub(crate) remove: Option<String>,
+}
+
+/// Whether to rewrite the v2 tasks as v3, or only list them.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MigrateInput {
+    #[schemars(
+        description = "Rewrite the tasks listed, one commit per repo; without it, list them and \
+                       write nothing."
+    )]
+    pub(crate) yes: Option<bool>,
+}
+
 /// A new open task, and the fields it starts with.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -121,9 +156,17 @@ pub(crate) struct AddInput {
     #[serde(default)]
     #[schemars(
         schema_with = "kind",
-        description = "task, as when left out, or project."
+        description = "task, as when left out, or project, which writes a tasks/task/v2 project \
+                       task until projects move to their own records."
     )]
     pub(crate) kind: Option<String>,
+    #[schemars(
+        length(max = 100),
+        description = "The board paths, in the task's own repo, of the records and files the \
+                       task names, such as /exchange/sent/20261122T0329Z-lead-scope.md. A \
+                       project task takes none."
+    )]
+    pub(crate) refs: Option<Vec<String>>,
     #[schemars(
         regex(pattern = r"^/"),
         description = "The board path, in the task's own repo, of a project's brief, such as \

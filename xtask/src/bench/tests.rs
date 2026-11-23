@@ -113,7 +113,7 @@ fn a_generated_board_holds_valid_open_tasks_and_one_in_five_waits_on_the_first()
     generate(root.path(), 0, &[], 0).unwrap();
     let cache = tempfile::tempdir().unwrap();
     let sql = "SELECT count(*), count(json_extract(body, '$.after')) FROM records \
-        WHERE type = 'tasks/task/v2' AND code IS NULL \
+        WHERE type = 'tasks/task/v3' AND code IS NULL \
         AND json_extract(body, '$.status') = 'open'";
     let report = Board::open(root.path(), None)
         .unwrap()
@@ -146,15 +146,15 @@ fn a_generated_mounted_board_mounts_each_repository_at_its_pinned_commit_and_eve
         "SELECT source, count(*) FROM entries WHERE source != 'worktree' GROUP BY source ORDER BY source",
     );
     // Each repository: 25 tasks, 100 projects, 100 of the plugin's tasks,
-    // 100 source files, its config and three schemas.
+    // 100 source files, its config and four schemas.
     let mut expected: Vec<_> = (pinned.iter())
-        .map(|commit| vec![json!(commit), json!(329)])
+        .map(|commit| vec![json!(commit), json!(330)])
         .collect();
     expected.sort_by_key(|row| row[0].to_string());
     assert_eq!(sources, expected);
     assert_eq!(
         query("SELECT count(*), count(code) FROM entries"),
-        [[json!(1_064), json!(0)]]
+        [[json!(1_067), json!(0)]]
     );
     let across = "SELECT count(*) FROM records WHERE type = 'bench/task/v1' \
         AND json_extract(body, '$.project') LIKE '/repos/r01/projects/%' AND code IS NULL";

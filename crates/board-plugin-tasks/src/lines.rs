@@ -93,12 +93,15 @@ fn keyed(line: &str, key: &str) -> bool {
         .is_some_and(|rest| rest.is_empty() || rest.starts_with(python_space))
 }
 
-/// Whether `held` is a value a line holds on its own: a JSON object, as
-/// this editor writes one, a double- or single-quoted string closed on the
-/// line, or a plain scalar that starts with none of YAML's indicators of a
-/// block, a collection, an anchor or a tag; then an optional comment.
+/// Whether `held` is a value a line holds on its own: a JSON object or
+/// list, as this editor and `add` write one, a double- or single-quoted
+/// string closed on the line, or a plain scalar that starts with none of
+/// YAML's indicators of a block, a collection, an anchor or a tag; then an
+/// optional comment.
 fn one_line(held: &str) -> bool {
-    if serde_json::from_str::<serde_json::Map<String, Value>>(held).is_ok() {
+    if serde_json::from_str::<serde_json::Map<String, Value>>(held).is_ok()
+        || serde_json::from_str::<Vec<Value>>(held).is_ok()
+    {
         return true;
     }
     let rest = if let Some(inner) = held.strip_prefix('"') {

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use board_model::{LogicalPath, Source};
 use board_ops::{Absent, Host, Limit, PluginError, RefsReport};
-use board_plugin::shape::{Actor, Record as _, TREE_CODES};
+use board_plugin::shape::{Actor, TREE_CODES};
 use board_repos::{COLUMNS, Date, Listed, json_body, parsed, query, root, shown};
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -14,14 +14,14 @@ use serde_json::Value;
 
 use crate::PLUGIN;
 use crate::dates::Defer;
-use crate::records::TaskRecord;
+use crate::records::TASK_TYPES;
 use crate::task::model;
 use crate::tree::{Forest, Node, Nodes, forest, waits_on};
 
 /// What the query reads of each Markdown file under a `tasks/` directory
 /// of its repo that may be a task: its repo's root, its path, its Board
-/// code, and its frontmatter as JSON when it is a `tasks/task/v2` record
-/// that parses, or null.
+/// code, and its frontmatter as JSON when it is a `tasks/task/v2` or
+/// `tasks/task/v3` record that parses, or null.
 const TASK_COLUMNS: [&str; 4] = [
     "substr(e.logical, 1, length(e.logical) - length(e.path))",
     "e.logical",
@@ -38,12 +38,14 @@ fn listing_query() -> String {
 UNION ALL
 SELECT 'task', *{padding} FROM (
 SELECT {}
-FROM entries AS e LEFT JOIN bodies AS b ON b.blob = e.blob AND e.type = 'tasks/task/v2'
+FROM entries AS e LEFT JOIN bodies AS b ON b.blob = e.blob AND e.type IN ('{}', '{}')
 WHERE e.path GLOB '*.md' AND ('/' || e.path) GLOB '*/tasks/*'
 ORDER BY e.logical
 )",
         query(),
-        TASK_COLUMNS.join(", ")
+        TASK_COLUMNS.join(", "),
+        TASK_TYPES[0],
+        TASK_TYPES[1]
     )
 }
 
@@ -75,7 +77,7 @@ pub(crate) fn listing(host: &dyn Host) -> Result<(Vec<Listed>, Vec<Row>), Plugin
 }
 
 /// A task, with the repo that holds it. `defer` keeps the text the
-/// frontmatter wrote. `waits` and `linked` say whether it has an `after`
+/// frontmatter wrote; `brief` and `refs` are paths in the board. `waits` and `linked` say whether it has an `after`
 /// and a `parent`, which `refs` resolves.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Task {
@@ -93,11 +95,12 @@ pub(crate) struct Task {
     pub(crate) linked: bool,
     pub(crate) kind: String,
     pub(crate) brief: Option<String>,
+    pub(crate) refs: Vec<String>,
 }
 
 /// The tasks in `roots`, in every status, and how many of their files are
 /// degraded or hold a value the model cannot read. A task file is degraded
-/// whatever its status when it is no `tasks/task/v2` record, when check
+/// whatever its status when it is no task record, when check
 /// degrades it for more than the tree, or when the model refuses a record
 /// the board's schema admitted. A date-time without an offset is local
 /// time, `offset` seconds east of UTC.
@@ -118,10 +121,15 @@ pub(crate) fn read(rows: &[Row], roots: &[String], offset: i32) -> (Vec<Task>, u
             degraded += 1;
             continue;
         };
-        let brief = match task.brief {
-            Some(brief) if at != "/" => Some(format!("{at}{brief}")),
-            brief => brief,
+        let in_board = |path: String| {
+            if at == "/" {
+                path
+            } else {
+                format!("{at}{path}")
+            }
         };
+        let brief = task.brief.map(in_board);
+        let refs = task.refs.into_iter().map(in_board).collect();
         tasks.push(Task {
             path,
             title: task.title,
@@ -136,10 +144,23 @@ pub(crate) fn read(rows: &[Row], roots: &[String], offset: i32) -> (Vec<Task>, u
             linked: task.parent.is_some(),
             kind: task.kind.unwrap_or_else(|| "task".to_owned()),
             brief,
+            refs,
             repo: at,
         });
     }
     (tasks, degraded)
+}
+
+/// The most of a task's `refs` a listed row shows; `refs_total` counts
+/// them all.
+pub(crate) const SHOWN_REFS: usize = 10;
+
+impl Task {
+    /// The first [`SHOWN_REFS`] of the task's `refs`, and how many it has.
+    pub(crate) fn shown_refs(&self) -> (Vec<String>, usize) {
+        let shown = self.refs.iter().take(SHOWN_REFS).cloned().collect();
+        (shown, self.refs.len())
+    }
 }
 
 /// The root of the repo that holds the board path `path`: the mount whose
@@ -240,7 +261,7 @@ pub(crate) fn resolve(host: &dyn Host, tasks: &[Task]) -> Result<Links, PluginEr
 /// its parent, and the targets elsewhere, each with whether it is an
 /// `after`. Each blocker is listed once, by its path in the board, and an
 /// unresolved one as written; so is the parent. A target is done when it
-/// is a `tasks/task/v2` record whose status is `done` and which check
+/// is a task record whose status is `done` and which check
 /// degrades for nothing but the tree. A target held by another commit than
 /// the task, or the board's own tree for a mount, is in another repo. Board
 /// displays a target in a mount by its path in that mount, so the repo's
@@ -280,7 +301,8 @@ fn blockers(report: &RefsReport, repo: &str) -> (Vec<String>, Option<String>, Ve
                 .and_then(|(_, value)| value.as_ref())
         };
         let code = fielded.and_then(|fielded| fielded.code);
-        let done = value("/$type").and_then(Value::as_str) == Some(TaskRecord::TYPE)
+        let done = (value("/$type").and_then(Value::as_str))
+            .is_some_and(|found| TASK_TYPES.contains(&found))
             && value("/status").and_then(Value::as_str) == Some("done")
             && code.is_none_or(|code| TREE_CODES.contains(&code.as_str()));
         if !done && !found.contains(&display) {

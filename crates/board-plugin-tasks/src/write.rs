@@ -1,5 +1,6 @@
 //! The write calls: `add`, `done`, `defer`, `drop`, `reviewed`
-//! and `move` (plugins/tasks/README.md, Writing tasks).
+//! and `move` (plugins/tasks/README.md, Writing tasks). `ref` and
+//! `migrate` write through the same edit.
 //!
 //! Each call syncs a mounted repo before it writes and pushes after, as
 //! notes `add` does, and each but `move` sets `reviewed` to the person's
@@ -21,7 +22,8 @@ use serde_json::{Map, Value, json};
 use crate::dates::horizon;
 use crate::lines::with_fields;
 use crate::listing::{grown, held_by, listing, read, resolve};
-use crate::records::TaskRecord;
+use crate::records::{TaskRecord, TaskV2Record};
+use crate::refs::{local_refs, not_v3};
 use crate::repeat::completed;
 use crate::task::model;
 use crate::tree::{Forest, descendants};
@@ -29,7 +31,9 @@ use crate::{PLUGIN, caller_origin, hinted, refusal, writer};
 
 mod inputs;
 
-pub(crate) use inputs::{AddInput, DeferInput, DoneInput, MoveInput, TaskPath};
+pub(crate) use inputs::{
+    AddInput, DeferInput, DoneInput, MigrateInput, MoveInput, RefInput, TaskPath,
+};
 
 /// The refusal of a write that found the task busy: edited in its clone
 /// and not committed, or changing.
@@ -80,7 +84,7 @@ pub(crate) struct Moved {
 pub(crate) type Values = Vec<(&'static str, Option<Value>)>;
 
 /// The person's today, by the call's time zone and `day_start`.
-fn day(host: &dyn Host) -> Date {
+pub(crate) fn day(host: &dyn Host) -> Date {
     let settings = host.settings();
     let start = day_start(settings.day_start.as_deref());
     today(settings.now, settings.utc_offset, start)
@@ -109,13 +113,25 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     let found = listed(host, PLUGIN)?;
     let repo = routed(&found, given.repo.as_deref(), remote.as_deref())?;
     let day = day(host);
+    // A project task stays v2 until `board projects migrate` moves it.
+    let project = given.kind.as_deref() == Some("project");
+    let tag = if project {
+        TaskV2Record::TYPE
+    } else {
+        TaskRecord::TYPE
+    };
+    let refs = match &given.refs {
+        Some(_) if project => return Err(not_v3("a project task", "add")),
+        Some(refs) => Some(local_refs(host, &repo, refs)?),
+        None => None,
+    };
     let mut fields: Vec<(&str, Value)> = vec![
-        ("$type", json!(TaskRecord::TYPE)),
+        ("$type", json!(tag)),
         ("title", json!(given.title)),
         ("status", json!("open")),
     ];
     let added = [
-        ("kind", given.kind.as_ref().map(|kind| json!(kind))),
+        ("kind", project.then(|| json!("project"))),
         ("brief", given.brief.as_ref().map(|brief| json!(brief))),
         ("parent", given.parent.as_ref().map(|parent| json!(parent))),
         ("due", given.due.as_ref().map(|due| json!(due))),
@@ -134,6 +150,7 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
             "contexts",
             given.contexts.as_ref().map(|contexts| json!(contexts)),
         ),
+        ("refs", refs.map(|refs| json!(refs))),
     ];
     for (key, value) in added {
         let Some(mut value) = value else { continue };
@@ -408,25 +425,27 @@ fn parented(
 }
 
 /// What a call changes, from the task's record and the person's today.
-type Change<'a> = dyn Fn(&Map<String, Value>, Date) -> Result<Values, PluginError> + 'a;
+pub(crate) type Change<'a> = dyn Fn(&Map<String, Value>, Date) -> Result<Values, PluginError> + 'a;
 
 /// A task as an edit left it: its path in its repo, its record with the
-/// change made, the commit that holds it, and the code of the sync before.
-struct Edited {
-    path: String,
-    record: Map<String, Value>,
-    commit: Option<String>,
-    synced: Option<String>,
+/// change made, the commit that holds it, the code of the sync before, and
+/// whether the edit wrote, which a change that names no field does not.
+pub(crate) struct Edited {
+    pub(crate) path: String,
+    pub(crate) record: Map<String, Value>,
+    pub(crate) commit: Option<String>,
+    pub(crate) synced: Option<String>,
+    pub(crate) wrote: bool,
 }
 
 /// Sets the fields `change` names on the task at `logical` in `repo`, as
-/// `landing` says. The sync before the write pushes only when
-/// `landing.push`.
+/// `landing` says, and writes nothing when it names none. The sync before
+/// the write pushes only when `landing.push`.
 ///
 /// A write refused because the task or the clone moved since it was read is
 /// tried again on a new read. A new read that finds the text the last
 /// write sent, which Board wrote before it refused, is that write.
-fn edit(
+pub(crate) fn edit(
     writer: Writer<'_>,
     repo: &Repo,
     logical: &str,
@@ -450,10 +469,20 @@ fn edit(
                 record: record.clone(),
                 commit: None,
                 synced,
+                wrote: true,
             });
         }
         let record = checked(host, &task, repo, logical, landing.finished)?;
         let values = change(&record, day)?;
+        if values.is_empty() {
+            return Ok(Edited {
+                path,
+                record,
+                commit: None,
+                synced,
+                wrote: false,
+            });
+        }
         let text = with_fields(task.text.as_deref().unwrap_or(""), &values, logical)?;
         let error = match repo.write(host, &path, &text, task.blob.as_deref()) {
             Ok(commit) => {
@@ -466,6 +495,7 @@ fn edit(
                     record,
                     commit,
                     synced,
+                    wrote: true,
                 });
             }
             Err(error) => error,
@@ -503,7 +533,7 @@ fn edit(
     ))
 }
 
-/// The task's record, refused unless it is a valid v2 task under `tasks/`
+/// The task's record, refused unless it is a valid task under `tasks/`
 /// in a notes repo, open unless `finished`.
 ///
 /// The file is in the notes repo `held` chose only when Board read it from
@@ -539,10 +569,7 @@ fn checked(
         .strip_prefix(repo.root.trim_end_matches('/'))
         .unwrap_or(logical);
     if task.text.is_none() || !within.contains("/tasks/") {
-        let why = format!(
-            "{logical} is not a {} task under a tasks/ directory; {hint}",
-            TaskRecord::TYPE
-        );
+        let why = format!("{logical} is not a task under a tasks/ directory; {hint}");
         return Err(refusal("tasks::task::not_task", why, at.clone()));
     }
     let record = match &task.record {
@@ -550,10 +577,7 @@ fn checked(
         _ => Map::new(),
     };
     if let Err(errors) = model(&Value::Object(record.clone()), host.settings().utc_offset) {
-        let why = format!(
-            "{logical} is not a valid {} task ({errors} errors); {hint}",
-            TaskRecord::TYPE
-        );
+        let why = format!("{logical} is not a valid task ({errors} errors); {hint}");
         return Err(refusal("tasks::task::not_task", why, at.clone()));
     }
     let status = record.get("status").cloned().unwrap_or(Value::Null);
@@ -632,7 +656,7 @@ fn routed(found: &[Listed], name: Option<&str>, remote: Option<&str>) -> Result<
 }
 
 /// The repo of `found` that holds the board path `logical`, with its clone.
-fn held(found: &[Listed], logical: &str) -> Repo {
+pub(crate) fn held(found: &[Listed], logical: &str) -> Repo {
     let at = held_by(found, logical);
     let clone = (found.iter())
         .find(|listed| listed.root == at)

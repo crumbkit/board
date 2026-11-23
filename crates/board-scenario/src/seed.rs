@@ -296,7 +296,7 @@ impl Default for Seed {
 }
 
 /// What exhibits rely on: the configuration, two types and one project.
-const SUPPORT: [(&str, &str); 4] = [
+const SUPPORT: [(&str, &str); 5] = [
     (".board/board.json", r#"{"$type": "board/config/v1"}"#),
     (".board/types/lr/task/v1.schema.json", TASK_SCHEMA),
     (
@@ -304,7 +304,16 @@ const SUPPORT: [(&str, &str); 4] = [
         r#"{"type": "object"}"#,
     ),
     ("projects/p.json", r#"{"$type": "lr/project/v1"}"#),
+    (".board/types/lr/local/v1.schema.json", LOCAL_SCHEMA),
 ];
+
+/// A type whose `see` must name a file in the record's own board.
+const LOCAL_SCHEMA: &str = r#"{
+  "type": "object",
+  "properties": {
+    "see": {"type": "string", "format": "board-ref", "x-board-local": true}
+  }
+}"#;
 
 const TASK_SCHEMA: &str = r#"{
   "type": "object",
@@ -317,7 +326,7 @@ const TASK_SCHEMA: &str = r#"{
 
 /// Exhibits in the root board that are text: path, text and code.
 #[rustfmt::skip]
-const TEXT: [(&str, &str, Option<Code>); 38] = [
+const TEXT: [(&str, &str, Option<Code>); 40] = [
     ("json/parse.json", "{", Some(Code::JsonParse)),
     ("json/conflict.json", "{\n<<<<<<< HEAD\n}\n", Some(Code::JsonMergeConflict)),
     ("json/duplicate.json", r#"{"a": 1, "a": 2}"#, Some(Code::JsonDuplicateKey)),
@@ -337,6 +346,8 @@ const TEXT: [(&str, &str, Option<Code>); 38] = [
     ("ref/malformed.json", r#"{"$type": "lr/task/v1", "title": "t", "project": "projects/p"}"#, Some(Code::RefMalformed)),
     ("ref/dangling.json", r#"{"$type": "lr/task/v1", "title": "t", "project": "/projects/q"}"#, Some(Code::RefDangling)),
     ("ref/wrong.json", r#"{"$type": "lr/task/v1", "title": "t", "project": "/ref/dangling"}"#, Some(Code::RefWrongType)),
+    ("ref/local.json", r#"{"$type": "lr/local/v1", "see": "/projects/p"}"#, None),
+    ("ref/through.json", r#"{"$type": "lr/local/v1", "see": "/mount/m"}"#, Some(Code::RefThroughMount)),
     ("path/.json", "{}", Some(Code::PathMalformed)),
     ("path/x", "", Some(Code::PathShadowed)),
     ("path/x.json", "{}", Some(Code::PathShadowed)),

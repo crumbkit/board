@@ -161,12 +161,13 @@ impl Tally {
 /// Where a reference led, and its code and reason when it fails.
 pub(crate) type Followed = (Option<Location>, Option<(Code, String)>);
 
-/// Follows a reference to `target`, and says why it fails, if it does: it leads nowhere, or,
-/// when it `accepts` only some record types, to anything else. `type_of`
-/// gives the record type at a location.
+/// Follows a reference to `target`, and says why it fails, if it does: it
+/// leads nowhere; it is `local` and leads through a mount; or, when it
+/// `accepts` only some record types, to anything else. `type_of` gives the
+/// record type at a location.
 pub(crate) fn follow<E>(
     target: &LogicalPath,
-    accepts: Option<&[RecordType]>,
+    (accepts, local): (Option<&[RecordType]>, bool),
     resolved: Result<Location, ResolveError>,
     type_of: impl FnOnce(&Location) -> Result<Option<RecordType>, E>,
 ) -> Result<Followed, E> {
@@ -174,6 +175,13 @@ pub(crate) fn follow<E>(
         Err(error) => return Ok((None, Some((Code::RefDangling, error.to_string())))),
         Ok(location) => location,
     };
+    if local && let Some(mount) = location.mount() {
+        let reason = format!(
+            "{target} is in the board mounted at {mount}, and this field names only files in \
+             the record's own board"
+        );
+        return Ok((Some(location), Some((Code::RefThroughMount, reason))));
+    }
     let failure = match accepts {
         Some(accepts) if !type_of(&location)?.is_some_and(|found| accepts.contains(&found)) => {
             let types: Vec<&str> = accepts.iter().map(RecordType::as_str).collect();
