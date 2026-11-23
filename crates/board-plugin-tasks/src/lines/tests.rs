@@ -37,6 +37,8 @@ fn a_key_whose_line_is_not_one_plain_scalar_is_refused_and_a_plain_one_is_replac
         ("defer: |\n  soon\n", false),
         ("defer:\n  - soon\n", false),
         ("defer: [soon]\n", false),
+        ("defer: [\"soon\",\n  \"later\"]\n", false),
+        ("defer: [\"soon\", \"later\"]\n", true),
         ("defer: \"soon\n  later\"\n", false),
         ("defer: soon\ndefer: someday\n", false),
         ("defer: so#on\n", false),

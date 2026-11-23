@@ -36,7 +36,7 @@ fn add_writes_an_open_task_named_by_its_title_reviewed_today_and_a_second_one_be
     assert_eq!(
         tasks.read("tasks/call-the-bank.md"),
         format!(
-            "---\n$type: \"tasks/task/v2\"\ntitle: \"Call the bank\"\nstatus: \"open\"\ndefer: \"{}\"\n\
+            "---\n$type: \"tasks/task/v3\"\ntitle: \"Call the bank\"\nstatus: \"open\"\ndefer: \"{}\"\n\
              reviewed: \"{}\"\n---\n\nAsk about fees.\n",
             day(20),
             day(0)

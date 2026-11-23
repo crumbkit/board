@@ -18,7 +18,7 @@ use crate::flow::{
 use crate::phases::check_target;
 use crate::plan::{Planned, plan_lines};
 use crate::pr::quote;
-use crate::records::{BOARD_ITSELF, BUILD, ChangeRecord, Kind, Route, SUITE_TYPE, TASK_TYPE};
+use crate::records::{BOARD_ITSELF, BUILD, ChangeRecord, Kind, Route, SUITE_TYPE, TASK_TYPES};
 use crate::repo::{CODEOWNERS, DOCS, Rule, ask_first, exists, files, owners, route, suite_in};
 use crate::rules::{Found, on_mount};
 use crate::surfaced::{Surfaced, surfaced};
@@ -207,7 +207,7 @@ pub(crate) fn refuse_existing(host: &dyn Host, path: &str) -> Result<(), PluginE
 /// one titled `title`.
 fn task_for(host: &dyn Host, asked: &Input, title: &str) -> Result<String, PluginError> {
     if let Some(named) = &asked.task {
-        check_target(host, named, &[TASK_TYPE])?;
+        check_target(host, named, &TASK_TYPES)?;
         return Ok(named.clone());
     }
     let route = routing(host, asked.task_repo.as_deref())?;

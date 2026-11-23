@@ -68,6 +68,16 @@ needs to know.
     find a shared record's wholes and the records each brings
     (plugins/share/README.md), and never infers either from a name.
 
+16. A reference field that must name a file in the record's own board
+    carries `"x-board-local": true` beside `format: board-ref`, on `items`
+    for a list. Only `tasks/task/v3`'s `refs` carries it. The record stays
+    valid, and `board check` and `board put` mark it degraded with
+    `board::ref::through_mount` when such a reference resolves through a
+    mount, naming the field and the mount. That code is one of
+    `TREE_CODES`, so a plugin still reads the record, as it reads one with
+    a dangling reference. A crossing between boards is an exchange message
+    (docs/guide/exchange.md), and the record names its own copy.
+
 `xtask/tests/shapes.rs` checks rules 1, 2, 5, 10, 11, 12 and 14 on every
 committed record schema. It lists the schemas that break rules 1 to 12
 today, until their plugins are ported. For rule 14 it lists each field by

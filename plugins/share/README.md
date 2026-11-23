@@ -53,7 +53,7 @@ is not followed, because only a typed reference or a link is one.
 A whole is a record that the entry at `path`, an entry under it, or another
 whole names through a part-of field. A part-of field's schema in this
 board's `.board/types/` carries `"x-board-part-of": true`, on `items` for a
-list. The `parent` of a `tasks/task/v2` task is one, so a shared task's
+list. The `parent` of a `tasks/task/v2` or `v3` task is one, so a shared task's
 project is a whole, and so is that project's parent, up the chain.
 
 A whole brings the records that name it by a typed reference and whose

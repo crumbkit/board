@@ -953,6 +953,24 @@ fn a_shared_task_brings_its_projects_decision_and_question_and_not_its_sibling_t
 }
 
 #[test]
+fn a_shared_v3_task_whose_parent_is_a_v2_project_brings_the_projects_decision_and_question() {
+    let boards = tasks_boards();
+    boards.reading_list();
+    let v3 = task("Remove", "parent: /tasks/tidy.md\n").replace("tasks/task/v2", "tasks/task/v3");
+    boards.personal.write("tasks/remove.md", &v3);
+    let preview = boards.preview(&["--path", "/tasks/remove.md"]);
+    assert_eq!(
+        preview["wholes"],
+        json!([{"path": "/tasks/tidy.md", "from": "/tasks/remove.md", "back_refs": 2}])
+    );
+    let output = boards.share(&["--path", "/tasks/remove.md"]);
+    assert_eq!(output["copied"], json!(READING));
+    let clone = Scenario::clone_of(&boards.team);
+    let checked = board_in(clone.workdir(), &["check"]);
+    assert_eq!(checked.code, 0, "{}", text(&checked.stdout));
+}
+
+#[test]
 fn a_shared_task_brings_no_change_record_of_its_project_however_many_name_it() {
     let boards = tasks_boards();
     boards.reading_list();

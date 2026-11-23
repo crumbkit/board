@@ -122,6 +122,30 @@ impl Location {
         ));
         format!("/{}", segments.join("/")).parse().ok()
     }
+
+    /// The path of the first mount point this Location was reached
+    /// through, from the board the resolution started in; `None` when it
+    /// is in that board.
+    pub fn mount(&self) -> Option<LogicalPath> {
+        self.mounts().into_iter().next()
+    }
+
+    /// The path of each mount point this Location was reached through, in
+    /// order, from the board the resolution started in.
+    pub fn mounts(&self) -> Vec<LogicalPath> {
+        let next_boards = (self.pointers.iter().skip(1))
+            .chain(std::iter::once(self))
+            .map(|step| &step.board);
+        let mut segments: Vec<&str> = Vec::new();
+        let mut found = Vec::new();
+        for (pointer, next) in self.pointers.iter().zip(next_boards) {
+            if pointer.board != *next {
+                segments.extend(addressed(&pointer.path, true));
+                found.extend(format!("/{}", segments.join("/")).parse().ok());
+            }
+        }
+        found
+    }
 }
 
 /// The segments that address the physical `path`: a file's `.json` is
@@ -164,6 +188,26 @@ mod tests {
             pointers: Vec::new(),
             follow: None,
         }
+    }
+
+    #[test]
+    fn a_location_names_the_first_mount_it_was_reached_through_and_none_within_its_board() {
+        let blob = Object::Blob(ObjectId::Sha1([1; 20]));
+        let mut inside = at("tasks/a.md", blob);
+        inside.pointers.push(at("docs/link.json", blob));
+        assert_eq!(inside.mount(), None);
+        let mut through = at("tasks/a.md", blob);
+        through.board.repository = PathBuf::from("/boards/two");
+        through.pointers.push(at("docs/link.json", blob));
+        through.pointers.push(at("repos/team.json", blob));
+        assert_eq!(through.mount(), Some("/repos/team".parse().unwrap()));
+        let mut nested = through.clone();
+        nested.board.repository = PathBuf::from("/boards/three");
+        let mut inner = at("lib.json", blob);
+        inner.board.repository = PathBuf::from("/boards/two");
+        nested.pointers.push(inner);
+        let paths: Vec<String> = nested.mounts().iter().map(ToString::to_string).collect();
+        assert_eq!(paths, ["/repos/team", "/repos/team/lib"]);
     }
 
     #[test]

@@ -110,7 +110,7 @@ row past 64 MiB is refused with that code.
 
 Examples:
   board query \"SELECT logical, code FROM entries WHERE status = 'degraded'\"
-  board query \"SELECT logical FROM records WHERE type = 'tasks/task/v2'\" --limit 20
+  board query \"SELECT logical FROM records WHERE type = 'tasks/task/v3'\" --limit 20
   board query 'SELECT name, sql FROM sqlite_master'";
 
 /// A command that changes nothing.
