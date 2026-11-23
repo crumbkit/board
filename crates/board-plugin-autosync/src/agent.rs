@@ -11,7 +11,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use crate::{home, refusal, state};
+use crate::{home, refusal};
 
 /// The agent's launchd label, and its plist's name.
 pub(crate) const LABEL: &str = "board.autosync";
@@ -63,14 +63,14 @@ fn plist(home: &Path) -> PathBuf {
 }
 
 /// The plist that runs `board` every `interval` seconds and at load, with
-/// `path` as its `PATH`, so it finds git and gitleaks as this run did.
-pub(crate) fn text(board: &str, interval: u64, path: &str, home: &str, logs: &Path) -> String {
+/// `path` as its `PATH`, so it finds git and gitleaks as this run did. Its
+/// output goes to /dev/null: the status file and the log keep each run.
+pub(crate) fn text(board: &str, interval: u64, path: &str, home: &str) -> String {
     let escaped = |text: &str| {
         text.replace('&', "&amp;")
             .replace('<', "&lt;")
             .replace('>', "&gt;")
     };
-    let logs = logs.display().to_string();
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -97,17 +97,15 @@ pub(crate) fn text(board: &str, interval: u64, path: &str, home: &str, logs: &Pa
 		<string>{}</string>
 	</dict>
 	<key>StandardOutPath</key>
-	<string>{}/agent.out</string>
+	<string>/dev/null</string>
 	<key>StandardErrorPath</key>
-	<string>{}/agent.err</string>
+	<string>/dev/null</string>
 </dict>
 </plist>
 "#,
         escaped(board),
         escaped(path),
         escaped(home),
-        escaped(&logs),
-        escaped(&logs),
     )
 }
 
@@ -164,13 +162,7 @@ pub(crate) fn install(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     let board = std::env::current_exe()
         .map_or_else(|_| "board".to_owned(), |board| board.display().to_string());
     let file = plist(&home);
-    let written = text(
-        &board,
-        interval,
-        &path,
-        &home.display().to_string(),
-        &state(&home),
-    );
+    let written = text(&board, interval, &path, &home.display().to_string());
     let output = |loaded| Output {
         plist: file.display().to_string(),
         text: written.clone(),
@@ -196,7 +188,9 @@ pub(crate) fn install(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     let file_text = file.display().to_string();
     match launchctl(host, &["bootstrap", &domain, &file_text]).map_err(failed)? {
         0 => Ok(json!(output(true))),
-        code => Err(failed(format!("launchctl bootstrap exited with {code}"))),
+        code => Err(failed(format!(
+            "launchctl bootstrap exited with {code}, so no agent is loaded now; the new plist is in place"
+        ))),
     }
 }
 

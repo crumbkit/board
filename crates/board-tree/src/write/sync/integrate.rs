@@ -134,15 +134,15 @@ impl Repository {
             self.descends_in(home.as_deref(), mount, candidate, of)
         };
         let merged = merge::merge_trees(self, base_tree, local_tree, remote_tree, &descends)?;
+        let failing = self.failing_records(&merged.schemas, base_tree, local_tree)?;
         if on_conflict == OnConflict::Refuse {
-            let failing = self.failing_records(&merged.schemas, base_tree, local_tree)?;
             let unsettled = (merged.pins.iter())
                 .filter(|pin| pin.basis != merge::PinBasis::Descendant)
                 .map(|pin| pin.path.clone());
             let mut paths: Vec<String> = (merged.conflicts.iter())
                 .map(|found| found.path.clone())
                 .chain(unsettled)
-                .chain(failing)
+                .chain(failing.iter().cloned())
                 .collect();
             paths.sort();
             paths.dedup();
@@ -157,6 +157,7 @@ impl Repository {
         }
         let mut outcome = Outcome {
             pins: merged.pins,
+            failing,
             ..Outcome::default()
         };
         let mut tree = self.gix_id(merged.tree)?;
@@ -191,7 +192,6 @@ impl Repository {
                 .map_err(|source| self.unreadable(source))?
                 .detach();
         }
-        outcome.failing = self.failing_records(&merged.schemas, base_tree, local_tree)?;
         let message = format!(
             "board sync: merge {}/{}\n",
             upstream.remote, upstream.branch

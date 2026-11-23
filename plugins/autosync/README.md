@@ -52,8 +52,10 @@ personal board:
 - `install`: writes `~/Library/LaunchAgents/board.autosync.plist` to a
   temporary name, renames it into place and bootstraps it. It runs
   `board --personal autosync run` every 300 seconds, or `--interval`, 60 to
-  3,600, and at load, with the `PATH` `install` ran with. `--dry-run`
-  prints the plist.
+  3,600, and at load, with the `PATH` `install` ran with, and sends its
+  output to /dev/null. A loaded agent is booted out first, so when the
+  bootstrap fails no agent is loaded and the new plist stays; run `install`
+  again. `--dry-run` prints the plist.
 - `uninstall`: boots the agent out and deletes its plist.
 
 ## One board's round
@@ -78,7 +80,12 @@ personal board:
    sends: `<fetched>..<new>`, or every commit reachable from `<new>` when
    the remote has no branch yet. A finding, an error, a timeout or a missing
    gitleaks 8.19.0 holds the push; the board stays merged locally.
+   gitleaks reads each commit's diff with `--text --no-textconv`, so a
+   `.gitattributes` cannot hide a file as binary, and with
+   `--diff-merges=first-parent`, so a merge resolved by hand is scanned
+   too. A secret only the remote side added then also holds the push.
 7. A rejected push starts another round, up to 3, each scanned again.
+   The scan's time is not charged to the sync's 60 seconds.
 
 ## False positives
 

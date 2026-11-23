@@ -87,14 +87,15 @@ fn a_guarded_sync_asks_before_each_push_after_a_rejected_one() {
     let (remote, one, two) = pair(&[("a.json", "0")]);
     commit_here(&one, &[("a.json", "0"), ("b.json", "1")]);
     commit_here(&two, &[("a.json", "0"), ("c.json", "2")]);
-    let mut rounds = 0;
+    let mut asked = Vec::new();
+    let mut theirs = None;
     let mut before_push = |outgoing: &Pushing| {
-        rounds += 1;
+        asked.push(*outgoing);
         // The other clone pushes while this one waits on its guard, once.
-        if rounds == 1 {
+        if asked.len() == 1 {
             let (_, _) = guarded(&two, BeforePush::Push);
+            theirs = Some(remote_head(&remote));
         }
-        let _ = outgoing;
         BeforePush::Push
     };
     let mut guard = Guard {
@@ -112,9 +113,34 @@ fn a_guarded_sync_asks_before_each_push_after_a_rejected_one() {
         .unwrap();
     assert!(synced.pushed);
     assert_eq!(synced.attempts, 2);
-    assert_eq!(rounds, 2);
+    assert_eq!(asked.len(), 2);
+    // The second ask names the commit the other clone pushed, so the guard
+    // checks the range that push left.
+    assert_eq!(asked[1].fetched, theirs);
+    assert_ne!(asked[1].fetched, asked[0].fetched);
     let files = remote.head().unwrap().files;
     assert!(files.contains_key("b.json") && files.contains_key("c.json"));
+}
+
+#[test]
+fn the_time_a_guard_takes_is_not_charged_to_the_sync_deadline() {
+    let (remote, one, _) = pair(&[("a.json", "0")]);
+    let new = commit_here(&one, &[("a.json", "1")]);
+    let given = Duration::from_secs(5);
+    let mut slow = |_: &Pushing| {
+        std::thread::sleep(given + Duration::from_secs(1));
+        BeforePush::Push
+    };
+    let mut guard = Guard {
+        branch: "main".to_owned(),
+        before_push: &mut slow,
+    };
+    let synced = Repository::open(one.workdir())
+        .unwrap()
+        .sync_guarded(true, &mut guard, Deadline::after(given), Duration::ZERO)
+        .unwrap();
+    assert!(synced.pushed);
+    assert_eq!(remote_head(&remote), new);
 }
 
 #[test]

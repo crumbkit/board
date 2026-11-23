@@ -151,6 +151,11 @@ impl Scan {
             Some(fetched) => format!("{fetched}..{}", pushing.new),
             None => pushing.new.to_string(),
         };
+        // gitleaks runs `git log -p` with these options and splits them on
+        // spaces. `--text --no-textconv` shows every file as text, whatever
+        // a `.gitattributes` says, and `--diff-merges=first-parent` shows
+        // what each merge changed, so a merge resolved by hand is scanned.
+        let log_options = format!("--text --no-textconv --diff-merges=first-parent {range}");
         let mut arguments: Vec<String> = [
             "-n",
             "10",
@@ -161,7 +166,7 @@ impl Scan {
             "--exit-code",
             "3",
             "--log-opts",
-            &range,
+            &log_options,
         ]
         .map(str::to_owned)
         .to_vec();

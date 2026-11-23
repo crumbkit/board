@@ -246,7 +246,6 @@ dependencies = [
  "board-model",
  "board-ops",
  "board-plugin",
- "board-scenario",
  "schemars",
  "serde",
  "serde_json",

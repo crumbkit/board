@@ -8,9 +8,6 @@
 
 use std::path::PathBuf;
 
-use board_model::Effect;
-use board_scenario::signer::Signer;
-
 use super::*;
 
 /// The personal board, its known boards file, the test signer, the home
@@ -39,6 +36,24 @@ fn gitleaks() -> PathBuf {
         .map(|directory| directory.join("gitleaks"))
         .find(|program| program.is_file())
         .expect("these tests run the real gitleaks; install 8.19.0 or later on the PATH")
+}
+
+/// Runs git in `directory`, as a person resolving a merge by hand would.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the owner fetches and merges with git when autosync refuses a conflict"
+)]
+fn git(directory: &std::path::Path, arguments: &[&str]) {
+    let ran = std::process::Command::new("git")
+        .args(arguments)
+        .current_dir(directory)
+        .output()
+        .unwrap();
+    assert!(
+        ran.status.success(),
+        "git {arguments:?}: {}",
+        text(&ran.stderr)
+    );
 }
 
 /// A GitHub token that gitleaks flags, made for this run, so no secret is
@@ -530,6 +545,60 @@ fn without_gitleaks_on_the_path_a_board_merges_and_pushes_nothing() {
     );
 }
 
+/// A `.gitattributes` that marks every file as binary makes `git log -p`
+/// print no text for them; the scan reads them as text anyway. The twin
+/// with the same attributes and no secret is pushed.
+#[test]
+fn a_gitattributes_marking_files_binary_hides_no_secret_and_its_clean_twin_is_pushed() {
+    let (mac, shared) = team();
+    let attributes = [(".gitattributes", "* -diff\n")];
+    let clean = shared.commit(&[attributes[0], ("notes/a.json", "{}")]);
+    assert!(mac.round().0);
+    assert_eq!(shared.remote_head(), clean);
+    let config = format!("{{\"token\": \"{}\"}}", secret());
+    shared.commit(&[attributes[0], ("notes/a.json", &config)]);
+    let (_, boards) = mac.round();
+    assert_eq!(
+        boards["team"]["outcome"], "findings",
+        "{:?}",
+        boards["team"]
+    );
+    assert_eq!(boards["team"]["findings"][0]["file"], "notes/a.json");
+    assert_eq!(shared.remote_head(), clean);
+}
+
+/// A merge made by hand whose result adds a secret neither parent holds is
+/// scanned against its first parent, so the secret blocks the push.
+#[test]
+fn a_secret_a_hand_made_merge_adds_blocks_the_push() {
+    let (mac, shared) = team();
+    shared
+        .remote
+        .commit(&[(".board/board.json", CONFIG), ("notes/theirs.json", "{}")]);
+    let theirs = shared.remote_head();
+    git(shared.clone.workdir(), &["fetch", "origin"]);
+    let mine = shared.commit(&[("notes/mine.json", "{}")]);
+    let config = format!("{{\"token\": \"{}\"}}", secret());
+    let tree = [
+        (".board/board.json", CONFIG),
+        ("notes/mine.json", "{}"),
+        ("notes/theirs.json", "{}"),
+        ("notes/resolved.json", config.as_str()),
+    ];
+    let merge = shared
+        .clone
+        .commit_at(&tree, &[mine, theirs], 1_700_000_000, "merge by hand");
+    for (path, text) in tree {
+        shared.clone.write(path, Item::File(text));
+    }
+    shared.clone.track(merge);
+    let (_, boards) = mac.round();
+    let team = &boards["team"];
+    assert_eq!(team["outcome"], "findings", "{team}");
+    assert_eq!(team["findings"][0]["file"], "notes/resolved.json", "{team}");
+    assert_eq!(shared.remote_head(), theirs);
+}
+
 #[test]
 fn a_conflict_moves_nothing_and_pushes_nothing() {
     let (mac, shared) = team();
@@ -576,26 +645,34 @@ fn a_dry_run_checks_each_board_and_changes_nothing() {
     assert!(!mac.state().join("status.json").exists());
 }
 
-/// The signature `autosync add` writes verifies as Board's effects module
-/// would build the statement.
+/// The signature `autosync add` writes verifies through Board's host for
+/// its own path; the same record and signature copied to another path do
+/// not, because the signed statement names the path.
 #[test]
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the test checks the signature against the statement the effects module signs"
-)]
-fn the_signature_add_writes_is_the_owners_write_of_the_record_without_it() {
+fn the_signature_add_writes_verifies_for_its_path_and_a_copy_elsewhere_does_not() {
     let (mac, _) = team();
-    let mut record = mac.personal.record("/autosync/boards/team").unwrap();
-    let signature = record.as_object_mut().unwrap().remove("signature").unwrap();
-    let statement = Effect::owner_write(
-        "personal",
-        "put",
-        "/autosync/boards/team",
-        Some(&record),
-        None,
+    let record = mac.personal.record("/autosync/boards/team").unwrap();
+    let directory = mac.personal.board.workdir().to_path_buf();
+    let put = (mac.personal).run_in(
+        &directory,
+        &["put", "/autosync/boards/copy"],
+        &record.to_string(),
     );
-    let signer: &Signer = &mac.personal.signer;
-    board_plugin::verify(&signer.allowed(), &statement, signature.as_str().unwrap()).unwrap();
+    assert_eq!(put.code, 0, "{}", text(&put.stderr));
+    let (code, report) = mac.run(&["autosync", "run", "--dry-run"]);
+    let boards = if code == 0 {
+        report["data"]["output"]["boards"].clone()
+    } else {
+        report["fields"]["boards"].clone()
+    };
+    let outcome = |name: &str| {
+        (boards.as_array().unwrap().iter())
+            .find(|entry| entry["name"] == name)
+            .map(|entry| entry["code"].clone())
+            .unwrap()
+    };
+    assert_eq!(outcome("copy"), "autosync::board::unsigned", "{boards}");
+    assert_ne!(outcome("team"), "autosync::board::unsigned", "{boards}");
 }
 
 #[test]
@@ -620,10 +697,12 @@ fn a_board_on_another_branch_is_skipped_and_back_on_its_branch_syncs() {
     assert_eq!(shared.remote_head(), new);
 }
 
-/// Every git command autosync and gitleaks run goes through a stub that
-/// logs it; none forces, rebases, stashes or stages.
+/// Every git command the plugin and gitleaks run goes through a stub that
+/// logs it; none forces, rebases, stashes or stages. The sync's own fetch
+/// and push start git from Board's PATH, which the stub is not on; their
+/// arguments are tested in board-tree's `src/transport/tests.rs`.
 #[test]
-fn no_git_command_autosync_runs_forces_rebases_stashes_or_stages() {
+fn no_git_command_the_plugin_runs_forces_rebases_stashes_or_stages() {
     let (mac, shared) = team();
     let log = mac.bin.workdir().join("git.log");
     let script = format!(

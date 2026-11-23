@@ -22,7 +22,8 @@ and asks before each push.
 - Before every push, including the push that starts a remote branch, the
   caller's `before_push` is asked with the fetched commit, or none, and the
   commit to push. `Hold` stops the sync with `board::sync::held`; the merge
-  stays committed locally.
+  stays committed locally. The time `before_push` takes moves the sync's
+  deadline later, so a slow check does not leave the push without time.
 - After a rejected push the next round fetches again and asks again, about
   the new range.
 - Uncommitted edits are left as a plain sync leaves them. Nothing is staged,

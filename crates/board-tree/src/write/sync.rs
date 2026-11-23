@@ -189,7 +189,7 @@ impl Repository {
         push: bool,
         accept_rewrite: bool,
         mut guard: Option<&mut Guard<'_>>,
-        deadline: Deadline,
+        mut deadline: Deadline,
         wait: Duration,
     ) -> Result<Synced, SyncError> {
         let upstream = self.upstream()?;
@@ -206,7 +206,7 @@ impl Repository {
             let previous = self.tracking_before(&upstream)?;
             if let Err(failed) = transport::fetch(self.path(), &upstream, &ssh, deadline) {
                 let head = self.start_branch(&upstream, previous, push, &ssh, deadline, failed)?;
-                Self::push_held(guard.as_deref_mut(), None, head)?;
+                Self::push_held(guard.as_deref_mut(), &mut deadline, None, head)?;
                 match transport::push(self.path(), &upstream, &head.to_string(), &ssh, deadline)? {
                     // The branch is HEAD now: fetch it, and integrate
                     // finds nothing to do.
@@ -261,7 +261,7 @@ impl Repository {
             if !push || new == fetched {
                 return Ok(done(created, total));
             }
-            Self::push_held(guard.as_deref_mut(), Some(fetched), new)?;
+            Self::push_held(guard.as_deref_mut(), &mut deadline, Some(fetched), new)?;
             match transport::push(self.path(), &upstream, &new.to_string(), &ssh, deadline)? {
                 Pushed::Done => return Ok(done(true, total)),
                 Pushed::Rejected(why) => reason = why,
@@ -312,16 +312,22 @@ impl Repository {
 
     /// Asks `guard`, when there is one, whether to push `new` over
     /// `fetched`, and stops the sync with [`SyncError::Held`] when it says
-    /// hold.
+    /// hold. The time the guard takes moves `deadline` later.
     fn push_held(
         guard: Option<&mut Guard<'_>>,
+        deadline: &mut Deadline,
         fetched: Option<ObjectId>,
         new: ObjectId,
     ) -> Result<(), SyncError> {
         let Some(guard) = guard else {
             return Ok(());
         };
-        match (guard.before_push)(&Pushing { fetched, new }) {
+        let asked = std::time::Instant::now();
+        let answer = (guard.before_push)(&Pushing { fetched, new });
+        // The guard's own work, such as a scan, has its own limit; the sync
+        // deadline covers git's fetches and pushes.
+        deadline.excluding(asked.elapsed());
+        match answer {
             BeforePush::Push => Ok(()),
             BeforePush::Hold => Err(SyncError::Held { new }),
         }

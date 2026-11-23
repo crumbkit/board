@@ -10,14 +10,13 @@ use std::ffi::OsString;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use board_model::{Effect, LogicalPath, Refusal, canonical_json};
+use board_model::{LogicalPath, Refusal, canonical_json};
 use board_ops::{
     Absent, DecideReport, Elsewhere, GetReport, Limit, MountError, MountUpdateReport,
     OwnerWriteError, PutError, PutReport, QueryError, QueryReport, ReadError, RefsError,
     RefsReport, Run, Settings, Shown, SyncError, Synced, Variables,
 };
 use board_plugin::child::{Exited, ProcessError};
-use board_scenario::signer::Signer;
 use serde_json::json;
 
 use super::*;
@@ -70,15 +69,20 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
 }
 
 /// A host over nothing but a home directory: its queries answer `rows`,
-/// its puts are recorded, its processes are recorded and answered by
-/// `exit`, and it signs and verifies with the test signer when it has one.
+/// its puts are recorded, its processes are recorded, `launchctl
+/// bootstrap` exits with `bootstrap` and every other `launchctl` with 0,
+/// and it signs and verifies as a stand-in signer when it has one.
+/// The stand-in's signature names the signer, the path and the record, so
+/// the tests check what the plugin asks to sign and verify; real signing
+/// is tested in board-ops' effects module and through the binary.
 struct Mac {
     home: tempfile::TempDir,
     settings: Settings,
-    signer: Option<Signer>,
+    signer: Option<&'static str>,
     rows: Vec<Vec<Value>>,
     puts: RefCell<Vec<Value>>,
     runs: RefCell<Vec<String>>,
+    bootstrap: i32,
 }
 
 impl Mac {
@@ -98,10 +102,11 @@ impl Mac {
         Self {
             home,
             settings,
-            signer: Some(Signer::new()),
+            signer: Some(OWNER),
             rows: Vec::new(),
             puts: RefCell::default(),
             runs: RefCell::default(),
+            bootstrap: 0,
         }
     }
 
@@ -109,22 +114,16 @@ impl Mac {
         Autosync.call(self, &capability.parse().unwrap(), input)
     }
 
-    /// The test signer's signature of the owner's put of `record` at
-    /// `path`, as Board's signer would make it.
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the test signs the owner's write as the effects module would"
-    )]
-    fn signed(signer: &Signer, path: &str, record: &Value) -> String {
-        signer.sign(&Effect::owner_write(
-            "personal",
-            "put",
-            path,
-            Some(record),
-            None,
-        ))
+    /// The stand-in signature by `signer` of the owner's put of `record`
+    /// at `path`.
+    fn signed(signer: &str, path: &str, record: &Value) -> String {
+        let record = canonical_json(record);
+        format!("{signer} {path} {}", record.as_str())
     }
 }
+
+/// The signer the stand-in host trusts.
+const OWNER: &str = "owner";
 
 impl Host for Mac {
     fn query(&self, sql: &str, _: Limit) -> Result<QueryReport, QueryError> {
@@ -201,8 +200,12 @@ impl Host for Mac {
             } else {
                 Vec::new()
             };
+            let bootstrap = run
+                .arguments
+                .first()
+                .is_some_and(|word| word == "bootstrap");
             return Ok(Exited {
-                code: Some(0),
+                code: Some(if bootstrap { self.bootstrap } else { 0 }),
                 stdout,
                 stderr: Vec::new(),
             });
@@ -212,23 +215,21 @@ impl Host for Mac {
         })
     }
     fn sign_owner_write(&self, path: &str, record: &Value) -> Result<String, OwnerWriteError> {
-        let signer = self.signer.as_ref().ok_or(OwnerWriteError::NoSigner)?;
+        let signer = self.signer.ok_or(OwnerWriteError::NoSigner)?;
         Ok(Self::signed(signer, path, record))
     }
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the test verifies the owner's write as the effects module would"
-    )]
     fn verify_owner_write(
         &self,
         path: &str,
         record: &Value,
         signature: &str,
     ) -> Result<(), OwnerWriteError> {
-        let signer = self.signer.as_ref().ok_or(OwnerWriteError::NoneNamed)?;
-        let statement = Effect::owner_write("personal", "put", path, Some(record), None);
-        board_plugin::verify(&signer.allowed(), &statement, signature)
-            .map_err(|source| OwnerWriteError::Bad { source })
+        let signer = self.signer.ok_or(OwnerWriteError::NoneNamed)?;
+        if signature == Self::signed(signer, path, record) {
+            Ok(())
+        } else {
+            Err(OwnerWriteError::NotOffered)
+        }
     }
 }
 
@@ -264,8 +265,8 @@ fn outcomes(mac: &Mac) -> Vec<(String, String)> {
 #[test]
 fn only_a_record_the_owner_signed_for_its_own_path_is_trusted() {
     let mut mac = Mac::new();
-    let owner = mac.signer.as_ref().unwrap();
-    let stranger = Signer::new();
+    let owner = OWNER;
+    let stranger = "stranger";
     let at = |name: &str| format!("/autosync/boards/{name}");
     let with = |mut record: Value, signature: String| {
         record["signature"] = json!(signature);
@@ -275,7 +276,7 @@ fn only_a_record_the_owner_signed_for_its_own_path_is_trusted() {
     let mut edited = with(record(), Mac::signed(owner, &at("edited"), &record()));
     edited["origins"] = json!(["git@evil.example:o/r.git"]);
     let copied = with(record(), Mac::signed(owner, &at("signed"), &record()));
-    let theirs = with(record(), Mac::signed(&stranger, &at("theirs"), &record()));
+    let theirs = with(record(), Mac::signed(stranger, &at("theirs"), &record()));
     mac.rows = [
         ("signed", signed),
         ("unsigned", record()),
@@ -339,6 +340,12 @@ fn install_dry_run_prints_the_plist_with_its_interval_and_path_and_loads_nothing
     assert!(text.contains("<string>/nowhere/bin</string>"), "{text}");
     assert!(text.contains("<string>autosync</string>"), "{text}");
     assert_eq!(printed["loaded"], false);
+    // Nothing rotates launchd's output files, so the agent keeps none.
+    assert_eq!(
+        text.matches("<string>/dev/null</string>").count(),
+        2,
+        "{text}"
+    );
     assert_eq!(*mac.runs.borrow(), Vec::<String>::new());
     assert!(!Path::new(printed["plist"].as_str().unwrap()).exists());
     let refused = mac.call("install", json!({"interval": 30})).unwrap_err();
@@ -371,4 +378,20 @@ fn install_writes_and_bootstraps_the_agent_and_uninstall_boots_it_out_and_delete
         mac.runs.borrow()[4],
         "launchctl bootout gui/501/board.autosync"
     );
+}
+
+#[test]
+fn a_failed_bootstrap_says_no_agent_is_loaded_and_a_working_one_loads_it() {
+    let mut mac = Mac::new();
+    mac.bootstrap = 5;
+    let refused = mac.call("install", json!({})).unwrap_err();
+    assert_eq!(refused.code, "autosync::agent::failed");
+    assert!(
+        refused.message.contains("no agent is loaded now"),
+        "{}",
+        refused.message
+    );
+    mac.bootstrap = 0;
+    let installed = mac.call("install", json!({})).unwrap();
+    assert_eq!(installed["loaded"], true);
 }
