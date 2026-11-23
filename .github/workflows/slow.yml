@@ -205,10 +205,10 @@ jobs:
   # It runs in two passes. The first tests each mutant with its own crate's
   # tests only, which rebuilds and tests far less. The second tests the
   # mutants the first missed or timed out with the whole workspace's tests,
-  # because board-cli's tests catch mutants in the crates it calls; a missed
-  # mutant there fails the job, which the report job surfaces. Together the
-  # passes catch what one whole-workspace pass catches, in fewer runner
-  # minutes.
+  # because board-cli's tests catch mutants in the crates it calls. A mutant
+  # missed or timed out there fails nothing; the missed-mutants job files it
+  # as a GitHub issue. Together the passes catch what one whole-workspace pass
+  # catches, in fewer runner minutes.
   #
   # cargo-mutants sets each mutant's test timeout to five times its baseline,
   # which can be shorter than one run of the whole workspace, so the timeout
@@ -352,9 +352,13 @@ jobs:
       # crate take under a second, so five times it falls to the floor. One
       # run of the whole workspace's tests takes about 530 s, so the floor is
       # 900 s; at 180 s a mutant only a late test catches timed out undecided.
+      # Exit code 2 means a mutant was missed and 3 that one timed out. The
+      # missed-mutants job files both, so neither fails this one.
       - run: |
           git diff --end-of-options "$BASE...HEAD" -- '*.rs' > changes.diff
-          cargo mutants --iterate --in-diff changes.diff --test-tool nextest --test-workspace=true --exclude 'crates/board-scenario/**' --minimum-test-timeout 900 --shard "${SHARD}/${TOTAL}"
+          status=0
+          cargo mutants --iterate --in-diff changes.diff --test-tool nextest --test-workspace=true --exclude 'crates/board-scenario/**' --minimum-test-timeout 900 --shard "${SHARD}/${TOTAL}" || status=$?
+          [ "$status" = 0 ] || [ "$status" = 2 ] || [ "$status" = 3 ]
         env:
           BASE: ${{ needs.base.outputs.base }}
           SHARD: ${{ matrix.shard }}
@@ -368,13 +372,65 @@ jobs:
           path: mutants.out/
           if-no-files-found: ignore
 
+  # Files the mutants the second pass missed or timed out as GitHub issues,
+  # one for each source file, titled "Mutants missed in <file>". It comments
+  # on that file's issue while one is open, and opens one otherwise. Scheduled
+  # runs and hand-runs file; a release skips mutants, so it files nothing. Its
+  # name does not start with "mutants", so the base job does not count it.
+  missed-mutants:
+    needs: [base, mutants-workspace]
+    if: ${{ !cancelled() && needs.mutants-workspace.result != 'skipped' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: mutants-workspace-*
+          path: workspace
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+          BASE: ${{ needs.base.outputs.base }}
+        run: |
+          shopt -s nullglob
+          # Each line of missed.txt and timeout.txt is <file>:<line>:<column>: <mutant>.
+          for kind in missed timeout; do
+            for found in workspace/*/"$kind.txt"; do
+              awk -v kind="$kind" '{ split($0, part, ":"); print part[1] "\t" kind "\t" $0 }' "$found"
+            done
+          done | sort -u > found.tsv
+          echo "The second pass left $(wc -l < found.tsv) mutants missed or timed out." >> "$GITHUB_STEP_SUMMARY"
+          [ -s found.tsv ] || exit 0
+          gh issue list --state open --search '"Mutants missed in" in:title' --limit 1000 --json number,title > open.json
+          cut -f1 found.tsv | sort -u > files.txt
+          while IFS= read -r file; do
+            title="Mutants missed in $file"
+            list=$(awk -F '\t' -v file="$file" '$1 == file { print "- " ($2 == "missed" ? "missed" : "timed out") ": `" $3 "`" }' found.tsv)
+            body="Slow lane run $RUN, at $SHA, mutated the changes since $BASE. The whole workspace's tests did not catch these mutants in \`$file\`:
+
+          $list
+
+          A missed mutant needs a test that fails when the code changes as it says. A timed-out mutant needs a test that finishes, or a note on why the mutant hangs. Close this issue when every mutant listed on it is caught."
+            number=$(jq -r --arg title "$title" '[.[] | select(.title == $title)][0].number // empty' open.json)
+            if [ -n "$number" ]; then
+              url=$(gh issue comment "$number" --body "$body" < /dev/null)
+            else
+              url=$(gh issue create --title "$title" --body "$body" < /dev/null)
+            fi
+            echo "- \`$file\`: $url" >> "$GITHUB_STEP_SUMMARY"
+          done < files.txt
+
   # A nightly failure shows nowhere else, so it opens one issue and later
   # failures comment on it until someone closes it. A job that runs past its
   # timeout ends cancelled, and so does the run's conclusion, but cancelled()
   # stays false for the jobs after it, so it is reported. A run cancelled by
   # hand makes cancelled() true and reports nothing.
   report:
-    needs: [base, macos, git-floor, fuzz, timing, mutants-crate, mutants-misses, mutants-workspace]
+    needs: [base, macos, git-floor, fuzz, timing, mutants-crate, mutants-misses, mutants-workspace, missed-mutants]
     if: ${{ !cancelled() && github.event_name == 'schedule' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -385,10 +441,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          RESULTS: "base: ${{ needs.base.result }}, macos: ${{ needs.macos.result }}, git-floor: ${{ needs.git-floor.result }}, fuzz: ${{ needs.fuzz.result }}, timing: ${{ needs.timing.result }}, mutants-crate: ${{ needs.mutants-crate.result }}, mutants-misses: ${{ needs.mutants-misses.result }}, mutants-workspace: ${{ needs.mutants-workspace.result }}"
+          RESULTS: "base: ${{ needs.base.result }}, macos: ${{ needs.macos.result }}, git-floor: ${{ needs.git-floor.result }}, fuzz: ${{ needs.fuzz.result }}, timing: ${{ needs.timing.result }}, mutants-crate: ${{ needs.mutants-crate.result }}, mutants-misses: ${{ needs.mutants-misses.result }}, mutants-workspace: ${{ needs.mutants-workspace.result }}, missed-mutants: ${{ needs.missed-mutants.result }}"
         run: |
           title="Slow lane failed"
-          body="$RUN failed ($RESULTS). A fuzz failure's crash inputs are in its crashes-* artifacts, and missed mutants are in the mutants-workspace-* artifacts."
+          body="$RUN failed ($RESULTS). A fuzz failure's crash inputs are in its crashes-* artifacts. Missed mutants are filed as issues titled \"Mutants missed in <file>\"."
           number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
           if [ -n "$number" ]; then
             gh issue comment "$number" --body "$body"
