@@ -1,7 +1,7 @@
 //! `pr-create`, `pr-edit`, `comment` and `issue-create`: gh runs only after
 //! the boundary passes what it would send.
 
-use super::desk::{Desk, executable, put_file, remove};
+use super::desk::{Desk, executable, put_bytes, put_file, remove};
 use super::merge::{CHANGE, HEAD, TESTED, change};
 use super::*;
 
@@ -565,4 +565,26 @@ fn pr_create_on_a_branch_named_after_an_open_change_attaches_once_and_after_a_do
         "{note}"
     );
     assert_eq!(desk.record(CHANGE).unwrap(), before);
+}
+
+#[test]
+fn pr_create_names_the_binary_files_it_left_out_of_the_diff() {
+    let desk = Desk::new();
+    desk.refuse(&["commit.*.diff"], "github.*");
+    desk.git(&desk.checkout(), &["switch", "-q", "-c", "feature"]);
+    put_bytes(&desk.checkout().join("font.woff2"), &super::push::font());
+    desk.git(&desk.checkout(), &["add", "font.woff2"]);
+    desk.git(&desk.checkout(), &["commit", "-q", "-m", "Add a font"]);
+    let sha = desk.head();
+    desk.gh_answers(
+        &json!(format!("Creating pull request\n{PULL_URL}\n")),
+        0,
+        "",
+    );
+    let flags = ["--title", "Add a font", "--body", "Fonts."];
+    let result = desk.output("pr-create", &flags);
+    assert_eq!(
+        result["binary_skipped"],
+        json!([{"commit": sha, "path": "font.woff2"}])
+    );
 }
