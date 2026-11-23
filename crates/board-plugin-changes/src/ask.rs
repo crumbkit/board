@@ -14,7 +14,7 @@ use crate::change::{attached, read, referenced};
 use crate::gates::design::versioned;
 use crate::gates::{UNDERSTANDING_TYPE, mockups, sections};
 use crate::phases::{attach, plan_text};
-use crate::{PLUGIN, to_value};
+use crate::{PLUGIN, refusal, to_value};
 
 /// The change to ask about, the project its question is filed under, and
 /// who asks.
@@ -54,10 +54,15 @@ pub(crate) struct Output {
 }
 
 /// The approving and the revising option of the question about the change
-/// at `path`: the first names the change, each understanding check in
-/// `records` and each mockup in `named` with its version; the second names
-/// none of them.
-pub(crate) fn options(path: &str, records: &[String], named: &[String]) -> (String, String) {
+/// at `path`: the first names the change, its current `plan`, each
+/// understanding check in `records` and each mockup in `named` with its
+/// version; the second names none of them.
+pub(crate) fn options(
+    path: &str,
+    plan: &str,
+    records: &[String],
+    named: &[String],
+) -> (String, String) {
     let data = if records.is_empty() {
         String::new()
     } else {
@@ -71,8 +76,7 @@ pub(crate) fn options(path: &str, records: &[String], named: &[String]) -> (Stri
     } else {
         format!(", and the mockups {}", named.join(", "))
     };
-    let mut approve = format!("Approve {path} as planned{data}{shown}");
-    approve.push('.');
+    let approve = format!("Approve {path} as planned in {plan}{data}{shown}.");
     let revise = "Revise the plan, then ask again.".to_owned();
     (approve, revise)
 }
@@ -102,8 +106,20 @@ pub(crate) fn ask(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
             },
         )
         .collect();
-    let (approve, revise) = options(&path, &records, &named);
-    let text = format!("Do you approve the plan of {path} ({})?", change.title);
+    let Some(current) = change.plan.as_deref() else {
+        return Err(refusal(
+            "changes::ask::no_plan",
+            format!("{path} names no plan to approve; write one with `board changes plan`"),
+            [("path", json!(path))],
+        ));
+    };
+    let (approve, revise) = options(&path, current, &records, &named);
+    // `plans.ask` matches an earlier question by its words, so naming the
+    // plan asks again once the plan is revised.
+    let text = format!(
+        "Do you approve the plan {current} of {path} ({})?",
+        change.title
+    );
     let question = json!({
         "question": text,
         "options": [{"id": "approve", "text": approve}, {"id": "revise", "text": revise}],
@@ -143,12 +159,18 @@ mod tests {
     fn the_approving_option_names_each_record_and_mockup_and_the_revising_one_names_none() {
         let records = ["/changes/t/understanding/data".to_owned()];
         let named = ["https://claude.ai/artifact/m1 version v2".to_owned()];
-        let (approve, revise) = options("/changes/t", &records, &named);
-        for each in ["/changes/t", &records[0], "https://claude.ai/artifact/m1"] {
+        let plan = "/changes/t/plans/2";
+        let (approve, revise) = options("/changes/t", plan, &records, &named);
+        for each in [
+            "/changes/t",
+            plan,
+            &records[0],
+            "https://claude.ai/artifact/m1",
+        ] {
             assert!(names_whole(&approve, each), "{each}: {approve}");
             assert!(!names_whole(&revise, each), "{each}: {revise}");
         }
-        let (bare, _) = options("/changes/t", &[], &[]);
-        assert_eq!(bare, "Approve /changes/t as planned.");
+        let (bare, _) = options("/changes/t", plan, &[], &[]);
+        assert_eq!(bare, "Approve /changes/t as planned in /changes/t/plans/2.");
     }
 }

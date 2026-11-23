@@ -162,11 +162,21 @@ impl Mounted {
     /// The logical path of each file `names` lists, NUL-separated, under
     /// the mount; a file outside the directory the mount shows is left out.
     fn logical(&self, names: &str) -> Vec<String> {
-        (names.split('\0'))
-            .filter(|name| !name.is_empty())
-            .filter_map(|name| name.strip_prefix(&self.prefix))
-            .map(|name| format!("{}/{name}", self.mount))
-            .collect()
+        self.split(names).0
+    }
+
+    /// The files `names` lists, NUL-separated: by logical path those in the
+    /// directory the mount shows, and by repository path those outside it.
+    fn split(&self, names: &str) -> (Vec<String>, Vec<String>) {
+        let mut inside = Vec::new();
+        let mut outside = Vec::new();
+        for name in names.split('\0').filter(|name| !name.is_empty()) {
+            match name.strip_prefix(&self.prefix) {
+                Some(under) => inside.push(format!("{}/{under}", self.mount)),
+                None => outside.push(name.to_owned()),
+            }
+        }
+        (inside, outside)
     }
 }
 
@@ -202,12 +212,20 @@ pub(crate) fn mounted(
 }
 
 /// One commit after a reviewed commit: the files it edits, by logical
+/// path, with those outside the directory the mount shows by repository
 /// path, or a merge and whether it cleanly merges the branch the mount
 /// follows.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Step {
-    Edit { commit: String, files: Vec<String> },
-    Merge { commit: String, clean: bool },
+    Edit {
+        commit: String,
+        files: Vec<String>,
+        outside: Vec<String>,
+    },
+    Merge {
+        commit: String,
+        clean: bool,
+    },
 }
 
 /// The commits on the first-parent chain after `from` up to `to`, oldest
@@ -291,9 +309,11 @@ pub(crate) fn after(
                     commit,
                 ])
                 .map_err(failed)?;
+                let (files, outside) = at.split(&names);
                 Step::Edit {
                     commit: commit.to_owned(),
-                    files: at.logical(&names),
+                    files,
+                    outside,
                 }
             }
             [ours, theirs] => Step::Merge {
@@ -356,20 +376,36 @@ fn clean_merge(
 }
 
 /// The commits of `steps`, when each edits only files in `allowed` or is
-/// a clean merge, or else why the first that does not fails.
-pub(crate) fn accepted(steps: &[Step], allowed: &BTreeSet<String>) -> Result<Vec<String>, String> {
+/// a clean merge, or else why the first that does not fails. A file
+/// outside the directory the mount shows is never a record path.
+pub(crate) fn accepted(
+    steps: &[Step],
+    allowed: &BTreeSet<String>,
+    mount: &str,
+) -> Result<Vec<String>, String> {
     let mut commits = Vec::new();
     for step in steps {
         match step {
-            Step::Edit { commit, files } => {
+            Step::Edit {
+                commit,
+                files,
+                outside,
+            } => {
+                if !outside.is_empty() {
+                    return Err(format!(
+                        "the later commit {commit} edits {}, outside the directory {mount} \
+                         shows, which is not a record path; review the head",
+                        outside.join(", ")
+                    ));
+                }
                 let other: Vec<&str> = (files.iter())
                     .filter(|file| !allowed.contains(*file))
                     .map(String::as_str)
                     .collect();
                 if !other.is_empty() {
                     return Err(format!(
-                        "the later commit {commit} edits {}, which is neither a record path nor \
-                         the lifecycle doc; review the head",
+                        "the later commit {commit} edits {}, which is not a record path; review \
+                         the head",
                         other.join(", ")
                     ));
                 }

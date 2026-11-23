@@ -197,11 +197,13 @@ impl Repo {
         self.git(&["rev-parse", "HEAD"])
     }
 
-    fn mounted(&self) -> Mounted {
+    /// The repository mounted at /repos/x, showing the directory `prefix`
+    /// names, or the whole repository when it is empty.
+    fn mounted(&self, prefix: &str) -> Mounted {
         Mounted {
             repository: self.root.clone(),
             follow: "main".to_owned(),
-            prefix: String::new(),
+            prefix: prefix.to_owned(),
             mount: "/repos/x".to_owned(),
         }
     }
@@ -209,8 +211,13 @@ impl Repo {
     /// The commits after `from` to `to`, judged with record paths under
     /// /repos/x/plan/.
     fn judged(&self, from: &str, to: &str) -> Result<Vec<String>, String> {
-        let steps = after(&self.host, &self.mounted(), from, to)?;
-        accepted(&steps, &allowed())
+        self.judged_in("", from, to)
+    }
+
+    /// [`Repo::judged`] with the mount showing the directory `prefix` names.
+    fn judged_in(&self, prefix: &str, from: &str, to: &str) -> Result<Vec<String>, String> {
+        let steps = after(&self.host, &self.mounted(prefix), from, to)?;
+        accepted(&steps, &allowed(), "/repos/x")
     }
 }
 
@@ -236,7 +243,25 @@ fn a_commit_that_edits_only_a_record_path_keeps_the_review_and_a_code_commit_doe
     let refused = repo.judged(&reviewed, &code).unwrap_err();
     assert!(
         refused.starts_with(&format!(
-            "the later commit {code} edits /repos/x/src/c.rs, which is neither"
+            "the later commit {code} edits /repos/x/src/c.rs, which is not a record path"
+        )),
+        "{refused}"
+    );
+}
+
+#[test]
+fn a_commit_that_edits_a_file_outside_the_mounts_directory_loses_the_review() {
+    let (repo, reviewed) = reviewed("outside");
+    let record = repo.commit("sub/plan/notes.md", "noted\n", "note");
+    assert_eq!(
+        repo.judged_in("sub/", &reviewed, &record),
+        Ok(vec![record.clone()])
+    );
+    let code = repo.commit("src/c.rs", "more\n", "code");
+    let refused = repo.judged_in("sub/", &reviewed, &code).unwrap_err();
+    assert!(
+        refused.starts_with(&format!(
+            "the later commit {code} edits src/c.rs, outside the directory /repos/x shows"
         )),
         "{refused}"
     );
@@ -250,7 +275,7 @@ fn a_clean_merge_of_main_keeps_the_review_and_a_conflicted_one_does_not() {
     repo.git(&["checkout", "-q", "work"]);
     repo.git(&["merge", "-q", "--no-edit", "main"]);
     let merged = repo.git(&["rev-parse", "HEAD"]);
-    let steps = after(&repo.host, &repo.mounted(), &reviewed_head, &merged).unwrap();
+    let steps = after(&repo.host, &repo.mounted(""), &reviewed_head, &merged).unwrap();
     assert_eq!(
         steps,
         [Step::Merge {
@@ -326,7 +351,7 @@ fn a_git_that_times_out_loses_the_review_and_says_why() {
     let repo = Repo::new("stalled");
     let stalled = Git::new(true);
     let head = "0123456789abcdef0123456789abcdef01234567";
-    let refused = after(&stalled, &repo.mounted(), head, head).unwrap_err();
+    let refused = after(&stalled, &repo.mounted(""), head, head).unwrap_err();
     assert!(refused.contains("timed out after 20 s"), "{refused}");
 }
 
@@ -364,11 +389,11 @@ fn the_review_check_passes_a_report_whose_later_commits_were_accepted_and_names_
         detail,
         format!(
             "/r/1 covers an earlier commit; the commits after it, {later}, edit only record \
-             paths or the lifecycle doc, or cleanly merge main, so it still counts"
+             paths or cleanly merge main, so it still counts"
         )
     );
-    let why = "the later commit c edits /repos/x/src/c.rs, which is neither a record path nor \
-               the lifecycle doc; review the head";
+    let why = "the later commit c edits /repos/x/src/c.rs, which is not a record path; review \
+               the head";
     observed
         .after_review
         .insert(reviewed.to_owned(), Err(why.to_owned()));

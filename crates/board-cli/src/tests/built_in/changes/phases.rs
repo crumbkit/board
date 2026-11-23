@@ -1658,3 +1658,36 @@ fn a_review_survives_a_later_commit_that_edits_only_a_record_path_and_not_one_th
         "{lost}"
     );
 }
+
+/// A lifecycle record may name a source file as its doc, so a later commit
+/// to that doc is code the review has not seen, and the review lapses.
+#[test]
+fn a_review_does_not_survive_a_later_commit_to_the_lifecycle_doc() {
+    let board = Changes::new();
+    let (base, reviewed) = reviewing(&board, &["/r/1"]);
+    board.write("r/1.json", &approving(&reviewed, &base));
+    record_paths(&board);
+    board.write(
+        "changes/t/lifecycle.json",
+        &typed(
+            "changes/lifecycle/v1",
+            &json!({"text": "/changes/t/lifecycle.md", "doc": "/repos/x/src/a.rs",
+                    "external": []}),
+        ),
+    );
+    board.write("changes/t/lifecycle.md", "| State | Event | Next |\n");
+    let doc = board.commit(&[("src/a.rs", "edited\n")], None);
+    board.call("attach", &at(&json!({"head": doc})));
+    let next = board.call("next", &path());
+    let review = (next["gate"].as_array().unwrap().iter())
+        .find(|each| each["check"] == "review")
+        .unwrap();
+    assert_eq!(review["status"], "missing", "{review}");
+    assert!(
+        review["detail"]
+            .as_str()
+            .unwrap()
+            .contains("/repos/x/src/a.rs, which is not a record path"),
+        "{review}"
+    );
+}

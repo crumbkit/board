@@ -927,7 +927,7 @@
           "type": "array"
         },
         "unchanged_by": {
-          "description": "With `at_head`, the rules whose paths the commits after the record's\ncommit may edit: such a commit, a clean merge of the branch the\nmount follows, or one that edits only the change's lifecycle doc\nleaves the record counting.",
+          "description": "With `at_head`, the rules whose paths the commits after the record's\ncommit may edit: such a commit, or a clean merge of the branch the\nmount follows, leaves the record counting.",
           "items": {
             "pattern": "^/\\S*$",
             "type": "string"

@@ -338,3 +338,72 @@ fn ask_files_and_attaches_one_question_whose_answer_passes_approval_and_data_sig
         .unwrap();
     assert_eq!(signed["status"], "pass", "{signed}");
 }
+
+/// `changes.ask` with the change /changes/t in `personal`, asked by one
+/// session under the project a: its exit code and its one document.
+fn asking(personal: &Personal) -> (u8, Value) {
+    let input = json!({"path": "/changes/t", "project": "a", "by": {"session": "local_0a1b"}});
+    let ran = personal.run_in(
+        personal.board.workdir(),
+        &["--json", "call", "changes.ask"],
+        &input.to_string(),
+    );
+    (ran.code, json(&ran))
+}
+
+/// The output of [`asking`], which must succeed.
+fn ask(personal: &Personal) -> Value {
+    let (code, document) = asking(personal);
+    assert_eq!(code, 0, "{document}");
+    document["data"]["output"].clone()
+}
+
+/// Points /changes/t at plan `number`, written beside it.
+fn planned(personal: &Personal, number: u32) {
+    let plan = json!({
+        "$type": "changes/plan/v1", "text": format!("/changes/t/plans/{number}.md"), "uses": [],
+        "answers": stores(),
+    });
+    let change = json!({
+        "$type": "changes/change/v1", "title": "T", "mount": "/", "phase": "plan",
+        "route": "owner", "plan": format!("/changes/t/plans/{number}"),
+    });
+    personal
+        .write(&format!("changes/t/plans/{number}.json"), &plan.to_string())
+        .write(&format!("changes/t/plans/{number}.md"), PLAN)
+        .write("changes/t.json", &change.to_string());
+}
+
+#[test]
+fn ask_files_one_question_per_plan_so_a_revised_plan_is_asked_again() {
+    let personal = Personal::enabling(&["plans", "changes"]);
+    let unplanned = json!({
+        "$type": "changes/change/v1", "title": "T", "mount": "/", "phase": "plan",
+    });
+    personal.write("changes/t.json", &unplanned.to_string());
+    let refused = asking(&personal).1;
+    assert_eq!(refused["code"], "changes::ask::no_plan", "{refused}");
+    planned(&personal, 1);
+    let first = ask(&personal);
+    assert_eq!(first["outcome"], "filed", "{first}");
+    for field in ["question", "approve"] {
+        let text = first[field].as_str().unwrap();
+        assert!(text.contains("/changes/t/plans/1"), "{field}: {text}");
+    }
+    let again = ask(&personal);
+    assert_eq!(again["outcome"], "merged", "{again}");
+    assert_eq!(again["path"], first["path"]);
+    let asked = first["path"].as_str().unwrap();
+    let (code, document) = called(
+        &personal,
+        "plans.answer",
+        &["--path", asked, "--option", "revise"],
+    );
+    assert_eq!(code, 0, "{document}");
+    planned(&personal, 2);
+    let revised = ask(&personal);
+    assert_eq!(revised["outcome"], "filed", "{revised}");
+    assert_ne!(revised["path"], first["path"]);
+    let approve = revised["approve"].as_str().unwrap();
+    assert!(approve.contains("/changes/t/plans/2"), "{approve}");
+}

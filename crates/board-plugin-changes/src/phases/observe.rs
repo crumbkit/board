@@ -4,7 +4,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use board_ops::{Host, PluginError};
-use board_plugin::shape::Record;
 
 use crate::approve::approval;
 use crate::board::{self, get_text};
@@ -16,7 +15,6 @@ use crate::flow::{self, Kind as CheckKind, of_change};
 use crate::gates::kinds::named_rules;
 use crate::gates::remedy::{fill, unfilled, values};
 use crate::gates::{Observed, Read, reads, reviewed_head, same_commit};
-use crate::lifecycle::LifecycleRecord;
 use crate::records::ChangeRecord;
 use crate::repo::check_suite;
 use crate::rules::{current as current_rule, listed_by, obligations, on_paths};
@@ -138,9 +136,8 @@ pub(crate) fn observe_in(
 
 /// For each commit that a record a `records` check of `checks` counts
 /// covers, other than the change's head: the commits after it to the head
-/// when each edits only paths its `unchanged_by` rules list or the
-/// change's lifecycle doc, or cleanly merges the branch the mount follows,
-/// or else why not.
+/// when each edits only paths its `unchanged_by` rules list, or cleanly
+/// merges the branch the mount follows, or else why not.
 pub(crate) fn after_review<'a>(
     host: &dyn Host,
     found: &Observed,
@@ -184,14 +181,11 @@ pub(crate) fn after_review<'a>(
             return Ok(walked);
         }
     };
-    let doc = lifecycle_doc(host, &found.path)?;
     for commit in covered {
         let walk = match after(host, &at, &commit, head) {
-            Ok(steps) => {
-                allowed(host, &rules, doc.as_deref(), &steps).map(|(allowed, absent)| {
-                    accepted(&steps, &allowed).map_err(|why| with_absent(why, &absent))
-                })?
-            }
+            Ok(steps) => allowed(host, &rules, &steps).map(|(allowed, absent)| {
+                accepted(&steps, &allowed, &at.mount).map_err(|why| with_absent(why, &absent))
+            })?,
             Err(why) => Err(why),
         };
         walked.insert(commit, walk);
@@ -200,24 +194,22 @@ pub(crate) fn after_review<'a>(
 }
 
 /// `why` with the rules `absent` names, which the board does not hold, so
-/// only clean merges and the lifecycle doc count.
+/// only clean merges count.
 fn with_absent(why: String, absent: &[String]) -> String {
     if absent.is_empty() {
         return why;
     }
     format!(
-        "{why}; no rule {} exists, so only clean merges of main and the lifecycle doc count; \
-         write the rule",
+        "{why}; no rule {} exists, so only clean merges of main count; write the rule",
         absent.join(" or ")
     )
 }
 
-/// The files of `steps` the `rules` list, with `doc`, and the rules the
-/// board does not hold.
+/// The files of `steps` the `rules` list, and the rules the board does not
+/// hold.
 fn allowed(
     host: &dyn Host,
     rules: &[String],
-    doc: Option<&str>,
     steps: &[Step],
 ) -> Result<(BTreeSet<String>, Vec<String>), PluginError> {
     let files: Vec<String> = (steps.iter())
@@ -226,7 +218,7 @@ fn allowed(
             Step::Merge { .. } => Vec::new(),
         })
         .collect();
-    let mut allowed: BTreeSet<String> = doc.map(str::to_owned).into_iter().collect();
+    let mut allowed = BTreeSet::new();
     let mut absent = Vec::new();
     for rule in rules {
         match listed_by(host, rule, &files)? {
@@ -235,14 +227,6 @@ fn allowed(
         }
     }
     Ok((allowed, absent))
-}
-
-/// The `doc` of the change's lifecycle record, when it has one Board reads.
-fn lifecycle_doc(host: &dyn Host, path: &str) -> Result<Option<String>, PluginError> {
-    let record = format!("{path}/lifecycle");
-    let found = referenced(host, std::slice::from_ref(&record))?;
-    Ok((found.of_type(LifecycleRecord::TYPE))
-        .find_map(|(_, body)| body.get("doc")?.as_str().map(str::to_owned)))
 }
 
 /// Adds to `found` each path a check's `when.absent` names that holds the
