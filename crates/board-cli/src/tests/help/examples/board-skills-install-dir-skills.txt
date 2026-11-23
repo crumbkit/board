@@ -9,6 +9,7 @@ written  evals                skills/evals
 written  flow                 skills/flow
 written  github               skills/github
 written  jira                 skills/jira
+written  map                  skills/map
 written  notes                skills/notes
 written  params               skills/params
 written  places               skills/places

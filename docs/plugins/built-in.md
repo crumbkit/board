@@ -2,7 +2,7 @@
 
 This file holds detail for docs/plugins.md. It says how Board calls a compiled-in
 plugin. [`autosync`](built-in/autosync.md), `artifacts`, `attention`, `boundary`, `plans`, `evals`, `runs`,
-`github`, `jira`, `notes`, `params`, `places`, [`priorities`](built-in/priorities.md), `prompts`, `review`, `rules`, [`share`](share.md), `tasks`, [`topics`](built-in/topics.md), `changes` and
+`github`, `jira`, [`map`](built-in/map.md), `notes`, `params`, `places`, [`priorities`](built-in/priorities.md), `prompts`, `review`, `rules`, [`share`](share.md), `tasks`, [`topics`](built-in/topics.md), `changes` and
 [`requests`](built-in/requests.md) are built in.
 [built-in/writing.md](built-in/writing.md) says how to write one.
 
@@ -78,7 +78,7 @@ plugin. [`autosync`](built-in/autosync.md), `artifacts`, `attention`, `boundary`
 
 `Board::build_in` takes a static list of plugins. A built-in plugin is
 offered before installed ones and is listed, found and enabled as an
-installed one is; a board still enables it by name. An installed plugin with
+installed one is; a board enables it by name. An installed plugin with
 the same name is `board::plugin::duplicate` for `call` and `plugin enable`;
 `plugin list` names its directory and `plugin find` leaves the plugin out.
 

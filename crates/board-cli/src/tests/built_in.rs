@@ -839,6 +839,7 @@ mod evals;
 mod github;
 mod init;
 mod jira;
+mod map;
 mod notes;
 mod params;
 mod places;
