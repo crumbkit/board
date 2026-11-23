@@ -146,8 +146,9 @@ fn a_batch_refusal_prints_every_refused_line_in_order_as_text_and_as_json() {
     );
 }
 
-#[test]
-fn an_undated_build_that_wrote_a_date_gated_board_warns_once_and_leaves_no_stale_note() {
+/// A board whose `min_board` names only a build date, with an identity to
+/// commit as.
+fn date_gated() -> board_scenario::Scenario {
     use board_scenario::{Item, Scenario};
 
     let scenario = Scenario::new();
@@ -158,19 +159,47 @@ fn an_undated_build_that_wrote_a_date_gated_board_warns_once_and_leaves_no_stale
         ),
     );
     scenario.identified();
-    let mut board = board_ops::Board::open(scenario.workdir(), None).unwrap();
+    scenario
+}
+
+/// Writes a note into the board at `root` as an undated build, outside any
+/// run, which leaves a warning on this thread.
+fn write_undated(root: &std::path::Path) {
+    let mut board = board_ops::Board::open(root, None).unwrap();
     board.running("0.0.0+abc", None);
+    let path = "/notes/stale.md".parse().unwrap();
     board
-        .put_file(
-            &"/notes/a.md".parse().unwrap(),
-            board_ops::Expect::Any,
-            b"hi\n",
-        )
+        .put_file(&path, board_ops::Expect::Any, b"old\n")
         .unwrap();
-    let warned = crate::report::Output::default().warned();
-    let stderr = text(&warned.stderr);
+}
+
+/// Runs `board` through the real run as an undated build. Each test runs
+/// in its own process, so the build it declares binds only that test.
+fn undated(root: &std::path::Path, arguments: &[&str], stdin: &[u8]) -> crate::report::Output {
+    board_ops::declare_build("0.0.0+abc", None);
+    super::board_with(root, None, arguments, stdin)
+}
+
+#[test]
+fn an_undated_put_through_the_run_warns_once_and_the_next_command_prints_no_stale_note() {
+    let scenario = date_gated();
+    let put = undated(scenario.workdir(), &["put", "/notes/a.md"], b"hi\n");
+    assert_eq!(put.code, 0, "{}", text(&put.stderr));
+    let stderr = text(&put.stderr);
     assert_eq!(stderr.matches("warning: ").count(), 1, "{stderr}");
     assert!(stderr.contains("no build date"), "{stderr}");
-    let next = crate::report::Output::default().warned();
-    assert_eq!(next.stderr, b"");
+    let next = undated(scenario.workdir(), &["get", "/notes/a.md"], b"");
+    assert_eq!(text(&next.stderr), "");
+}
+
+#[test]
+fn a_note_left_on_the_thread_before_a_run_is_not_printed_by_it_and_the_runs_own_write_is() {
+    let scenario = date_gated();
+    write_undated(scenario.workdir());
+    let read = undated(scenario.workdir(), &["get", "/notes/stale.md"], b"");
+    assert_eq!(read.code, 0, "{}", text(&read.stderr));
+    assert_eq!(text(&read.stderr), "");
+    write_undated(scenario.workdir());
+    let put = undated(scenario.workdir(), &["put", "/notes/b.md"], b"hi\n");
+    assert_eq!(text(&put.stderr).matches("warning: ").count(), 1);
 }

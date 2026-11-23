@@ -1082,6 +1082,9 @@ fn rendered() -> Vec<(Vec<&'static str>, Output)> {
         &path,
     );
     rendered.push((vec!["uri"], uri));
+    let timed =
+        printer(&["timing", "check"]).print(render::TIMING_CHECK, Ok(crate::timing::sample()));
+    rendered.push((vec!["timing", "check"], timed));
     let opened = Opened {
         binding: "/bindings/review".parse().unwrap(),
         port: 1,

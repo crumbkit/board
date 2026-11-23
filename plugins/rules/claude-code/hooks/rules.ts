@@ -3,6 +3,13 @@
 
 import type { Checked, Kind, Rule, StateBadge } from '../types'
 
+/**
+ * The speed check, which session start runs detached: the shell returns at
+ * once, so the start never waits on it, and the check records at most one
+ * run an hour (docs/architecture/performance/timing.md, The speed check).
+ */
+export const SPEED_CHECK = 'nohup board timing check --record < /dev/null > /dev/null 2>&1 &'
+
 /** The name of the context block the session's first message carries. */
 export const BLOCK = 'boardRules'
 

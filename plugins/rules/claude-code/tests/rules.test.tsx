@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
 import { SLOT, bandRows } from '../hooks/band'
-import { badgeValue, boardName, contextText, parseBadges, parseCheck, parseForPath, parsePersonal, rulesBadge, sections } from '../hooks/rules'
+import { badgeValue, boardName, contextText, parseBadges, parseCheck, parseForPath, parsePersonal, rulesBadge, sections, SPEED_CHECK } from '../hooks/rules'
 
 // These prove what a session is told about rules and when, with git and
 // board stood in by a process.run hook. They do not run board: the Python
@@ -36,6 +36,8 @@ type Answers = {
   commands?: Record<string, string>
   /** The repository `board ls /` names; none when no board holds the directory. */
   repository?: string
+  /** 'fails' when the shell that starts the speed check cannot run. */
+  speed?: 'fails'
 }
 
 const CONFIG = '/home/me/.config/board/config.json'
@@ -45,6 +47,7 @@ const PERSONAL = '/home/me/Code/board'
 /** Stands in for the engine beneath the plugin: git, board, the tool list, the status line and the transcript. */
 function engine(on: On, answers: Answers) {
   const events: string[] = []
+  const detached: string[] = []
   const appended: string[] = []
   const logs: string[] = []
   const run = (exitCode: number, stdout: string) => ({
@@ -60,6 +63,11 @@ function engine(on: On, answers: Answers) {
   on('process.run', (_, e) => {
     const line = e.argv.join(' ')
     if (line.includes('rev-parse')) return run(0, `${ROOT}\n`)
+    if (line.includes('timing check')) {
+      detached.push(`${e.argv[2]} in ${e.init?.cwd}`)
+      if (answers.speed === 'fails') throw new Error('no shell')
+      return run(0, '')
+    }
     if (line.includes('ls / --limit 1')) {
       if (answers.repository === undefined) return run(1, JSON.stringify({ code: 'board::config::not_found', message: 'no board' }))
       return run(0, JSON.stringify({ schema: 'board/ls-report/v2', data: [], summary: { location: { repository: answers.repository } } }))
@@ -100,7 +108,7 @@ function engine(on: On, answers: Answers) {
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
   on('prompt.context', (_, e) => ({ blocks: e.blocks }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  return { events, appended, logs }
+  return { events, detached, appended, logs }
 }
 
 const start = ($: Engine) => $.session.start({ cwd: `${ROOT}/src`, surface: 'terminal', isInteractive: true })
@@ -202,6 +210,22 @@ test('session start checks the repository root once, and the first message carri
   expect(events).toEqual(['check'])
   expect(context.blocks.map(b => b.name)).toEqual(['claudeMd', 'boardRules'])
   expect(context.blocks[1]?.text).toContain('/rules/example/readme')
+})
+
+test('session start starts the speed check detached at the repository root, once', async ($, on) => {
+  const { detached } = engine(on, {})
+  await start($)
+  expect(detached).toHaveLength(1)
+  expect(detached[0]).toContain(`${SPEED_CHECK} in ${ROOT}`)
+  expect(detached[0]).toContain('$HOME/.local/bin')
+  expect(SPEED_CHECK).toMatch(/^nohup board timing check --record .*&$/)
+})
+
+test('a speed check that cannot start is logged and the session starts with its rules', async ($, on) => {
+  const { events, logs } = engine(on, { speed: 'fails' })
+  await start($)
+  expect(events).toEqual(['check'])
+  expect(logs.some(log => log.startsWith('board: the speed check did not start'))).toBe(true)
 })
 
 test('with no board the first message carries no block', async ($, on) => {

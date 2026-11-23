@@ -90,14 +90,87 @@ plugin's own work, such as the `board query` it runs, which records its own
 line one `depth` deeper. The runs that refused a changed target, from both log files:
 `cat ~/.cache/board/timings.jsonl.1 ~/.cache/board/timings.jsonl 2>/dev/null | jq -c 'select(.work.target_changed) | {at_ms, root, n: .work.target_changed}'`.
 
-Before a line would take the log past 1 MiB, the log is renamed to
-`timings.jsonl.1`, replacing the one before. The rename takes no lock, so two
-runs that fill the log at once can lose the older file. The run that renames
-second also loses its own record, because the log it tried to rename is
-already gone. Recording happens after the output is printed. A record that cannot be written is dropped silently, and
-the run's output and exit code stay as they were. Read the log with `jq`. The
-`root` of each record shows the names of your directories, so check the log
-before you attach it to a bug report.
+A record also holds `load1`, the machine's one-minute load average when it
+ended (from `vm.loadavg` on macOS, `/proc/loadavg` on Linux), `cpus`, its
+logical cores, and `killed`. A run that SIGINT, SIGTERM or SIGHUP ends, such
+as a hook that times out, writes its line with `killed: true` and a null
+`exit` before it ends as the signal would. `serve` and `ui` stop on those
+signals themselves and write no such line. A run that SIGKILL ends, or that
+crashes, writes nothing.
+
+Before a line would take the log past 1 MiB, the run that takes the
+rotation lock (`timings.lock`, a kernel lock that a killed run releases)
+summarises the log into `timing-digest.jsonl`, then renames the log to
+`timings.jsonl.1`, replacing the one before. A run that finds the lock held
+appends without rotating. Recording happens after the output is printed. A
+record that cannot be written is dropped silently, and the run's output and
+exit code stay as they were. Read the log with `jq`. The `root` of each
+record shows the names of your directories, so check the log before you
+attach it to a bug report.
+
+## The digest
+
+Each line of `timing-digest.jsonl`, tagged `board/timing-digest/v1`, sums
+one command's top-level runs on one board (`root`) in one UTC hour
+(`start_ms`) of one rotated log, named by the `at_ms` of its first line
+(`from_ms`). It counts the `runs`, those `killed` and those `judged`, and
+keeps the last 20 judged times in `judged_us`. A run is judged when it was
+not killed and `load1` was no higher than `cpus`. Rotation rewrites the
+digest whole, keeping its lines that parse, so a line a crash cut short is
+dropped. A log whose `from_ms` the digest already holds adds nothing, so a
+rotation run again after a crash counts no hour twice. A digest that cannot
+be written leaves that log's hours out, and the log still rotates.
+
+## The speed check
+
+`board timing check` judges each command in budgets.md's Command budgets
+on the personal board: the p90 of its last 20 judged top-level runs, from
+the digest's hours of logs no longer kept and then both logs. A call is
+named by its capability. With fewer than 5 judged runs a command is
+unjudged. A command over its budget is over; one over three times it, or a
+session-start command with a run killed in the last day, is far too slow.
+The check prints a row per command and how many lines it could not parse.
+
+With `--record` it writes the suite `/suites/board-speed-local` (a
+`runs/suite/v1` of kind `benchmark`) if absent, then a `runs/run/v1` with a
+result per command and the measures `over_budget` and `killed`, and stamps
+`timing-check.stamp` in the cache. Within an hour of the stamp it writes
+nothing. The rules mod starts `board timing check --record` detached at
+each session's start, so the start does not wait on it.
+
+The check is silent: it records runs and opens nothing. A later change
+makes it live once each command has 100 judged runs and the budgets hold.
+A live check then opens one task per command over budget at
+`/tasks/board-speed-<command>.md`, only if absent, naming the run; gives an
+open task a title that says so when the command is far too slow, which the
+lead names in its next status to the owner; and, once the lines changed
+since the task opened pass `overflow-agent-grace`, files one
+`plans/question/v1` at `/projects/board/questions/board-speed-<command>`,
+only if absent. Until that change measures the changed lines, no question
+is filed.
+
+### Lifecycle
+
+| State | Event | Next | Owner |
+| --- | --- | --- | --- |
+| a run running | it returns | one line, `killed: false` | the run |
+| a run running | SIGINT, SIGTERM or SIGHUP | one line, `killed: true`, then it ends | the run's signal thread |
+| a run running | SIGKILL or a crash | no line | the system |
+| log under 1 MiB | a line would pass 1 MiB, lock taken | digest rewritten, log renamed | the rotating run |
+| log under 1 MiB | the lock is held | the line appended, no rotation | the run |
+| no stamp, or one over an hour old | `timing check --record` | suite if absent, a run, the stamp | the check |
+| stamp under an hour old | `timing check --record` | nothing written | the check |
+| silent | the owner lands the live change | live | the owner |
+| live, command over | a check | its task, if absent | the check |
+| live, task open | far too slow | the task retitled | the check |
+| live, task open | changed lines past the grace | its question, if absent | the check |
+
+Crash points: a run killed while appending leaves a partial line, which
+the check skips and counts. A rotation killed after the digest and before
+the rename rotates again, and the digest skips the log it holds. A check
+killed after the run and before the stamp records one more run within the
+hour. Two checks at once may both record a run; each task and question has
+one fixed path and is written only if absent.
 
 ## Reading the log and profiling
 

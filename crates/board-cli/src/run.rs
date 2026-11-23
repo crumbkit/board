@@ -19,6 +19,7 @@ mod remove;
 mod repo;
 mod syncing;
 mod uri;
+mod watched;
 
 /// What a plugin run gets from this command line's context.
 pub(crate) fn plugins(context: &Context) -> Plugins<'_> {
@@ -380,6 +381,15 @@ Examples:
     /// Describe the JSON documents that Board prints.
     #[command(subcommand, after_help = crate::describe::SCHEMAS_HELP)]
     Schemas(crate::describe::SchemasCommand),
+    /// Time hot commands against their budgets.
+    #[command(
+        subcommand,
+        after_help = "\
+Examples:
+  board timing check
+  board timing check --record"
+    )]
+    Timing(crate::timing::TimingCommand),
 }
 
 impl Command {
@@ -453,7 +463,7 @@ fn run_command(
         }
     };
     let words = arguments.get(1..).unwrap_or_default();
-    ran.command = Some(crumbkit::command_path(&Cli::command(), words).join(" "));
+    ran.command = Some(watched::watched(words, &cli.command, grafted.as_ref()));
     if let Command::Commands(_) | Command::Schemas(_) = cli.command {
         return describe(&arguments, context, &cli, view, ran);
     }
@@ -463,7 +473,7 @@ fn run_command(
     {
         return render::refused(printer, *refusal);
     }
-    if let Command::Completion(_) | Command::Skills(_) = cli.command {
+    if let Command::Completion(_) | Command::Skills(_) | Command::Timing(_) = cli.command {
         return unopened(&cli, context, printer, None);
     }
     let base = cli.personal.then(|| context.personal());
@@ -518,7 +528,7 @@ fn run_command(
     output
 }
 
-/// Runs completion and skills, which need no board, and `plugin list` and
+/// Runs completion, skills and timing, which open no board first, and `plugin list` and
 /// `find` once opening the board was `refused`, which any other command prints.
 fn unopened(cli: &Cli, context: &Context, printer: Printer, refused: Option<Refusal>) -> Output {
     match (&cli.command, refused) {
@@ -526,6 +536,7 @@ fn unopened(cli: &Cli, context: &Context, printer: Printer, refused: Option<Refu
         (Command::Skills(command), _) => {
             crate::skills::skills(command, context, printer, cli.chooses_board())
         }
+        (Command::Timing(command), _) => crate::timing::timing(command, context, printer),
         (Command::Plugin(command), Some(refused)) => {
             crate::plugin::unopened(command, context, printer, refused)
         }
@@ -639,7 +650,8 @@ fn command(
         | Command::Commands(_)
         | Command::Schemas(_)
         | Command::Completion(_)
-        | Command::Skills(_) => unreachable!(),
+        | Command::Skills(_)
+        | Command::Timing(_) => unreachable!(),
         Command::Check {
             path,
             healthy,

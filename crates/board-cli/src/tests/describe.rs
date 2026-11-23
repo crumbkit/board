@@ -58,6 +58,7 @@ const LINES: &[(&str, &[&str], &[&str])] = &[
     ("commands list", &[], &[]),
     ("schemas list", &[], &[]),
     ("schemas show", &[], &["board/check-report/v2"]),
+    ("timing check", &[], &[]),
 ];
 
 /// The leaves whose JSON already holds every field, because they print
@@ -88,6 +89,7 @@ const WHOLE: &[&str] = &[
     "ui template",
     "ui open",
     "completion print",
+    "timing check",
 ];
 
 /// The command line of the leaf at `path` as a program builds it: the

@@ -157,6 +157,11 @@ secrecy = "0.10.3"
 serde = { version = "1.0.228", features = ["derive"] }
 # derive: the rows crumbkit prints describe their own JSON Schema.
 schemars = { version = "1.2.2", default-features = false, features = ["derive", "std"] }
+# The machine's one-minute load, which each timing line records so the speed
+# check leaves out runs on a busy machine. macOS has no safe API for it and
+# the workspace forbids unsafe code; Linux reads /proc/loadavg. Only
+# board-cli's timing module uses it.
+sysctl = "0.6.0"
 # `board ui` stops on a flag that SIGINT, SIGTERM and SIGHUP set, with no
 # async runtime and no unsafe code.
 signal-hook = { version = "0.4.4", default-features = false }

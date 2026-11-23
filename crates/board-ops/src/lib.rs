@@ -31,7 +31,10 @@ mod ui;
 mod verdict;
 mod version;
 
-pub use board_index::{Budget, Fallback, append_timing, source_name};
+pub use board_index::{
+    Budget, Fallback, Timings, append_timing, read_timings, source_name, stamp_timing,
+    timing_stamped,
+};
 
 pub use crate::attachment::{FetchError, MAX_INLINE_BYTES};
 pub use crate::board::{Backend, Board, Config, OpenError, StartedIn, Store};
