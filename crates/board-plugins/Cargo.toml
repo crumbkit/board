@@ -10,6 +10,7 @@ rust-version.workspace = true
 [features]
 artifacts = ["dep:board-plugin-artifacts"]
 attention = ["dep:board-plugin-attention"]
+autosync = ["dep:board-plugin-autosync"]
 boundary = ["dep:board-plugin-boundary"]
 changes = ["dep:board-plugin-changes"]
 evals = ["dep:board-plugin-evals"]
@@ -19,6 +20,7 @@ notes = ["dep:board-plugin-notes"]
 params = ["dep:board-plugin-params"]
 places = ["dep:board-plugin-places"]
 plans = ["dep:board-plugin-plans"]
+priorities = ["dep:board-plugin-priorities"]
 prompts = ["dep:board-plugin-prompts"]
 requests = ["dep:board-plugin-requests"]
 review = ["dep:board-plugin-review"]
@@ -32,6 +34,7 @@ topics = ["dep:board-plugin-topics"]
 board-ops.workspace = true
 board-plugin-artifacts = { workspace = true, optional = true }
 board-plugin-attention = { workspace = true, optional = true }
+board-plugin-autosync = { workspace = true, optional = true }
 board-plugin-boundary = { workspace = true, optional = true }
 board-plugin-changes = { workspace = true, optional = true }
 board-plugin-evals = { workspace = true, optional = true }
@@ -41,6 +44,7 @@ board-plugin-notes = { workspace = true, optional = true }
 board-plugin-params = { workspace = true, optional = true }
 board-plugin-places = { workspace = true, optional = true }
 board-plugin-plans = { workspace = true, optional = true }
+board-plugin-priorities = { workspace = true, optional = true }
 board-plugin-prompts = { workspace = true, optional = true }
 board-plugin-requests = { workspace = true, optional = true }
 board-plugin-review = { workspace = true, optional = true }

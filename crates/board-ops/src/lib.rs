@@ -38,8 +38,8 @@ pub use crate::board::{Backend, Board, Config, OpenError, StartedIn, Store};
 pub use crate::check::{CheckError, CheckReport, Checked, Detail};
 pub use crate::checkout::Refused as CheckoutRefused;
 pub use crate::effects::{
-    AnswerReport, Asker, DecideReport, EffectError, Shown, SignOrderError, Signing,
-    VerifyOrderError, answer,
+    AnswerReport, Asker, DecideReport, EffectError, OwnerWriteError, Shown, SignOrderError,
+    Signing, VerifyOrderError, answer,
 };
 pub use crate::enable::{EnableError, EnableReport, Kept};
 pub use crate::history::{At, LogReport};
@@ -63,7 +63,7 @@ pub use crate::put::{
 pub use crate::query::{DEFAULT_LIMIT, MAX_LIMIT, QueryError, QueryReport};
 pub use crate::read::{GetReport, Listed, LsReport, ReadError};
 pub use crate::refs::{Absent, Fielded, Incoming, Missing, Outgoing, RefsError, RefsReport};
-pub use crate::sync::{Conflicted, SyncError, Synced};
+pub use crate::sync::{BeforePush, Conflicted, Guard, Pushing, SyncError, Synced};
 pub use crate::trace::{Phase, Trace};
 pub use crate::types::TypeError;
 pub use crate::ui::{BindingError, Drawn, Failed, Page, PageError};

@@ -1,0 +1,30 @@
+{
+  "summary": "The board commits a confirmed priority may see before the lead asks the owner to confirm it again.",
+  "unit": "commits",
+  "inputs": [
+    {
+      "name": "commits-per-week",
+      "meaning": "The board's commits per week, leaving out bulk commits.",
+      "source": "Run `git rev-list --count --since=60.days --invert-grep --grep=^Board-Bulk: HEAD` in the board and divide by the weeks."
+    },
+    {
+      "name": "outcomes",
+      "meaning": "The answers the owner gave when asked to confirm a stale entry in the last 60 days.",
+      "source": "Read the owner's answers to stale-priority questions of the last 60 days with `board query`."
+    }
+  ],
+  "method": "Multiply commits-per-week by two, so an entry is stale after about two weeks of the board's usual activity, then keep the result within the bounds. Write the result as the record's top-level `value`. Until a run finds enough data, the heuristic's lenient default, 300, applies, which a board with a few commits a day reaches in weeks.",
+  "start": 300,
+  "default": 300,
+  "bounds": {
+    "min": 30,
+    "max": 3000
+  },
+  "enough": "At least 4 weeks of commits and 5 answers to stale-priority questions.",
+  "check": {
+    "measure": "The share of stale entries in the last 60 days that the owner confirmed unchanged. A high share means the owner was asked too soon.",
+    "fails_above": 0.8
+  },
+  "recheck_after": 30,
+  "consumer": "priorities"
+}

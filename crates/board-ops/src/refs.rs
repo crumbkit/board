@@ -132,22 +132,52 @@ impl Board {
         limit: Option<usize>,
         cache: Option<&'a Path>,
     ) -> Result<impl Iterator<Item = Result<RefsReport, RefsError>> + 'a, RefsError> {
+        let mut answering = self.answering(absent, fields, limit, cache, None)?;
+        Ok(paths.iter().map(move |path| answering.answer(path)))
+    }
+
+    /// Each of `paths` answered as [`Board::refs`] answers it, through
+    /// `kept` when it holds a snapshot, and the snapshot the answers used,
+    /// if any, so a caller can answer through it again.
+    pub(crate) fn refs_kept(
+        &self,
+        paths: &[LogicalPath],
+        absent: Absent,
+        fields: &[String],
+        cache: Option<&Path>,
+        kept: Option<Snapshot>,
+    ) -> Result<RefsKept, RefsError> {
+        let mut answering = self.answering(absent, fields, None, cache, kept)?;
+        let answers = paths.iter().map(|path| answering.answer(path)).collect();
+        Ok((answers, answering.snapshot))
+    }
+
+    fn answering<'a>(
+        &'a self,
+        absent: Absent,
+        fields: &'a [String],
+        limit: Option<usize>,
+        cache: Option<&'a Path>,
+        snapshot: Option<Snapshot>,
+    ) -> Result<Answering<'a>, RefsError> {
         let view = self
             .repositories()
             .snapshot()
             .map_err(|source| refused(ResolveError::Git(source)))?;
-        let mut answering = Answering {
+        Ok(Answering {
             board: self,
             view,
             absent,
             fields,
             limit: limit.unwrap_or(usize::MAX),
             cache,
-            snapshot: None,
-        };
-        Ok(paths.iter().map(move |path| answering.answer(path)))
+            snapshot,
+        })
     }
 }
+
+/// Each path's answer, and the snapshot they used.
+pub(crate) type RefsKept = (Vec<Result<RefsReport, RefsError>>, Option<Snapshot>);
 
 impl Answering<'_> {
     fn answer(&mut self, path: &LogicalPath) -> Result<RefsReport, RefsError> {

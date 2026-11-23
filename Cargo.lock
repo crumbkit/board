@@ -147,6 +147,7 @@ version = "0.0.0"
 dependencies = [
  "board-model",
  "board-tree",
+ "crumbkit-durable",
  "proptest",
  "rusqlite",
  "serde_json",
@@ -235,6 +236,20 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "board-plugin-autosync"
+version = "0.0.0"
+dependencies = [
+ "board-index",
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -371,6 +386,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "board-plugin-priorities"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-plugin-params",
+ "board-repos",
+ "board-validate",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "board-plugin-prompts"
 version = "0.0.0"
 dependencies = [
@@ -495,6 +525,7 @@ dependencies = [
  "board-ops",
  "board-plugin-artifacts",
  "board-plugin-attention",
+ "board-plugin-autosync",
  "board-plugin-boundary",
  "board-plugin-changes",
  "board-plugin-evals",
@@ -504,6 +535,7 @@ dependencies = [
  "board-plugin-params",
  "board-plugin-places",
  "board-plugin-plans",
+ "board-plugin-priorities",
  "board-plugin-prompts",
  "board-plugin-requests",
  "board-plugin-review",

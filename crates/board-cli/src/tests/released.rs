@@ -780,12 +780,12 @@ fn expanded(spelled: &str, sources: &[&str]) -> Result<Vec<String>, String> {
 const SHARED: &[(&str, &str, &[&str])] = &[
     (
         "board_refused(",
-        "crates/board-ops/src/host.rs",
+        "crates/board-ops/src/host/error.rs",
         &["board::refused"],
     ),
     (
         "read_input",
-        "crates/board-ops/src/host.rs",
+        "crates/board-ops/src/host/error.rs",
         &["call::bad_input"],
     ),
     (

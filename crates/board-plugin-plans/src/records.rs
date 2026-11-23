@@ -85,8 +85,11 @@ impl Accepts for AnyWork {
 /// The record types of a change, which the changes plugin ships.
 pub(crate) const CHANGE_TYPES: [&str; 2] = ["changes/change/v1", "changes/change/v2"];
 
-/// The record type of a task, which the tasks plugin ships.
+/// The record type of a task that a question's `blocks` names. The
+/// question's schema is released, so it names v2 alone.
 pub(crate) const TASK_TYPE: &str = "tasks/task/v2";
+/// Every task type the tasks plugin ships, which a query reads.
+pub(crate) const TASK_TYPES: [&str; 2] = [TASK_TYPE, "tasks/task/v3"];
 
 /// Where a question stands.
 #[derive(Debug, JsonSchema)]

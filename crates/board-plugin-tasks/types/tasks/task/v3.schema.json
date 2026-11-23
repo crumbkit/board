@@ -1,0 +1,180 @@
+{
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "description": "Who wrote a record or acted: the session, the program, the person and\nthe agent's name, each when known, and at least one. Every record type that names who\nacted holds one.",
+      "minProperties": 1,
+      "properties": {
+        "agent": {
+          "description": "The name the agent was given, such as `nightly scheduler`, as\nfree text.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "person": {
+          "description": "The person who acted, such as `ana`, or their email address.",
+          "pattern": "^([a-z0-9]+(-[a-z0-9]+)*|[^@\\s]+@[^@\\s]+)$",
+          "type": "string"
+        },
+        "program": {
+          "description": "The program that acted, such as `claude-code` or `codex`.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "session": {
+          "description": "The Claude Code session's `local_` id.",
+          "pattern": "^local_[0-9a-f-]+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "dependentRequired": {
+    "ephemeral": [
+      "repeat"
+    ]
+  },
+  "description": "`tasks/task/v3`: the frontmatter of a Markdown task under `tasks/`, whose\nbody holds its prose. It is v2 without `kind`, and with `refs`.",
+  "properties": {
+    "$type": {
+      "const": "tasks/task/v3",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "after": {
+      "description": "The tasks in the same repo this task waits on, by path.",
+      "items": {
+        "format": "board-ref",
+        "type": "string",
+        "x-board-type": [
+          "tasks/task/v2",
+          "tasks/task/v3"
+        ]
+      },
+      "type": "array"
+    },
+    "brief": {
+      "description": "A project's brief, such as a README.md, by path.",
+      "format": "board-ref",
+      "type": "string"
+    },
+    "contexts": {
+      "description": "Tags for where the task can be done, such as `errands`.",
+      "items": {
+        "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "defer": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "enum": [
+            "not-today",
+            "not-this-week",
+            "soon",
+            "someday"
+          ],
+          "type": "string"
+        }
+      ],
+      "description": "What hides the task until it ends: a date, a date and time, or a\nhorizon counted from `reviewed`."
+    },
+    "due": {
+      "description": "The day the task is due.",
+      "format": "date",
+      "type": "string"
+    },
+    "ephemeral": {
+      "description": "Whether a repeating task's missed days roll forward to one instance\ntoday, with no backlog.",
+      "type": "boolean"
+    },
+    "from_hour": {
+      "description": "The hour of the person's day from which the task is available.",
+      "maximum": 23,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "id": {
+      "description": "The note's id, which Reflect writes; the plugin ignores it.",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "owner": {
+      "$ref": "#/$defs/Actor",
+      "description": "The agent or person who holds the task."
+    },
+    "parent": {
+      "description": "The task in the same repo this one is part of, by path.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-part-of": true,
+      "x-board-type": [
+        "tasks/task/v2",
+        "tasks/task/v3"
+      ]
+    },
+    "pinned": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "minimum": 0,
+          "type": "integer"
+        }
+      ],
+      "description": "Whether, or in what place, Reflect pins the note to its sidebar,\nwhich Reflect writes; the plugin ignores it."
+    },
+    "refs": {
+      "description": "Records and files in the task's own repository that the task names,\nsuch as its copies of exchange messages and their replies.",
+      "items": {
+        "format": "board-ref",
+        "type": "string",
+        "x-board-local": true
+      },
+      "maxItems": 100,
+      "type": "array"
+    },
+    "repeat": {
+      "description": "When a repeating task comes back.",
+      "pattern": "^(daily|weekdays|weekly-(mon|tue|wed|thu|fri|sat|sun)|monthly-([1-9]|[12][0-9]|3[01])|annually-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01]))$",
+      "type": "string"
+    },
+    "reviewed": {
+      "description": "The day the task was last looked at.",
+      "format": "date",
+      "type": "string"
+    },
+    "status": {
+      "description": "Whether the task is open, done or dropped.",
+      "enum": [
+        "open",
+        "done",
+        "dropped"
+      ],
+      "type": "string"
+    },
+    "title": {
+      "description": "What the task is, in a line.",
+      "type": "string",
+      "x-board-prose": true
+    }
+  },
+  "required": [
+    "$type",
+    "title",
+    "status"
+  ],
+  "title": "Task",
+  "type": "object"
+}

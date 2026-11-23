@@ -1,4 +1,5 @@
 wrote /.board/types/tasks/task/v2.schema 4efcc5d6cc4dbe9576cac1c17f3b7ca382697c74
+wrote /.board/types/tasks/task/v3.schema 2a65d214ec2fffaf38b7cf3aeccb8c9d3927567c
 wrote /.board/board 892e4294231c82127504d3cd17a6b29d09329489
-committed 7411b5c11cfa0154bf41b14cf8ab112c9be5302e
+committed 0acabc34b2c8085ad7aa44ff80d17d6276324cc3
 enabled tasks

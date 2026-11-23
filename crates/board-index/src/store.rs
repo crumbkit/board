@@ -57,6 +57,8 @@ pub struct RefFact {
     pub target: LogicalPath,
     /// The record types the target may have; `None` accepts any.
     pub accepts: Option<Vec<RecordType>>,
+    /// Whether the target must be in the record's own board.
+    pub local: bool,
 }
 
 /// One working-tree entry as the last refresh saw it.
@@ -301,19 +303,20 @@ impl Writer {
         schema: ObjectId,
     ) -> Result<Option<ValidationFact>, IndexError> {
         type Outcome = (Option<String>, Option<String>, Option<String>, Option<i64>);
-        type Row = (Outcome, Option<(String, String, Option<String>)>);
+        type Row = (Outcome, Option<(String, String, Option<String>, bool)>);
         self.validations_read.set(self.validations_read.get() + 1);
         let rows = self
             .connection()
             .prepare_cached(
-                "SELECT v.code, v.pointer, v.reason, v.failures, r.pointer, r.target, r.accepts
+                "SELECT v.code, v.pointer, v.reason, v.failures, r.pointer, r.target, r.accepts,
+                        r.local
                  FROM main.validations AS v LEFT JOIN main.refs AS r
                  ON r.record = v.record AND r.schema = v.schema
                  WHERE v.record = ?1 AND v.schema = ?2 ORDER BY r.ordinal",
             )?
             .query_map(params![record.to_string(), schema.to_string()], |row| {
                 let reference = match row.get::<_, Option<String>>(4)? {
-                    Some(pointer) => Some((pointer, row.get(5)?, row.get(6)?)),
+                    Some(pointer) => Some((pointer, row.get(5)?, row.get(6)?, row.get(7)?)),
                     None => None,
                 };
                 Ok((
@@ -336,11 +339,12 @@ impl Writer {
         let references = rows
             .into_iter()
             .filter_map(|(_, reference)| reference)
-            .map(|(pointer, target, accepts)| {
+            .map(|(pointer, target, accepts, local)| {
                 target.parse().ok().map(|target| RefFact {
                     pointer,
                     target,
                     accepts: accepts.and_then(|text| serde_json::from_str(&text).ok()),
+                    local,
                 })
             })
             .collect::<Option<Vec<RefFact>>>();
@@ -395,15 +399,16 @@ impl Writer {
                 serde_json::Value::from(types.iter().map(RecordType::as_str).collect::<Vec<_>>())
                     .to_string()
             });
-            self.connection().prepare_cached("INSERT OR REPLACE INTO main.refs (record, schema, ordinal, pointer, target, accepts)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?
+            self.connection().prepare_cached("INSERT OR REPLACE INTO main.refs (record, schema, ordinal, pointer, target, accepts, local)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?
             .execute(params![
                     record,
                     schema,
                     ordinal,
                     reference.pointer,
                     reference.target.to_string(),
-                    accepts
+                    accepts,
+                    reference.local
                 ],
             )?;
         }

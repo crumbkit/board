@@ -9,6 +9,8 @@ pub const BUILT_IN: BuiltIn = BuiltIn(&[
     &board_plugin_artifacts::Artifacts,
     #[cfg(feature = "attention")]
     &board_plugin_attention::Attention,
+    #[cfg(feature = "autosync")]
+    &board_plugin_autosync::Autosync,
     #[cfg(feature = "boundary")]
     &board_plugin_boundary::Boundary,
     #[cfg(feature = "changes")]
@@ -27,6 +29,8 @@ pub const BUILT_IN: BuiltIn = BuiltIn(&[
     &board_plugin_places::Places,
     #[cfg(feature = "plans")]
     &board_plugin_plans::Plans,
+    #[cfg(feature = "priorities")]
+    &board_plugin_priorities::Priorities,
     #[cfg(feature = "prompts")]
     &board_plugin_prompts::Prompts,
     #[cfg(feature = "requests")]

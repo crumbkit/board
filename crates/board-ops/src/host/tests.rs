@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use board_model::{Code, ObjectId, PluginName, RefusalCode};
 use board_plugin::{CallReport, Environment, Limits, Target};
 use board_scenario::{Item, Scenario};
-use serde_json::json;
+use serde_json::{Map, json};
 
 use super::*;
 use crate::tests::open;
@@ -1014,6 +1014,7 @@ fn a_cache_place_is_plain_names_under_the_cache_home_and_none_without_one() {
 
 mod call;
 mod decide;
+mod memo;
 mod order;
 mod put;
 mod run;

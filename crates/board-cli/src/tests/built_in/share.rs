@@ -953,6 +953,24 @@ fn a_shared_task_brings_its_projects_decision_and_question_and_not_its_sibling_t
 }
 
 #[test]
+fn a_shared_v3_task_whose_parent_is_a_v2_project_brings_the_projects_decision_and_question() {
+    let boards = tasks_boards();
+    boards.reading_list();
+    let v3 = task("Remove", "parent: /tasks/tidy.md\n").replace("tasks/task/v2", "tasks/task/v3");
+    boards.personal.write("tasks/remove.md", &v3);
+    let preview = boards.preview(&["--path", "/tasks/remove.md"]);
+    assert_eq!(
+        preview["wholes"],
+        json!([{"path": "/tasks/tidy.md", "from": "/tasks/remove.md", "back_refs": 2}])
+    );
+    let output = boards.share(&["--path", "/tasks/remove.md"]);
+    assert_eq!(output["copied"], json!(READING));
+    let clone = Scenario::clone_of(&boards.team);
+    let checked = board_in(clone.workdir(), &["check"]);
+    assert_eq!(checked.code, 0, "{}", text(&checked.stdout));
+}
+
+#[test]
 fn a_shared_task_brings_no_change_record_of_its_project_however_many_name_it() {
     let boards = tasks_boards();
     boards.reading_list();
@@ -1410,4 +1428,57 @@ fn a_shared_record_brings_the_repository_record_it_names_and_one_the_team_holds_
         (&json!(["/pulls/b"]), &json!(1))
     );
     assert_eq!(boards.changed(&before), ["pulls/b.json"]);
+}
+
+#[test]
+fn a_shared_task_leaves_out_the_priorities_record_that_covers_it_and_brings_a_decision_naming_it() {
+    let boards = tasks_boards();
+    boards.reading_list();
+    let enabled = boards.personal.run(&["plugin", "enable", "priorities"]);
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    let entry =
+        json!({"id": "tidy", "title": "Tidy the reading list", "covers": ["/tasks/remove.md"]});
+    boards
+        .personal
+        .write(
+            "priorities.json",
+            &json!({"$type": "priorities/list/v1", "short": [entry], "long": []}).to_string(),
+        )
+        .write(
+            "projects/tidy/decisions/e.json",
+            &plan_decision(&["/tasks/remove.md"]),
+        );
+    let call = ["--path", "/tasks/remove.md"];
+    let preview = boards.preview(&call);
+    let mut copied = READING.to_vec();
+    copied.insert(1, "/projects/tidy/decisions/e");
+    assert_eq!(
+        (&preview["copied"], &preview["not_copied"]),
+        (
+            &json!(copied),
+            &json!([{"path": "/priorities", "reason": "withheld", "from": "/tasks/remove.md"}])
+        )
+    );
+    let next = preview["next"].as_str().unwrap();
+    assert!(!next.contains("--allow-uncopied"), "{next}");
+    assert_eq!(boards.share(&call)["copied"], json!(copied));
+    assert!(!boards.exists("priorities.json"));
+    // A target that names nothing is still refused beside the withheld one.
+    boards.personal.write(
+        "tasks/remove.md",
+        &task(
+            "Remove",
+            "parent: /tasks/tidy.md
+",
+        )
+        .replace("# Remove\n", "# Remove\n\nSee [gone](/notes/gone.md).\n"),
+    );
+    let refused = boards.refused(&call);
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["paths"]),
+        (
+            &json!("share::closure::uncopied"),
+            &json!(["/notes/gone.md"])
+        )
+    );
 }

@@ -10,8 +10,11 @@ use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 /// `monthly-<1..31>` and `annually-<MM-DD>`.
 pub(crate) const REPEAT: &str = "^(daily|weekdays|weekly-(mon|tue|wed|thu|fri|sat|sun)|monthly-([1-9]|[12][0-9]|3[01])|annually-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01]))$";
 
-/// `tasks/task/v2`: the frontmatter of a Markdown task under `tasks/`, whose
-/// body holds its prose.
+/// The most entries a task's `refs` holds.
+pub const MOST_REFS: usize = 100;
+
+/// `tasks/task/v3`: the frontmatter of a Markdown task under `tasks/`, whose
+/// body holds its prose. It is v2 without `kind`, and with `refs`.
 #[derive(Debug, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(
@@ -69,14 +72,15 @@ pub struct TaskRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(schema_with = "parent")]
     pub parent: Option<String>,
-    /// Whether this is a `task`, as when it is left out, or a `project`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(schema_with = "kind")]
-    pub kind: Option<String>,
     /// A project's brief, such as a README.md, by path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(schema_with = "file_ref")]
     pub brief: Option<String>,
+    /// Records and files in the task's own repository that the task names,
+    /// such as its copies of exchange messages and their replies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(schema_with = "refs")]
+    pub refs: Option<Vec<String>>,
     /// The note's id, which Reflect writes; the plugin ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Slug>")]
@@ -88,6 +92,14 @@ pub struct TaskRecord {
     pub pinned: Option<Pinned>,
 }
 
+/// `tasks/task/v2`: a task as it was before v3, with `kind`, which a
+/// project task still is until projects move to their own records. The
+/// plugin reads it, and `tasks.migrate` rewrites every other one as v3.
+pub const V2_TYPE: &str = "tasks/task/v2";
+
+/// The schema of [`V2_TYPE`], released, as the plugin shipped it.
+pub(crate) const V2_SCHEMA: &str = include_str!("../types/tasks/task/v2.schema.json");
+
 /// Reflect's `pinned`: whether the note is pinned, or its place in the
 /// sidebar.
 #[derive(Debug)]
@@ -97,8 +109,11 @@ pub enum Pinned {
 }
 
 impl Record for TaskRecord {
-    const TYPE: &'static str = "tasks/task/v2";
+    const TYPE: &'static str = "tasks/task/v3";
 }
+
+/// Every task type the plugin reads, v2 then v3.
+pub const TASK_TYPES: [&str; 2] = [V2_TYPE, TaskRecord::TYPE];
 
 fn status(_: &mut SchemaGenerator) -> Schema {
     json_schema!({"type": "string", "enum": ["open", "done", "dropped"]})
@@ -117,7 +132,17 @@ fn defer(_: &mut SchemaGenerator) -> Schema {
 }
 
 fn task_ref(_: &mut SchemaGenerator) -> Schema {
-    json_schema!({"type": "string", "format": "board-ref", "x-board-type": TaskRecord::TYPE})
+    json_schema!({"type": "string", "format": "board-ref", "x-board-type": TASK_TYPES})
+}
+
+/// `refs` names files in the task's own repository only, which
+/// `x-board-local` makes `board check` hold it to.
+fn refs(_: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "array",
+        "maxItems": MOST_REFS,
+        "items": {"type": "string", "format": "board-ref", "x-board-local": true},
+    })
 }
 
 /// `parent` names the record a task is part of, which share reads as a
@@ -150,8 +175,4 @@ fn hour(_: &mut SchemaGenerator) -> Schema {
 
 fn pinned(_: &mut SchemaGenerator) -> Schema {
     json_schema!({"anyOf": [{"type": "boolean"}, {"type": "integer", "minimum": 0}]})
-}
-
-fn kind(_: &mut SchemaGenerator) -> Schema {
-    json_schema!({"type": "string", "enum": ["task", "project"]})
 }

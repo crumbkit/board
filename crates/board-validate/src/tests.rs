@@ -235,9 +235,27 @@ fn references_carry_their_pointer_path_and_accepted_types() {
             pointer: "/parent".to_owned(),
             path: path("/projects/p"),
             accepts: Some(vec!["lr/project/v1".parse().unwrap()]),
+            local: false,
         }]
     );
     assert_eq!(schema.references(&json!({"title": "t"})), Vec::new());
+}
+
+#[test]
+fn a_reference_whose_schema_says_x_board_local_is_marked_local_and_its_neighbour_is_not() {
+    let schema = Schema::compile(json!({
+        "type": "object",
+        "properties": {
+            "refs": {"type": "array", "items": {"type": "string", "format": "board-ref", "x-board-local": true}},
+            "brief": {"type": "string", "format": "board-ref"}
+        }
+    }))
+    .unwrap();
+    let found = schema.references(&json!({"refs": ["/a"], "brief": "/b"}));
+    let local: Vec<(&str, bool)> = (found.iter())
+        .map(|reference| (reference.pointer.as_str(), reference.local))
+        .collect();
+    assert_eq!(local, [("/brief", false), ("/refs/0", true)]);
 }
 
 #[test]
@@ -249,6 +267,7 @@ fn a_reference_with_a_fragment_names_the_path_before_it_and_its_twin_without_one
             pointer: "/parent".to_owned(),
             path: path(value),
             accepts: Some(vec!["lr/project/v1".parse().unwrap()]),
+            local: false,
         }]
     };
     let anchored = json!({"title": "t", "parent": "/changes/x#design-conformance"});

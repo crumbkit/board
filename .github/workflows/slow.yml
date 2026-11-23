@@ -142,6 +142,7 @@ jobs:
       - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
         with:
           tool: cargo-nextest@0.9.146
+      - run: bin/install-gitleaks
       # The ui part runs in a Docker container, and macOS runners have no
       # Docker, so this job skips it. ci.yml runs it on Linux.
       - run: bin/lint rust
@@ -234,6 +235,7 @@ jobs:
       - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
         with:
           tool: cargo-mutants@27.1.0,cargo-nextest@0.9.146
+      - run: bin/install-gitleaks
       - id: diff
         run: |
           git diff --end-of-options "$BASE...HEAD" -- '*.rs' > changes.diff
@@ -326,6 +328,7 @@ jobs:
       - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
         with:
           tool: cargo-mutants@27.1.0,cargo-nextest@0.9.146
+      - run: bin/install-gitleaks
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: mutants-misses-caught

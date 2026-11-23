@@ -30,6 +30,20 @@ impl Repo {
         format!("{}/{path}", self.root.trim_end_matches('/'))
     }
 
+    /// The board path of `path`, a path in the repo that starts with `/`.
+    pub fn board_path(&self, path: &str) -> String {
+        self.logical(path.trim_start_matches('/'))
+    }
+
+    /// The board path `path` as a path in the repo, starting with `/`, or
+    /// `path` as it is when it is outside the repo.
+    pub fn repo_path<'a>(&self, path: &'a str) -> &'a str {
+        match path.strip_prefix(self.root.trim_end_matches('/')) {
+            Some(rest) if rest.starts_with('/') => rest,
+            _ => path,
+        }
+    }
+
     /// The file at `path` in the repo, at the pin. Nothing at the path, or
     /// a directory there, is no file; any other refusal of `board get` is
     /// `<plugin>::board::refused`.

@@ -64,9 +64,22 @@ needs to know.
     list, such as `tasks/task/v2`'s `parent`. A type whose records go with
     a whole they name carries `"x-board-goes-with-whole": true` at its top
     level, such as `plans/decision/v1` and `plans/question/v1`. Neither
-    keyword changes any record's validity. The share plugin reads them to
-    find a shared record's wholes and the records each brings
-    (plugins/share/README.md), and never infers either from a name.
+    keyword changes any record's validity. A type whose records never go
+    with a shared record that they name carries
+    `"x-board-goes-with-share": false` at its top level, such as
+    `priorities/list/v1`. The share plugin reads these keywords to find a
+    shared record's wholes, the records each brings and the back-refs it
+    leaves out (plugins/share/README.md), and never infers one from a name.
+
+16. A reference field that must name a file in the record's own board
+    carries `"x-board-local": true` beside `format: board-ref`, on `items`
+    for a list. Only `tasks/task/v3`'s `refs` carries it. The record stays
+    valid, and `board check` and `board put` mark it degraded with
+    `board::ref::through_mount` when such a reference resolves through a
+    mount, naming the field and the mount. That code is one of
+    `TREE_CODES`, so a plugin still reads the record, as it reads one with
+    a dangling reference. A crossing between boards is an exchange message
+    (docs/guide/exchange.md), and the record names its own copy.
 
 `xtask/tests/shapes.rs` checks rules 1, 2, 5, 10, 11, 12 and 14 on every
 committed record schema. It lists the schemas that break rules 1 to 12

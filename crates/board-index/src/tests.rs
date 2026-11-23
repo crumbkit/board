@@ -479,11 +479,13 @@ fn a_validation_stores_its_outcome_and_the_references_it_found_in_order() {
             pointer: "/owner".to_owned(),
             target: "/people/ada".parse().unwrap(),
             accepts: Some(vec!["test/person/v1".parse().unwrap()]),
+            local: false,
         },
         RefFact {
             pointer: "/blocks".to_owned(),
             target: "/tasks/b".parse().unwrap(),
             accepts: None,
+            local: true,
         },
     ]);
     let invalid = ValidationFact::Invalid {
@@ -876,6 +878,7 @@ fn a_validation_reads_back_with_none_one_or_many_references_in_order_and_only_it
         pointer: format!("/blocks/{n}"),
         target: format!("/tasks/{n}").parse().unwrap(),
         accepts: None,
+        local: n == 1,
     };
     let none = ValidationFact::Valid(Vec::new());
     let one = ValidationFact::Valid(vec![reference(0)]);

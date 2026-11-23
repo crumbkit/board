@@ -51,8 +51,9 @@ const HEAD: &str = "a3f9c0de1234567890abcdef1234567890abcdef";
 const BASE: &str = "0123456789abcdef0123456789abcdef01234567";
 /// Types other plugins own, which a change references. The fixture board
 /// keeps a loose schema of its own for each.
-const FOREIGN_TYPES: [&str; 7] = [
+const FOREIGN_TYPES: [&str; 8] = [
     "tasks/task/v2",
+    "tasks/task/v3",
     "runs/suite/v1",
     "runs/run/v1",
     "plans/decision/v1",
@@ -986,6 +987,27 @@ fn check_reports_a_ticket_of_another_type_and_admits_each_issue_type() {
         "plan",
         &json!({"tickets": ["/tickets/ACME-123", "/issues/octo-widgets-6"]}),
     );
+    assert_eq!(board.code("/changes/t"), None);
+}
+
+#[test]
+fn check_admits_a_change_whose_task_is_a_v3_task_and_reports_one_naming_a_ticket() {
+    let board = mounted();
+    board.write(
+        "tasks/v3.md",
+        "---\n$type: tasks/task/v3\ntitle: A\nstatus: open\n---\n",
+    );
+    board.write("tickets/ACME-123.json", &typed("jira/issue/v1", &json!({})));
+    board.change_at(
+        "changes/t.json",
+        "plan",
+        &json!({"task": "/tickets/ACME-123"}),
+    );
+    assert_eq!(
+        board.code("/changes/t").as_deref(),
+        Some("board::ref::wrong_type")
+    );
+    board.change_at("changes/t.json", "plan", &json!({"task": "/tasks/v3.md"}));
     assert_eq!(board.code("/changes/t"), None);
 }
 

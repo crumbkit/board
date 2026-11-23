@@ -1,8 +1,8 @@
 # Built-in plugins
 
-This file holds detail for docs/plugins.md. It says how a plugin compiled into
-Board is called. `artifacts`, `attention`, `boundary`, `plans`, `evals`, `runs`,
-`github`, `jira`, `notes`, `params`, `places`, `prompts`, `review`, `rules`, [`share`](share.md), `tasks`, [`topics`](built-in/topics.md), `changes` and
+This file holds detail for docs/plugins.md. It says how Board calls a compiled-in
+plugin. [`autosync`](built-in/autosync.md), `artifacts`, `attention`, `boundary`, `plans`, `evals`, `runs`,
+`github`, `jira`, `notes`, `params`, `places`, [`priorities`](built-in/priorities.md), `prompts`, `review`, `rules`, [`share`](share.md), `tasks`, [`topics`](built-in/topics.md), `changes` and
 [`requests`](built-in/requests.md) are built in.
 [built-in/writing.md](built-in/writing.md) says how to write one.
 

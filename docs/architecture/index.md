@@ -21,7 +21,7 @@ directory of each other board whose recorded root it can see is gone.
 | `blobs` | parse result in the role the path gives (`json`, `schema`, `reserved_schema`, `markdown`): kind, type, code, and the parser's or compiler's reason; a schema's code says whether it compiles | blob, role |
 | `bodies` | the canonical form of each record that parses; a Markdown record's is its frontmatter | blob |
 | `validations` | schema result: code, failing JSON pointer, reason, failure count | record blob, schema blob |
-| `refs` | references a valid record makes, in order: JSON pointer, target path, accepted types | record blob, schema blob, ordinal |
+| `refs` | references a valid record makes, ordered: JSON pointer, target path, accepted types, `x-board-local` | record blob, schema blob, ordinal |
 | `links` | a Markdown file's links to board paths outside its frontmatter, in order, as written | blob, ordinal |
 | `mounts` | each mount point and the commit it reaches, or its code | source, path |
 | `pointers` | a mounted tree's mount pointers | scan key, path |
@@ -34,9 +34,9 @@ entry: `source`, `path`, `logical` (the display path), `blob`, `size`, `kind`,
 record was checked against). A pointer's `type` is `board/mount/v1` or
 `board/repo/v1`. The `records` view is its rows of kind `record`,
 with `source`, `path`, `logical`, `blob`, `type`, `status`, `code` and `body`;
-`body` is NULL when the record does not parse. A `code` of `board::ref::dangling` or
-`board::ref::wrong_type` marks a broken reference in a record its schema
-admits; only the first marks a Markdown file that is not a record. Tables, views and columns are an
+`body` is NULL when the record does not parse. A `code` of `board::ref::dangling`,
+`board::ref::wrong_type` or `board::ref::through_mount` marks a broken reference in a record its schema
+admits; only `dangling` marks a Markdown file that is not a record. Tables, views and columns are an
 interface for agents' SQL; changing one changes the index format. A
 commit mounted in several places appears once, with `logical` through the
 shortest display path, then the first lexically.
@@ -57,12 +57,12 @@ seconds for the lock. If the wait runs out, it runs in an index in memory, so
 the index lock never refuses a `query` or a `call`. A
 JSON or Markdown file of up to 16 MiB is parsed from the bytes hashed, so a cold refresh
 opens each file once. The walk lists directories and reads each entry's stat
-on up to four threads, as many as there are cores, never listing an ignored
+on up to four threads, one per core, never listing an ignored
 directory, then hashes the files whose stat the index does not hold on as
 many new threads; the entries and the index are the same whatever the count.
 A cold refresh compiles each schema once: the compilation that judges the
 schema also validates the records of its type.
-A file that is read again, such as a larger one, and that changed after hashing
+A file read again that changed after hashing
 is `board::repo::unreadable` until the next run, and so are the records of a
 schema that changed. `check`, `refs`, `query` and `ls` use the index; `get`
 resolves directly.
@@ -70,8 +70,9 @@ resolves directly.
 Once the index has doubled in pages since its last prune or first refresh, a
 refresh that writes also prunes: it deletes the fact rows that neither the
 working tree, `HEAD`'s tree nor a mounted commit reaches, and gives the freed
-pages back. A query that another process prunes under runs again, at most
-three times.
+pages back. A query another process prunes under runs again, at most
+three times. A plugin call takes at most one snapshot of each kind
+(performance/budgets.md).
 
 ## Commands that read it
 

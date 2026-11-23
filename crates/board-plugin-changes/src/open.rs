@@ -10,7 +10,7 @@ use crate::board::{readable, rows, text};
 use crate::change::{
     LastSync, branch_of, change_types, kind_in, last_sync, parsed, prototypes, state_of, sync_reads,
 };
-use crate::flow::{FlowSummary, of_change};
+use crate::flow::{FlowSummary, Flows};
 use crate::records::{ChangeRecord, Kind, PrototypeRecord, Route, State};
 use crate::{PLUGIN, to_value};
 
@@ -133,6 +133,7 @@ pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     let mut found = Vec::new();
     let mut unreadable = 0;
     let mut reads = false;
+    let mut flows = Flows::default();
     for row in rows(host, &sql)? {
         let change = (readable(row.get(1))).then(|| parsed(row.get(2))).flatten();
         let (Some(path), Some(change)) = (text(row.first()), change) else {
@@ -151,9 +152,7 @@ pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
             None => None,
         };
         if kind.is_none_or(|kind| kind_in(&prototypes, path) == kind) {
-            let flow = (of_change(host, path, &change).ok().flatten())
-                .filter(|_| prototype.is_none())
-                .map(|flow| FlowSummary::from(&flow));
+            let flow = (flows.of_change(host, path, &change)).filter(|_| prototype.is_none());
             found.push(listed(path, change, flow, prototype));
         }
     }
@@ -167,3 +166,6 @@ pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         sync: last_sync(host, reads)?,
     }))
 }
+
+#[cfg(test)]
+mod tests;

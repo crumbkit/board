@@ -19,8 +19,11 @@ pub(crate) use understanding::{Subject, UnderstandingRecord};
 pub(crate) const TICKET_TYPES: [&str; 2] = ["jira/issue/v1", "github/issue/v1"];
 /// The record types a change's `pulls` may reference.
 pub(crate) const PULL_TYPES: [&str; 1] = ["github/pull/v1"];
-/// The record type a change's `task` references; the tasks plugin owns it.
-pub(crate) const TASK_TYPE: &str = "tasks/task/v2";
+/// The record types a change's `task` references, v2 and v3; the tasks
+/// plugin owns them.
+pub(crate) const TASK_TYPES: [&str; 2] = ["tasks/task/v2", "tasks/task/v3"];
+/// The task type a reader names, which matches either of [`TASK_TYPES`].
+pub(crate) const TASK_TYPE: &str = TASK_TYPES[1];
 /// The record type of a repository's mount.
 const MOUNT_TYPE: &str = "board/mount/v1";
 
@@ -48,7 +51,7 @@ impl Accepts for Mount {
 pub(crate) enum Task {}
 
 impl Accepts for Task {
-    const TYPES: &'static [&'static str] = &[TASK_TYPE];
+    const TYPES: &'static [&'static str] = &TASK_TYPES;
 }
 
 /// A ticket of the jira or github plugin.

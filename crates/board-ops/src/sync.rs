@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use board_model::{Code, Refusal};
 use board_tree::Deadline;
-pub use board_tree::{Conflicted, Synced};
+pub use board_tree::{BeforePush, Conflicted, Guard, Pushing, Synced};
 
 use crate::board::Board;
 
@@ -53,6 +53,29 @@ impl Board {
             .writable()
             .map_err(board_tree::SyncError::from)?;
         Ok(self.repository().sync(push, deadline, wait)?)
+    }
+}
+
+impl Board {
+    /// As [`Self::sync`], with `guard`'s checks (`board_tree`'s
+    /// `Repository::sync_guarded`): another branch, a staged change or a
+    /// git operation in progress is refused before the fetch, a merge with
+    /// a conflict before HEAD moves, and each push runs only when the
+    /// guard admits it. A sync of this board already running is refused at
+    /// once.
+    pub fn sync_guarded(
+        &self,
+        push: bool,
+        guard: &mut Guard<'_>,
+        deadline: Duration,
+    ) -> Result<Synced, SyncError> {
+        let deadline = Deadline::after(deadline);
+        (self.repositories())
+            .writable()
+            .map_err(board_tree::SyncError::from)?;
+        Ok(self
+            .repository()
+            .sync_guarded(push, guard, deadline, Duration::ZERO)?)
     }
 }
 

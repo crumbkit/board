@@ -25,6 +25,7 @@ fn valid(target: &str) -> ValidationFact {
         pointer: "/see".into(),
         target: target.parse().unwrap(),
         accepts: None,
+        local: false,
     }])
 }
 

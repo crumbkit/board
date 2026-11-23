@@ -1,16 +1,21 @@
 # tasks
 
 A Board plugin, built into Board as `crates/board-plugin-tasks`, for tasks.
-It reads `tasks/task/v2` Markdown tasks with Board's query. `available` sorts
+It reads `tasks/task/v3` Markdown tasks, and the `tasks/task/v2` tasks not yet
+migrated, with Board's query. `available` sorts
 the tasks of the repos in scope into the tasks to work on now, those due soon,
 the stale ones and those an owner holds. `tree` lists tasks and projects as
-one tree. `add`, `claim`, `done`, `defer`, `drop`, `reviewed` and `move` write
-tasks.
+one tree. `add`, `claim`, `done`, `defer`, `drop`, `reviewed`, `move` and
+`ref` write tasks, and `migrate` rewrites v2 tasks as v3.
 
-Run `board plugin enable tasks` in a board, which writes the schema the
+Run `board plugin enable tasks` in a board, which writes the schemas the
 plugin ships to `.board/types/tasks/task/` and names the plugin in
 `.board/board.json`. A notes repo needs a copy of the schema in its own
-`.board/types/tasks/task/` for its tasks to be checked. An installed copy of
+`.board/types/tasks/task/` for its tasks to be checked. `add` writes a v2
+task into a notes repo that holds only the v2 schema, and refuses `refs`
+there with `tasks::add::no_v3_schema`; copy
+`.board/types/tasks/task/v3.schema.json` into the repo and commit it to
+write v3 there. An installed copy of
 the former Python plugin under `$XDG_DATA_HOME/board/plugins/tasks` must be
 removed, or Board refuses every tasks call with `board::plugin::duplicate`.
 
@@ -22,7 +27,7 @@ frontmatter is the record and its body is the task's prose:
 
 ```markdown
 ---
-$type: tasks/task/v2
+$type: tasks/task/v3
 title: Write the plan
 status: open
 due: 2026-10-30
@@ -33,6 +38,7 @@ contexts: [errands]
 reviewed: 2026-10-25
 owner: {"program": "claude-code", "session": "local_7f3a2b1c-0d9e-4f8a-b7c6-5d4e3f2a1b0c"}
 parent: /tasks/ship-the-release.md
+refs: [/exchange/sent/20261122T0329Z-lead-scope.md]
 ---
 The plan covers ...
 ```
@@ -63,9 +69,20 @@ The plan covers ...
 - `parent` names the one task this task is part of, by its path in the
   task's own repo, as `after` does, and `board check` reports it the same way.
   A second task that needs the same work lists it in `after` instead.
-- `kind` is `task`, as when it is left out, or `project`. A project may name
-  its brief, such as `/projects/flows/README.md`, in `brief`, a reference to
-  any file in the repo. Any task or project may be the parent of either.
+- `refs` lists at most 100 records and files in the task's own repository
+  that the task names, such as its copies of exchange messages
+  (docs/guide/exchange.md). Its schema marks each entry `x-board-local`, so
+  `board check` reports one that resolves through a mount as
+  `board::ref::through_mount`, and the task is still listed. `ref` edits it.
+- `brief` names a project's brief, such as `/projects/flows/README.md`, a
+  reference to any file in the repo. A v3 task's `parent` and `after` may
+  name a v2 or a v3 task.
+- `tasks/task/v2` is v3 without `refs` and with `kind`: `task`, as when it
+  is left out, or `project`. A project task stays v2 until projects move to
+  their own records. A v2 task's `parent` and `after` accept a v2 task
+  only, so `board check` reports a v2 task whose `parent` or `after` names
+  a v3 task as `board::ref::wrong_type`. A v3 task may have a v2 project
+  as its parent.
 - `id` and `pinned` are fields Reflect writes, and the plugin ignores them.
   `id` is the note's id, a slug. `pinned` is `true` or `false`, or the
   note's place in Reflect's sidebar, a whole number.
@@ -142,6 +159,10 @@ force at the call, so it can be an hour off.
 plugin's model. A task file is degraded, whatever its status, when check
 degrades it for more than a dangling or wrong-typed reference, or when the
 model refuses a record the board's schema admits.
+
+Each task in `available` and in `tree` also carries `refs`, the first 10 of
+its `refs` as paths in the board, and `refs_total`, how many it holds.
+`board refs <task>` lists them all.
 
 ## Projects and trees
 
@@ -271,6 +292,41 @@ stays unpushed too. `unpushed` is then `tasks::repo::not_pushed`, and the
 next write call that pushes, such as `reviewed` or a `done` without the flag,
 pushes the commits. `tasks.available` syncs without pushing, so it does not
 push them.
+
+## Refs
+
+`ref --path <task> --add <path>` adds a path, given as a path in the board,
+to the end of a v3 task's `refs`, once, written as a path in the task's own
+repo. `--remove <path>` removes one. Each call takes one of each. It keeps
+the order of the rest, the body and every other field, sets `reviewed`, and
+syncs and pushes as `move` does. A call that changes nothing writes nothing
+and returns `unchanged: true`. It refuses, writing nothing, with
+`tasks::ref::missing` when no file is at the added path,
+`tasks::ref::through_mount` when the path is in another board than the
+task's, `tasks::ref::too_many` past 100 refs, and `tasks::ref::not_v3` on a
+v2 task. `add` takes `refs` as a list on stdin, checked the same way; a
+project task takes none.
+
+## Migrating to v3
+
+`migrate` lists each v2 task that is not a project, in `/` and every notes
+repo, with the v3 record it becomes, at most 100 per repo with a `total`,
+and writes nothing. `migrate --yes` syncs each repo, then rewrites every
+listed task in one commit per repo, whose message ends `Board-Bulk: tasks
+migrate to tasks/task/v3`, and pushes it. The rewrite sets `$type` and
+removes `kind: task`, keeping every other byte. While any v2 project task
+remains, `--yes` refuses with `tasks::migrate::project_task`, naming the
+first 20, and writes nothing, so existing tasks gain refs once projects
+move to their own records. A run that finds nothing returns
+`unchanged: true`.
+
+`naming` lists the questions whose `blocks`, and the artifacts whose
+`subject`, name a task the run rewrites, at most 100 with a
+`naming_total`. `plans/question/v1` and `artifacts/artifact/v1` accept only
+a v2 task, so `board check` reports each as `board::ref::wrong_type` once
+the task is v3. A repo whose rewrite is refused has its code and message in
+`refused`, and the other repos' rewrites still land. A run killed part way
+leaves each repo's commit whole or absent; run it again.
 
 ## The sweep skill
 

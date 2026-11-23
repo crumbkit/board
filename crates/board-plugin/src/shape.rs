@@ -15,7 +15,11 @@ use serde_json::{Map, Value, json};
 
 /// Codes that depend on the tree rather than the record. A record holding
 /// one is still a record to read.
-pub const TREE_CODES: [&str; 2] = ["board::ref::dangling", "board::ref::wrong_type"];
+pub const TREE_CODES: [&str; 3] = [
+    "board::ref::dangling",
+    "board::ref::wrong_type",
+    "board::ref::through_mount",
+];
 
 /// Reads a JSON number, such as `5` or `5.0`, as a `u16`.
 #[expect(

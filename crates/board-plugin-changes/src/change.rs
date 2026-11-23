@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 use crate::board::{self, body, readable, rows, text, tree_codes};
 use crate::records::{
     AttemptRecord, ChangeRecord, ChangeV1, DONE, DROPPED, Kind, PULL_TYPES, PlanRecord,
-    PrototypeRecord, RUN_V1, State, is_final,
+    PrototypeRecord, RUN_V1, State, TASK_TYPES, is_final,
 };
 use crate::refusal;
 
@@ -44,11 +44,13 @@ pub(crate) struct Referenced {
     pub(crate) unreadable_types: BTreeMap<String, String>,
 }
 
-/// Whether `a` and `b` are the two types an attempt has had.
-fn both_attempts(a: &str, b: &str) -> bool {
+/// Whether `a` and `b` are the two types an attempt has had, or two
+/// versions of a task.
+fn same_kind(a: &str, b: &str) -> bool {
     [a, b]
         .iter()
         .all(|each| [AttemptRecord::TYPE, RUN_V1].contains(each))
+        || [a, b].iter().all(|each| TASK_TYPES.contains(each))
 }
 
 impl Referenced {
@@ -67,9 +69,7 @@ impl Referenced {
         record_type: &'a str,
     ) -> impl Iterator<Item = (&'a str, &'a Map<String, Value>)> {
         (self.records.iter())
-            .filter(move |(_, (found, _))| {
-                found == record_type || both_attempts(found, record_type)
-            })
+            .filter(move |(_, (found, _))| found == record_type || same_kind(found, record_type))
             .map(|(path, (_, body))| (path.as_str(), body))
     }
 }
