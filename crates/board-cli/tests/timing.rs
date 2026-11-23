@@ -435,6 +435,11 @@ fn a_recorded_check_writes_the_suite_and_a_run_once_an_hour_and_a_check_without_
     .unwrap();
     assert_eq!(written["results"].as_array().unwrap().len(), 11);
     assert!(written["measures"]["over_budget"].is_u64(), "{written}");
+    let setup = written["setup"].as_str().unwrap();
+    assert!(
+        setup.starts_with("board timing check --record on the machine "),
+        "{setup}"
+    );
 
     let again = check(
         &scenario,
@@ -444,4 +449,62 @@ fn a_recorded_check_writes_the_suite_and_a_run_once_an_hour_and_a_check_without_
     assert_eq!(again["recorded"], Value::Null);
     let runs = std::fs::read_dir(scenario.workdir().join("suites/board-speed-local/runs"));
     assert_eq!(runs.unwrap().count(), 1);
+}
+
+/// The line the rules mod runs under /bin/sh at a session's start, from
+/// `SPEED_CHECK` in plugins/rules/claude-code/hooks/rules.ts.
+fn speed_check_line() -> String {
+    let source = include_str!("../../../plugins/rules/claude-code/hooks/rules.ts");
+    let start = source.find("SPEED_CHECK = '").unwrap() + "SPEED_CHECK = '".len();
+    let length = source[start..].find('\'').unwrap();
+    source[start..start + length].to_owned()
+}
+
+#[test]
+fn the_speed_check_the_rules_mod_starts_outlives_its_shell_and_the_hooks_process_group() {
+    let home = tempfile::tempdir().unwrap();
+    let scenario = personal(home.path());
+    for _ in 0..5 {
+        run(&scenario, home.path(), None, &["get", "/missing"]);
+    }
+    // A `board` on PATH that waits until the hook's group is signalled,
+    // then runs the real check.
+    let bin = tempfile::tempdir().unwrap();
+    let script = format!(
+        "#!/bin/sh\nsleep 2\nexec '{}' \"$@\"\n",
+        env!("CARGO_BIN_EXE_board")
+    );
+    std::fs::write(bin.path().join("board"), script).unwrap();
+    std::fs::set_permissions(
+        bin.path().join("board"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    let path = format!("{}:/usr/bin:/bin", bin.path().display());
+    let mut shell = Command::new("/bin/sh");
+    shell
+        .args(["-c", &speed_check_line()])
+        .current_dir(scenario.workdir())
+        .env_clear()
+        .env("HOME", home.path())
+        .env("XDG_CACHE_HOME", home.path().join("cache"))
+        .env("XDG_CONFIG_HOME", home.path().join("config"))
+        .env("PATH", path);
+    std::os::unix::process::CommandExt::process_group(&mut shell, 0);
+    let mut child = shell.spawn().unwrap();
+    let group = child.id();
+    assert!(child.wait().unwrap().success());
+    // The hook's process group ends as a host may end it.
+    for signal in ["HUP", "TERM"] {
+        Command::new("kill")
+            .args(["-s", signal, "--", &format!("-{group}")])
+            .status()
+            .unwrap();
+    }
+    let runs = scenario.workdir().join("suites/board-speed-local/runs");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while !runs.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert_eq!(std::fs::read_dir(runs).map_or(0, Iterator::count), 1);
 }

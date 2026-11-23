@@ -118,7 +118,11 @@ keeps the last 20 judged times in `judged_us`. A run is judged when it was
 not killed and `load1` was no higher than `cpus`. Rotation rewrites the
 digest whole, keeping its lines that parse, so a line a crash cut short is
 dropped. A log whose `from_ms` the digest already holds adds nothing, so a
-rotation run again after a crash counts no hour twice. A digest that cannot
+rotation run again after a crash counts no hour twice. The digest keeps, for
+each command on each board, its newest hours until they hold 20 judged
+times, every hour of the day before its newest hour, and at most 2,000
+hours, about 600 KB. Past that limit the oldest hours go first; the check
+reads no further back, so dropping them changes no judgement. A digest that cannot
 be written leaves that log's hours out, and the log still rotates.
 
 ## The speed check
@@ -135,8 +139,12 @@ With `--record` it writes the suite `/suites/board-speed-local` (a
 `runs/suite/v1` of kind `benchmark`) if absent, then a `runs/run/v1` with a
 result per command and the measures `over_budget` and `killed`, and stamps
 `timing-check.stamp` in the cache. Within an hour of the stamp it writes
-nothing. The rules mod starts `board timing check --record` detached at
-each session's start, so the start does not wait on it.
+nothing. The run's `setup` names the machine's host name. The rules mod
+starts `board timing check --record` detached at each session's start,
+with `set -m` so it runs in a process group of its own and nohup so it
+ignores SIGHUP; `board timing` keeps that ignore. A SIGTERM or SIGKILL sent
+to the check's own process ends it with no run written; the next session's
+check writes one, as the stamp is not yet set.
 
 The check is silent: it records runs and opens nothing. A later change
 makes it live once each command has 100 judged runs and the budgets hold.

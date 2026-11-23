@@ -221,6 +221,9 @@ pub(crate) fn counts(judged: &[Judged]) -> (u64, u64) {
 
 /// The machine a run was on, as a run record names it.
 pub(crate) struct Host {
+    /// The machine's host name, when it has one, so a reader with several
+    /// Macs can tell their runs apart.
+    pub(crate) name: Option<String>,
     pub(crate) os: &'static str,
     pub(crate) arch: &'static str,
     pub(crate) cpus: u64,
@@ -230,7 +233,12 @@ pub(crate) struct Host {
 /// the build `build`.
 pub(crate) fn run_record(judged: &[Judged], at: &str, build: &str, host: &Host) -> Value {
     let (over, killed) = counts(judged);
+    let on = host.name.as_ref().map_or_else(
+        || "an unnamed machine".to_owned(),
+        |name| format!("the machine {name}"),
+    );
     json!({
+        "setup": format!("board timing check --record on {on}"),
         "$type": "runs/run/v1",
         "suite": LOCAL_SUITE,
         "started": at,

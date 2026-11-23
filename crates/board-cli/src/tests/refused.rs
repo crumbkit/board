@@ -174,7 +174,10 @@ fn write_undated(root: &std::path::Path) {
 }
 
 /// Runs `board` through the real run as an undated build. Each test runs
-/// in its own process, so the build it declares binds only that test.
+/// in its own process under nextest, which bin/test and CI use, so the build
+/// it declares binds only that test. Under plain `cargo test` an earlier
+/// test in the process may have declared the real build first, and these
+/// tests then fail without a regression.
 fn undated(root: &std::path::Path, arguments: &[&str], stdin: &[u8]) -> crate::report::Output {
     board_ops::declare_build("0.0.0+abc", None);
     super::board_with(root, None, arguments, stdin)

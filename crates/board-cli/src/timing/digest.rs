@@ -106,11 +106,58 @@ pub(crate) fn hours(digest: &[u8]) -> (Vec<Hour>, usize) {
     (hours, skipped)
 }
 
-/// The digest after `log` rotates: the hours of `old` that parse, then the
-/// hours of `log`'s top-level runs, unless `old` already holds that log.
-/// A digest written before a crash is so never counted twice, and a line
-/// cut short is dropped.
+/// How much of the past a digest keeps, so that rotating it stays cheap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Window {
+    /// For each command on each board, the newest hours whose judged times
+    /// reach this many, which is all the check reads.
+    pub(crate) judged: usize,
+    /// Every hour this recent, before the newest hour, whose killed runs
+    /// the check counts.
+    pub(crate) recent_ms: u64,
+    /// The most hours in all; the oldest go first past it.
+    pub(crate) hours: usize,
+}
+
+/// The window the binary keeps: a day of hours, and at most 2,000 hours,
+/// about 600 KB (docs/architecture/performance/timing.md, The digest).
+pub(crate) const WINDOW: Window = Window {
+    judged: KEPT,
+    recent_ms: 24 * HOUR_MS,
+    hours: 2_000,
+};
+
+/// The digest after `log` rotates, within [`WINDOW`].
 pub(crate) fn summarise(log: &[u8], old: &[u8]) -> Vec<u8> {
+    summarise_within(log, old, &WINDOW)
+}
+
+/// `hours` cut to `window`: for each command on each board, its newest hours
+/// until their judged times reach `window.judged`, and every hour within
+/// `window.recent_ms` of the newest; then at most `window.hours`, newest
+/// first. Returned oldest first.
+fn within(mut hours: Vec<Hour>, window: &Window) -> Vec<Hour> {
+    hours.sort_by_key(|hour| std::cmp::Reverse(hour.start_ms));
+    let newest = hours.first().map_or(0, |hour| hour.start_ms);
+    let mut held: BTreeMap<(Option<String>, String), usize> = BTreeMap::new();
+    hours.retain(|hour| {
+        let held = held
+            .entry((hour.root.clone(), hour.command.clone()))
+            .or_default();
+        let needed = *held < window.judged;
+        *held += hour.judged_us.len();
+        needed || hour.start_ms.saturating_add(window.recent_ms) >= newest
+    });
+    hours.truncate(window.hours);
+    hours.reverse();
+    hours
+}
+
+/// The digest after `log` rotates: the hours of `old` that parse, then the
+/// hours of `log`'s top-level runs, unless `old` already holds that log,
+/// cut to `window`. A digest written before a crash is so never counted
+/// twice, and a line cut short is dropped.
+pub(crate) fn summarise_within(log: &[u8], old: &[u8], window: &Window) -> Vec<u8> {
     let (mut kept, _) = hours(old);
     let (runs, _) = runs(log);
     if let Some(from_ms) = runs.first().map(|run| run.at_ms)
@@ -146,7 +193,7 @@ pub(crate) fn summarise(log: &[u8], old: &[u8]) -> Vec<u8> {
         kept.extend(grouped);
     }
     let mut bytes = Vec::new();
-    for hour in kept {
+    for hour in within(kept, window) {
         if let Ok(line) = serde_json::to_string(&hour) {
             bytes.extend(line.into_bytes());
             bytes.push(b'\n');

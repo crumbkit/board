@@ -358,6 +358,71 @@ mod speed {
         assert_eq!(digest::summarise(&newer, &torn), digest);
     }
 
+    /// The digest after each log in turn rotates, within `window`.
+    fn rotated(logs: &[Vec<u8>], window: &digest::Window) -> Vec<digest::Hour> {
+        let mut bytes = Vec::new();
+        for log in logs {
+            bytes = digest::summarise_within(log, &bytes, window);
+        }
+        digest::hours(&bytes).0
+    }
+
+    /// One log per hour from T0, each with two calm runs of `get`.
+    fn hourly(hours: u64) -> Vec<Vec<u8>> {
+        (0..hours)
+            .map(|hour| log(&runs(T0 + hour * HOUR, "get", &[5, 5], 1.0)))
+            .collect()
+    }
+
+    fn starts(hours: &[digest::Hour]) -> Vec<u64> {
+        hours
+            .iter()
+            .map(|hour| (hour.start_ms - T0) / HOUR)
+            .collect()
+    }
+
+    #[test]
+    fn a_digest_keeps_each_commands_hours_that_hold_its_last_judged_times_and_the_last_day_and_drops_older_ones()
+     {
+        let window = digest::Window {
+            judged: 3,
+            recent_ms: 0,
+            hours: 100,
+        };
+        // Hour 5 holds 2 judged times and hour 4 two more, which reach 3.
+        assert_eq!(starts(&rotated(&hourly(6), &window)), [4, 5]);
+        let day = digest::Window {
+            recent_ms: 3 * HOUR,
+            ..window
+        };
+        assert_eq!(starts(&rotated(&hourly(6), &day)), [2, 3, 4, 5]);
+        // A command keeps its own hours, whatever another command ran since.
+        let mut logs = vec![log(&runs(T0, "put", &[5, 5, 5], 1.0))];
+        logs.extend(hourly(6).into_iter().skip(1));
+        let kept = rotated(&logs, &window);
+        let put: Vec<_> = kept.iter().filter(|hour| hour.command == "put").collect();
+        assert_eq!(put.len(), 1);
+    }
+
+    #[test]
+    fn a_digest_past_its_most_hours_drops_the_oldest_hours_first() {
+        let window = digest::Window {
+            judged: 1_000,
+            recent_ms: 1_000 * HOUR,
+            hours: 3,
+        };
+        assert_eq!(starts(&rotated(&hourly(6), &window)), [3, 4, 5]);
+        // The digest the binary keeps holds a day and the times the check reads.
+        assert_eq!(
+            (
+                digest::WINDOW.judged,
+                digest::WINDOW.recent_ms,
+                digest::WINDOW.hours
+            ),
+            (digest::KEPT, 24 * HOUR, 2_000)
+        );
+    }
+
     #[test]
     fn the_budgets_hold_the_owners_figures_and_budgets_md_shows_the_same_table() {
         let of = |command: &str| BUDGETS.iter().find(|b| b.command == command).unwrap().ms;
@@ -596,6 +661,7 @@ mod speed {
         let suite = check::local_suite();
         assert_eq!(suite["kind"], "benchmark");
         let host = check::Host {
+            name: Some("studio".to_owned()),
             os: "macos",
             arch: "aarch64",
             cpus: 14,
@@ -606,6 +672,10 @@ mod speed {
             .collect();
         let run = check::run_record(&judged, "2026-11-23T12:00:00Z", "0.0.0+abc", &host);
         assert_eq!(run["measures"], json!({"over_budget": 1, "killed": 0}));
+        assert_eq!(
+            run["setup"],
+            "board timing check --record on the machine studio"
+        );
         for (path, record) in [
             ("/suites/board-speed-local", suite),
             ("/suites/board-speed-local/runs/a", run),

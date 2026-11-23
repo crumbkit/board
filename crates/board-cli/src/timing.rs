@@ -154,6 +154,10 @@ struct Pending {
 /// The run in progress, which only the binary's main sets.
 static PENDING: Mutex<Option<Pending>> = Mutex::new(None);
 
+/// Whether main set [`PENDING`], so that a run whose pending line a signal
+/// already took writes no second line.
+static WATCHED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn pending() -> std::sync::MutexGuard<'static, Option<Pending>> {
     PENDING.lock().unwrap_or_else(PoisonError::into_inner)
 }
@@ -166,6 +170,7 @@ pub(crate) fn watch(started: Instant, context: &Context) {
         return;
     }
     if let Some(cache) = &context.cache {
+        WATCHED.store(true, std::sync::atomic::Ordering::SeqCst);
         *pending() = Some(Pending {
             started,
             depth: environment.depth().unwrap_or_default(),
@@ -221,8 +226,12 @@ fn killed() {
 /// directory, unless `BOARD_TIMINGS` is `0`. A record that cannot be written
 /// is dropped: the run it describes has already finished.
 pub(crate) fn append(started: Instant, ran: &Ran, output: &Output, context: &Context) {
-    // A signal from here on writes no second line.
-    pending().take();
+    // A signal from here on writes no second line, and a signal that came
+    // first has written the run's one line.
+    let taken = pending().take();
+    if taken.is_none() && WATCHED.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     let environment = &context.environment;
     let recording = environment.timings.as_deref() != Some("0".as_ref());
     let depth = environment.depth().unwrap_or_default();

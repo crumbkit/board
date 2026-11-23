@@ -103,6 +103,9 @@ fn recorded(
     let name = at.strftime("%Y%m%dT%H%M%SZ").to_string();
     let path = logical(&format!("{LOCAL_SUITE}/runs/{name}"))?;
     let host = check::Host {
+        name: nix::unistd::gethostname()
+            .ok()
+            .and_then(|name| name.into_string().ok()),
         os: std::env::consts::OS,
         arch: std::env::consts::ARCH,
         cpus: super::machine().cpus.unwrap_or(1),
