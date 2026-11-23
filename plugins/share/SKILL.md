@@ -31,7 +31,9 @@ Copy a record you wrote into a board other people read.
      follows none of their references.
    - `not_copied`: each target the share does not copy, with its `reason`:
      `directory`, `mount`, `link`, `missing`, or `beyond` for an entry a
-     whole's decision or question names that the set does not hold.
+     whole's decision or question names that the set does not hold, or
+     `withheld` for a back-ref whose type stays out of shares, such as
+     the owner's priorities, which never needs `--allow-uncopied`.
    - `next`: the command that writes.
 
    Read `extras`, `wholes` and `not_copied` and agree to them before you go on, or

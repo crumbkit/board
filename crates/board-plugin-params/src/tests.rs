@@ -100,9 +100,13 @@ fn the_shipped_heuristics_are_admitted_with_the_start_default_bounds_and_check_t
         .map(|(name, text)| {
             let record = shipped_record(text);
             heuristic.validate(&record).unwrap();
+            let (unit, consumer) = match *name {
+                "priorities-reconfirm" => ("commits", "priorities"),
+                _ => ("changed-lines", "rules"),
+            };
             assert_eq!(
                 (&record["unit"], &record["consumer"]),
-                (&json!("changed-lines"), &json!("rules")),
+                (&json!(unit), &json!(consumer)),
                 "{name}"
             );
             let method = record["method"].as_str().unwrap();
@@ -126,6 +130,7 @@ fn the_shipped_heuristics_are_admitted_with_the_start_default_bounds_and_check_t
         [
             ("overflow-agent-grace", [100.0, 200.0, 25.0, 2000.0, 0.3]),
             ("overflow-owner-grace", [400.0, 800.0, 100.0, 8000.0, 0.5]),
+            ("priorities-reconfirm", [300.0, 300.0, 30.0, 3000.0, 0.8]),
         ]
     );
 }
@@ -351,6 +356,11 @@ fn the_shipped_heuristics_are_read_with_the_default_and_bounds_the_plan_set() {
                 "overflow-owner-grace".to_owned(),
                 800.0,
                 bounds(100.0, 8000.0)
+            ),
+            (
+                "priorities-reconfirm".to_owned(),
+                300.0,
+                bounds(30.0, 3000.0)
             ),
         ]
     );

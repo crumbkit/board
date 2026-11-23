@@ -20,6 +20,7 @@ notes = ["dep:board-plugin-notes"]
 params = ["dep:board-plugin-params"]
 places = ["dep:board-plugin-places"]
 plans = ["dep:board-plugin-plans"]
+priorities = ["dep:board-plugin-priorities"]
 prompts = ["dep:board-plugin-prompts"]
 requests = ["dep:board-plugin-requests"]
 review = ["dep:board-plugin-review"]
@@ -43,6 +44,7 @@ board-plugin-notes = { workspace = true, optional = true }
 board-plugin-params = { workspace = true, optional = true }
 board-plugin-places = { workspace = true, optional = true }
 board-plugin-plans = { workspace = true, optional = true }
+board-plugin-priorities = { workspace = true, optional = true }
 board-plugin-prompts = { workspace = true, optional = true }
 board-plugin-requests = { workspace = true, optional = true }
 board-plugin-review = { workspace = true, optional = true }

@@ -182,7 +182,7 @@ pub(crate) fn share_to(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         })?;
         commit = Some(mount(host, &to)?.1);
     }
-    let uncopied = !not_copied.is_empty();
+    let uncopied = not_copied.iter().any(NotCopied::refused);
     let next = (!yes)
         .then(|| next(host, &path, &to, local_attachments, uncopied))
         .transpose()?;
@@ -327,8 +327,9 @@ fn mount(host: &dyn Host, to: &str) -> Result<(String, String), PluginError> {
 }
 
 /// Refuses, naming each with its reason, the targets the share does not
-/// copy.
+/// copy, except a withheld back-ref, which its type keeps out on purpose.
 fn uncopied(not_copied: &[NotCopied]) -> Result<(), PluginError> {
+    let not_copied: Vec<&NotCopied> = not_copied.iter().filter(|left| left.refused()).collect();
     if not_copied.is_empty() {
         return Ok(());
     }
