@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's recovery and twin checks cannot provoke through the
 /// `board` command line, why, and where each is tested instead. The checks
 /// provoke every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 23] = [
+pub const NOT_REPRODUCED: [(Code, &str); 27] = [
     (
         Code::AttachmentMissing,
         "the store must lose an object between the put and the fetch; \
@@ -93,6 +93,10 @@ pub const NOT_REPRODUCED: [(Code, &str); 23] = [
         "ui open must fail to start a server or a browser, and a test must not start one; \
          board-serve/src/tests.rs pairs a binary that cannot start with a running server",
     ),
+    (Code::SyncOtherBranch, GUARDED),
+    (Code::SyncStaged, GUARDED),
+    (Code::SyncConflicted, GUARDED),
+    (Code::SyncHeld, GUARDED),
     (Code::ServeHost, SERVED),
     (Code::ServeOrigin, SERVED),
     (Code::ServeToken, SERVED),
@@ -111,6 +115,10 @@ pub const NOT_REPRODUCED: [(Code, &str); 23] = [
          board-cli/src/tests/aliases.rs runs a former name and the plugin's own name",
     ),
 ];
+
+/// Why the guarded sync's refusals are not provoked through `board sync`.
+const GUARDED: &str = "only a guarded sync, which the autosync plugin asks for, refuses with it; \
+     board-tree/src/write/sync/guard/tests.rs pairs it with a sync that is admitted";
 
 const SERVED: &str = "the server gives it to an HTTP request, never to a command line; \
      board-serve/src/tests.rs pairs each refused request with an admitted twin";

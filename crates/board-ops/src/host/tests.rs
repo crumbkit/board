@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use board_model::{Code, ObjectId, PluginName, RefusalCode};
 use board_plugin::{CallReport, Environment, Limits, Target};
 use board_scenario::{Item, Scenario};
-use serde_json::json;
+use serde_json::{Map, json};
 
 use super::*;
 use crate::tests::open;
