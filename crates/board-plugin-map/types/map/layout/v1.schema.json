@@ -104,6 +104,26 @@
       ],
       "type": "object"
     },
+    "Column": {
+      "additionalProperties": false,
+      "description": "One column of a table.",
+      "properties": {
+        "label": {
+          "description": "The column's heading.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "numeric": {
+          "description": "Whether the column's cells are numbers, drawn right aligned; false\nwhen left out.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "type": "object"
+    },
     "Item": {
       "additionalProperties": false,
       "description": "One thing the map shows, drawn as a round mark with a label of one or\nmore lines beside it.",
@@ -111,6 +131,17 @@
         "at": {
           "$ref": "#/$defs/At",
           "description": "The mark's stored centre; left out until it is placed."
+        },
+        "bin": {
+          "description": "Which of the ramp's bins shades the mark, counted from 0 for the\nfirst; the mark is unshaded when left out.",
+          "maximum": 4,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "column": {
+          "description": "The item's place in its lane's left to right order. Placement keeps\nan item with a lower column left of one with a higher column in the\nsame lane; items sharing a column are not ordered.",
+          "minimum": 0,
+          "type": "integer"
         },
         "id": {
           "description": "The item's name, unique among the map's items, which lines and notes\nname.",
@@ -126,6 +157,11 @@
           },
           "minItems": 1,
           "type": "array"
+        },
+        "lane": {
+          "description": "The region whose band the item stays in, when it has no `region` of\nits own; with a `region`, the two must name the same one.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
         },
         "radius": {
           "description": "The mark's radius; 8 when left out.",
@@ -243,6 +279,41 @@
       ],
       "type": "object"
     },
+    "LineKind": {
+      "additionalProperties": false,
+      "description": "How lines of one kind are drawn.",
+      "properties": {
+        "arrow": {
+          "description": "Whether the line ends in an arrow; true when left out.",
+          "type": "boolean"
+        },
+        "kind": {
+          "description": "The kind, as a line's `kind` names it.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "label": {
+          "description": "What the key says the line means, such as `builds after`.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "style": {
+          "description": "How the stroke is drawn; solid when left out.",
+          "enum": [
+            "solid",
+            "dashed",
+            "dotted"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "label"
+      ],
+      "type": "object"
+    },
     "Note": {
       "additionalProperties": false,
       "description": "A short text that belongs to an item or to a line, placed from its\nanchor's position whenever the map is drawn, so it moves with what it\ndescribes.",
@@ -261,6 +332,34 @@
       "required": [
         "text",
         "anchor"
+      ],
+      "type": "object"
+    },
+    "Ramp": {
+      "additionalProperties": false,
+      "description": "The shades of a map, from low to high, and what each stands for.",
+      "properties": {
+        "bins": {
+          "description": "What each bin stands for, lowest first, such as `none`, `1`, `2+`.",
+          "items": {
+            "minLength": 1,
+            "type": "string",
+            "x-board-prose": true
+          },
+          "maxItems": 5,
+          "minItems": 2,
+          "type": "array"
+        },
+        "label": {
+          "description": "What the shade measures, such as `Open tasks`.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "label",
+        "bins"
       ],
       "type": "object"
     },
@@ -312,6 +411,29 @@
       ],
       "type": "object"
     },
+    "Row": {
+      "additionalProperties": false,
+      "description": "One row of a table.",
+      "properties": {
+        "cells": {
+          "description": "The cells, one for each column.",
+          "items": {
+            "type": "string",
+            "x-board-prose": true
+          },
+          "type": "array"
+        },
+        "item": {
+          "description": "The item the row describes, which the page lights with the row;\nleft out when the row describes no item.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cells"
+      ],
+      "type": "object"
+    },
     "Sheet": {
       "additionalProperties": false,
       "description": "The drawing area, from (0, 0) to (width, height).",
@@ -332,6 +454,50 @@
       "required": [
         "width",
         "height"
+      ],
+      "type": "object"
+    },
+    "Table": {
+      "additionalProperties": false,
+      "description": "A table shown under the map.",
+      "properties": {
+        "caption": {
+          "description": "A sentence below the table; left out when it has none.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "columns": {
+          "description": "The columns, left to right.",
+          "items": {
+            "$ref": "#/$defs/Column"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "id": {
+          "description": "The table's name, unique among the map's tables.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "rows": {
+          "description": "The rows, top to bottom; each has one cell for each column.",
+          "items": {
+            "$ref": "#/$defs/Row"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "The heading above the table.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "columns",
+        "rows"
       ],
       "type": "object"
     }
@@ -360,6 +526,14 @@
       "minItems": 1,
       "type": "array"
     },
+    "line_kinds": {
+      "description": "How the page draws each kind of line, with its entry in the key; a\nkind with no entry is drawn solid, with an arrow, labelled by its\nname. Left out when the map styles none.",
+      "items": {
+        "$ref": "#/$defs/LineKind"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
     "lines": {
       "description": "Lines between items; left out when the map has none.",
       "items": {
@@ -376,6 +550,10 @@
       "minItems": 1,
       "type": "array"
     },
+    "ramp": {
+      "$ref": "#/$defs/Ramp",
+      "description": "The shades that an item's `bin` picks from, with what each stands\nfor; left out when no item is shaded."
+    },
     "regions": {
       "description": "Titled rectangles that group items, such as one per system or one\nlane per stream of work; left out when the map has none.",
       "items": {
@@ -387,6 +565,14 @@
     "sheet": {
       "$ref": "#/$defs/Sheet",
       "description": "The sheet every label must stay on."
+    },
+    "tables": {
+      "description": "Tables shown under the map, one after another; left out when the\nmap has none.",
+      "items": {
+        "$ref": "#/$defs/Table"
+      },
+      "minItems": 1,
+      "type": "array"
     },
     "title": {
       "description": "The map's title, such as `Services and their links`.",

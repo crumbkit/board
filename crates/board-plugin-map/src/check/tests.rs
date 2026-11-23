@@ -121,6 +121,72 @@ fn a_map_naming_what_it_does_not_hold_is_refused_and_its_twin_is_admitted() {
     }
 }
 
+/// A lane names a region and, with a region, must name the same one; each
+/// refusal has an admitted twin.
+#[test]
+fn a_lane_must_name_a_region_and_agree_with_the_items_region() {
+    let mut good = fixture("queue-final");
+    let region = good["items"][0]["region"].as_str().unwrap().to_owned();
+    good["items"][0]["lane"] = json!(region);
+    good["items"][0]["column"] = json!(2);
+    check(&map(&good)).unwrap();
+    let other = good["regions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|region| region["id"].as_str().unwrap().to_owned())
+        .find(|id| *id != region)
+        .unwrap();
+    for (lane, code) in [
+        (json!("nowhere"), "map::layout::unknown_id"),
+        (json!(other), "map::layout::lane_region_mismatch"),
+    ] {
+        let mut twin = good.clone();
+        twin["items"][0]["lane"] = lane;
+        let refused = check(&map(&twin)).map(|_| ()).map_err(|error| error.code);
+        assert_eq!(refused, Err(code.to_owned()));
+    }
+    // With no region of its own, an item's lane is its region.
+    let mut laned = good.clone();
+    laned["items"][0].as_object_mut().unwrap().remove("region");
+    check(&map(&laned)).unwrap();
+}
+
+/// A negative column is refused by the schema; the twin with column 0 is
+/// admitted.
+#[test]
+fn the_schema_refuses_a_negative_column() {
+    let mut good = fixture("queue-final");
+    good["items"][0]["lane"] = good["items"][0]["region"].clone();
+    good["items"][0]["column"] = json!(0);
+    let schema = board_validate::Schema::compile(crate::layout_schema()).unwrap();
+    schema.validate(&good).unwrap();
+    good["items"][0]["column"] = json!(-1);
+    let refused = schema.validate(&good).unwrap_err();
+    assert_eq!(refused.code(), board_model::Code::RecordInvalid);
+    assert_eq!(
+        refused.reason(),
+        "fails its schema at \"/items/0/column\": -1 is less than the minimum of 0"
+    );
+}
+
+/// A `line_kinds` entry names a kind some line has; an entry for a kind no
+/// line has is refused, and its twin naming a kind a line has is admitted.
+#[test]
+fn a_line_kind_no_line_uses_is_refused_and_its_twin_is_admitted() {
+    let mut good = fixture("services-final");
+    good["line_kinds"] = json!([{"kind": "lib", "label": "builds on"}]);
+    check(&map(&good)).unwrap();
+    let mut twin = good.clone();
+    twin["line_kinds"][0]["kind"] = json!("ferry");
+    let refused = check(&map(&twin)).map(|_| ()).unwrap_err();
+    assert_eq!(refused.code, "map::layout::unknown_id");
+    assert_eq!(
+        refused.message,
+        "the map styles the line kind ferry, which no line of the map has"
+    );
+}
+
 /// An item with no stored position is reported and left out of the
 /// drawing, with its lines and notes.
 #[test]

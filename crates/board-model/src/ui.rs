@@ -30,16 +30,18 @@ pub enum ComponentKind {
     Markdown,
     Record,
     Diff,
+    Map,
 }
 
 impl ComponentKind {
-    pub const ALL: [Self; 3] = [Self::Markdown, Self::Record, Self::Diff];
+    pub const ALL: [Self; 4] = [Self::Markdown, Self::Record, Self::Diff, Self::Map];
 
     pub const fn name(self) -> &'static str {
         match self {
             Self::Markdown => "markdown",
             Self::Record => "record",
             Self::Diff => "diff",
+            Self::Map => "map",
         }
     }
 
@@ -58,6 +60,9 @@ impl ComponentKind {
             Self::Diff => {
                 "a unified diff, given as data, as its files with change counts and numbered lines that link to themselves"
             }
+            Self::Map => {
+                "a map/layout/v1 record drawn as regions, shaded items, styled lines, anchored notes, a key and tables"
+            }
         }
     }
 
@@ -75,6 +80,11 @@ impl ComponentKind {
                 "required": ["patch"],
                 "properties": {"patch": {"type": "string"}},
             }),
+            Self::Map => json!({
+                "type": "object",
+                "required": ["$type", "sheet", "items"],
+                "properties": {"$type": {"const": "map/layout/v1"}},
+            }),
         }
     }
 
@@ -84,6 +94,7 @@ impl ComponentKind {
             Self::Markdown => &[DERIVED_TYPE],
             Self::Record => &["*"],
             Self::Diff => &[],
+            Self::Map => &["map/layout/v1"],
         }
     }
 
@@ -94,6 +105,7 @@ impl ComponentKind {
                 r##"{"data": {"markdown": "# Summary\n\nWhat changed, and why.\n\n- [x] Tests pass\n- [ ] Owner reviewed\n\n```rust\nfn main() {}\n```\n"}}"##
             }
             Self::Record => r#"{"ref": "/tasks/a"}"#,
+            Self::Map => r#"{"ref": "/maps/a"}"#,
             Self::Diff => {
                 r#"{"data": {"patch": "diff --git a/src/retry.rs b/src/retry.rs\n--- a/src/retry.rs\n+++ b/src/retry.rs\n@@ -1,3 +1,3 @@\n fn limit() -> u32 {\n-    3\n+    5\n }\n"}}"#
             }
@@ -109,7 +121,7 @@ impl ComponentKind {
     /// serialize.
     pub fn drawn(self, value: Value) -> Result<Value, PatchError> {
         match self {
-            Self::Markdown | Self::Record => Ok(value),
+            Self::Markdown | Self::Record | Self::Map => Ok(value),
             Self::Diff => {
                 let text = value.get("patch").and_then(Value::as_str).unwrap_or("");
                 let patch = Patch::parse(text)?;

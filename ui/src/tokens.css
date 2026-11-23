@@ -21,6 +21,18 @@
   --font-text: ui-serif, Georgia, "Iowan Old Style", serif;
   --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* A map's regions, its blue to red ramp and the edge of its marks. */
+  --map-region-a: oklch(0.955 0.03 85);
+  --map-region-b: oklch(0.955 0.03 160);
+  --map-region-c: oklch(0.955 0.03 320);
+  --map-region-d: oklch(0.955 0.02 30);
+  --map-region-e: oklch(0.955 0.025 240);
+  --map-cx-1: #b7d9f2;
+  --map-cx-2: #99abeb;
+  --map-cx-3: #a46fc4;
+  --map-cx-4: #ab3573;
+  --map-cx-5: #8b1210;
+  --map-edge: rgba(11, 11, 11, 0.35);
   --measure: 68ch;
   --radius: 6px;
 }
@@ -41,6 +53,17 @@
     --added-soft: #1d3320;
     --removed: #f29a90;
     --removed-soft: #3d1f1c;
+    --map-region-a: oklch(0.255 0.025 85);
+    --map-region-b: oklch(0.255 0.025 160);
+    --map-region-c: oklch(0.255 0.025 320);
+    --map-region-d: oklch(0.255 0.02 30);
+    --map-region-e: oklch(0.255 0.025 240);
+    --map-cx-1: #204263;
+    --map-cx-2: #515496;
+    --map-cx-3: #9b5eae;
+    --map-cx-4: #de709e;
+    --map-cx-5: #fd9f81;
+    --map-edge: rgba(255, 255, 255, 0.35);
   }
 }
 

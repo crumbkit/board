@@ -2,7 +2,9 @@
 
 This file holds detail for docs/plugins/built-in.md. The `map` plugin keeps
 a map as one record, `map/layout/v1`, at `/maps/<name>`, and its `check`
-capability lists what a reader of the map would see as broken.
+capability lists what a reader of the map would see as broken, its
+`place` capability chooses positions and label sides, and its `page`
+capability draws the map as an HTML page.
 plugins/map/README.md lists its fields, capabilities and codes.
 
 ## Stored positions and anchored notes
@@ -39,3 +41,47 @@ and lists an accept that matches no finding as `accept-unused`.
 The constants and tests come from the map prototype's `geom.js`, which
 three real maps were checked with. The plugin's fixtures keep those maps'
 geometry and label lengths with every name replaced.
+
+## What place does
+
+`place` fills in what a map leaves out. It gives each item with no `at` a
+position and a label side, and each line note with no `offset` a place along
+its line. It tries every grid position (10 units apart) in the item's region
+with each of the four sides, scores each with `check`, and keeps the spot with
+the fewest findings, breaking ties by nearness to the item's line neighbours.
+It then moves each placed item within 60 units to cut findings, and chooses a
+side again for each item whose label lies within one label width of a placed
+one. The engine does not store where a person moved a pinned item from, so it
+treats each pinned item that a finding touches as moved, and chooses the sides
+within one label width of it again in the same way. A held item keeps a new
+side only when the side clears a finding. If findings remain it searches by
+simulated annealing, from a fixed seed and in the order of the items' ids, so
+a map gives the same result whatever order it lists its parts in. Annealing
+changes the side of a held item only within one label width of a placed or
+moved item, and only to clear a finding.
+
+`placed` lists only the items the run gave a position. When an item's region,
+lane and columns leave it no grid position, it stays unplaced, the run is
+refused with `map::place::findings_left`, and the hint names the item.
+
+An item with a `lane` is placed inside that region's band, and items with a
+`column` keep their lane's left to right order: an item's x must lie right of
+every placed item of a lower column and left of every placed item of a higher
+one in the same lane. A pinned item therefore bounds its neighbours.
+
+A pinned item never moves, though its label side may change. An item the
+engine placed before moves only with `relayout`. `place` writes the whole map
+in one `put` that expects the blob it read, so a map changed meanwhile is
+refused with `board::put::stale` and left as it was. When no spot clears every
+finding, `place` stores the best spots and is refused with
+`map::place::findings_left`.
+
+## What page draws
+
+`page` returns one HTML document in its output and writes no file, because
+plugins leave file writes to the tree. The page has inline styles and a small
+script and requests nothing from the network. It draws regions, each item as a
+mark shaded by its `bin` in the map's `ramp`, labels on their stored sides,
+lines in the style their `line_kinds` entry gives, notes from their anchors, a
+key, and each table. Pointing at an item lights it, its lines and the table
+rows that name it. The Board UI draws the same record with its `map` kind.
