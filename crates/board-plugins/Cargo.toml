@@ -10,6 +10,7 @@ rust-version.workspace = true
 [features]
 artifacts = ["dep:board-plugin-artifacts"]
 attention = ["dep:board-plugin-attention"]
+autosync = ["dep:board-plugin-autosync"]
 boundary = ["dep:board-plugin-boundary"]
 changes = ["dep:board-plugin-changes"]
 evals = ["dep:board-plugin-evals"]
@@ -32,6 +33,7 @@ topics = ["dep:board-plugin-topics"]
 board-ops.workspace = true
 board-plugin-artifacts = { workspace = true, optional = true }
 board-plugin-attention = { workspace = true, optional = true }
+board-plugin-autosync = { workspace = true, optional = true }
 board-plugin-boundary = { workspace = true, optional = true }
 board-plugin-changes = { workspace = true, optional = true }
 board-plugin-evals = { workspace = true, optional = true }

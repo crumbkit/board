@@ -302,6 +302,11 @@ pub trait Host {
     ) -> Result<&'static str, VerifyOrderError> {
         Err(VerifyOrderError::NotOffered)
     }
+    /// Each board the known boards file lists. A host with no known boards
+    /// file, such as a test's, lists none.
+    fn known_boards(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
     /// Shows the owner the statement of their put of `record` at `path` in
     /// the personal board through the signer, and returns their armored
     /// signature once it verifies against the allowed signers file. A
@@ -725,6 +730,10 @@ impl Host for Hosted<'_> {
         signature: &str,
     ) -> Result<&'static str, VerifyOrderError> {
         crate::effects::verify_order(&self.plugins.signing, order, signature)
+    }
+
+    fn known_boards(&self) -> Vec<PathBuf> {
+        self.plugins.known.map(KnownBoards::boards).unwrap_or_default()
     }
 
     #[expect(

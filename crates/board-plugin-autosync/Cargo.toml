@@ -1,0 +1,27 @@
+[package]
+name = "board-plugin-autosync"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+board-index.workspace = true
+board-model.workspace = true
+board-ops.workspace = true
+board-plugin.workspace = true
+rustix.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+board-plugin-tasks.workspace = true
+board-scenario.workspace = true
+proptest.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

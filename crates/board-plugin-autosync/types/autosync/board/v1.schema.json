@@ -1,0 +1,40 @@
+{
+  "additionalProperties": false,
+  "description": "`autosync/board/v1`: one board this Mac keeps in step with its remote,\nat `/autosync/boards/<name>` in the personal board. autosync trusts it\nonly when `signature` is the owner's signature of the other fields.",
+  "properties": {
+    "$type": {
+      "const": "autosync/board/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "branch": {
+      "description": "The branch HEAD must be on and the sync pushes, `main` when left\nout.",
+      "pattern": "^[A-Za-z0-9._/-]+$",
+      "type": "string"
+    },
+    "origins": {
+      "description": "The remote URLs the board may push to. Every push URL of the remote\nits branch follows must be one of them.",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "path": {
+      "description": "The board's directory: absolute, or under the home as `~/...`.",
+      "pattern": "^(/|~/).+",
+      "type": "string"
+    },
+    "signature": {
+      "description": "The owner's armored SSH signature of their put of this record\nwithout this field, made with Touch ID by `autosync add`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "path",
+    "origins"
+  ],
+  "title": "BoardRecord",
+  "type": "object"
+}
