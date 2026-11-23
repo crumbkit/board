@@ -15,7 +15,7 @@ use crate::gh;
 use crate::git;
 use crate::hook::{Handed, Pushing};
 use crate::objects::{Kind, Object, write};
-use crate::parts::{Parts, push_parts};
+use crate::parts::{Parts, Skipped, push_parts, skipped};
 use crate::remote;
 
 /// Where a call sends from and to: the personal board, the checkout's root,
@@ -146,6 +146,9 @@ pub(crate) struct Pushed {
     sent: String,
     branch: String,
     commits: Vec<String>,
+    /// The binary files left out of the diffs checked, because their bytes
+    /// are not text.
+    binary_skipped: Vec<Skipped>,
 }
 
 /// The pushed branch and the pull request opened from it; `sent` is its URL
@@ -161,6 +164,7 @@ pub(crate) struct Opened {
     sent: String,
     branch: String,
     commits: Vec<String>,
+    binary_skipped: Vec<Skipped>,
     number: u64,
     path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -188,6 +192,7 @@ struct Push {
     passed: Passed,
     branch: String,
     commits: Vec<String>,
+    binary_skipped: Vec<Skipped>,
     line: String,
 }
 
@@ -215,7 +220,17 @@ fn pushed(
     let have = git::advertised(host, top, "origin")?;
     let (commits, mut parts) = push_parts(host, top, &branch, head, &have)?;
     parts.extend(extra.clone());
-    let passed = place.check_asking(action.capability(), &parts, ask_owner)?;
+    let binary_skipped = skipped(&parts, &commits);
+    let passed = place
+        .check_asking(action.capability(), &parts, ask_owner)
+        .map_err(|mut refusal| {
+            // So the person sees what was not scanned beside what failed.
+            refusal.fields.insert(
+                "binary_skipped".to_owned(),
+                serde_json::to_value(&binary_skipped).unwrap_or_default(),
+            );
+            refusal
+        })?;
     let handed = Handed {
         digest: passed.digest.clone(),
         action,
@@ -240,6 +255,7 @@ fn pushed(
         passed,
         branch,
         commits,
+        binary_skipped,
         line,
     })
 }
@@ -265,6 +281,7 @@ pub(crate) fn push(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         passed,
         branch,
         commits,
+        binary_skipped,
         line,
     } = pushed(
         &place,
@@ -281,6 +298,7 @@ pub(crate) fn push(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         sent: line,
         branch,
         commits,
+        binary_skipped,
     }))
 }
 
@@ -331,6 +349,7 @@ pub(crate) fn pr_create(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         passed,
         branch,
         commits,
+        binary_skipped,
         ..
     } = pushed(
         &place,
@@ -387,6 +406,7 @@ pub(crate) fn pr_create(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         sent,
         branch,
         commits,
+        binary_skipped,
         number,
         path,
         change,

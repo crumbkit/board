@@ -6,7 +6,22 @@ use super::*;
 
 /// The parts of one commit made as `t <t@t>`, named by its short SHA.
 pub(super) fn commit_parts(desk: &Desk, sha: &str, message: &str, binary: &str) -> Value {
-    let flags = [
+    commit_parts_skipping(desk, sha, message, binary, "")
+}
+
+/// [`commit_parts`] for a commit whose diff leaves out the files `skipped`
+/// lists, one path per line.
+pub(super) fn commit_parts_skipping(
+    desk: &Desk,
+    sha: &str,
+    message: &str,
+    binary: &str,
+    skipped: &str,
+) -> Value {
+    let excluded: Vec<String> = (skipped.lines())
+        .map(|path| format!(":(exclude,literal){path}"))
+        .collect();
+    let mut flags = vec![
         "-c",
         "core.quotePath=false",
         "show",
@@ -18,7 +33,16 @@ pub(super) fn commit_parts(desk: &Desk, sha: &str, message: &str, binary: &str) 
         "--text",
         sha,
     ];
+    if !excluded.is_empty() {
+        flags.push("--");
+        flags.extend(excluded.iter().map(String::as_str));
+    }
     let diff = desk.git(&desk.checkout(), &flags);
+    let diff = if diff.is_empty() {
+        diff
+    } else {
+        format!("{diff}\n")
+    };
     let short = &sha[..12];
     json!({
         format!("commit.{short}.message"): format!("{message}\n"),
@@ -26,9 +50,10 @@ pub(super) fn commit_parts(desk: &Desk, sha: &str, message: &str, binary: &str) 
         format!("commit.{short}.author_email"): "t@t",
         format!("commit.{short}.committer_name"): "t",
         format!("commit.{short}.committer_email"): "t@t",
-        format!("commit.{short}.diff"): format!("{diff}\n"),
+        format!("commit.{short}.diff"): diff,
         format!("commit.{short}.headers"): "",
         format!("commit.{short}.binary"): binary,
+        format!("commit.{short}.skipped"): skipped,
     })
 }
 
@@ -824,4 +849,104 @@ fn only_the_calls_that_take_ask_owner_name_it_in_a_refusal_so_merge_does_not_and
     let (_, pushed) = desk.call("push", &[]);
     assert_eq!(pushed["code"], "github::boundary::refused");
     assert!(pushed.to_string().contains("--ask_owner true"), "{pushed}");
+}
+
+/// Bytes with a NUL and the text the test rule matches, as random bytes in a
+/// vendored font might.
+fn font() -> Vec<u8> {
+    let mut bytes = b"wOF2\x00\x01\xff\xfe".to_vec();
+    bytes.extend(b"token acme-123\n".iter().copied());
+    bytes
+}
+
+/// Commits `bytes` at `file` in the desk's checkout.
+fn commit_bytes(desk: &Desk, bytes: &[u8], file: &str) -> String {
+    let checkout = desk.checkout();
+    put_bytes(&checkout.join(file), bytes);
+    desk.git(&checkout, &["add", file]);
+    desk.git(&checkout, &["commit", "-q", "-m", "Add a file"]);
+    desk.head()
+}
+
+#[test]
+fn a_binary_file_whose_bytes_match_a_text_rule_is_left_out_of_the_diff_and_named_in_the_result() {
+    let desk = Desk::new();
+    desk.refuse(&["commit.*.diff"], "github.*");
+    let sha = commit_bytes(&desk, &font(), "font.woff2");
+    let result = desk.output("push", &[]);
+    assert_eq!(result["commits"], json!([sha]));
+    assert_eq!(
+        result["binary_skipped"],
+        json!([{"commit": sha, "path": "font.woff2"}])
+    );
+    let parts = merged(
+        json!({"push.branch": "main"}),
+        &[commit_parts_skipping(
+            &desk,
+            &sha,
+            "Add a file",
+            "font.woff2\n",
+            "font.woff2\n",
+        )],
+    );
+    assert!(
+        !parts[format!("commit.{}.diff", &sha[..12])]
+            .as_str()
+            .unwrap()
+            .contains("woff")
+    );
+    assert_eq!(result["digest"], digest("github.push", &parts));
+    assert_eq!(desk.remote_head("main"), Some(sha));
+}
+
+#[test]
+fn a_text_file_marked_binary_is_still_scanned_and_a_match_in_it_refuses_the_push() {
+    let desk = Desk::new();
+    let checkout = desk.checkout();
+    desk.refuse(&["commit.*.diff"], "github.*");
+    put_file(&checkout.join(".gitattributes"), "*.txt binary\n");
+    desk.git(&checkout, &["add", ".gitattributes"]);
+    let sha = desk.commit_to("Add notes", "notes.txt", Some("token acme-123\n"));
+    let (ran, failure) = desk.call("push", &[]);
+    assert_eq!(ran.code, 1, "{failure}");
+    let part = format!("commit.{}.diff", &sha[..12]);
+    assert_eq!(failure["fields"]["failures"][0]["part"], part);
+    assert_eq!(failure["fields"]["binary_skipped"], json!([]));
+}
+
+#[test]
+fn a_match_in_a_text_file_refuses_beside_a_skipped_binary_file_and_the_refusal_names_it() {
+    let desk = Desk::new();
+    let checkout = desk.checkout();
+    desk.refuse(&["commit.*.diff"], "github.*");
+    put_bytes(&checkout.join("font.woff2"), &font());
+    put_file(&checkout.join("notes.txt"), "token acme-123\n");
+    desk.git(&checkout, &["add", "font.woff2", "notes.txt"]);
+    desk.git(&checkout, &["commit", "-q", "-m", "Add files"]);
+    let sha = desk.head();
+    let (ran, failure) = desk.call("push", &[]);
+    assert_eq!(ran.code, 1, "{failure}");
+    let part = format!("commit.{}.diff", &sha[..12]);
+    assert_eq!(failure["fields"]["failures"][0]["part"], part);
+    assert_eq!(
+        failure["fields"]["binary_skipped"],
+        json!([{"commit": sha, "path": "font.woff2"}])
+    );
+}
+
+#[test]
+fn a_deleted_binary_file_is_skipped_by_the_bytes_it_removed() {
+    let desk = Desk::new();
+    let checkout = desk.checkout();
+    desk.refuse(&["commit.*.diff"], "github.*");
+    commit_bytes(&desk, &font(), "font.woff2");
+    desk.output("push", &[]);
+    desk.git(&checkout, &["rm", "-q", "font.woff2"]);
+    desk.git(&checkout, &["commit", "-q", "-m", "Remove the font"]);
+    let sha = desk.head();
+    let result = desk.output("push", &[]);
+    assert_eq!(
+        result["binary_skipped"],
+        json!([{"commit": sha, "path": "font.woff2"}])
+    );
 }

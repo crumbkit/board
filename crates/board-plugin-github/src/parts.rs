@@ -8,9 +8,11 @@ use std::sync::LazyLock;
 
 use board_ops::{Host, PluginError};
 use regex::Regex;
+use schemars::JsonSchema;
+use serde::Serialize;
 use serde_json::json;
 
-use crate::git::{error, git, git_adding, lossy, outgoing};
+use crate::git::{error, git, git_adding, lossy, outgoing, run};
 
 /// The short SHA that names a commit's or tag's parts, at a fixed length so
 /// part names never change.
@@ -31,6 +33,35 @@ static TAGGER: LazyLock<Regex> = LazyLock::new(|| {
 
 /// Named texts, sorted by name, as the boundary takes them.
 pub(crate) type Parts = BTreeMap<String, String>;
+
+/// A binary file left out of its commit's diff because its bytes are not
+/// text, so no text rule scanned it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Skipped {
+    /// The commit, by its full SHA when the push's commits are known, and
+    /// by the short SHA that names its parts otherwise.
+    pub(crate) commit: String,
+    pub(crate) path: String,
+}
+
+/// The files the `commit.<sha>.skipped` parts list, in part order, each
+/// commit named by `commits`' full SHA when one starts with its short SHA.
+pub(crate) fn skipped(parts: &Parts, commits: &[String]) -> Vec<Skipped> {
+    let mut found = Vec::new();
+    for (name, text) in parts {
+        let short = (name.strip_prefix("commit.")).and_then(|rest| rest.strip_suffix(".skipped"));
+        let Some(short) = short else { continue };
+        let commit = commits.iter().find(|full| full.starts_with(short));
+        for path in text.lines() {
+            found.push(Skipped {
+                commit: commit.map_or(short, String::as_str).to_owned(),
+                path: path.to_owned(),
+            });
+        }
+    }
+    found
+}
 
 /// The commits a push of `head` sends past `have`, and the parts that name
 /// `branch` and each commit. `github.push` and the pre-push hook both build
@@ -102,13 +133,14 @@ pub(crate) fn ref_parts(
     Ok(parts)
 }
 
-/// Each commit's message, names, emails, headers, diff and binary paths, as
-/// parts named `commit.<short sha>.<field>`. The diff is git's text of
-/// every file, binary or not, with no textconv or external diff and with
-/// file names unquoted, so a text file's lines are the bytes sent. A
-/// binary file's bytes that are not UTF-8 are replaced by U+FFFD, and a
-/// text file's are `github::git::not_utf8`. A commit that changes a file
-/// Git LFS stores is `github::push::lfs`.
+/// Each commit's message, names, emails, headers, diff, binary paths and
+/// skipped paths, as parts named `commit.<short sha>.<field>`. The diff is
+/// git's text of every file but the binary ones whose bytes are not text,
+/// with no textconv or external diff and with file names unquoted, so a
+/// text file's lines are the bytes sent. The `skipped` part names the files
+/// left out. A text file's bytes that are not UTF-8 are
+/// `github::git::not_utf8`. A commit that changes a file Git LFS stores is
+/// `github::push::lfs`.
 pub(crate) fn commit_parts(
     host: &dyn Host,
     at: &Path,
@@ -140,27 +172,63 @@ pub(crate) fn commit_parts(
         let object = git(host, at, &["cat-file", "commit", sha], "")?;
         let skipped = ["tree", "parent", "author", "committer"];
         parts.insert(format!("{prefix}headers"), headers(&object, &skipped));
-        parts.insert(format!("{prefix}diff"), diff(host, at, sha)?);
-        let binary: String = (changed.iter())
-            .filter(|(_, binary)| *binary)
-            .flat_map(|(path, _)| [path.as_str(), "\n"])
-            .collect();
+        let mut left_out = Vec::new();
+        for (path, binary) in &changed {
+            if *binary && !holds_text(host, at, sha, path)? {
+                left_out.push(path.as_str());
+            }
+        }
+        parts.insert(format!("{prefix}diff"), diff(host, at, sha, &left_out)?);
+        let lines = |paths: &mut dyn Iterator<Item = &str>| -> String {
+            paths.flat_map(|path| [path, "\n"]).collect()
+        };
+        let binary = lines(
+            &mut (changed.iter())
+                .filter(|(_, b)| *b)
+                .map(|(p, _)| p.as_str()),
+        );
         parts.insert(format!("{prefix}binary"), binary);
+        parts.insert(format!("{prefix}skipped"), lines(&mut left_out.into_iter()));
     }
     Ok(parts)
 }
 
-/// The commit's patch, with every file's bytes, or `github::git::not_utf8`
-/// when a file git counts as text holds bytes that are not UTF-8, which
-/// could not be checked as sent. A binary file's bytes that are not UTF-8
-/// are checked with each such byte replaced by U+FFFD, and its path is in
-/// the commit's `binary` part.
-fn diff(host: &dyn Host, at: &Path, sha: &str) -> Result<String, PluginError> {
+/// Whether the bytes of `path` that the commit `sha` sends are text: valid
+/// UTF-8 with no NUL. A file git counts as binary whose bytes are text, such
+/// as a text file marked `-diff`, is still scanned. A file the commit
+/// deletes is read from the first parent. A blob that cannot be read is
+/// `github::git::failed`, so no file is skipped unread.
+fn holds_text(host: &dyn Host, at: &Path, sha: &str, path: &str) -> Result<bool, PluginError> {
+    let new = format!("{sha}:{path}");
+    let present = run(host, at, &["cat-file", "-e", &new], "").code == 0;
+    let object = if present {
+        new
+    } else {
+        format!("{sha}^:{path}")
+    };
+    let (bytes, utf8) = lossy(host, at, &["cat-file", "blob", &object], "")?;
+    Ok(utf8 && !bytes.contains('\0'))
+}
+
+/// The commit's patch, with the bytes of every file but those in
+/// `left_out`, or `github::git::not_utf8` when a file git counts as text
+/// holds bytes that are not UTF-8, which could not be checked as sent. A
+/// binary file whose bytes are text is checked as sent; one that is not is
+/// left out, and is in the commit's `binary` and `skipped` parts.
+fn diff(host: &dyn Host, at: &Path, sha: &str, left_out: &[&str]) -> Result<String, PluginError> {
     let unquoted = ["-c", "core.quotePath=false", "show"];
+    let excluded: Vec<String> = (left_out.iter())
+        .map(|path| format!(":(exclude,literal){path}"))
+        .collect();
     let arguments = |text: &'static [&'static str]| -> Vec<&str> {
-        (unquoted.iter().chain(&DIFF).chain(text).copied())
+        let mut arguments: Vec<&str> = (unquoted.iter().chain(&DIFF).chain(text).copied())
             .chain([sha])
-            .collect()
+            .collect();
+        if !excluded.is_empty() {
+            arguments.push("--");
+            arguments.extend(excluded.iter().map(String::as_str));
+        }
+        arguments
     };
     let (diff, utf8) = lossy(host, at, &arguments(&["--text"]), "")?;
     if utf8 {

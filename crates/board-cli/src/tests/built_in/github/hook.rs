@@ -1,7 +1,7 @@
 //! `github.install-hook`, the git pre-push hook its command installs, which
 //! checks what a raw `git push` sends, and `github.covers`.
 
-use super::desk::{Desk, NAMES, ORIGIN, digest, executable, put_file, remove};
+use super::desk::{Desk, NAMES, ORIGIN, digest, executable, put_bytes, put_file, remove};
 use super::push::{commit_parts, merged};
 use std::path::PathBuf;
 
@@ -733,4 +733,24 @@ fn a_remote_listing_in_the_hook_that_fails_to_sign_in_carries_the_sign_in_hint_w
     desk.git(&checkout, &["config", &reachable, ORIGIN]);
     let (ran, document) = desk.call_at(None, true, "pre-push", &flags, &[]);
     assert_eq!(ran.code, 0, "{document}");
+}
+
+#[test]
+fn a_raw_push_names_each_binary_file_left_out_of_the_check_on_stderr() {
+    let desk = Desk::new();
+    install(&desk);
+    desk.refuse(&["commit.*.diff"], "github.*");
+    let checkout = desk.checkout();
+    put_bytes(
+        &checkout.join("font.woff2"),
+        b"wOF2\x00\xfftoken acme-123\n",
+    );
+    desk.git(&checkout, &["add", "font.woff2"]);
+    desk.git(&checkout, &["commit", "-q", "-m", "Add a font"]);
+    let sha = desk.head();
+    let (code, stderr) = desk.push(&["origin", "main"], &[]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stderr.contains("font.woff2"), "{stderr}");
+    assert!(stderr.contains(&sha[..12]), "{stderr}");
+    assert_eq!(desk.remote_head("main"), Some(sha));
 }

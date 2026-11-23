@@ -257,8 +257,9 @@ The parts, which a boundary's `checks` name by glob:
 | `commit.<sha>.committer_name` | `push`, `pr-create` | The committer's name. |
 | `commit.<sha>.committer_email` | `push`, `pr-create` | The committer's email. |
 | `commit.<sha>.headers` | `push`, `pr-create` | The commit object's header lines other than `tree`, `parent`, `author` and `committer`, such as `encoding` or a merged signed tag's `mergetag`; empty when there are none. |
-| `commit.<sha>.diff` | `push`, `pr-create` | The commit's patch against its first parent, with every file as text: no textconv, external diff or `-diff` attribute hides a file's bytes, and file names are not quoted. A text file's bytes, a carriage return included, are those sent. In a binary file, each byte that is not UTF-8 is checked as U+FFFD. |
+| `commit.<sha>.diff` | `push`, `pr-create` | The commit's patch against its first parent, as text: no textconv, external diff or `-diff` attribute hides a file's bytes, and file names are not quoted. A text file's bytes, a carriage return included, are those sent. A file git counts as binary is left out when its bytes hold a NUL or are not valid UTF-8, since random bytes there match text rules by chance; a binary-marked file whose bytes are valid UTF-8 with no NUL stays in. |
 | `commit.<sha>.binary` | `push`, `pr-create` | The paths git counts as binary, one per line, so a boundary can refuse them by name; empty when there are none. |
+| `commit.<sha>.skipped` | `push`, `pr-create` | The paths left out of the diff because their bytes are not text, one per line; empty when there are none. A rule that must see a binary file can refuse it by path here. No text rule scans those bytes. |
 | `pr.title`, `pr.body` | `pr-create`, `pr-edit` | The pull request's title and body. `pr-edit` sends only those given. |
 | `comment.body` | `comment` | The comment. |
 | `issue.title`, `issue.body` | `issue-create` | The issue's title and body. |
@@ -625,3 +626,8 @@ with boundary and rules enabled. Their checkout's origin names GitHub,
 and its git config sends every fetch and push to a local bare repository
 instead. The hook tests install the hook with the command `install-hook`
 prints and push with git, which runs the `board` cargo built.
+
+`github.push` and `github.pr-create` report the files left out of the diffs as
+`binary_skipped`, a list of `{commit, path}`. A refusal carries the same list
+in its fields, and the pre-push hook prints one warning line per file on
+stderr.
