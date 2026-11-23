@@ -3,7 +3,7 @@ import type { EngineInterface, PluginOptions, Register, RenderElement } from 'cl
 
 import type { Open, Question, Unread, Waiting } from '../types'
 import { SLOT, drawsInto, joinBand, keepOneBand } from './band'
-import { countLists, drawReads, endList, endRead, paneLists, REFRESH_MS, schedule, startList, startRead, tickReads } from './refresh'
+import { begin, countCallsForList, end, isDue, REFRESH_MS, schedule, tickIsDue } from './refresh'
 import type { Counted, Schedule } from './refresh'
 import { answerText, approvalText, approvedChange, blocking, countBadge, failure, parseAnswered, parseApproved, parseOpen, parseRows, parseWaiting, plain, project, refused, report, REPORT_LIMIT, REPORT_SQL, WRITTEN_BY } from './plans'
 
@@ -81,41 +81,53 @@ async function refreshOpen($: EngineInterface, options: PluginOptions): Promise<
 /** What the mod keeps between reads: whether plans.waiting is absent, and its schedule. */
 type Local = { absent: boolean; schedule: Schedule }
 
-/** Reads the open questions, whose read the schedule marks started, and marks it ended beside the count `total`. */
-async function list($: EngineInterface, options: PluginOptions, s: Schedule, total: () => number | null) {
-  let worked = false
+/** Runs `work`, logs what it throws, so a read launched without a wait rejects nothing, and runs `done` however it ends. */
+async function guarded($: EngineInterface, what: string, work: () => Promise<void>, done: () => void) {
   try {
-    worked = await refreshOpen($, options)
+    await work()
+  } catch (error) {
+    $.ui.log(`board: ${what} did not run: ${String(error)}`, { to: 'debug' })
   } finally {
-    endList(s, worked, total())
+    done()
   }
+}
+
+const totalOf = (counted: Counted) => (counted.kind === 'read' ? counted.total : null)
+
+/** Reads the open questions, whose read the schedule marks begun, and marks it ended beside the count `total`. */
+async function list($: EngineInterface, options: PluginOptions, s: Schedule, total: number | null) {
+  let worked = false
+  await guarded($, 'plans.open', async () => {
+    worked = await refreshOpen($, options)
+  }, () => end(s, 'list', { worked, total }))
 }
 
 /** Reads the open questions and what waits on the owner, side by side, as a session starts and after an answer. */
 async function refreshBoth($: EngineInterface, options: PluginOptions, local: Local) {
   const s = local.schedule
   const now = await $.clock.now()
-  startRead(s, now)
-  startList(s, now)
+  begin(s, 'count', now)
+  begin(s, 'list', now)
   let worked = false
   let counted: Counted = { kind: 'failed' }
-  try {
+  await guarded($, 'a refresh', async () => {
     ;[worked, counted] = await Promise.all([refreshOpen($, options), refreshWaiting($, options, local)])
-  } finally {
-    endRead(s)
-    endList(s, worked, counted.kind === 'read' ? counted.total : null)
-  }
+  }, () => {
+    end(s, 'count')
+    end(s, 'list', { worked, total: totalOf(counted) })
+  })
 }
 
-/** Reads what waits on the owner, whose read the schedule marks started, and the open questions only when `countLists` says the count calls for them. */
+/** Reads what waits on the owner, whose read the schedule marks begun, and the open questions only when the count calls for them. */
 async function refreshCount($: EngineInterface, options: PluginOptions, local: Local) {
   const s = local.schedule
-  try {
+  await guarded($, 'plans.waiting', async () => {
     const counted = await refreshWaiting($, options, local)
-    if (countLists(s, counted, await $.clock.now())) await list($, options, s, () => (counted.kind === 'read' ? counted.total : null))
-  } finally {
-    endRead(s)
-  }
+    const now = await $.clock.now()
+    if (!countCallsForList(s, counted, now)) return
+    begin(s, 'list', now)
+    await list($, options, s, totalOf(counted))
+  }, () => end(s, 'count'))
 }
 
 /**
@@ -227,11 +239,21 @@ export const register: Register = (on, options) => {
       polling = true
       // A tick reads only when the band was drawn since the last read, so a session nobody draws runs no board.
       $.clock.every(REFRESH_MS, async () => {
-        if (tickReads(local.schedule, await $.clock.now())) void refreshCount($, options, local)
+        const now = await $.clock.now()
+        if (!tickIsDue(local.schedule, now)) return
+        begin(local.schedule, 'count', now)
+        await refreshCount($, options, local)
       })
     }
-    // Drawing may not write state, so a read the draw starts runs once the draw is done.
-    if (drawReads(local.schedule, await $.clock.now())) $.clock.after(0, () => void refreshCount($, options, local))
+    // Drawing may not write state, so a read the draw starts runs once the draw is done. It is
+    // marked begun now, because the host may draw again first; a callback that never runs leaves
+    // a read that counts as lost after LOST_MS, so it cannot stop later reads.
+    const now = await $.clock.now()
+    local.schedule.drawn = true
+    if (isDue(local.schedule.count, now)) {
+      begin(local.schedule, 'count', now)
+      $.clock.after(0, () => void refreshCount($, options, local))
+    }
     if (e.props.hasSurvey || !drawsInto(e.plugin)) return below
     // plans.waiting counts the open questions; when it has not answered, the button counts plans.open's.
     const badge = countBadge(await read($, waiting), await read($, open), await read($, failed))
@@ -250,7 +272,11 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane', requestId: QUESTIONS }, async ($, e) => {
     // The pane's read stands beside the count last read, so an unchanged count does not read the list again.
     const shown = (await read($, waiting))?.total ?? null
-    if (paneLists(local.schedule, await $.clock.now())) $.clock.after(0, () => void list($, options, local.schedule, () => shown))
+    const drawn = await $.clock.now()
+    if (isDue(local.schedule.list, drawn)) {
+      begin(local.schedule, 'list', drawn)
+      $.clock.after(0, () => void list($, options, local.schedule, shown))
+    }
     const found = await read($, open)
     const unread = (await read($, failed)).open
     const now = await $.clock.now()

@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
 import { bandRows } from '../hooks/band'
-import { countLists, endList, schedule } from '../hooks/refresh'
+import { begin, countCallsForList, end, isDue, LOST_MS, schedule, tickIsDue } from '../hooks/refresh'
 import { approvalText, blocking, countBadge, NAMES, namesWhole, parseWaiting, questionsLabel, report, REPORT_SQL, waitingLabel } from '../hooks/plans'
 
 // These prove what the band and the panes draw, which `board` commands the
@@ -739,14 +739,42 @@ test('an answer reads what waits and the open list again', async ($, on) => {
 
 test('a failed count reads no open list, and a count read beside no earlier list reads it', () => {
   const s = schedule()
-  expect(countLists(s, { kind: 'failed' }, NOW)).toBe(false)
-  expect(countLists(s, { kind: 'read', total: 0 }, NOW)).toBe(true)
-  endList(s, true, 0)
-  expect(countLists(s, { kind: 'read', total: 0 }, NOW)).toBe(false)
+  expect(countCallsForList(s, { kind: 'failed' }, NOW)).toBe(false)
+  expect(countCallsForList(s, { kind: 'read', total: 0 }, NOW)).toBe(true)
+  end(s, 'list', { worked: true, total: 0 })
+  expect(countCallsForList(s, { kind: 'read', total: 0 }, NOW)).toBe(false)
   // A list read that failed leaves the total it was read beside, so the changed count retries it.
-  expect(countLists(s, { kind: 'read', total: 1 }, NOW)).toBe(true)
-  endList(s, false, 1)
-  expect(countLists(s, { kind: 'read', total: 1 }, NOW)).toBe(true)
+  expect(countCallsForList(s, { kind: 'read', total: 1 }, NOW)).toBe(true)
+  end(s, 'list', { worked: false, total: 1 })
+  expect(countCallsForList(s, { kind: 'read', total: 1 }, NOW)).toBe(true)
+})
+
+test('a read whose callback never ran stops later reads only until it counts as lost', () => {
+  const s = schedule()
+  begin(s, 'count', NOW)
+  s.drawn = true
+  expect(tickIsDue(s, NOW + LOST_MS - 1)).toBe(false)
+  expect(tickIsDue(s, NOW + LOST_MS)).toBe(true)
+  expect(isDue(s.count, NOW + 60_000)).toBe(true)
+  // The twin: a read that ended is not running, so the tick reads at once.
+  end(s, 'count')
+  expect(tickIsDue(s, NOW + 1)).toBe(true)
+})
+
+test('a drawn minute whose plans.waiting fails reads no open list and keeps the last count', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  let fails = false
+  const down = { exitCode: 1, stdout: JSON.stringify({ schema: 'board/failure/v1', code: 'board::query::timeout', message: 'the query ran longer than 1s' }) }
+  const { ran, waited } = engine(on, { waiting: () => (fails ? down : { exitCode: 0, stdout: waitingReport(3, 1) }) })
+  await start($)
+  fails = true
+  for (let i = 0; i < 3; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(reads(ran, waited)).toEqual({ waiting: 4, open: 1 })
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await band.find({ key: 'waiting' }))?.text).toBe('Waiting 3 · 1 blocking: the last read failed')
 })
 
 test('a band that stays on screen is drawn again by each read, so it reads what waits every minute', async ($, on) => {
