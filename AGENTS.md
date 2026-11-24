@@ -15,7 +15,8 @@ Linux, split across parallel jobs, and runs the tests that spawn git against
 git 2.39 on every pull request. A slow lane runs the scripts on macOS weekly,
 without the ui part, which CI runs on Linux. The slow lane also runs fuzzing,
 timing and mutants nightly. A scheduled slow-lane job that fails opens or
-comments on its own issue labelled `red-lane`. A release runs CI only.
+comments on its own issue labelled `red-lane`, and the next scheduled run in
+which it passes closes that issue. A release runs CI only.
 STANDARDS.md lists what they enforce and the rules they cannot.
 The check suite is `/suites/board-gates`, which runs these gates on the commit
 under test.

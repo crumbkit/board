@@ -384,14 +384,16 @@ jobs:
   # A nightly failure shows nowhere else, so each job that failed or ran past
   # its timeout gets its own issue, titled "Slow lane job <job> failed" and
   # labelled red-lane. A later failure of that job comments on its issue while
-  # the issue is open, and opens a new one once it is closed. A job that runs
-  # past its timeout ends cancelled, and so does the run's conclusion, but
-  # cancelled() stays false for the jobs after it, so it is reported. A run
-  # cancelled by hand makes cancelled() true and reports nothing. Only
-  # scheduled runs report.
+  # the issue is open, and opens a new one once it is closed. When the job
+  # passes in a later scheduled run, the report job closes its open issue with
+  # a comment naming that run. A skipped or cancelled job leaves its issue as
+  # it is. A job that runs past its timeout ends cancelled, and so does the
+  # run's conclusion, but cancelled() stays false for the jobs after it, so it
+  # is reported. A run cancelled by hand makes cancelled() true and reports
+  # nothing. Only scheduled runs report.
   report:
     needs: [base, macos, fuzz, timing, mutants-crate, mutants-misses, mutants-workspace, missed-mutants]
-    if: ${{ !cancelled() && github.event_name == 'schedule' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+    if: ${{ !cancelled() && github.event_name == 'schedule' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -405,13 +407,19 @@ jobs:
           NEEDS: ${{ toJSON(needs) }}
         run: |
           label=red-lane
-          if ! gh label list --search "$label" --limit 100 --json name --jq '.[].name' | grep -qx "$label"; then
-            gh label create "$label" --color B60205 --description "A job of the scheduled slow lane failed or ran past its timeout" < /dev/null
-          fi
+          gh label create "$label" --force --color B60205 --description "A job of the scheduled slow lane failed or ran past its timeout" < /dev/null
           gh issue list --state open --label "$label" --limit 1000 --json number,title > open.json
-          jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | "\(.key)\t\(.value.result)"' <<< "$NEEDS" > red.tsv
+          jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled" or .value.result == "success") | "\(.key)\t\(.value.result)"' <<< "$NEEDS" > results.tsv
           while IFS=$'\t' read -r job result; do
             title="Slow lane job $job failed"
+            number=$(jq -r --arg title "$title" '[.[] | select(.title == $title)][0].number // empty' open.json)
+            if [ "$result" = success ]; then
+              if [ -n "$number" ]; then
+                gh issue close "$number" --comment "The job \`$job\` passed in slow lane run $RUN, at $SHA." < /dev/null
+                echo "- \`$job\` passed: closed #$number" >> "$GITHUB_STEP_SUMMARY"
+              fi
+              continue
+            fi
             if [ "$result" = cancelled ]; then
               what="ran past its timeout"
             else
@@ -421,12 +429,11 @@ jobs:
             if [ "$job" = fuzz ]; then
               body="$body Its crash inputs are in the run's crashes-* artifacts."
             fi
-            body="$body Close this issue when the job passes again."
-            number=$(jq -r --arg title "$title" '[.[] | select(.title == $title)][0].number // empty' open.json)
+            body="$body The next scheduled run in which the job passes closes this issue."
             if [ -n "$number" ]; then
               url=$(gh issue comment "$number" --body "$body" < /dev/null)
             else
               url=$(gh issue create --title "$title" --label "$label" --body "$body" < /dev/null)
             fi
             echo "- \`$job\` $what: $url" >> "$GITHUB_STEP_SUMMARY"
-          done < red.tsv
+          done < results.tsv
