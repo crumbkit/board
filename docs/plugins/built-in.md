@@ -1,7 +1,7 @@
 # Built-in plugins
 
 This file holds detail for docs/plugins.md. It says how Board calls a compiled-in
-plugin. [`autosync`](built-in/autosync.md), `artifacts`, `attention`, `boundary`, `plans`, `evals`, `runs`,
+plugin. [`autosync`](built-in/autosync.md), `artifacts`, `orders`, `boundary`, `plans`, `evals`, `runs`,
 `github`, `jira`, [`map`](built-in/map.md), `notes`, `params`, `places`, [`priorities`](built-in/priorities.md), `prompts`, `review`, `rules`, [`share`](share.md), `tasks`, [`topics`](built-in/topics.md), `changes` and
 [`requests`](built-in/requests.md) are built in.
 [built-in/writing.md](built-in/writing.md) says how to write one.
@@ -59,10 +59,10 @@ plugin. [`autosync`](built-in/autosync.md), `artifacts`, `attention`, `boundary`
     config through board-tree, so no process starts. It is `Outside`
     without a caller or a repository, `Url`, or `Unread` with why the
     repository gave none.
-  - `sign_order(order)` shows the owner an attention order's statement
-    through attention-sign and returns their signature, or why there is
-    none; `verify_order(order, signature)` returns `owner` or why the
-    signature does not verify. Only Board's own host offers them; any other
+  - `sign_order(order)` shows the owner an order's statement through the
+    signer and returns their signature, or why there is none;
+    `verify_order(order, signature)` returns `owner` or why the signature
+    does not verify. Only Board's own host offers them; any other
     refuses (docs/architecture/writes/signing.md).
   - `run(process)` starts a program, such as git, gh or an agent;
     `run_hiding`, which implementors override, starts one without some

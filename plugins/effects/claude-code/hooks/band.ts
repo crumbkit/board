@@ -38,7 +38,7 @@ const keyOf = (node: RenderNode | undefined) => (isBox(node) ? String(node.props
 const section = (key: string) => key.slice('band:'.length, 'band:'.length + 1)
 
 /** The mods that draw the band. */
-const MODS: readonly string[] = ['board-attention', 'board-effects', 'board-plans', 'board-rules']
+const MODS: readonly string[] = ['board-attention', 'board-effects', 'board-orders', 'board-plans', 'board-rules']
 
 /** Whether a mod draws its part into the band row the host asks of `plugin`: only a Board mod's row. */
 export const drawsInto = (plugin: string | undefined) => MODS.includes(plugin ?? '')

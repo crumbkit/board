@@ -7,8 +7,6 @@ use board_ops::BuiltIn;
 pub const BUILT_IN: BuiltIn = BuiltIn(&[
     #[cfg(feature = "artifacts")]
     &board_plugin_artifacts::Artifacts,
-    #[cfg(feature = "attention")]
-    &board_plugin_attention::Attention,
     #[cfg(feature = "autosync")]
     &board_plugin_autosync::Autosync,
     #[cfg(feature = "boundary")]
@@ -25,6 +23,8 @@ pub const BUILT_IN: BuiltIn = BuiltIn(&[
     &board_plugin_map::MapPlugin,
     #[cfg(feature = "notes")]
     &board_plugin_notes::Notes,
+    #[cfg(feature = "orders")]
+    &board_plugin_orders::Orders,
     #[cfg(feature = "params")]
     &board_plugin_params::Params,
     #[cfg(feature = "places")]

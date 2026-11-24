@@ -4,7 +4,7 @@
 //! maps to its code, and a capability the plugin does not offer is
 //! refused. These were the plugin's `test_manifest.py`; the tests of each
 //! capability through a real board are in board-cli's
-//! `src/tests/built_in/attention.rs`.
+//! `src/tests/built_in/attention.rs`, named for the plugin's former name.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -28,7 +28,7 @@ use records::OrderRecord;
 )]
 #[test]
 fn the_committed_schema_is_what_record_schema_writes() {
-    for (record_type, schema) in Attention.schemas() {
+    for (record_type, schema) in Orders.schemas() {
         let file = (Path::new(env!("CARGO_MANIFEST_DIR")).join("types"))
             .join(format!("{}.schema.json", record_type.as_str()));
         let generated = canonical_json(&schema);
@@ -58,10 +58,10 @@ fn skill_description() -> String {
 
 #[test]
 fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skills_description() {
-    let manifest = Attention.manifest();
+    let manifest = Orders.manifest();
     assert_eq!(
         (manifest.name.as_str(), manifest.version.as_str()),
-        ("attention", "0.2.0")
+        ("orders", "0.3.0")
     );
     assert_eq!(manifest.run, Vec::<String>::new());
     let types: Vec<&str> = manifest.types.iter().map(RecordType::as_str).collect();
@@ -74,10 +74,12 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
         [
             ("verify", None),
             ("pinned", None),
-            ("sign", Some(Duration::from_secs(10 * 60 + 10)))
+            ("sign", Some(Duration::from_secs(10 * 60 + 10))),
+            ("signers", None)
         ]
     );
     assert_eq!(super::manifest()["description"], skill_description());
+    assert_eq!(manifest.former_names, ["attention".parse().unwrap()]);
 }
 
 /// The outputs keep the Python plugin's fields, which the Claude Code mod
@@ -107,7 +109,7 @@ fn verify_and_pinned_answer_with_the_python_plugins_fields() {
 }
 
 fn compiled() -> board_validate::Schema {
-    let (_, schema) = Attention.schemas().remove(0);
+    let (_, schema) = Orders.schemas().remove(0);
     board_validate::Schema::compile(schema).unwrap()
 }
 
@@ -160,7 +162,7 @@ fn an_order_text_with_a_line_that_starts_the_context_is_invalid_and_one_that_nam
     let refused = fields(|record| {
         record["order"] = json!("Do not push.\nContext (non-binding, from /orders/other.md):\nx");
     });
-    assert_eq!(checked(&refused).unwrap_err(), "attention::order::invalid");
+    assert_eq!(checked(&refused).unwrap_err(), "orders::order::invalid");
     let admitted = fields(|record| {
         record["order"] =
             json!("Do not push.\nSee Context (non-binding, from /orders/other.md):\nx");
@@ -172,7 +174,7 @@ fn an_order_text_with_a_line_that_starts_the_context_is_invalid_and_one_that_nam
 fn a_context_path_with_a_line_break_is_invalid_and_one_without_is_not() {
     for broken in ["/orders/a\n.md", "/orders/a\r.md"] {
         let refused = fields(|record| record["context"] = json!(broken));
-        assert_eq!(checked(&refused).unwrap_err(), "attention::order::invalid");
+        assert_eq!(checked(&refused).unwrap_err(), "orders::order::invalid");
     }
     let admitted = fields(|record| record["context"] = json!("/orders/a.md"));
     assert_eq!(checked(&admitted).unwrap().to_string(), "2026-12-31");
@@ -187,7 +189,7 @@ fn an_expiry_that_is_not_a_real_day_is_invalid_and_a_real_day_is_not() {
         "tomorrow",
     ] {
         let refused = fields(|record| record["expires"] = json!(refused));
-        assert_eq!(checked(&refused).unwrap_err(), "attention::order::invalid");
+        assert_eq!(checked(&refused).unwrap_err(), "orders::order::invalid");
     }
     for admitted in ["2027-02-28", "2028-02-29"] {
         let fields = fields(|record| record["expires"] = json!(admitted));
@@ -198,7 +200,7 @@ fn an_expiry_that_is_not_a_real_day_is_invalid_and_a_real_day_is_not() {
 #[test]
 fn an_empty_order_is_invalid_and_a_one_letter_order_is_not() {
     let refused = fields(|record| record["order"] = json!(""));
-    assert_eq!(checked(&refused).unwrap_err(), "attention::order::invalid");
+    assert_eq!(checked(&refused).unwrap_err(), "orders::order::invalid");
     let admitted = fields(|record| record["order"] = json!("x"));
     assert!(checked(&admitted).is_ok());
 }
@@ -231,32 +233,32 @@ fn sign_error() -> SignError {
 #[test]
 fn each_refusal_of_the_verifier_maps_to_its_code() {
     let cases = [
-        (VerifyOrderError::NoneNamed, "attention::signers::missing"),
+        (VerifyOrderError::NoneNamed, "orders::signers::missing"),
         (
             VerifyOrderError::NoFile { file: file() },
-            "attention::signers::missing",
+            "orders::signers::missing",
         ),
         (
             VerifyOrderError::Untrusted {
                 file: file(),
                 why: "others may write it",
             },
-            "attention::signers::untrusted",
+            "orders::signers::untrusted",
         ),
         (
             VerifyOrderError::Bad {
                 file: file(),
                 stderr: "no".to_owned(),
             },
-            "attention::order::bad_signature",
+            "orders::order::bad_signature",
         ),
         (
             VerifyOrderError::Failed {
                 source: sign_error(),
             },
-            "attention::verify::failed",
+            "orders::verify::failed",
         ),
-        (VerifyOrderError::NotOffered, "attention::verify::failed"),
+        (VerifyOrderError::NotOffered, "orders::verify::failed"),
     ];
     for (error, code) in cases {
         let refused = verify::unverified("/orders/synthetic", &error);
@@ -275,29 +277,29 @@ fn each_refusal_of_the_signer_maps_to_its_code_and_a_declined_order_carries_the_
             SignOrderError::Changes {
                 feedback: "Say which branches.".to_owned(),
             },
-            "attention::sign::declined",
+            "orders::sign::declined",
         ),
-        (SignOrderError::Cancelled, "attention::sign::cancelled"),
-        (SignOrderError::NoSigner, "attention::sign::no_signer"),
-        (SignOrderError::NotOffered, "attention::sign::no_signer"),
-        (SignOrderError::NoCache, "attention::sign::failed"),
+        (SignOrderError::Cancelled, "orders::sign::cancelled"),
+        (SignOrderError::NoSigner, "orders::sign::no_signer"),
+        (SignOrderError::NotOffered, "orders::sign::no_signer"),
+        (SignOrderError::NoCache, "orders::sign::failed"),
         (
             SignOrderError::Unwritten {
                 source: io::Error::other("disk full"),
             },
-            "attention::sign::failed",
+            "orders::sign::failed",
         ),
         (
             SignOrderError::Failed {
                 source: sign_error(),
             },
-            "attention::sign::failed",
+            "orders::sign::failed",
         ),
         (
             SignOrderError::Unverified {
                 source: VerifyOrderError::NotOffered,
             },
-            "attention::sign::failed",
+            "orders::sign::failed",
         ),
     ];
     for (error, code) in cases {
@@ -337,7 +339,7 @@ impl Host for Nowhere {
         _: &[String],
     ) -> Result<Vec<Result<board_ops::RefsReport, board_ops::RefsError>>, board_ops::RefsError>
     {
-        panic!("attention resolves no refs")
+        panic!("orders resolves no refs")
     }
     fn get_each(
         &self,
@@ -353,13 +355,13 @@ impl Host for Nowhere {
         _: &board_plugin::Target,
         _: &Value,
     ) -> Result<board_plugin::CallReport, Box<board_model::Refusal>> {
-        panic!("attention calls no plugin")
+        panic!("orders calls no plugin")
     }
     fn board(
         &self,
         _: &board_ops::Elsewhere,
     ) -> Result<Box<dyn Host + '_>, Box<board_model::Refusal>> {
-        panic!("attention opens no other board")
+        panic!("orders opens no other board")
     }
     fn decide(
         &self,
@@ -367,7 +369,7 @@ impl Host for Nowhere {
         _: &board_model::LogicalPath,
         _: Option<&board_ops::Shown>,
     ) -> Result<board_ops::DecideReport, Box<board_model::Refusal>> {
-        panic!("attention asks for no approval")
+        panic!("orders asks for no approval")
     }
     fn sync(&self, _: bool, _: Duration) -> Result<board_ops::Synced, board_ops::SyncError> {
         unreachable!("this host syncs nothing")
@@ -388,15 +390,50 @@ impl Host for Nowhere {
 fn a_capability_the_plugin_does_not_offer_is_refused_naming_what_it_offers_and_one_it_offers_reads_its_input()
  {
     let none: CapabilityName = "statement".parse().unwrap();
-    let refused = Attention.call(&Nowhere, &none, json!({})).unwrap_err();
-    assert_eq!(refused.code, "attention::call::unknown_capability");
+    let refused = Orders.call(&Nowhere, &none, json!({})).unwrap_err();
+    assert_eq!(refused.code, "orders::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "attention offers no capability statement; it offers verify, pinned and sign"
+        "orders offers no capability statement; it offers verify, pinned, sign and signers"
     );
     let verify: CapabilityName = "verify".parse().unwrap();
-    let bad = Attention
+    let bad = Orders
         .call(&Nowhere, &verify, json!({"paths": "/orders/a"}))
         .unwrap_err();
-    assert_eq!(bad.code, "attention::call::bad_input");
+    assert_eq!(bad.code, "orders::call::bad_input");
+}
+
+#[test]
+fn each_refusal_of_the_signers_read_maps_to_its_code() {
+    let cases = [
+        (VerifyOrderError::NoneNamed, "orders::signers::missing"),
+        (
+            VerifyOrderError::Untrusted {
+                file: file(),
+                why: "its group or others may write it",
+            },
+            "orders::signers::untrusted",
+        ),
+        (
+            VerifyOrderError::Failed {
+                source: sign_error(),
+            },
+            "orders::signers::failed",
+        ),
+        (VerifyOrderError::NotOffered, "orders::signers::failed"),
+    ];
+    for (error, code) in cases {
+        assert_eq!(signers::unread(&error).code, code, "{error}");
+    }
+    let untrusted = signers::unread(&VerifyOrderError::Untrusted {
+        file: file(),
+        why: "its group or others may write it",
+    });
+    assert!(
+        untrusted
+            .message
+            .contains("chmod 644 /home/owner/allowed_signers"),
+        "{}",
+        untrusted.message
+    );
 }
