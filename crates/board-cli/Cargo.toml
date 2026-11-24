@@ -41,6 +41,7 @@ board-model.workspace = true
 board-ops.workspace = true
 board-plugin.workspace = true
 board-plugins.workspace = true
+board-search.workspace = true
 board-serve.workspace = true
 board-tree.workspace = true
 board-types.workspace = true
@@ -52,6 +53,9 @@ nix.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+sysctl.workspace = true
 
 [dev-dependencies]
 board-scenario.workspace = true

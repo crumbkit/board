@@ -1,0 +1,14 @@
+Filters:
+  type:  The kind of record, by a short name that matches every version of its type.
+  from:  Who wrote the record: the person, agent or program its `by` names, or me for the board's owner.
+Types:
+  task      tasks/task/*
+  question  plans/question/*
+  answer    plans/answer/*
+  decision  plans/decision/*
+  change    changes/change/*
+  plan      changes/plan/*
+  eval      evals/eval/*
+  run       runs/run/*
+  artifact  artifacts/artifact/*
+  rule      rules/rule/*

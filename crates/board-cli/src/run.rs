@@ -17,8 +17,10 @@ mod lookup;
 mod mount;
 mod remove;
 mod repo;
+mod search;
 mod syncing;
 mod uri;
+mod watched;
 
 /// What a plugin run gets from this command line's context.
 pub(crate) fn plugins(context: &Context) -> Plugins<'_> {
@@ -102,6 +104,9 @@ impl Cli {
 pub(crate) type Page = crumbkit::Page<DEFAULT_LIMIT, MAX_LIMIT>;
 
 pub(crate) use board_ops::Prefix;
+pub(crate) use search::SEARCH;
+#[cfg(test)]
+pub(crate) use search::{TIMEOUT_HINT, unanswered};
 
 /// A path argument as typed: absolute, or relative to the run's prefix.
 #[derive(Clone, Debug)]
@@ -358,6 +363,9 @@ Examples:
         #[command(flatten)]
         page: Page,
     },
+    /// Find the records a query matches.
+    #[command(after_help = search::SEARCH_HELP)]
+    Search(search::Searching),
     /// Serve this board's pages on 127.0.0.1 until it is idle.
     #[command(after_help = crate::ui::SERVE_HELP)]
     Serve {
@@ -380,6 +388,15 @@ Examples:
     /// Describe the JSON documents that Board prints.
     #[command(subcommand, after_help = crate::describe::SCHEMAS_HELP)]
     Schemas(crate::describe::SchemasCommand),
+    /// Time hot commands against their budgets.
+    #[command(
+        subcommand,
+        after_help = "\
+Examples:
+  board timing check
+  board timing check --record"
+    )]
+    Timing(crate::timing::TimingCommand),
 }
 
 impl Command {
@@ -453,7 +470,7 @@ fn run_command(
         }
     };
     let words = arguments.get(1..).unwrap_or_default();
-    ran.command = Some(crumbkit::command_path(&Cli::command(), words).join(" "));
+    ran.command = Some(watched::watched(words, &cli.command, grafted.as_ref()));
     if let Command::Commands(_) | Command::Schemas(_) = cli.command {
         return describe(&arguments, context, &cli, view, ran);
     }
@@ -463,7 +480,7 @@ fn run_command(
     {
         return render::refused(printer, *refusal);
     }
-    if let Command::Completion(_) | Command::Skills(_) = cli.command {
+    if let Command::Completion(_) | Command::Skills(_) | Command::Timing(_) = cli.command {
         return unopened(&cli, context, printer, None);
     }
     let base = cli.personal.then(|| context.personal());
@@ -518,16 +535,21 @@ fn run_command(
     output
 }
 
-/// Runs completion and skills, which need no board, and `plugin list` and
-/// `find` once opening the board was `refused`, which any other command prints.
+/// Runs completion, skills and timing, which open no board first, and
+/// `plugin list`, `find` and `search` once opening the board was `refused`,
+/// which any other command prints.
 fn unopened(cli: &Cli, context: &Context, printer: Printer, refused: Option<Refusal>) -> Output {
     match (&cli.command, refused) {
         (Command::Completion(command), _) => crate::completion::completion(command, printer),
         (Command::Skills(command), _) => {
             crate::skills::skills(command, context, printer, cli.chooses_board())
         }
+        (Command::Timing(command), _) => crate::timing::timing(command, context, printer),
         (Command::Plugin(command), Some(refused)) => {
             crate::plugin::unopened(command, context, printer, refused)
+        }
+        (Command::Search(asked), Some(refused)) => {
+            search::unopened(asked, context, printer, refused)
         }
         (_, Some(refused)) => render::refused(printer, refused),
         (_, None) => unreachable!("only completion and skills run without a board"),
@@ -639,7 +661,8 @@ fn command(
         | Command::Commands(_)
         | Command::Schemas(_)
         | Command::Completion(_)
-        | Command::Skills(_) => unreachable!(),
+        | Command::Skills(_)
+        | Command::Timing(_) => unreachable!(),
         Command::Check {
             path,
             healthy,
@@ -684,6 +707,7 @@ fn command(
                 Err(error) => render::refused(printer, error.refusal()),
             }
         }
+        Command::Search(asked) => search::search(board, context, printer, &asked),
         Command::Type(command) => crate::stdin::type_add(command, board, printer, stdin),
         Command::Plugin(command) => crate::plugin::plugin(command, board, context, printer),
         Command::Call { target, capability } => {

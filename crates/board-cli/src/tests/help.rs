@@ -115,6 +115,16 @@ const ALLOW: &[Allow] = &[
         &["/tasks/fix-login"],
         "the fixture's origin is a temporary directory, so no golden output can pin its URI",
     ),
+    Allow::example(
+        "timing check",
+        &[],
+        "the check reads the personal board and this machine's timing log, which the fixture does not hold",
+    ),
+    Allow::example(
+        "timing check",
+        &["--record"],
+        "the check reads the personal board and this machine's timing log, which the fixture does not hold",
+    ),
     Allow::example("serve", &[], SERVES),
     Allow::example("serve", &["--idle", "2m"], SERVES),
     Allow::example("ui open", &["/bindings/review"], SERVES),
@@ -229,8 +239,8 @@ fn files_of(root: &Path) -> Vec<(String, String)> {
 /// such as `plugin` and 1,200 for each other command.
 pub(super) const BUDGETS: Budgets = Budgets::new()
     .root(
-        3_100,
-        "The root page lists all twenty-two commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.",
+        3_200,
+        "The root page lists all twenty-three commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.",
     )
     .nodes(&[
         Budget::new(
@@ -247,6 +257,11 @@ pub(super) const BUDGETS: Budgets = Budgets::new()
             "refs",
             2_000,
             "refs has five options and two output formats, and a reader needs the from/to line format and the --field encoding on one page to parse its text output. Its page also ends with the Effects: line and a global flags line that names --no-input.",
+        ),
+        Budget::new(
+            "search",
+            1_700,
+            "search shows on one page each part of the query syntax with an example, the ten short type names, what from:me reads, that words match by substring and the order results come in, so a reader can write a query without opening docs/commands/search.md.",
         ),
         Budget::new(
             "decide",

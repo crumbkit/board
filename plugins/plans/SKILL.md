@@ -21,7 +21,11 @@ in. `<project>` names what the record concerns, such as the repository
 
        board -C <board> ls /projects/<project>/decisions
 
-   `board::path::not_found` means the project has no decision yet.
+   `board::path::not_found` means the project has no decision yet. To find
+   decisions on the subject in every project, run
+   `board -C <board> search 'type:decision <words>'`; `type:question` and
+   `type:answer` find questions and answers the same way, and
+   `from:<person>` keeps the records that person wrote.
 
 2. When you or the owner choose between options, write a
    `plans/decision/v1`. Write it as its own record, even while you write a

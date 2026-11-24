@@ -102,7 +102,15 @@ fn inside(
     let mut ran = Ran::default();
     let output = run(arguments, &context, &mut &stdin[..], &mut ran);
     let started = std::time::Instant::now();
-    let record = crate::timing::record(started, &ran, &output, 0).unwrap();
+    let record = crate::timing::record(
+        started,
+        &ran,
+        &output,
+        0,
+        crate::timing::Machine::default(),
+        false,
+    )
+    .unwrap();
     (output, record["prefix"].clone())
 }
 
@@ -782,4 +790,23 @@ fn a_uri_read_inside_a_clone_of_its_remote_reads_that_clone_and_inside_a_clone_o
     let other = originated("git@github.com:acme/other-board.git");
     let (lost, _) = known(other.workdir(), &xdg, None, &["get", URI]);
     assert_eq!(code(&lost), "board::uri::not_found");
+}
+
+#[test]
+fn an_undated_answer_through_the_run_warns_once_that_it_wrote_a_date_gated_personal_board() {
+    let (personal, xdg, effect, _) = one_pending();
+    let gated = r#"{"$type": "board/config/v1", "commit_on_put": false, "min_board": {"built": "2026-11-13T00:00:00Z"}}"#;
+    personal.write(".board/board.json", Item::File(gated));
+    // Each test runs in its own process, so the build declared here binds
+    // only this test.
+    board_ops::declare_build("0.0.0+abc", None);
+    let refused = answering(&xdg, &Signer::new(), &[&effect.id(), "refuse"], b"");
+    assert_eq!(refused.code, 0, "{}", text(&refused.stderr));
+    let stderr = text(&refused.stderr);
+    assert_eq!(stderr.matches("warning: ").count(), 1, "{stderr}");
+    assert!(stderr.contains("no build date"), "{stderr}");
+    let seen = personal
+        .workdir()
+        .join(format!("effects/seen/{}.json", effect.id()));
+    assert!(seen.exists());
 }

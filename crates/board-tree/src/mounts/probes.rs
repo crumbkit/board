@@ -1,6 +1,6 @@
 //! What opening a mounted repository found, kept under a stamp of the files
 //! that decide it, so a run opens the repository only when one of them
-//! changed (docs/architecture/performance/warm.md).
+//! changed (docs/architecture/performance/warm/index.md).
 
 use std::collections::HashSet;
 use std::fs;

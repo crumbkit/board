@@ -23,6 +23,7 @@ mod query;
 mod read;
 mod refs;
 pub mod repo;
+mod search;
 mod snapshot;
 mod sync;
 mod trace;
@@ -31,7 +32,10 @@ mod ui;
 mod verdict;
 mod version;
 
-pub use board_index::{Budget, Fallback, append_timing, source_name};
+pub use board_index::{
+    Budget, Fallback, Timings, append_timing, read_timings, source_name, stamp_timing,
+    timing_stamped,
+};
 
 pub use crate::attachment::{FetchError, MAX_INLINE_BYTES};
 pub use crate::board::{Backend, Board, Config, OpenError, StartedIn, Store};
@@ -63,6 +67,9 @@ pub use crate::put::{
 pub use crate::query::{DEFAULT_LIMIT, MAX_LIMIT, QueryError, QueryReport};
 pub use crate::read::{GetReport, Listed, LsReport, ReadError};
 pub use crate::refs::{Absent, Fielded, Incoming, Missing, Outgoing, RefsError, RefsReport};
+pub use crate::search::{
+    Cursor, Hit, SEARCH_LIMIT, SEARCH_MAX, SearchReport, Statement, TITLE_CHARS, compile,
+};
 pub use crate::sync::{BeforePush, Conflicted, Guard, Pushing, SyncError, Synced};
 pub use crate::trace::{Phase, Trace};
 pub use crate::types::TypeError;

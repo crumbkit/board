@@ -2,7 +2,7 @@
 
 This file holds detail for docs/architecture.md. It says how the index keeps
 each mounted source's decision so a warm query or check neither walks nor
-decides it. The working tree's decision is kept as [warm.md](warm.md) says.
+decides it. The working tree's decision is kept as [index.md](index.md) says.
 
 ## What is kept
 
@@ -30,7 +30,7 @@ A source's key hashes:
 - for each mount it reaches, the same of that source, without its route.
 
 A run opens a mounted repository and looks up its pinned commit only when
-the repository's stamp changed ([warm.md](warm.md)), so a deleted repository
+the repository's stamp changed ([index.md](index.md)), so a deleted repository
 or a lost commit still changes the key. The repositories one source's mounts
 name are opened in parallel, one thread each, before its mounts are read in
 order.

@@ -1,6 +1,6 @@
 //! What each walk listed in each directory, kept so that a later walk reads
 //! the listing of a directory whose stat has not changed in place of
-//! listing it again (docs/architecture/performance/warm.md).
+//! listing it again (docs/architecture/performance/warm/index.md).
 
 use board_model::Stat;
 use board_tree::{Directories, DirectoryListing, Item, ItemType};

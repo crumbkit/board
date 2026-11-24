@@ -117,3 +117,40 @@ fn a_record_with_a_malformed_field_is_refused_and_its_twin_is_admitted() {
     unknown["owner"] = json!("ana");
     assert!(compiled.validate(&unknown).is_err());
 }
+
+/// An entry confirmed `days` before 2026-11-24 with `commits` since,
+/// against the default 300 commits.
+fn stale(days: i64, commits: Option<u32>) -> bool {
+    let today = board_repos::Date::parse("2026-11-24").unwrap();
+    list::is_stale(Some(today.plus(-days)), today, commits, 300.0)
+}
+
+#[test]
+fn an_entry_is_stale_from_seven_days_after_its_confirmation() {
+    assert!(!stale(6, Some(0)));
+    assert!(stale(7, Some(0)));
+}
+
+#[test]
+fn an_entry_is_stale_once_it_has_seen_more_commits_than_the_value() {
+    assert!(stale(0, Some(301)));
+    assert!(!stale(0, Some(300)));
+}
+
+#[test]
+fn when_git_cannot_count_commits_the_days_alone_decide() {
+    assert!(stale(8, None));
+    assert!(!stale(1, None));
+}
+
+#[test]
+fn an_entry_confirmed_after_today_is_not_stale() {
+    assert!(!stale(-3, Some(0)));
+}
+
+#[test]
+fn when_the_confirmed_day_does_not_parse_the_commits_alone_decide() {
+    let today = board_repos::Date::parse("2026-11-24").unwrap();
+    assert!(!list::is_stale(None, today, Some(300), 300.0));
+    assert!(list::is_stale(None, today, Some(301), 300.0));
+}

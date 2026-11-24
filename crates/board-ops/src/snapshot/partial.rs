@@ -1,6 +1,6 @@
 //! The working tree's decision kept in a slot, and deciding again after a
 //! change only the entries the change could alter
-//! (docs/architecture/performance/warm.md).
+//! (docs/architecture/performance/warm/index.md).
 
 use std::collections::{HashMap, HashSet};
 

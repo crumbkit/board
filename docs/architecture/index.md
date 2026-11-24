@@ -25,9 +25,9 @@ directory of each other board whose recorded root it can see is gone.
 | `links` | a Markdown file's links to board paths outside its frontmatter, in order, as written | blob, ordinal |
 | `mounts` | each mount point and the commit it reaches, or its code | source, path |
 | `pointers` | a mounted tree's mount pointers | scan key, path |
-| `directories` | each directory's stat and items as a walk listed them ([performance/warm.md](performance/warm.md)) | path |
-| `decided` | a source's entries as decided ([performance/decisions.md](performance/decisions.md)) | decision key or slot, path |
-| `probes` | what opening a mounted repository found ([performance/warm.md](performance/warm.md)) | stamp |
+| `directories` | each directory's stat and items as a walk listed them ([performance/warm/index.md](performance/warm/index.md)) | path |
+| `decided` | a source's entries as decided ([performance/warm/decisions.md](performance/warm/decisions.md)) | decision key or slot, path |
+| `probes` | what opening a mounted repository found ([performance/warm/index.md](performance/warm/index.md)) | stamp |
 | `slots`, `inputs` | the working tree's kept decision, and what each entry read | slot; slot, path |
 | `state` | index format, and when the last refresh that hashed or recorded a file began | key |
 

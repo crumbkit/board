@@ -30,6 +30,7 @@ members = [
     "crates/board-plugins",
     "crates/board-repos",
     "crates/board-scenario",
+    "crates/board-search",
     "crates/board-serve",
     "crates/board-top",
     "crates/board-tree",
@@ -55,6 +56,7 @@ board-ops = { path = "crates/board-ops", version = "0.0.0" }
 board-model = { path = "crates/board-model", version = "0.0.0" }
 board-plugin = { path = "crates/board-plugin", version = "0.0.0" }
 board-repos = { path = "crates/board-repos", version = "0.0.0" }
+board-search = { path = "crates/board-search", version = "0.0.0" }
 board-plugin-artifacts = { path = "crates/board-plugin-artifacts", version = "0.0.0" }
 board-plugin-attention = { path = "crates/board-plugin-attention", version = "0.0.0" }
 board-plugin-autosync = { path = "crates/board-plugin-autosync", version = "0.0.0" }
@@ -113,8 +115,9 @@ jsonschema-regex = "0.58.5"
 # move, so the signer and allowed signers file an approval trusts stay put.
 # Without default features it brings only libc, bitflags and cfg-if; only
 # board-cli uses it: src/config.rs for the passwd entry, and src/stdin.rs to
-# poll stdin before it reads a stdin a call left unread.
-nix = { version = "0.31.3", default-features = false, features = ["poll", "user"] }
+# poll stdin before it reads a stdin a call left unread, and src/timing for
+# the host name a speed run names.
+nix = { version = "0.31.3", default-features = false, features = ["hostname", "poll", "user"] }
 # A Markdown link names a path percent-encoded, as a URL does. gix already
 # brings this crate in.
 percent-encoding = "2.3.2"
@@ -157,6 +160,11 @@ secrecy = "0.10.3"
 serde = { version = "1.0.228", features = ["derive"] }
 # derive: the rows crumbkit prints describe their own JSON Schema.
 schemars = { version = "1.2.2", default-features = false, features = ["derive", "std"] }
+# The machine's one-minute load, which each timing line records so the speed
+# check leaves out runs on a busy machine. macOS has no safe API for it and
+# the workspace forbids unsafe code; Linux reads /proc/loadavg. Only
+# board-cli's timing module uses it.
+sysctl = "0.7.1"
 # `board ui` stops on a flag that SIGINT, SIGTERM and SIGHUP set, with no
 # async runtime and no unsafe code.
 signal-hook = { version = "0.4.4", default-features = false }

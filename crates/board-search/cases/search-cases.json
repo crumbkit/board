@@ -1,0 +1,834 @@
+{
+  "about": "The search syntax's shared cases. Each case gives an input and either its parts and canonical text or its errors. Spans count Unicode scalar values from 0, and end is exclusive. Flare's Rust parser, Board's parser and the later TypeScript parser must each pass every case.",
+  "version": 1,
+  "cases": [
+    {
+      "about": "An empty query has no parts and matches everything the caller can open.",
+      "input": "",
+      "parts": [],
+      "canonical": ""
+    },
+    {
+      "about": "A plain word.",
+      "input": "budget",
+      "parts": [
+        {
+          "kind": "word",
+          "text": "budget",
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 6
+          }
+        }
+      ],
+      "canonical": "budget"
+    },
+    {
+      "about": "A space between parts means all must match.",
+      "input": "budget review",
+      "parts": [
+        {
+          "kind": "word",
+          "text": "budget",
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 6
+          }
+        },
+        {
+          "kind": "word",
+          "text": "review",
+          "negated": false,
+          "span": {
+            "start": 7,
+            "end": 13
+          }
+        }
+      ],
+      "canonical": "budget review"
+    },
+    {
+      "about": "Extra spaces do not count; the canonical text keeps one.",
+      "input": "  budget   review  ",
+      "parts": [
+        {
+          "kind": "word",
+          "text": "budget",
+          "negated": false,
+          "span": {
+            "start": 2,
+            "end": 8
+          }
+        },
+        {
+          "kind": "word",
+          "text": "review",
+          "negated": false,
+          "span": {
+            "start": 11,
+            "end": 17
+          }
+        }
+      ],
+      "canonical": "budget review"
+    },
+    {
+      "about": "A quoted phrase matches as one string.",
+      "input": "\"budget review\"",
+      "parts": [
+        {
+          "kind": "phrase",
+          "text": "budget review",
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 15
+          }
+        }
+      ],
+      "canonical": "\"budget review\""
+    },
+    {
+      "about": "A part starts right after a closing quote.",
+      "input": "\"a\"b",
+      "parts": [
+        {
+          "kind": "phrase",
+          "text": "a",
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 3
+          }
+        },
+        {
+          "kind": "word",
+          "text": "b",
+          "negated": false,
+          "span": {
+            "start": 3,
+            "end": 4
+          }
+        }
+      ],
+      "canonical": "\"a\" b"
+    },
+    {
+      "about": "A from: filter with one person.",
+      "input": "from:erin",
+      "parts": [
+        {
+          "kind": "filter",
+          "field": "from",
+          "values": [
+            {
+              "text": "erin",
+              "span": {
+                "start": 5,
+                "end": 9
+              }
+            }
+          ],
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 9
+          }
+        }
+      ],
+      "canonical": "from:erin"
+    },
+    {
+      "about": "Field names print in lower case.",
+      "input": "FROM:erin",
+      "parts": [
+        {
+          "kind": "filter",
+          "field": "from",
+          "values": [
+            {
+              "text": "erin",
+              "span": {
+                "start": 5,
+                "end": 9
+              }
+            }
+          ],
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 9
+          }
+        }
+      ],
+      "canonical": "from:erin"
+    },
+    {
+      "about": "Values keep the case they were typed in.",
+      "input": "Type:Markdown",
+      "parts": [
+        {
+          "kind": "filter",
+          "field": "type",
+          "values": [
+            {
+              "text": "Markdown",
+              "span": {
+                "start": 5,
+                "end": 13
+              }
+            }
+          ],
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 13
+          }
+        }
+      ],
+      "canonical": "type:Markdown"
+    },
+    {
+      "about": "me names the signed-in person.",
+      "input": "from:me",
+      "parts": [
+        {
+          "kind": "filter",
+          "field": "from",
+          "values": [
+            {
+              "text": "me",
+              "span": {
+                "start": 5,
+                "end": 7
+              }
+            }
+          ],
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 7
+          }
+        }
+      ],
+      "canonical": "from:me"
+    },
+    {
+      "about": "A comma inside a value means any of.",
+      "input": "from:erin,sam",
+      "parts": [
+        {
+          "kind": "filter",
+          "field": "from",
+          "values": [
+            {
+              "text": "erin",
+              "span": {
+                "start": 5,
+                "end": 9
+              }
+            },
+            {
+              "text": "sam",
+              "span": {
+                "start": 10,
+                "end": 13
+              }
+            }
+          ],
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 13
+          }
+        }
+      ],
+      "canonical": "from:erin,sam"
+    },
+    {
+      "about": "A value with a space is quoted, and its span includes the quotes.",
+      "input": "from:\"ana lima\"",
+      "parts": [
+        {
+          "kind": "filter",
+          "field": "from",
+          "values": [
+            {
+              "text": "ana lima",
+              "span": {
+                "start": 5,
+                "end": 15
+              }
+            }
+          ],
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 15
+          }
+        }
+      ],
+      "canonical": "from:\"ana lima\""
+    },
+    {
+      "about": "A comma list can mix plain and quoted values.",
+      "input": "from:erin,\"ana lima\"",
+      "parts": [
+        {
+          "kind": "filter",
+          "field": "from",
+          "values": [
+            {
+              "text": "erin",
+              "span": {
+                "start": 5,
+                "end": 9
+              }
+            },
+            {
+              "text": "ana lima",
+              "span": {
+                "start": 10,
+                "end": 20
+              }
+            }
+          ],
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 20
+          }
+        }
+      ],
+      "canonical": "from:erin,\"ana lima\""
+    },
+    {
+      "about": "A quoted value without a space prints without quotes.",
+      "input": "from:\"erin\"",
+      "parts": [
+        {
+          "kind": "filter",
+          "field": "from",
+          "values": [
+            {
+              "text": "erin",
+              "span": {
+                "start": 5,
+                "end": 11
+              }
+            }
+          ],
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 11
+          }
+        }
+      ],
+      "canonical": "from:erin"
+    },
+    {
+      "about": "A type: filter.",
+      "input": "type:markdown",
+      "parts": [
+        {
+          "kind": "filter",
+          "field": "type",
+          "values": [
+            {
+              "text": "markdown",
+              "span": {
+                "start": 5,
+                "end": 13
+              }
+            }
+          ],
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 13
+          }
+        }
+      ],
+      "canonical": "type:markdown"
+    },
+    {
+      "about": "A leading minus excludes what the filter matches.",
+      "input": "-type:html",
+      "parts": [
+        {
+          "kind": "filter",
+          "field": "type",
+          "values": [
+            {
+              "text": "html",
+              "span": {
+                "start": 6,
+                "end": 10
+              }
+            }
+          ],
+          "negated": true,
+          "span": {
+            "start": 0,
+            "end": 10
+          }
+        }
+      ],
+      "canonical": "-type:html"
+    },
+    {
+      "about": "A word and an excluded filter.",
+      "input": "budget -type:html",
+      "parts": [
+        {
+          "kind": "word",
+          "text": "budget",
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 6
+          }
+        },
+        {
+          "kind": "filter",
+          "field": "type",
+          "values": [
+            {
+              "text": "html",
+              "span": {
+                "start": 13,
+                "end": 17
+              }
+            }
+          ],
+          "negated": true,
+          "span": {
+            "start": 7,
+            "end": 17
+          }
+        }
+      ],
+      "canonical": "budget -type:html"
+    },
+    {
+      "about": "An excluded word.",
+      "input": "-draft",
+      "parts": [
+        {
+          "kind": "word",
+          "text": "draft",
+          "negated": true,
+          "span": {
+            "start": 0,
+            "end": 6
+          }
+        }
+      ],
+      "canonical": "-draft"
+    },
+    {
+      "about": "An excluded phrase.",
+      "input": "-\"draft notes\"",
+      "parts": [
+        {
+          "kind": "phrase",
+          "text": "draft notes",
+          "negated": true,
+          "span": {
+            "start": 0,
+            "end": 14
+          }
+        }
+      ],
+      "canonical": "-\"draft notes\""
+    },
+    {
+      "about": "Only the first minus excludes; the second belongs to the word.",
+      "input": "--x",
+      "parts": [
+        {
+          "kind": "word",
+          "text": "-x",
+          "negated": true,
+          "span": {
+            "start": 0,
+            "end": 3
+          }
+        }
+      ],
+      "canonical": "--x"
+    },
+    {
+      "about": "A minus inside a word is part of the word.",
+      "input": "well-known",
+      "parts": [
+        {
+          "kind": "word",
+          "text": "well-known",
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 10
+          }
+        }
+      ],
+      "canonical": "well-known"
+    },
+    {
+      "about": "A colon after something that is not a field name is part of a word.",
+      "input": "10:30",
+      "parts": [
+        {
+          "kind": "word",
+          "text": "10:30",
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 5
+          }
+        }
+      ],
+      "canonical": "10:30"
+    },
+    {
+      "about": "Spans count Unicode scalar values, not bytes.",
+      "input": "café",
+      "parts": [
+        {
+          "kind": "word",
+          "text": "café",
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 4
+          }
+        }
+      ],
+      "canonical": "café"
+    },
+    {
+      "about": "Spans count Unicode scalar values in any script.",
+      "input": "日本 語",
+      "parts": [
+        {
+          "kind": "word",
+          "text": "日本",
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 2
+          }
+        },
+        {
+          "kind": "word",
+          "text": "語",
+          "negated": false,
+          "span": {
+            "start": 3,
+            "end": 4
+          }
+        }
+      ],
+      "canonical": "日本 語"
+    },
+    {
+      "about": "Every part of the first slice in one query.",
+      "input": "budget \"review notes\" from:erin,sam -type:html",
+      "parts": [
+        {
+          "kind": "word",
+          "text": "budget",
+          "negated": false,
+          "span": {
+            "start": 0,
+            "end": 6
+          }
+        },
+        {
+          "kind": "phrase",
+          "text": "review notes",
+          "negated": false,
+          "span": {
+            "start": 7,
+            "end": 21
+          }
+        },
+        {
+          "kind": "filter",
+          "field": "from",
+          "values": [
+            {
+              "text": "erin",
+              "span": {
+                "start": 27,
+                "end": 31
+              }
+            },
+            {
+              "text": "sam",
+              "span": {
+                "start": 32,
+                "end": 35
+              }
+            }
+          ],
+          "negated": false,
+          "span": {
+            "start": 22,
+            "end": 35
+          }
+        },
+        {
+          "kind": "filter",
+          "field": "type",
+          "values": [
+            {
+              "text": "html",
+              "span": {
+                "start": 42,
+                "end": 46
+              }
+            }
+          ],
+          "negated": true,
+          "span": {
+            "start": 36,
+            "end": 46
+          }
+        }
+      ],
+      "canonical": "budget \"review notes\" from:erin,sam -type:html"
+    },
+    {
+      "about": "An unknown filter names the span of its field name.",
+      "input": "form:erin",
+      "errors": [
+        {
+          "code": "unknown_field",
+          "span": {
+            "start": 0,
+            "end": 4
+          }
+        }
+      ]
+    },
+    {
+      "about": "updated: is a later increment, so it is an unknown filter for now.",
+      "input": "updated:7d",
+      "errors": [
+        {
+          "code": "unknown_field",
+          "span": {
+            "start": 0,
+            "end": 7
+          }
+        }
+      ]
+    },
+    {
+      "about": "with: is a later increment, so it is an unknown filter for now.",
+      "input": "with:me",
+      "errors": [
+        {
+          "code": "unknown_field",
+          "span": {
+            "start": 0,
+            "end": 4
+          }
+        }
+      ]
+    },
+    {
+      "about": "sort: is a later increment, so it is an unknown filter for now.",
+      "input": "sort:new",
+      "errors": [
+        {
+          "code": "unknown_field",
+          "span": {
+            "start": 0,
+            "end": 4
+          }
+        }
+      ]
+    },
+    {
+      "about": "The span of an excluded unknown filter leaves out the minus.",
+      "input": "budget -sort:new",
+      "errors": [
+        {
+          "code": "unknown_field",
+          "span": {
+            "start": 8,
+            "end": 12
+          }
+        }
+      ]
+    },
+    {
+      "about": "An unclosed quote runs to the end of the text.",
+      "input": "budget \"review",
+      "errors": [
+        {
+          "code": "unclosed_quote",
+          "span": {
+            "start": 7,
+            "end": 14
+          }
+        }
+      ]
+    },
+    {
+      "about": "An unclosed quote in a value runs to the end of the text.",
+      "input": "from:\"ana",
+      "errors": [
+        {
+          "code": "unclosed_quote",
+          "span": {
+            "start": 5,
+            "end": 9
+          }
+        }
+      ]
+    },
+    {
+      "about": "A filter with no value names the field and its colon.",
+      "input": "from:",
+      "errors": [
+        {
+          "code": "empty_value",
+          "span": {
+            "start": 0,
+            "end": 5
+          }
+        }
+      ]
+    },
+    {
+      "about": "An empty first value names the field and its colon.",
+      "input": "from:,erin",
+      "errors": [
+        {
+          "code": "empty_value",
+          "span": {
+            "start": 0,
+            "end": 5
+          }
+        }
+      ]
+    },
+    {
+      "about": "An empty value after a comma names the comma.",
+      "input": "from:erin,",
+      "errors": [
+        {
+          "code": "empty_value",
+          "span": {
+            "start": 9,
+            "end": 10
+          }
+        }
+      ]
+    },
+    {
+      "about": "An empty quoted value names its quotes.",
+      "input": "type:\"\"",
+      "errors": [
+        {
+          "code": "empty_value",
+          "span": {
+            "start": 5,
+            "end": 7
+          }
+        }
+      ]
+    },
+    {
+      "about": "An empty phrase names its quotes.",
+      "input": "\"\"",
+      "errors": [
+        {
+          "code": "empty_phrase",
+          "span": {
+            "start": 0,
+            "end": 2
+          }
+        }
+      ]
+    },
+    {
+      "about": "A phrase of spaces is empty.",
+      "input": "\" \"",
+      "errors": [
+        {
+          "code": "empty_phrase",
+          "span": {
+            "start": 0,
+            "end": 3
+          }
+        }
+      ]
+    },
+    {
+      "about": "A minus alone excludes nothing.",
+      "input": "-",
+      "errors": [
+        {
+          "code": "nothing_to_exclude",
+          "span": {
+            "start": 0,
+            "end": 1
+          }
+        }
+      ]
+    },
+    {
+      "about": "A minus before a space excludes nothing.",
+      "input": "budget - review",
+      "errors": [
+        {
+          "code": "nothing_to_exclude",
+          "span": {
+            "start": 7,
+            "end": 8
+          }
+        }
+      ]
+    },
+    {
+      "about": "Every error is listed, in the order of the text.",
+      "input": "form:erin \"open",
+      "errors": [
+        {
+          "code": "unknown_field",
+          "span": {
+            "start": 0,
+            "end": 4
+          }
+        },
+        {
+          "code": "unclosed_quote",
+          "span": {
+            "start": 10,
+            "end": 15
+          }
+        }
+      ]
+    },
+    {
+      "about": "A query holds at most 1000 characters.",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "errors": [
+        {
+          "code": "too_long",
+          "span": {
+            "start": 1000,
+            "end": 1001
+          }
+        }
+      ]
+    }
+  ]
+}
