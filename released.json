@@ -9464,6 +9464,7 @@
       },
       "output.left_out[].key": {
         "type": [
+          "null",
           "string"
         ]
       },
@@ -9479,7 +9480,10 @@
         "enum": [
           "not_owner",
           "not_orders",
-          "differs"
+          "differs",
+          "pattern",
+          "unreadable",
+          "duplicate"
         ]
       },
       "output.text": {

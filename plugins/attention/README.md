@@ -95,7 +95,10 @@ key of the attention file merged in. It writes neither file; the owner reads
 the lines and writes Board's file. A printed line never admits more than the
 lines it came from:
 
-- An attention line counts only when it admits `owner` for orders.
+- An attention line counts only when it admits `owner` for orders. Lists
+  holding `!`, `*` or `?` are patterns to ssh-keygen and are not compared,
+  so such a line, or one whose key Board lists with such a line, gives
+  nothing.
 - A key only in the attention file gets that line's principals and options,
   with `namespaces="attention/order/v1"`.
 - A key in both files keeps Board's lines. When none admits orders, the first
@@ -107,7 +110,8 @@ lines it came from:
 `changes` gives each printed line that differs, as `gained`, `added` or
 `merged`. `duplicates` lists Board's lines that share a key, and `merged` says
 whether they printed as one. `left_out` gives each attention line that added
-nothing, as `not_owner`, `not_orders` or `differs`. A Board file that group or
+nothing, as `not_owner`, `not_orders`, `differs`, `pattern`, `unreadable` or
+`duplicate`, which is a later line for a key an earlier line gave. A Board file that group or
 others may write stops orders as it stops approvals, with
 `orders::signers::untrusted`.
 

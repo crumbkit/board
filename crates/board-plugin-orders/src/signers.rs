@@ -59,6 +59,13 @@ pub(crate) enum Reason {
     NotOrders,
     /// Board's lines for its key name other principals or other options.
     Differs,
+    /// It or Board's line for its key names principals or namespaces with
+    /// `!`, `*` or `?`, which are not compared.
+    Pattern,
+    /// It cannot be read, or its `namespaces=` is not one quoted value.
+    Unreadable,
+    /// An earlier line of the attention file already gave its key.
+    Duplicate,
 }
 
 /// A line of the attention file, numbered from 1, that gave the printed
@@ -67,8 +74,8 @@ pub(crate) enum Reason {
 #[schemars(deny_unknown_fields)]
 pub(crate) struct LeftOut {
     pub(crate) line: usize,
-    /// The key, as `<type> <base64>`.
-    pub(crate) key: String,
+    /// The key, as `<type> <base64>`, or none when the line cannot be read.
+    pub(crate) key: Option<String>,
     pub(crate) reason: Reason,
 }
 
@@ -121,6 +128,9 @@ pub(crate) fn output(merged: Signers) -> Output {
                     LeftOutReason::NotOwner => Reason::NotOwner,
                     LeftOutReason::NotOrders => Reason::NotOrders,
                     LeftOutReason::Differs => Reason::Differs,
+                    LeftOutReason::Pattern => Reason::Pattern,
+                    LeftOutReason::Unreadable => Reason::Unreadable,
+                    LeftOutReason::Duplicate => Reason::Duplicate,
                 },
             })
             .collect(),

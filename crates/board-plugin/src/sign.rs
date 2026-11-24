@@ -321,7 +321,8 @@ pub struct Duplicate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LeftOut {
     pub line: usize,
-    pub key: String,
+    /// The key, as `<type> <base64>`, or none when the line cannot be read.
+    pub key: Option<String>,
     pub reason: LeftOutReason,
 }
 
@@ -335,6 +336,14 @@ pub enum LeftOutReason {
     /// Board's lines for its key name other principals or other options,
     /// so adding the order namespace would admit more than it does.
     Differs,
+    /// It or Board's line for its key names principals or namespaces with
+    /// `!`, `*` or `?`, which ssh-keygen reads as patterns, so the lists are
+    /// not compared.
+    Pattern,
+    /// It cannot be read, or its `namespaces=` is not one quoted value.
+    Unreadable,
+    /// An earlier line of the attention file already gave its key.
+    Duplicate,
 }
 
 /// Board's allowed signers file `board` with each key of the attention file
@@ -396,16 +405,22 @@ impl Entry {
             }
             _ => return None,
         };
-        let namespaces = (options.iter())
-            .find(|option| is_namespaces(option))
-            .map(|option| {
+        let namespaces = match options
+            .iter()
+            .filter(|option| is_namespaces(option))
+            .collect::<Vec<_>>()[..]
+        {
+            [] => None,
+            [option] => {
                 let (_, value) = option.split_once('=').expect("is_namespaces found an =");
-                value
-                    .trim_matches('"')
-                    .split(',')
-                    .map(str::to_owned)
-                    .collect()
-            });
+                let value = value.strip_prefix('"')?.strip_suffix('"')?;
+                if value.contains('"') {
+                    return None;
+                }
+                Some(value.split(',').map(str::to_owned).collect())
+            }
+            _ => return None,
+        };
         let comment = words[at + 2..].join(" ");
         Some(Self {
             principals: words[0].split(',').map(str::to_owned).collect(),
@@ -424,6 +439,14 @@ impl Entry {
     fn admits(&self, principal: &str, namespace: &str) -> bool {
         self.principals.iter().any(|p| p == principal)
             && (self.namespaces.as_ref()).is_none_or(|all| all.iter().any(|n| n == namespace))
+    }
+
+    /// Whether its principals or namespaces hold a `!`, `*` or `?`, which
+    /// ssh-keygen matches as a pattern.
+    fn has_pattern(&self) -> bool {
+        (self.principals.iter())
+            .chain(self.namespaces.iter().flatten())
+            .any(|name| name.starts_with('!') || name.contains(['*', '?']))
     }
 
     fn line(&self) -> String {
@@ -474,6 +497,8 @@ struct Merge {
     at: std::collections::HashMap<String, Vec<(usize, usize)>>,
     duplicates: Vec<Duplicate>,
     left_out: Vec<LeftOut>,
+    /// The keys lines of the attention file added or gained.
+    given: std::collections::HashSet<String>,
 }
 
 /// `board`, the text of Board's allowed signers file, with each key of
@@ -482,7 +507,9 @@ struct Merge {
 /// - two lines of Board's with one key, the same principals and the same
 ///   other options print as one with both lines' namespaces, or none when
 ///   either names none; other pairs print unchanged; both are reported;
-/// - an attention line that does not admit `owner` in orders is left out;
+/// - an attention line that cannot be read, that names patterns, that does
+///   not admit `owner` in orders, or whose key an earlier line gave is left
+///   out, as is one whose key Board lists on a line that names patterns;
 /// - Board's line for a key such a line lists gains the order namespace
 ///   when it names `owner`, the attention line admits all its principals and
 ///   the other options are the same; otherwise it is left as it was and the
@@ -554,59 +581,85 @@ impl Merge {
     }
 
     fn attention_line(&mut self, number: usize, line: &str) {
-        let namespace = board_model::ORDER_TYPE;
+        let text = line.trim();
+        if text.is_empty() || text.starts_with('#') {
+            return;
+        }
         let Some(entry) = Entry::parse(line) else {
+            self.left_out.push(LeftOut {
+                line: number,
+                key: None,
+                reason: LeftOutReason::Unreadable,
+            });
             return;
         };
-        let reason = if !entry.principals.iter().any(|p| p == PRINCIPAL) {
-            Some(LeftOutReason::NotOwner)
-        } else if !entry.admits(PRINCIPAL, namespace) {
-            Some(LeftOutReason::NotOrders)
-        } else if let Some(seen) = self.at.get(&entry.key) {
-            let lines = || {
-                (seen.iter()).filter_map(|&(index, _)| match &self.printed[index] {
-                    Printed::Key(kept, ..) => Some((index, kept)),
-                    Printed::Kept(_) => None,
-                })
-            };
-            if lines().any(|(_, kept)| kept.admits(PRINCIPAL, namespace)) {
-                return;
-            }
-            let fits = lines().find(|(_, kept)| {
-                kept.others == entry.others
-                    && kept.principals.iter().any(|p| p == PRINCIPAL)
-                    && (kept.principals.iter()).all(|p| entry.principals.contains(p))
+        if let Some(reason) = self.attention_entry(&entry) {
+            self.left_out.push(LeftOut {
+                line: number,
+                key: Some(entry.key),
+                reason,
             });
-            match fits.map(|(index, _)| index) {
-                Some(index) => {
-                    if let Printed::Key(kept, change, _) = &mut self.printed[index]
-                        && let Some(namespaces) = &mut kept.namespaces
-                    {
-                        namespaces.push(namespace.to_owned());
-                        change.get_or_insert(LineChange::Gained);
-                    }
-                    None
-                }
-                None => Some(LeftOutReason::Differs),
-            }
-        } else {
+        }
+    }
+
+    /// Adds what the attention line `entry` gives, or why it gives nothing.
+    fn attention_entry(&mut self, entry: &Entry) -> Option<LeftOutReason> {
+        let namespace = board_model::ORDER_TYPE;
+        if entry.has_pattern() {
+            return Some(LeftOutReason::Pattern);
+        }
+        if !entry.principals.iter().any(|p| p == PRINCIPAL) {
+            return Some(LeftOutReason::NotOwner);
+        }
+        if !entry.admits(PRINCIPAL, namespace) {
+            return Some(LeftOutReason::NotOrders);
+        }
+        if self.given.contains(&entry.key) {
+            return Some(LeftOutReason::Duplicate);
+        }
+        let Some(seen) = self.at.get(&entry.key) else {
             let added = Entry {
                 namespaces: Some(vec![namespace.to_owned()]),
                 ..entry.clone()
             };
+            self.given.insert(added.key.clone());
             self.at
                 .insert(added.key.clone(), vec![(self.printed.len(), 0)]);
             self.printed
                 .push(Printed::Key(added, Some(LineChange::Added), String::new()));
-            None
+            return None;
         };
-        if let Some(reason) = reason {
-            self.left_out.push(LeftOut {
-                line: number,
-                key: entry.key,
-                reason,
-            });
+        let lines: Vec<(usize, &Entry)> = (seen.iter())
+            .filter_map(|&(index, _)| match &self.printed[index] {
+                Printed::Key(kept, ..) => Some((index, kept)),
+                Printed::Kept(_) => None,
+            })
+            .collect();
+        if lines.iter().any(|(_, kept)| kept.has_pattern()) {
+            return Some(LeftOutReason::Pattern);
         }
+        if lines
+            .iter()
+            .any(|(_, kept)| kept.admits(PRINCIPAL, namespace))
+        {
+            return None;
+        }
+        let fits = lines.iter().find(|(_, kept)| {
+            kept.others == entry.others
+                && kept.principals.iter().any(|p| p == PRINCIPAL)
+                && (kept.principals.iter()).all(|p| entry.principals.contains(p))
+        });
+        let Some(&(index, _)) = fits else {
+            return Some(LeftOutReason::Differs);
+        };
+        if let Printed::Key(kept, change, _) = &mut self.printed[index]
+            && let Some(namespaces) = &mut kept.namespaces
+        {
+            namespaces.push(namespace.to_owned());
+            change.get_or_insert(LineChange::Gained);
+        }
+        self.given.insert(entry.key.clone());
+        None
     }
 
     fn finish(self) -> Signers {

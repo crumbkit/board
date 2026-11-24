@@ -483,6 +483,115 @@ fn a_key_only_in_the_attention_file_is_added_for_the_order_namespace_alone() {
             (4, LineChange::Added)
         ]
     );
+    assert_eq!(left_out(&signers), [(3, LeftOutReason::Duplicate)]);
+}
+
+/// ssh-keygen reads `!`, `*` and `?` in principals and namespaces as
+/// patterns, so an attention line naming one, or one whose key Board lists
+/// on a line naming one, gives nothing and Board's line prints unchanged.
+#[test]
+fn an_attention_or_board_line_with_patterns_gives_nothing() {
+    for (board, attention) in [
+        (
+            "owner,bob namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA\n",
+            "owner,bob,!bob ecdsa-sha2-nistp256 AAAA\n",
+        ),
+        (
+            "owner namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA\n",
+            "owner,!owner ecdsa-sha2-nistp256 AAAA\n",
+        ),
+        (
+            "",
+            "owner namespaces=\"attention/order/v1,!attention/*\" ssh-ed25519 BBBB\n",
+        ),
+        ("", "own* ssh-ed25519 BBBB\n"),
+        ("", "owner,b?b ssh-ed25519 BBBB\n"),
+        (
+            "owner,!bob namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA\n",
+            "owner ecdsa-sha2-nistp256 AAAA\n",
+        ),
+        (
+            "owner namespaces=\"board/*\" ecdsa-sha2-nistp256 AAAA\n",
+            "owner ecdsa-sha2-nistp256 AAAA\n",
+        ),
+    ] {
+        let signers = merged_signers(board, attention);
+        assert_eq!(signers.text, board, "{attention}");
+        assert_eq!(changes(&signers), []);
+        assert_eq!(left_out(&signers), [(1, LeftOutReason::Pattern)]);
+    }
+}
+
+/// An attention line that admits owner and more principals than Board's
+/// line gives that line the order namespace, since it admits all of them.
+#[test]
+fn an_attention_line_with_more_principals_than_boards_line_gives_it_orders() {
+    let board = "owner namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA\n";
+    let signers = merged_signers(board, "owner,bob ecdsa-sha2-nistp256 AAAA\n");
+    assert_eq!(
+        signers.text,
+        "owner namespaces=\"board/approve/v1,attention/order/v1\" ecdsa-sha2-nistp256 AAAA\n"
+    );
+    assert_eq!(changes(&signers), [(1, LineChange::Gained)]);
+    assert_eq!(left_out(&signers), []);
+}
+
+/// Options are compared as written, so the same options in another order
+/// neither merge two of Board's lines nor let an attention line give one
+/// the order namespace.
+#[test]
+fn the_same_options_in_another_order_do_not_merge() {
+    let board = "owner cert-authority,valid-before=\"20270101\",namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA\nowner valid-before=\"20270101\",cert-authority,namespaces=\"board/write/v1\" ecdsa-sha2-nistp256 AAAA\n";
+    let signers = merged_signers(board, "");
+    assert_eq!(signers.text, board);
+    assert_eq!(changes(&signers), []);
+    assert!(!signers.duplicates[0].merged);
+
+    let board = "owner cert-authority,valid-before=\"20270101\",namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA\n";
+    let attention = "owner valid-before=\"20270101\",cert-authority ecdsa-sha2-nistp256 AAAA\n";
+    let signers = merged_signers(board, attention);
+    assert_eq!(signers.text, board);
+    assert_eq!(left_out(&signers), [(1, LeftOutReason::Differs)]);
+}
+
+/// A `namespaces=` value without quotes, or two `namespaces=` options on one
+/// line, is refused by ssh-keygen, so such a line cannot be read: Board's
+/// prints as it was and the attention file's is left out as unreadable, as
+/// is a line with no key.
+#[test]
+fn an_unquoted_or_doubled_namespaces_or_a_line_with_no_key_is_unreadable() {
+    let attention = "owner namespaces=attention/order/v1 ssh-ed25519 BBBB\nowner namespaces=\"git\",namespaces=\"attention/order/v1\" ssh-ed25519 CCCC\nowner ssh-ed25519\n\n# a comment\n";
+    let signers = merged_signers("", attention);
+    assert_eq!(signers.text, "");
+    assert_eq!(
+        left_out(&signers),
+        [
+            (1, LeftOutReason::Unreadable),
+            (2, LeftOutReason::Unreadable),
+            (3, LeftOutReason::Unreadable),
+        ]
+    );
+    assert!(signers.left_out.iter().all(|left| left.key.is_none()));
+
+    let board = "owner namespaces=board/approve/v1 ecdsa-sha2-nistp256 AAAA\nowner namespaces=\"git\",namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 BBBB\n";
+    let signers = merged_signers(board, "");
+    assert_eq!(signers.text, board);
+    assert_eq!(changes(&signers), []);
+}
+
+/// A later attention line for a key an earlier line already gave is left
+/// out as a duplicate, with its key, though its options differ.
+#[test]
+fn a_later_attention_line_for_a_key_already_given_is_a_duplicate() {
+    let attention =
+        "owner valid-before=\"20200101\" ssh-ed25519 BBBB old\nowner ssh-ed25519 BBBB new\n";
+    let signers = merged_signers("", attention);
+    assert_eq!(
+        signers.text,
+        "owner valid-before=\"20200101\",namespaces=\"attention/order/v1\" ssh-ed25519 BBBB old\n"
+    );
+    assert_eq!(left_out(&signers), [(2, LeftOutReason::Duplicate)]);
+    assert_eq!(signers.left_out[0].key.as_deref(), Some("ssh-ed25519 BBBB"));
 }
 
 /// An attention line that does not admit owner in orders adds nothing and
