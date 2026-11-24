@@ -14,6 +14,28 @@ const open = atom({ plugin: 'board-attention', key: 'open' } as const, null as s
 const pinned = atom({ plugin: 'board-attention', key: 'pinned' } as const, null as Pinned | null)
 const selected = atom({ plugin: 'board-attention', key: 'selected' } as const, null as string | null)
 const showContext = atom({ plugin: 'board-attention', key: 'showContext' } as const, false)
+const replacedBy = atom({ plugin: 'board-attention', key: 'replaced' } as const, false)
+
+/** The command that installs the mod that replaces this one. */
+export const INSTALL = 'claude plugin install board-orders@board'
+/** The command that removes this mod once board-orders is installed. */
+export const UNINSTALL = 'claude plugin uninstall board-attention@board'
+
+/**
+ * Whether `enabled`, the settings' `enabledPlugins`, turns on board-orders,
+ * which replaces this mod. While it does, this mod adds no context and
+ * registers no tool, so a session sees each order once.
+ */
+export function replaced(enabled: unknown): boolean {
+  if (typeof enabled !== 'object' || enabled === null) return false
+  return Object.entries(enabled).some(([id, on]) => id.split('@')[0] === 'board-orders' && on === true)
+}
+
+/** The band's line about the replacement: install it, or, once it is on, uninstall this mod. */
+export const replacementLine = (isReplaced: boolean) =>
+  isReplaced
+    ? `board-orders now shows the pinned orders; remove this mod with \`${UNINSTALL}\`.`
+    : `board-orders replaces this mod: run \`${INSTALL}\`, then \`${UNINSTALL}\`.`
 
 const TOOL = 'request_signature'
 const BOARD = 'the personal board'
@@ -67,7 +89,9 @@ export function outcome(request: Request, exitCode: number, stdout: string, stde
     }
   }
   const failed = failure(stdout)
-  if (failed?.code === 'attention::sign::declined') {
+  // Board names these codes orders:: since the plugin's rename, and
+  // attention:: before it.
+  if (failed?.code === 'orders::sign::declined' || failed?.code === 'attention::sign::declined') {
     const feedback = typeof failed.fields.feedback === 'string' ? failed.fields.feedback : failed.message
     return {
       kind: 'changes',
@@ -76,7 +100,7 @@ export function outcome(request: Request, exitCode: number, stdout: string, stde
         `Revise the draft, then call ${TOOL} again.`,
     }
   }
-  if (failed?.code === 'attention::sign::cancelled') return { kind: 'cancelled' }
+  if (failed?.code === 'orders::sign::cancelled' || failed?.code === 'attention::sign::cancelled') return { kind: 'cancelled' }
   // Board prints a failure document for every failure under --json, and a
   // child ended by a signal reads as exit status 1, so exit 1 without one
   // means the process was killed.
@@ -103,6 +127,9 @@ async function readPinned($: EngineInterface): Promise<Pinned> {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
+    const isReplaced = replaced(await $.settings.read({ key: 'enabledPlugins' }))
+    await update($, replacedBy, () => isReplaced)
+    if (isReplaced) return started
     await $.tool.register({
       name: TOOL,
       description:
@@ -140,6 +167,7 @@ export const register: Register = on => {
   // came before this module loaded reads it here.
   on('prompt.context', async ($, e, next) => {
     const context = await next(e)
+    if (await read($, replacedBy)) return context
     const answer = (await read($, pinned)) ?? (await readPinned($))
     const text = contextText(answer)
     if (text === null) return context
@@ -152,6 +180,13 @@ export const register: Register = on => {
     const below = await next(e)
     if (e.props.hasSurvey || !drawsInto(e.plugin)) return below
     const { Box, Button, Text } = $.ui.resolve(e)
+    const isReplaced = await read($, replacedBy)
+    const notice = (
+      <Box key="replacement">
+        <Text dimColor>{replacementLine(isReplaced)}</Text>
+      </Box>
+    ) as RenderElement
+    if (isReplaced) return joinBand(below, [], [notice])
     const answer = await read($, pinned)
     const button = answer === null ? null : ordersButton(answer)
     const list = await read($, pending)
@@ -219,7 +254,8 @@ export const register: Register = on => {
         </Box>
       )
 
-    return joinBand(below, part === null ? [] : [part as RenderElement], request === null ? [] : [request as RenderElement])
+    const lines = [...(request === null ? [] : [request as RenderElement]), notice]
+    return joinBand(below, part === null ? [] : [part as RenderElement], lines)
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {

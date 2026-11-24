@@ -30,14 +30,15 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   board from `board --json ls / --limit 1` at the repository root, because
   `rules.check` does not report its board. With no such board, it is
   left out.
-- **Orders button**, from `board-attention`: `Orders <n>`, the number of
+- **Orders button**, from `board-orders`, or `board-attention` until it is
+  uninstalled: `Orders <n>`, the number of
   pinned orders that verified. It opens the pinned-orders pane, which lists
   every order; pressing one opens its text, path, expiry and signer, and a
   **Show context** button for its context. When orders are left out, the
   button shows in red as `Orders <n>: <m> left out`, and the pane gives each
   one's code and message. When the personal board cannot be read, the button
   shows in red with Board's code, such as `Orders:
-  attention::signers::missing`, and the pane gives the message.
+  orders::signers::missing`, and the pane gives the message.
 - **Rules button**, from `board-rules`: `Rules <n>`, the number of
   rules `rules.check` returned. It opens a pane that lists them as
   standing rules, obligations owed and budgets, each with its path and
@@ -83,8 +84,9 @@ row. A tree beneath that is not a band, such as another plugin's, is kept as
 a line after the row.
 
 The slots, in order, are `a1-state`, `b1-orders`, `b2-controls`,
-`b3-waiting` and `b4-effects`; the letter is the section. Each of the four
-mods keeps an identical copy of `hooks/band.ts`, which holds this logic,
+`b3-waiting` and `b4-effects`; the letter is the section. Each of the five
+mods, `board-attention`, `board-effects`, `board-orders`, `board-plans` and
+`board-rules`, keeps an identical copy of `hooks/band.ts`, which holds this logic,
 because a mod installs alone. The `mods` workflow fails when a copy differs
 from the attention mod's, and the attention mod's `tests/band.test.ts` tests
 the logic.

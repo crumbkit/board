@@ -59,6 +59,8 @@ function engine(on: On, answer: { exitCode: number; stdout: string; stderr?: str
     ran.push(e.argv)
     return { value: { stderr: '', ...answer, isStdoutTruncated: false, isStderrTruncated: false } }
   })
+  // No real settings reach a test: board-orders, which replaces this mod, is not enabled.
+  on('settings.read', () => ({ value: {} }))
   on('tool.register', (_, e) => ({ value: { tool: `mcp__board-attention__${e.name}` } }))
   on('ui.open', (_, e) => {
     opened.push(e.id)

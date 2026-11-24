@@ -5,7 +5,7 @@ import { ROW, SLOT, drawsInto, joinBand, oneBand } from '../hooks/band'
 
 // These prove how a mod's part joins the band the mods beneath it drew. Each
 // Board mod keeps an identical copy of band.ts, which the mods workflow
-// compares with this mod's, so this test covers all four.
+// compares with this mod's, so this test covers all five.
 
 const part = (key: string, text: string): RenderElement => ({ type: 'Box', props: { key }, children: [text] })
 const ENGINE: RenderElement = { type: 'engine', ref: 0 }
@@ -57,5 +57,6 @@ test('the band rows keep one band, the one with the most parts, and pass other p
 
 test('a mod draws into a Board mod\'s row and not into another plugin\'s row', () => {
   expect(drawsInto('board-rules')).toBe(true)
+  expect(drawsInto('board-orders')).toBe(true)
   expect(drawsInto('turn-band')).toBe(false)
 })

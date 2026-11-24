@@ -46,6 +46,10 @@ Codes are `orders::order::<code>` unless shown whole.
 - `orders::signers::untrusted`: the allowed signers file is not the
   owner's alone.
 - `orders::verify::failed`: the signature could not be checked.
+- `orders::signers::legacy`, a warning on stderr beside a verified order:
+  only the old attention allowed signers file admits its key. The order
+  binds; tell the owner the warning's next step, since only they may edit
+  that file.
 - `orders::board::refused`: Board refused the read, as when nothing is at
   the path.
 

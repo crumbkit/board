@@ -37,6 +37,8 @@ declare module 'claude-code' {
       selected: string | null
       /** Whether the pane shows the chosen order's context. */
       showContext: boolean
+      /** Whether board-orders, which replaces this mod, is enabled; read at session start. */
+      replaced: boolean
     }
   }
 }
