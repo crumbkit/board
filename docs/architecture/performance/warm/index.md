@@ -71,7 +71,7 @@ alter, and the states of each.
 - A build that does not name itself keeps no probe.
 - `pointers` rows hold each pointer's `repo`, `follow` and commit, so a run
   reads a source's mounts from the index without opening it.
-- The `repositories` work count ([timing.md](timing.md)) is the repositories
+- The `repositories` work count ([timing.md](../timing.md)) is the repositories
   a run opened. A warm query of an unchanged board opens none.
 
 ## The working tree's decision
@@ -105,7 +105,7 @@ alter, and the states of each.
   every entry and keeps none. The slot keeps the rows, inputs and key of
   the earlier tree it holds, and the next run compares the walk with them.
 - A run that does not keep its rows records no reads.
-- The `decided` work count ([timing.md](timing.md)) is the entries a run
+- The `decided` work count ([timing.md](../timing.md)) is the entries a run
   decided. A warm `query` or `check` of an unchanged board decides none.
 
 ## Deciding again after a change

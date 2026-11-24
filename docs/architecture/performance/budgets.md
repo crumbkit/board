@@ -108,7 +108,7 @@ them:
 | `board call plans.open --limit 20`, warm, on the owner's board | 50 ms |
 
 A warm `board check` reads the decisions the index keeps
-(performance/decisions.md).
+(performance/warm/decisions.md).
 
 ## Command budgets
 

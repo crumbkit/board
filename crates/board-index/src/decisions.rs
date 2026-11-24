@@ -1,6 +1,6 @@
 //! Each source's decision and mounted sources' pointer lists, kept under keys that
 //! board-tree makes and this crate never reads into
-//! (docs/architecture/performance/decisions.md), and the views that show
+//! (docs/architecture/performance/warm/decisions.md), and the views that show
 //! what one run decided.
 
 use board_model::{Change, Code, Digest, Kind, LogicalPath, Mount, ObjectId, Role, Source};
