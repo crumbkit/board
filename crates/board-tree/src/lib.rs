@@ -7,6 +7,7 @@ mod git;
 mod history;
 mod mounts;
 mod moved;
+pub mod reads;
 mod repositories;
 mod resolve;
 mod symlink;

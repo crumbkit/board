@@ -151,6 +151,28 @@ impl<F> Reached<F> {
         from: &Source,
         closures: &mut HashMap<ObjectId, Option<Digest>>,
     ) -> Option<Vec<Vec<u8>>> {
+        let each = self.probed_each(from, closures)?;
+        Some(each.into_iter().flat_map(|(_, fields)| fields).collect())
+    }
+
+    /// What each mount pointer of the working tree names and reached, as
+    /// its key holds it, hashed, by the pointer's physical path. `None`
+    /// when the working tree's decision has no key.
+    pub fn worktree_probes(&self) -> Option<Vec<(String, Digest)>> {
+        let each = self.probed_each(&Source::WorkingTree, &mut HashMap::new())?;
+        Some(
+            (each.into_iter())
+                .map(|(path, fields)| (path, hashed(&fields)))
+                .collect(),
+        )
+    }
+
+    /// [`Reached::probed`], by each pointer's physical path in path order.
+    fn probed_each(
+        &self,
+        from: &Source,
+        closures: &mut HashMap<ObjectId, Option<Digest>>,
+    ) -> Option<Vec<(String, Vec<Vec<u8>>)>> {
         if self.unread.contains(from) {
             return None;
         }
@@ -158,8 +180,9 @@ impl<F> Reached<F> {
             .filter(|probe| probe.from == *from)
             .collect();
         probes.sort_by(|a, b| a.path.cmp(&b.path));
-        let mut fields = Vec::new();
+        let mut each = Vec::new();
         for probe in probes {
+            let mut fields = Vec::new();
             fields.push(probe.path.clone().into_bytes());
             fields.push(probe.repo.clone().into_bytes());
             fields.push(probe.commit.to_string().into_bytes());
@@ -186,8 +209,9 @@ impl<F> Reached<F> {
                     fields.push(closure.hex().into_bytes());
                 }
             }
+            each.push((probe.path.clone(), fields));
         }
-        Some(fields)
+        Some(each)
     }
 }
 

@@ -13,4 +13,6 @@
 ["links","CREATE TABLE links (\n    blob TEXT NOT NULL,\n    ordinal INTEGER NOT NULL,\n    destination TEXT NOT NULL,\n    PRIMARY KEY (blob, ordinal)\n) WITHOUT ROWID"]
 ["pointers","CREATE TABLE pointers (\n    scan TEXT NOT NULL,\n    path TEXT NOT NULL,\n    logical TEXT,\n    blob TEXT,\n    repo TEXT,\n    follow TEXT,\n    commit_id TEXT,\n    PRIMARY KEY (scan, path)\n) WITHOUT ROWID"]
 ["probes","CREATE TABLE probes (\n    stamp TEXT PRIMARY KEY,\n    path TEXT NOT NULL,\n    root TEXT NOT NULL,\n    common TEXT,\n    origin TEXT\n) WITHOUT ROWID"]
+["slots","CREATE TABLE slots (\n    slot TEXT PRIMARY KEY,\n    key TEXT NOT NULL,\n    frame TEXT NOT NULL,\n    head TEXT,\n    directories BLOB NOT NULL,\n    probes BLOB NOT NULL\n) WITHOUT ROWID"]
+["inputs","CREATE TABLE inputs (\n    slot TEXT NOT NULL,\n    path TEXT NOT NULL,\n    entry TEXT NOT NULL,\n    reads BLOB NOT NULL,\n    PRIMARY KEY (slot, path)\n) WITHOUT ROWID"]
 ["decided","CREATE TABLE decided (\n    key TEXT NOT NULL,\n    path TEXT NOT NULL,\n    logical TEXT,\n    blob TEXT,\n    size INTEGER,\n    role TEXT,\n    schema TEXT,\n    kind TEXT NOT NULL,\n    code TEXT,\n    detail TEXT,\n    change TEXT,\n    PRIMARY KEY (key, path)\n) WITHOUT ROWID"]

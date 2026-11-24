@@ -127,6 +127,30 @@ CREATE TABLE probes (
     common TEXT,
     origin TEXT
 ) WITHOUT ROWID;
+-- The working tree's decision one build keeps for one board root, whose
+-- rows `decided` holds under `slot`: `key` is the key of the tree they
+-- describe, `frame` the digest of the moved prefixes, `head` the tree HEAD
+-- named, `directories` each directory and submodule the walk saw and
+-- `probes` each mount pointer's path and probe digest, each ended by a zero
+-- byte.
+CREATE TABLE slots (
+    slot TEXT PRIMARY KEY,
+    key TEXT NOT NULL,
+    frame TEXT NOT NULL,
+    head TEXT,
+    directories BLOB NOT NULL,
+    probes BLOB NOT NULL
+) WITHOUT ROWID;
+-- Each entry of a slot's tree: `entry` is the digest of the entry as
+-- deciding reads it, and `reads` each name its decision read
+-- (board_tree::reads), each ended by a zero byte.
+CREATE TABLE inputs (
+    slot TEXT NOT NULL,
+    path TEXT NOT NULL,
+    entry TEXT NOT NULL,
+    reads BLOB NOT NULL,
+    PRIMARY KEY (slot, path)
+) WITHOUT ROWID;
 CREATE TABLE decided (
     key TEXT NOT NULL,
     path TEXT NOT NULL,
@@ -160,9 +184,9 @@ DELETE FROM temp.probed;
 /// Deletes the facts nothing current reaches: each tree beneath a source's
 /// root, each object those trees hold, and each working-tree blob. A
 /// validation and its references go unless both blobs are reached, a
-/// decision or pointer list unless this run reached its key, and a probe
-/// unless this run used it.
-pub(crate) const PRUNE: [&str; 9] = [
+/// decision, a slot or a pointer list unless this run reached its key, and
+/// a probe unless this run used it.
+pub(crate) const PRUNE: [&str; 11] = [
     "DELETE FROM main.trees WHERE tree NOT IN temp.kept",
     "DELETE FROM main.blobs WHERE blob NOT IN temp.kept",
     "DELETE FROM main.links WHERE blob NOT IN temp.kept",
@@ -175,6 +199,10 @@ pub(crate) const PRUNE: [&str; 9] = [
     "DELETE FROM main.pointers
      WHERE scan NOT IN (SELECT scan FROM temp.reached WHERE scan IS NOT NULL)",
     "DELETE FROM main.probes WHERE stamp NOT IN temp.probed",
+    "DELETE FROM main.slots
+     WHERE slot NOT IN (SELECT key FROM temp.reached WHERE key IS NOT NULL)",
+    "DELETE FROM main.inputs
+     WHERE slot NOT IN (SELECT key FROM temp.reached WHERE key IS NOT NULL)",
 ];
 
 /// Counts a prune in `state`, so a run can tell when another process has

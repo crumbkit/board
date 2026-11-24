@@ -75,6 +75,13 @@ pub(crate) struct Referenced {
 }
 
 impl Decisions {
+    /// Puts the entries decided from `start` on in path order, as a run
+    /// that decides every entry in order leaves them.
+    pub(super) fn sort_from(&mut self, start: usize) {
+        self.resolved[start..].sort_by(|a, b| a.path.cmp(&b.path));
+        self.checked[start..].sort_by(|a, b| a.path.cmp(&b.path));
+    }
+
     /// Decides `entry` of `source`, named `logical` from the root.
     pub(super) fn push(
         &mut self,

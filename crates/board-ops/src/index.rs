@@ -163,16 +163,27 @@ impl Board {
         root: Option<ObjectId>,
         listed: &mut usize,
     ) -> Result<HashMap<String, Option<ObjectId>>, RefreshError> {
-        let repository = self.repository();
         let Some(root) = root else {
             return Ok(HashMap::new());
         };
+        self.store_head(writer, root, listed)?;
+        Ok(writer.files(root)?)
+    }
+
+    /// Stores each tree beneath `root`, the tree `HEAD` names, that the
+    /// index does not hold, counting each in `listed`.
+    pub(crate) fn store_head(
+        &self,
+        writer: &Writer,
+        root: ObjectId,
+        listed: &mut usize,
+    ) -> Result<(), RefreshError> {
         let mut known = |tree| writer.has_tree(tree).unwrap_or(false);
-        for tree in repository.trees(root, &mut known)? {
+        for tree in self.repository().trees(root, &mut known)? {
             writer.put_tree(&tree)?;
             *listed += 1;
         }
-        Ok(writer.files(root)?)
+        Ok(())
     }
 
     /// Walks the working tree, hashing only files whose metadata the index

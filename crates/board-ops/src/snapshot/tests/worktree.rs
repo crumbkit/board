@@ -1,7 +1,7 @@
-//! The working tree's decision, which the index keeps under a key of all it
-//! depends on. A warm query or check of an unchanged board decides no entry,
-//! and after each change decides the working tree again and answers as a
-//! cold one.
+//! The working tree's decision, which the index keeps in a slot with the
+//! key of all it depends on. A warm query or check of an unchanged board
+//! decides no entry, and after each change decides again only the entries
+//! the change could alter, and answers as a cold one.
 
 use std::path::Path;
 
@@ -97,6 +97,8 @@ fn directories(scenario: &Scenario) -> Vec<Change<'_>> {
 #[test]
 fn after_each_change_a_warm_query_decides_again_and_answers_as_a_cold_one() {
     let (scenario, vendor) = mounting();
+    // Enough other entries that most changes decide only what they reach.
+    fill(&scenario, 80);
     let cache = tempfile::tempdir().unwrap();
     let pruned = || {
         let board = open(&scenario);
@@ -171,16 +173,125 @@ fn after_each_change_a_warm_query_decides_again_and_answers_as_a_cold_one() {
         ),
     ];
     changes.extend(directories(&scenario));
+    changes.extend(more(&scenario));
     assert!(decided(&scenario, cache.path()) > 0);
     assert_eq!(decided(&scenario, cache.path()), 0, "nothing changed");
     for (change, make) in changes {
         make();
-        assert!(decided(&scenario, cache.path()) > 0, "{change}");
+        let count = decided(&scenario, cache.path());
+        // A commit changes no entry, so no entry is decided again; only
+        // each row's `change` is set again. No entry refers to the file
+        // deleted.
+        let none = ["a commit that moves HEAD", "a delete"].contains(&change);
+        assert_eq!(count == 0, none, "{change}: {count}");
         assert_eq!(
             decided(&scenario, cache.path()),
             0,
             "{change}, then nothing"
         );
+    }
+}
+
+/// Changes to repo records, a symlink and links through it, each answered
+/// as a cold run answers it.
+fn more(scenario: &Scenario) -> Vec<Change<'_>> {
+    let repo = |remote: &str| format!(r#"{{"$type": "board/repo/v1", "remote": "{remote}"}}"#);
+    vec![
+        (
+            "a repo record",
+            Box::new(move || {
+                scenario.write("repos/a.json", Item::File(&repo("example-org/a")));
+            }),
+        ),
+        (
+            "a second repo record that names the first's remote",
+            Box::new(move || {
+                scenario.write("repos/b.json", Item::File(&repo("example-org/a")));
+            }),
+        ),
+        (
+            "a symlink and a note that links through it",
+            Box::new(|| {
+                scenario
+                    .write("linked/x.json", Item::Symlink("../projects/p.json"))
+                    .write("notes/l.md", Item::File("[x](/linked/x)\n"));
+            }),
+        ),
+        (
+            "the symlink retargeted",
+            Box::new(|| {
+                scenario
+                    .write("linked/x.json", Item::Deleted)
+                    .write("linked/x.json", Item::Symlink("../tasks/a.json"));
+            }),
+        ),
+    ]
+}
+
+/// Writes `count` tasks in `topics/` that refer to nothing.
+fn fill(scenario: &Scenario, count: usize) {
+    for at in 0..count {
+        let fields = format!(r#", "note": "{at}""#);
+        scenario.write(&format!("topics/t{at}.json"), Item::File(&task(&fields)));
+    }
+}
+
+/// `mounting`'s board with `count` more tasks in `topics/`, which refer to
+/// nothing, and a task whose reference to `/projects/z` dangles.
+fn crowded(count: usize) -> (Scenario, Library) {
+    let (scenario, vendor) = mounting();
+    fill(&scenario, count);
+    let dangling = task(r#", "see": "/projects/z""#);
+    scenario.write("tasks/z.json", Item::File(&dangling));
+    (scenario, vendor)
+}
+
+#[test]
+fn after_a_record_is_added_a_warm_query_decides_it_and_each_entry_whose_reference_reaches_it() {
+    let (scenario, _vendor) = crowded(60);
+    let cache = tempfile::tempdir().unwrap();
+    decided(&scenario, cache.path());
+    assert_eq!(decided(&scenario, cache.path()), 0);
+    let project = r#"{"$type": "lr/project/v1"}"#;
+    scenario.write("projects/q.json", Item::File(project));
+    assert_eq!(
+        decided(&scenario, cache.path()),
+        1,
+        "a record nothing refers to"
+    );
+    scenario.write("projects/z.json", Item::File(project));
+    assert_eq!(
+        decided(&scenario, cache.path()),
+        2,
+        "a record a task refers to"
+    );
+}
+
+#[test]
+fn a_commit_that_changes_no_entry_decides_none_and_sets_each_rows_change_as_a_cold_run_does() {
+    let (scenario, _vendor) = crowded(60);
+    let cache = tempfile::tempdir().unwrap();
+    decided(&scenario, cache.path());
+    let committed = task(r#", "project": "/projects/p""#);
+    scenario.commit(&[("tasks/a.json", &committed)]);
+    assert_eq!(decided(&scenario, cache.path()), 0);
+    scenario.commit(&[("tasks/b.json", &task(r#", "see": "/tasks/a""#))]);
+    assert_eq!(decided(&scenario, cache.path()), 0, "a second commit");
+}
+
+#[test]
+fn more_than_one_in_twenty_entries_changed_decides_every_entry_and_fewer_decide_those_changed() {
+    for (changed, every) in [(1, false), (10, true)] {
+        let (scenario, _vendor) = crowded(60);
+        let cache = tempfile::tempdir().unwrap();
+        decided(&scenario, cache.path());
+        for at in 0..changed {
+            let fields = format!(r#", "note": "changed {at}""#);
+            scenario.write(&format!("topics/t{at}.json"), Item::File(&task(&fields)));
+        }
+        let count = decided(&scenario, cache.path());
+        let expected = if every { count > 60 } else { count == changed };
+        assert!(expected, "{changed} changed decided {count}");
     }
 }
 

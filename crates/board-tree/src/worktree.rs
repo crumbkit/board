@@ -85,6 +85,8 @@ pub(crate) struct WorkingTree<'r, 'k, T = ()> {
     /// How this tree listed each directory it listed or read from
     /// `earlier`.
     directories: Directories,
+    /// Where each lookup and listing is recorded, when they are.
+    reads: Option<crate::reads::Reads>,
 }
 
 /// What one snapshot of the working tree listed and hashed, so that a later
@@ -211,6 +213,7 @@ impl Repository {
             earlier,
             started_ns: now_ns(),
             directories: HashMap::new(),
+            reads: None,
         })
     }
 }
@@ -251,6 +254,7 @@ impl<'r, 'k> WorkingTree<'r, 'k> {
             earlier: self.earlier,
             started_ns: self.started_ns,
             directories: self.directories,
+            reads: self.reads,
         }
     }
 }
@@ -267,6 +271,13 @@ impl<T: Send> WorkingTree<'_, '_, T> {
     pub(crate) fn listed(mut self, listings: Listings) -> Self {
         (self.listed, self.settled) = (listings.listed, listings.settled);
         self.directories = listings.directories;
+        self
+    }
+
+    /// This tree, recording into `reads` each name it looks up and each
+    /// directory it lists whole.
+    pub(crate) fn reading(mut self, reads: crate::reads::Reads) -> Self {
+        self.reads = Some(reads);
         self
     }
 
@@ -437,10 +448,19 @@ impl<T: Send> Tree for WorkingTree<'_, '_, T> {
     }
 
     fn list(&mut self, directory: &PathBuf) -> Result<Rc<[RawEntry<PathBuf>]>, GitError> {
+        if let Some(reads) = &self.reads {
+            crate::reads::listed(reads, directory);
+        }
         let count = self.listing(directory)?.items.len();
         Ok((0..count)
             .filter_map(|at| self.entry(directory, at))
             .collect())
+    }
+
+    fn followed_symlink(&mut self) {
+        if let Some(reads) = &self.reads {
+            reads.borrow_mut().push(crate::reads::ANY.to_owned());
+        }
     }
 
     /// Classifies only the items whose names could give such an entry, so
@@ -452,6 +472,9 @@ impl<T: Send> Tree for WorkingTree<'_, '_, T> {
         name: &[u8],
         segment: Option<&str>,
     ) -> Result<Vec<RawEntry<PathBuf>>, GitError> {
+        if let Some(reads) = &self.reads {
+            crate::reads::lookup(reads, directory, name, segment);
+        }
         let listing = self.listing(directory)?;
         let names = listing.items.iter().map(|item| item.name.as_slice());
         let found = listing.folded.find(names, name, segment);

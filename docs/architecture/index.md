@@ -26,7 +26,9 @@ directory of each other board whose recorded root it can see is gone.
 | `mounts` | each mount point and the commit it reaches, or its code | source, path |
 | `pointers` | a mounted tree's mount pointers | scan key, path |
 | `directories` | each directory's stat and items as a walk listed them ([performance/warm.md](performance/warm.md)) | path |
-| `decided` | a source's entries as decided ([performance/decisions.md](performance/decisions.md)) | decision key, path |
+| `decided` | a source's entries as decided ([performance/decisions.md](performance/decisions.md)) | decision key or slot, path |
+| `probes` | what opening a mounted repository found ([performance/warm.md](performance/warm.md)) | stamp |
+| `slots`, `inputs` | the working tree's kept decision, and what each entry read | slot; slot, path |
 | `state` | index format, and when the last refresh that hashed or recorded a file began | key |
 
 The `entries` view joins these across the root and its mounts, one row per
@@ -56,7 +58,7 @@ writes nothing, so it neither waits for nor blocks another process. If another
 process holds the lock or wrote first, the refresh runs again, waiting up to 5
 seconds for the lock. If the wait runs out, it runs in an index in memory, so
 the index lock never refuses a `query` or a `call`. A
-JSON or Markdown file of up to 16 MiB is parsed from the bytes hashed, so a cold refresh
+file of up to 16 MiB is parsed from the bytes hashed, so a cold refresh
 opens each file once. The walk reads each entry's stat on up to four
 threads, never listing an ignored directory, then hashes the files whose
 stat changed on as many threads; the thread count changes no result.
@@ -81,8 +83,8 @@ JSON, at most 100 unless `--limit` (at most 10,000) or `--all` says
 otherwise, with `truncated` set when rows were left out. Rows also stop
 before one that would take them past 64 MiB as printed, even with `--all`.
 That cut adds the code `board::output::over_budget` to the report's `summary`
-and still exits 0. A first row or a single value past 64 MiB is refused with the same
-code and exits 1. Each value is counted as the row is read, so a wide row
+and exits 0. A first row or value past 64 MiB is refused with that code
+and exits 1. Each value is counted as the row is read, so a wide row
 stops at the value that passes the budget. The report is `rows`, each
 row an array in column order, and a `summary` holding `columns`. SQL that does not parse, would write, or holds more than one statement
 is `board::query::invalid`; ATTACH, DETACH and PRAGMA statements count as
@@ -100,13 +102,11 @@ ancestor and, under `missing`, the physical path a file there would have, by
 put's resolution; put may still refuse it, for instance through a mount, and
 names a new record's file with `.json`. Beneath a non-JSON file, or naming an
 existing entry by its `.json` file, the path stays `path::not_found`.
-Several paths are answered in the order given. All resolve in one snapshot
-of the working tree, and the board is checked once, only when a path
-resolves, so a plugin needs one run for many records.
+All paths resolve in one snapshot, and the board is checked once, only
+when a path resolves.
 Each answer is what the path alone gives, with the limit applied to each, so
 a run prints at most the number of paths times the limit reference lines,
-plus a note or error for each path, and the caller chooses how many paths to
-ask. A refused path does not stop the others and makes the run exit 1. Text
+plus a note or error for each path. A refused path does not stop the others and makes the run exit 1. Text
 prints each path's lines under a `==> <path> <==` header, as `get` does, and
 an error names its path on a `key:` line. JSON is always one `board/refs-report/v2`,
 for one path too. `data` holds each path's references in the order asked, and
