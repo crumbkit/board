@@ -17,8 +17,8 @@ const whole = { stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 
 type Shares = { context?: number; usage?: number } | 'refused' | 'throws'
 
-/** Stands in for `board`, the disk under `STATE` and the session's prompt submission. */
-function host(on: On, who: string | { id: string }, shares: Shares = { context: 70, usage: 85 }, disk = new Map<string, string>()) {
+/** Stands in for `board`, the disk under `STATE` and the session's prompt submission. A write to a path in `failing` throws. */
+function host(on: On, who: string | { id: string }, shares: Shares = { context: 70, usage: 85 }, disk = new Map<string, string>(), failing = new Set<string>()) {
   const me = typeof who === 'string' ? { id: who } : who
   const submitted: string[] = []
   const logs: string[] = []
@@ -29,7 +29,11 @@ function host(on: On, who: string | { id: string }, shares: Shares = { context: 
     if (value === undefined) return { value: { exitCode: 1, stdout: '{"code":"params::heuristic::not_found"}', ...whole } }
     return { value: { exitCode: 0, stdout: JSON.stringify({ data: { output: { value, source: 'value' } } }), ...whole } }
   })
-  on('fs.write', (_, e) => (disk.set(e.path, e.text), { value: undefined }))
+  on('fs.write', (_, e) => {
+    if (failing.has(e.path)) throw new Error('disk full')
+    disk.set(e.path, e.text)
+    return { value: undefined }
+  })
   on('fs.read', (_, e) => {
     const text = disk.get(e.path)
     if (text === undefined) throw new Error('missing')
@@ -329,4 +333,174 @@ test('a measurement without a context percent does not re-arm the context crossi
   await $.session.measure({ ...usage(80), context: { window: 200_000 }, changed: ['rateLimits' as never] })
   await $.session.measure(usage(80))
   expect(submitted).toHaveLength(1)
+})
+
+const SEVEN = '2026-11-24T00:00:00Z'
+const trigger = (disk: Map<string, string>) => JSON.parse(disk.get(`${STATE}/trigger.json`)!)
+
+test('a usage reset that puts the window back under its share stops telling new sessions', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const who = { id: 's1' }
+  const { disk, submitted } = host(on, who)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  await start($)
+  await $.session.measure(usage(10, 10, 86))
+  expect(submitted).toHaveLength(1)
+
+  await $.session.measure(usage(10, 10, 41))
+  who.id = 's2'
+  await clock.advance(30_000)
+
+  expect(submitted).toHaveLength(1)
+  expect(Date.parse(trigger(disk).resetsAt)).toBeLessThanOrEqual(NOW)
+  expect(trigger(disk).key).toBe(`seven_day@${SEVEN}`)
+})
+
+test('a session whose window fell back under its share is told again when it crosses again', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { disk, submitted } = host(on, 's1')
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  await start($)
+  await $.session.measure(usage(10, 10, 86))
+  await $.session.measure(usage(10, 10, 41))
+  expect(JSON.parse(disk.get(`${STATE}/sessions/s1.json`)!).asked).toEqual([])
+
+  await clock.advance(60_000)
+  await $.session.measure(usage(10, 10, 86))
+
+  expect(submitted).toHaveLength(2)
+  expect(trigger(disk)).toEqual({ key: `seven_day@${SEVEN}`, why: 'the seven_day usage limit is 86% used', resetsAt: SEVEN, at: '2026-11-19T09:01:00Z' })
+})
+
+test('a reading under the share leaves a trigger for another window alone, and writes nothing when there is no trigger', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const five = JSON.stringify({ key: `five_hour@${RESET}`, why: 'the five_hour usage limit is 86% used', resetsAt: RESET, at: '2026-11-19T08:00:00Z' })
+  const disk = new Map([[`${STATE}/trigger.json`, five]])
+  const { submitted } = host(on, 's1', undefined, disk)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  await start($)
+
+  await $.session.measure({ ...usage(10), rateLimits: [{ kind: 'seven_day', percentUsed: 41, resetsAt: SEVEN }] })
+
+  expect(disk.get(`${STATE}/trigger.json`)).toBe(five)
+  expect(submitted).toEqual([])
+  disk.delete(`${STATE}/trigger.json`)
+  await $.session.measure(usage(10, 10, 41))
+  expect(disk.size).toBe(0)
+})
+
+test('a trigger left before the fix is cleared by a reading of its window under the share, whatever that reading\'s reset time', async ($, on) => {
+  const now = Date.UTC(2026, 10, 24, 12, 20, 0)
+  const clock = mock.clock(on, { now })
+  const old = { key: 'seven_day@2026-11-26T00:00:00.000Z', why: 'the seven_day usage limit is 85% used', resetsAt: '2026-11-26T00:00:00.000Z', at: '2026-11-22T03:13:00Z' }
+  const who = { id: 's1' }
+  const disk = new Map([[`${STATE}/trigger.json`, JSON.stringify(old)]])
+  const { submitted } = host(on, who, undefined, disk)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  await start($)
+
+  await $.session.measure({ ...usage(10), rateLimits: [{ kind: 'seven_day', percentUsed: 41, resetsAt: '2026-11-25T00:00:00Z' }] })
+  who.id = 's2'
+  await clock.advance(30_000)
+
+  expect(submitted).toEqual([])
+  expect(trigger(disk)).toEqual({ key: old.key, why: 'the seven_day usage limit fell to 41% used', resetsAt: '2026-11-24T12:20:00Z', at: '2026-11-24T12:20:00Z' })
+})
+
+test('a trigger that cannot be cleared is logged and does not stop the measure', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const live = JSON.stringify({ key: `seven_day@${SEVEN}`, why: 'the seven_day usage limit is 86% used', resetsAt: SEVEN, at: '2026-11-19T08:00:00Z' })
+  const disk = new Map([[`${STATE}/trigger.json`, live]])
+  const { logs } = host(on, 's1', undefined, disk, new Set([`${STATE}/trigger.json`]))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  await start($)
+
+  const out = await $.session.measure(usage(10, 10, 41))
+
+  expect(out).toEqual({ changed: ['context'] })
+  expect(disk.get(`${STATE}/trigger.json`)).toBe(live)
+  expect(logs.join('\n')).toMatch(/handoff: could not clear the trigger: /)
+})
+
+test('a reading just under the share, from a session whose usage lags, does not clear a real crossing', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const who = { id: 's1' }
+  const { disk, submitted } = host(on, who)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  await start($)
+  await $.session.measure(usage(10, 10, 86))
+  const written = disk.get(`${STATE}/trigger.json`)
+
+  who.id = 's2'
+  await $.session.measure(usage(10, 10, 84))
+  who.id = 's3'
+  await clock.advance(30_000)
+
+  expect(disk.get(`${STATE}/trigger.json`)).toBe(written)
+  expect(submitted).toHaveLength(2)
+  expect(submitted[1]).toMatch(/seven_day usage limit is 86% used/)
+})
+
+test('a reading well under the share from another session clears the crossing for every idle session', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const who = { id: 's1' }
+  const { submitted } = host(on, who)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  await start($)
+  await $.session.measure(usage(10, 10, 86))
+
+  who.id = 's2'
+  await $.session.measure(usage(10, 10, 41))
+  who.id = 's3'
+  await clock.advance(30_000)
+
+  expect(submitted).toHaveLength(1)
+})
+
+test('an idle session told before a reset is told again when the window crosses again', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const who = { id: 's1' }
+  const { disk, submitted } = host(on, who)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  await start($)
+  await $.session.measure(usage(10, 10, 86))
+  who.id = 's3'
+  await clock.advance(30_000)
+  expect(submitted).toHaveLength(2)
+
+  who.id = 's1'
+  await $.session.measure(usage(10, 10, 41))
+  who.id = 's3'
+  await clock.advance(30_000)
+  expect(JSON.parse(disk.get(`${STATE}/sessions/s3.json`)!).asked).toEqual([])
+
+  who.id = 's1'
+  await $.session.measure(usage(10, 10, 86))
+  who.id = 's3'
+  await clock.advance(30_000)
+  expect(submitted).toHaveLength(4)
+})
+
+test('a second measurement under the share after a clear leaves the trigger as it is', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { disk } = host(on, 's1')
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  await start($)
+  await $.session.measure(usage(10, 10, 86))
+  await $.session.measure(usage(10, 10, 41))
+  const cleared = disk.get(`${STATE}/trigger.json`)
+
+  await clock.advance(60_000)
+  await $.session.measure(usage(10, 10, 41))
+
+  expect(disk.get(`${STATE}/trigger.json`)).toBe(cleared)
 })
