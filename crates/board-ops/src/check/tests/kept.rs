@@ -68,6 +68,7 @@ fn row(checked: &Checked, detail: Option<String>) -> KeptRow {
             Status::Ok => None,
         },
         detail,
+        change: checked.change,
     }
 }
 

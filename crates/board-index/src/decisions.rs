@@ -1,9 +1,9 @@
-//! Mounted sources' decisions and pointer lists, kept under keys that
+//! Each source's decision and mounted sources' pointer lists, kept under keys that
 //! board-tree makes and this crate never reads into
 //! (docs/architecture/performance/decisions.md), and the views that show
 //! what one run decided.
 
-use board_model::{Code, Digest, Kind, LogicalPath, ObjectId, Role, Source};
+use board_model::{Change, Code, Digest, Kind, LogicalPath, ObjectId, Role, Source};
 use board_tree::Held;
 use rusqlite::params;
 
@@ -45,6 +45,7 @@ pub struct KeptRow {
     pub code: Option<Code>,
     /// What check reports beyond the row, as `put_decision` was given it.
     pub detail: Option<String>,
+    pub change: Change,
 }
 
 impl Decided {
@@ -132,8 +133,9 @@ impl Writer {
     }
 
     /// Keeps `entries`, one source's whole decision, under `key`, each with
-    /// its `detail`. Their source and change are not kept: a key names a
-    /// tree, not a commit, and a mounted entry is committed.
+    /// its `detail`. Their source is not kept: a key names a tree, not a
+    /// commit. A working-tree entry's change is kept; a mounted entry is
+    /// committed.
     pub fn put_decision<'e>(
         &self,
         key: &Digest,
@@ -142,13 +144,14 @@ impl Writer {
         let key = key.hex();
         let mut statement = self.connection().prepare_cached(
             "INSERT OR REPLACE INTO main.decided
-             (key, path, logical, blob, size, role, schema, kind, code, detail)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             (key, path, logical, blob, size, role, schema, kind, code, detail, change)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         )?;
         for (entry, detail) in entries {
             let (path, logical, blob, size, role, schema, kind, code) = columns(entry);
+            let change = (entry.source == Source::WorkingTree).then(|| entry.change.as_str());
             statement.execute(params![
-                key, path, logical, blob, size, role, schema, kind, code, detail
+                key, path, logical, blob, size, role, schema, kind, code, detail, change
             ])?;
         }
         Ok(())
@@ -162,11 +165,12 @@ impl Writer {
             String,
             Option<String>,
             Option<String>,
+            Option<String>,
         );
         let rows = self
             .connection()
             .prepare_cached(
-                "SELECT path, logical, kind, code, detail FROM main.decided
+                "SELECT path, logical, kind, code, detail, change FROM main.decided
                  WHERE key = ?1 ORDER BY path",
             )?
             .query_map([key.hex()], |row| {
@@ -176,11 +180,12 @@ impl Writer {
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get(5)?,
                 ))
             })?
             .collect::<Result<Vec<Row>, _>>()?;
         rows.into_iter()
-            .map(|(path, logical, kind, code, detail)| {
+            .map(|(path, logical, kind, code, detail, change)| {
                 let unreadable =
                     |logical: &Option<LogicalPath>, column, value: &str| IndexError::Unreadable {
                         path: path.clone(),
@@ -201,25 +206,31 @@ impl Writer {
                     ),
                     None => None,
                 };
+                let change = match change.as_deref() {
+                    None | Some("committed") => Change::Committed,
+                    Some("uncommitted") => Change::Uncommitted,
+                    Some(text) => return Err(unreadable(&logical, "change", text)),
+                };
                 Ok(KeptRow {
                     path,
                     logical,
                     kind,
                     code,
                     detail,
+                    change,
                 })
             })
             .collect()
     }
 
-    /// Records that this run reached the mounted `source`, whose decision
-    /// the index keeps under `key` when there is one, and whose pointers it
-    /// lists under `scan`.
+    /// Records that this run reached `source`, whose decision the index
+    /// keeps under `key` when there is one, and whose pointers it lists
+    /// under `scan` when it is a mounted source.
     pub fn reach(
         &self,
         source: &Source,
         key: Option<&Digest>,
-        scan: &Digest,
+        scan: Option<&Digest>,
     ) -> Result<(), IndexError> {
         self.connection()
             .prepare_cached(
@@ -228,7 +239,7 @@ impl Writer {
             .execute(params![
                 source_name(source),
                 key.map(Digest::hex),
-                scan.hex()
+                scan.map(Digest::hex)
             ])?;
         Ok(())
     }

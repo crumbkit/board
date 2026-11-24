@@ -9,7 +9,7 @@ use crate::address::{self, Pointers};
 use crate::git::{GitError, Repository};
 use crate::symlink::{Chains, End, Node, ROOT};
 use crate::tree::{Kind, RawEntry, Tree, Unhashed};
-use crate::worktree::{Known, Listings, Prepare};
+use crate::worktree::{Directories, Known, Listings, Prepare};
 
 /// One file in a tree. Directories are not entries.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -118,16 +118,19 @@ impl Repository {
     /// each thread stops at the next file it prepares. If a hashing thread
     /// panics after `keep` has failed, the walk ends with that panic instead.
     /// The walk's listings come with its entries, for a
-    /// [`Resolver`](crate::Resolver) of the same snapshot to start from.
+    /// [`Resolver`](crate::Resolver) of the same snapshot to start from. A
+    /// directory that has not changed since `earlier` listed it is read
+    /// from there, not listed again; [`Listings::directories`] says how the
+    /// walk listed each, for the next walk.
     pub fn walk_working_tree<T: Send, E: From<GitError>>(
         &self,
-        known: Known<'_>,
+        (known, earlier): (Known<'_>, &Directories),
         prepare: Prepare<'_, T>,
         keep: &mut dyn FnMut(T) -> Result<(), E>,
     ) -> Result<(Vec<Entry>, Listings), E> {
         let mut failed = None;
         let mut keep = |prepared| keep(prepared).map_err(|error| failed = Some(error)).is_ok();
-        let mut tree = (self.working_tree(Some(known))?)
+        let mut tree = (self.working_tree_after(Some(known), earlier)?)
             .keeping(prepare, &mut keep)
             .on_demand();
         let walked = walk_in(&mut tree);

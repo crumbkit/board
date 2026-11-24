@@ -14,17 +14,21 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use board_index::{Decided, Index, IndexError, Storage, View, Writer};
+use board_index::{Decided, Index, IndexError, Resolved, Storage, View, Writer};
 use board_model::{
     Change, Code, Digest, Kind, LogicalPath, ObjectId, REPO_TYPE, RecordType, Role, Source, Stat,
 };
 use board_tree::{
-    Cache, Entry, Held, Mounted, Place, Repository, Scopes, TreeRow, TreeRows, in_scope,
+    Cache, Entry, Held, Listings, Mounted, Place, Repository, Scopes, Status, TreeRow, TreeRows,
+    in_scope,
 };
 
 use crate::board::Board;
 use crate::check::{CheckError, CheckReport};
-use crate::index::{Indexed, Kept, RefreshError, Refreshed, Run, attempt, facts, plain, transact};
+use crate::index::{
+    Indexed, Kept, Refresh, RefreshError, Refreshed, Run, attempt, facts, plain, transact,
+    unvalidated, validated,
+};
 
 mod decide;
 
@@ -113,6 +117,7 @@ impl Board {
         trace.count("pointers_read", work.pointers_read);
         trace.count("kept", work.kept);
         trace.count("walked", work.walked);
+        trace.count("decided", work.decided);
         drop(trace);
         Ok(Snapshot {
             decided,
@@ -172,12 +177,18 @@ impl Board {
         scope: Option<&LogicalPath>,
         need: Need,
     ) -> Run<(CheckReport, Vec<Referenced>, Walked)> {
-        let refresh = self.refresh(writer)?;
-        let mut work = refresh.work;
+        let Refresh {
+            entries,
+            listings,
+            mut facts,
+            kept,
+            head,
+            mut work,
+        } = self.refresh(writer)?;
         let timed = self.timed("snapshot.mounts");
         let mounts = self.repositories().walk_mounts(
-            &refresh.entries,
-            &refresh.facts,
+            &entries,
+            &facts,
             &mut Indexing {
                 writer,
                 work: &mut work,
@@ -187,51 +198,48 @@ impl Board {
         )?;
         drop(timed);
         let _timed = self.timed("snapshot.decide");
+        // A scoped run decides the working tree only in part.
+        let keyed = scope
+            .is_none()
+            .then(|| self.worktree_key(&mounts, (&entries, &listings), head))
+            .flatten();
+        let key = keyed.as_ref().map(|(key, _)| key);
+        let held = match key {
+            Some(key) => writer.has_decision(key)?,
+            None => false,
+        };
+        let mut decided = Decisions::default();
+        let root = Source::WorkingTree;
+        if let Some(key) = key.filter(|_| held && need.reads_kept()) {
+            unvalidated(&kept, &mut work);
+            if need == Need::Check {
+                for row in writer.decision(key)? {
+                    decided.checked.push(crate::check::from_kept(&root, row)?);
+                }
+            }
+            writer.reach(&root, Some(key), None)?;
+        } else {
+            validated(
+                writer,
+                self.repository(),
+                &root,
+                &mut facts,
+                kept,
+                &mut work,
+            )?;
+        }
         let scopes = &mounts.scopes;
-        let facts = mounts
+        let walked_facts = mounts
             .sources
             .iter()
             .filter_map(|m| Some(&m.walked.as_ref()?.1));
-        let plain = plain(std::iter::once(&refresh.facts).chain(facts));
-        let mut known = known(&refresh.entries, &mut work.hashed);
-        let resolver = self.repositories().resolver(&mut known, refresh.listings)?;
-        let mut resolver = resolver.knowing(&plain);
-        let mut decided = Decisions::default();
-        let root = Decide {
-            repositories: self.repositories(),
-            mounted: None,
-            writer,
-            listed: &refresh.entries,
-            facts: &refresh.facts,
-            resolve: RefCell::new(Box::new(|path: &LogicalPath| resolver.resolve(path))),
-            reader: RefCell::new(self.repositories().root().reader()),
-            failed: Cell::new(false),
-            remotes: OnceCell::new(),
-            cycles: &mounts.cycles,
-        };
-        for entry in &refresh.entries {
-            if !in_scope(scopes, &Source::WorkingTree, entry.logical.as_ref()) {
-                continue;
-            }
-            // A symlink is committed when its own blob is.
-            let own = entry.link.as_ref().map(|link| link.blob).or(entry.blob);
-            let change = if refresh.head.get(&entry.path) == Some(&own) {
-                Change::Committed
-            } else {
-                Change::Uncommitted
-            };
-            decided.push(
-                &root,
-                &Source::WorkingTree,
-                entry,
-                entry.logical.clone(),
-                change,
-            )?;
+        let plain = plain(std::iter::once(&facts).chain(walked_facts));
+        if !(held && need.reads_kept()) {
+            let listed = (entries.as_slice(), &facts, listings, head);
+            let read = (writer, &plain, scopes, &mounts.cycles);
+            let rows = self.decide_worktree(read, listed, &mut decided, &mut work)?;
+            keep_worktree(writer, (keyed.as_ref(), held), &rows, &mut decided)?;
         }
-        drop(root);
-        work.pointers_read += resolver.pointers_read();
-        drop(resolver);
-        drop(known);
         for mounted in &mounts.sources {
             let read_kept = need.reads_kept() && mounted.kept && mounted.whole;
             // A source was not walked when its decision is kept or the scope
@@ -247,7 +255,7 @@ impl Board {
                         }
                     }
                 }
-                writer.reach(&source, key, &mounted.scan)?;
+                writer.reach(&source, key, Some(&mounted.scan))?;
                 continue;
             };
             let read = (writer, &plain, scopes, &mounts.cycles);
@@ -258,17 +266,96 @@ impl Board {
         if writer.wrote()? {
             work.pruned = writer.prune_if_doubled()?;
         }
+        work.decided = decided.decided;
         let report = CheckReport {
             entries: decided.checked,
             memory: None,
             work,
         };
-        let mut walked = vec![(Source::WorkingTree, refresh.entries)];
+        let mut walked = vec![(Source::WorkingTree, entries)];
         walked.extend(
             (mounts.sources.into_iter())
                 .filter_map(|mounted| Some((Source::Commit(mounted.commit), mounted.walked?.0))),
         );
         Ok(((report, decided.references, walked), decided.resolved))
+    }
+
+    /// The key of the working tree's decision and the mounts it may cross
+    /// ([`board_tree::Reached::worktree_key`]): it holds every entry the
+    /// walk listed as a decision reads it, each directory and submodule the
+    /// walk saw, which a resolution can reach though it holds no entry, the
+    /// tree `HEAD` names, which says whether each entry is committed, and
+    /// the moved prefixes a resolution tries.
+    fn worktree_key(
+        &self,
+        mounts: &Mounts,
+        (entries, listings): (&[Entry], &Listings),
+        head: Option<ObjectId>,
+    ) -> Option<(Digest, HashSet<board_tree::Crossing>)> {
+        let head = head.map(|tree| tree.to_string()).unwrap_or_default();
+        let moved = format!("{:?}", self.repositories().moved());
+        let listed = listed(entries);
+        let directories = seen_directories(listings);
+        let fields: [&[u8]; 4] = [head.as_bytes(), moved.as_bytes(), &listed, &directories];
+        mounts.worktree_key(self.build, self.repository(), &fields)
+    }
+
+    /// Decides each entry of the working tree in scope into `decided`, and
+    /// says whether its rows may be kept: nothing failed to read, no two
+    /// names share a path and no file could not be read, with each mount its
+    /// resolutions crossed.
+    fn decide_worktree(
+        &self,
+        (writer, plain, scopes, cycles): (&Writer, &HashSet<ObjectId>, &Scopes, &Cycles),
+        (entries, facts, listings, head): (&[Entry], &Facts, Listings, Option<ObjectId>),
+        decided: &mut Decisions,
+        work: &mut Refreshed,
+    ) -> Result<Rows, RefreshError> {
+        let timed = self.timed("snapshot.head");
+        let head = self.head(writer, head, &mut work.trees)?;
+        drop(timed);
+        let mut known = known(entries, &mut work.hashed);
+        let resolver = self.repositories().resolver(&mut known, listings)?;
+        let mut resolver = resolver.knowing(plain);
+        let root = Decide {
+            repositories: self.repositories(),
+            mounted: None,
+            writer,
+            listed: entries,
+            facts,
+            resolve: RefCell::new(Box::new(|path: &LogicalPath| resolver.resolve(path))),
+            reader: RefCell::new(self.repositories().root().reader()),
+            failed: Cell::new(false),
+            remotes: OnceCell::new(),
+            cycles,
+        };
+        let mut whole = true;
+        for entry in entries {
+            if !in_scope(scopes, &Source::WorkingTree, entry.logical.as_ref()) {
+                whole = false;
+                continue;
+            }
+            // A symlink is committed when its own blob is.
+            let own = entry.link.as_ref().map(|link| link.blob).or(entry.blob);
+            let change = if head.get(&entry.path) == Some(&own) {
+                Change::Committed
+            } else {
+                Change::Uncommitted
+            };
+            decided.push(
+                &root,
+                &Source::WorkingTree,
+                entry,
+                entry.logical.clone(),
+                change,
+            )?;
+        }
+        let failed = root.failed.get();
+        drop(root);
+        work.pointers_read += resolver.pointers_read();
+        let crossed = resolver.crossed();
+        let storable = keepable(whole && !failed, &decided.resolved);
+        Ok(Rows { storable, crossed })
     }
 
     /// Decides each entry of `mounted` in scope into `decided`, and keeps
@@ -317,17 +404,7 @@ impl Board {
         let probed =
             (in_commit.crossed().iter()).all(|crossed| mounted.crossings.contains(crossed));
         let rows = &decided.resolved[start..];
-        // Names that are not UTF-8 can share a path, which the index keeps
-        // only once.
-        let mut paths = std::collections::HashSet::new();
-        // A file that could not be read may be read next run.
-        let storable = mounted.whole
-            && probed
-            && !failed
-            && rows.iter().all(|row| paths.insert(row.path.as_str()))
-            && !rows
-                .iter()
-                .any(|row| row.code == Some(Code::RepoUnreadable));
+        let storable = keepable(mounted.whole && probed && !failed, rows);
         let kept = match &mounted.key {
             Some(_) if mounted.kept => true,
             Some(key) if storable => {
@@ -341,7 +418,7 @@ impl Board {
             decided.resolved.truncate(start);
         }
         let key = mounted.key.as_ref().filter(|_| kept);
-        writer.reach(&source, key, &mounted.scan)?;
+        writer.reach(&source, key, Some(&mounted.scan))?;
         Ok(in_commit.pointers_read())
     }
 }
@@ -363,8 +440,105 @@ fn known<'e>(
     }
 }
 
+/// Whether a source's decided `rows` may be kept, given that it was
+/// decided whole and nothing failed to read (`whole`). Names that are not
+/// UTF-8 can share a path, which the index keeps only once, and a file that
+/// could not be read may be read next run.
+fn keepable(whole: bool, rows: &[Resolved]) -> bool {
+    let mut paths = HashSet::new();
+    whole
+        && rows.iter().all(|row| paths.insert(row.path.as_str()))
+        && !rows
+            .iter()
+            .any(|row| row.code == Some(Code::RepoUnreadable))
+}
+
+/// Each directory and submodule `listings` saw, as the bytes of its path,
+/// whether it is a submodule, and a separator.
+fn seen_directories(listings: &Listings) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for (path, submodule) in listings.seen_directories() {
+        let path = path.as_os_str().as_encoded_bytes();
+        bytes.extend(path.len().to_le_bytes());
+        bytes.extend_from_slice(path);
+        bytes.push(u8::from(submodule));
+    }
+    bytes
+}
+
+/// Each entry as deciding it reads it, without its metadata, each field
+/// preceded by its length so that no two lists give the same bytes.
+fn listed(entries: &[Entry]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut field = |text: &str| {
+        bytes.extend(text.len().to_le_bytes());
+        bytes.extend_from_slice(text.as_bytes());
+    };
+    for entry in entries {
+        let Entry {
+            path,
+            logical,
+            blob,
+            status,
+            stat: _,
+            size,
+            link,
+        } = entry;
+        field(path);
+        field(logical.as_ref().map_or("", LogicalPath::as_str));
+        field(&blob.map(|blob| blob.to_string()).unwrap_or_default());
+        field(match status {
+            Status::Ok => "",
+            Status::Degraded(code) => code.as_str(),
+        });
+        field(&size.map(|size| size.to_string()).unwrap_or_default());
+        field(
+            &link
+                .as_ref()
+                .map(|link| link.blob.to_string())
+                .unwrap_or_default(),
+        );
+        field(link.as_ref().map_or("", |link| link.target.as_str()));
+    }
+    bytes
+}
+
 /// What the index holds about one source's entries, by physical path.
 type Facts = HashMap<String, Indexed>;
+
+/// Keeps the working tree's rows in `decided` under its key, when the key
+/// already holds them or when they are storable and every mount they crossed
+/// is one the key holds. Kept rows leave `decided`'s rows, as the views read
+/// them from the index.
+fn keep_worktree(
+    writer: &Writer,
+    (keyed, held): (Option<&(Digest, HashSet<board_tree::Crossing>)>, bool),
+    rows: &Rows,
+    decided: &mut Decisions,
+) -> Result<(), RefreshError> {
+    let Some((key, crossings)) = keyed else {
+        return Ok(());
+    };
+    let storable =
+        rows.storable && (rows.crossed.iter()).all(|crossed| crossings.contains(crossed));
+    if !(held || storable) {
+        return Ok(());
+    }
+    if !held {
+        let details = decided.checked.iter().map(crate::check::to_kept);
+        writer.put_decision(key, decided.resolved.iter().zip(details))?;
+    }
+    decided.resolved.clear();
+    writer.reach(&Source::WorkingTree, Some(key), None)?;
+    Ok(())
+}
+
+/// Whether the working tree's rows may be kept, and each mount its
+/// resolutions crossed.
+struct Rows {
+    storable: bool,
+    crossed: Vec<board_tree::Crossing>,
+}
 
 /// Every mounted source, with what the index holds about its entries.
 type Mounts = board_tree::Reached<Facts>;
@@ -406,8 +580,17 @@ impl Cache for Indexing<'_> {
     ) -> Result<Facts, RefreshError> {
         // Each walk asks for its facts once.
         self.work.walked += 1;
-        let kept = Kept::default();
-        facts(self.writer, repository, source, entries, self.work, kept)
+        let mut kept = Kept::default();
+        let mut facts = facts(
+            self.writer,
+            repository,
+            source,
+            entries,
+            self.work,
+            &mut kept,
+        )?;
+        validated(self.writer, repository, source, &mut facts, kept, self.work)?;
+        Ok(facts)
     }
 
     fn is_pointer(facts: &Facts, path: &str) -> bool {

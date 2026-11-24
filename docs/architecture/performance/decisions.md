@@ -2,13 +2,14 @@
 
 This file holds detail for docs/architecture.md. It says how the index keeps
 each mounted source's decision so a warm query or check neither walks nor
-decides it.
+decides it. The working tree's decision is kept as [warm.md](warm.md) says.
 
 ## What is kept
 
-- `decided`: one row per entry of a mounted source, as a query's views show
-  it, under the source's key. The source and `change` are not kept: a key
-  names a tree, and each run attaches the commit that reached it. Its
+- `decided`: one row per entry of a source, as a query's views show it,
+  under the source's key. The source is not kept: each run attaches the
+  source that reached the key. A mounted source's rows keep no `change`,
+  as every entry of a commit is committed. Its
   `detail` column holds, as JSON, what `check` reports beyond the row: a
   degraded entry's detail and the schema it names. The `decided` view
   leaves it out.
@@ -42,6 +43,7 @@ mounts are read in order.
   keeps what it decided, except for a source it decided only in part. A
   row that cannot be read fails the run with `board::index::failed`.
 - `refs` decides every source, and keeps what it decided.
+- A scoped run decides the working tree only in part, and keeps none of it.
 - A scoped `ls` walks and decides only the sources its scope reaches, and
   keeps nothing for a source it decided only in part.
 - A scope reaches a source when one of the source's routes lies inside the
@@ -70,7 +72,7 @@ These sources are decided on every run:
 ## Order and pruning
 
 - `entries` lists the kept rows by source, then path, then the rest: the
-  working tree's and those of sources never kept. Whether a source is kept
+  rows of sources not kept. Whether a source is kept
   depends on the source, not on the cache, so a query without `ORDER BY`
   answers alike warm and cold.
 - A prune deletes kept rows and pointer lists the run did not reach.

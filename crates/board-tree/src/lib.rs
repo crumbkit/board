@@ -35,8 +35,8 @@ pub use crate::transport::{Deadline, GIT_DEADLINE, Upstream};
 pub use crate::trees::{Rows, TreeRow, TreeRows, walk_stored};
 pub use crate::walk::{Beneath, Entry, Link, Name, Status};
 pub use crate::worktree::{
-    Directory, Known, Listings, Prepare, Reader, Working, discover, is_repository_root,
-    repository_root, uncommitted,
+    Directories, Directory, DirectoryListing, Item, ItemType, Known, Listings, Prepare, Reader,
+    Working, discover, is_repository_root, repository_root, uncommitted,
 };
 pub use crate::write::outside::write_outside;
 pub use crate::write::sync::{

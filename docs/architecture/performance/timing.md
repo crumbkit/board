@@ -53,11 +53,11 @@ changes.
 | `snapshot` | refreshing the index and deciding every entry, for `check`, `ls`, `query` and `refs` |
 | `index.refresh` | the refresh, within `snapshot` |
 | `index.refresh.load` | loading the working-tree rows the last refresh stored |
-| `index.refresh.walk` | walking the working tree |
+| `index.refresh.walk` | walking the working tree, listing only the directories that changed ([warm.md](warm.md)) |
 | `index.refresh.sync` | storing what the walk found that differs from those rows |
 | `index.refresh.facts` | loading or adding each entry's facts |
-| `index.refresh.head` | listing `HEAD`'s trees |
 | `snapshot.mounts` | walking each mounted commit, within `snapshot` |
+| `snapshot.head` | listing `HEAD`'s trees, within `snapshot.decide`, when the working tree is decided |
 | `snapshot.decide` | deciding every entry, its references and pointers, then storing the mounts and pruning the index |
 | `snapshot.commit` | committing the index |
 | `view` | filling the views with what the snapshot decided, for `query` |
@@ -75,7 +75,8 @@ unread because they changed after the check (it does not name them),
 capabilities `commands` or `schemas` listed, `repositories`, the
 repositories a snapshot opened from disk besides the board's own, `kept`,
 the mounted sources a query or check read from kept decisions without
-walking them (architecture/performance/decisions.md), `walked`, the mounted
+walking them (architecture/performance/decisions.md), `decided`, the entries
+a snapshot decided in place of reading kept rows, `walked`, the mounted
 sources a snapshot walked from the index to find their mounts or decide
 them, and `pointers_read`, the files `snapshot.decide` read to learn whether
 they are pointers, once per blob in each source. It leaves out a file whose

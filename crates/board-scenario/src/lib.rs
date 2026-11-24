@@ -245,6 +245,27 @@ impl Scenario {
         self
     }
 
+    /// Dates every directory of the working tree, outside `.git`, an hour
+    /// ago, as directories nothing has changed in for a while are, so that
+    /// a walk can trust what it listed in them.
+    pub fn settle_directories(&self) -> &Self {
+        let hour_ago = SystemTime::now() - Duration::from_hours(1);
+        let mut pending = vec![self.workdir().to_path_buf()];
+        while let Some(directory) = pending.pop() {
+            for item in fs::read_dir(&directory).unwrap() {
+                let item = item.unwrap();
+                if item.file_type().unwrap().is_dir() && item.file_name() != ".git" {
+                    pending.push(item.path());
+                }
+            }
+            fs::File::open(&directory)
+                .unwrap()
+                .set_modified(hour_ago)
+                .unwrap();
+        }
+        self
+    }
+
     /// Gives the repository a git identity, so that a put can commit.
     pub fn identified(&self) -> &Self {
         self.write(

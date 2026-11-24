@@ -51,6 +51,9 @@ pub struct Refreshed {
     /// Mounted sources a snapshot walked from the index, to find their
     /// mounts or to decide them.
     pub walked: usize,
+    /// Entries a snapshot decided, not counting those whose decision it
+    /// read from the index's kept decisions.
+    pub decided: usize,
 }
 
 /// What this refresh learnt from the blobs it read in full, so it need not
@@ -64,6 +67,16 @@ pub(crate) struct Kept {
     /// Only a schema with no code is asked for, so it always compiles.
     schemas: HashMap<ObjectId, Option<Schema>>,
     compiled: usize,
+}
+
+impl std::fmt::Debug for Kept {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Kept")
+            .field("facts", &self.facts.len())
+            .field("compiled", &self.compiled)
+            .finish_non_exhaustive()
+    }
 }
 
 /// One entry's blob, the role its path gives it, and what the index holds
@@ -99,52 +112,59 @@ pub(crate) struct Refresh {
     pub(crate) entries: Vec<Entry>,
     /// What the walk listed, so resolution in this run lists nothing again.
     pub(crate) listings: Listings,
-    /// The fact for each entry that has one, by physical path. An entry
-    /// that changed after the walk or could not be read has none.
+    /// The fact for each entry that has one, by physical path, without
+    /// its validation, which [`validated`] adds. An entry that changed
+    /// after the walk or could not be read has none.
     pub(crate) facts: HashMap<String, Indexed>,
-    /// What `HEAD` holds at each path; empty before the first commit.
-    pub(crate) head: HashMap<String, Option<ObjectId>>,
+    /// What the refresh learnt from the blobs it read in full, for
+    /// [`validated`].
+    pub(crate) kept: Kept,
+    /// The tree `HEAD` names; `None` before the first commit.
+    pub(crate) head: Option<ObjectId>,
     pub(crate) work: Refreshed,
 }
 
 impl Board {
-    /// Brings the index up to date with the working tree, adding every fact
-    /// it does not yet hold.
+    /// Brings the index up to date with the working tree, adding every
+    /// blob fact it does not yet hold. Validations wait for [`validated`],
+    /// which a run that reads a kept decision never needs.
     pub(crate) fn refresh(&self, writer: &Writer) -> Result<Refresh, RefreshError> {
         let _timed = self.timed("index.refresh");
         let mut work = Refreshed::default();
         let mut kept = Kept::default();
         let (entries, listings) = self.walk(writer, &mut work, &mut kept)?;
         let timed = self.timed("index.refresh.facts");
+        let source = &Source::WorkingTree;
         let facts = facts(
             writer,
             self.repository(),
-            &Source::WorkingTree,
+            source,
             &entries,
             &mut work,
-            kept,
+            &mut kept,
         )?;
         drop(timed);
-        let timed = self.timed("index.refresh.head");
-        let head = self.head(writer, &mut work.trees)?;
-        drop(timed);
+        let head = self.repository().head_tree()?;
         Ok(Refresh {
             entries,
             listings,
             facts,
+            kept,
             head,
             work,
         })
     }
 
-    /// Adds `HEAD`'s trees the index does not hold, and returns its files.
-    fn head(
+    /// Adds the trees beneath `root`, the tree `HEAD` names, that the index
+    /// does not hold, and returns its files.
+    pub(crate) fn head(
         &self,
         writer: &Writer,
+        root: Option<ObjectId>,
         listed: &mut usize,
     ) -> Result<HashMap<String, Option<ObjectId>>, RefreshError> {
         let repository = self.repository();
-        let Some(root) = repository.head_tree()? else {
+        let Some(root) = root else {
             return Ok(HashMap::new());
         };
         let mut known = |tree| writer.has_tree(tree).unwrap_or(false);
@@ -156,7 +176,9 @@ impl Board {
     }
 
     /// Walks the working tree, hashing only files whose metadata the index
-    /// does not hold, and records what it saw. Each JSON file the walk reads
+    /// does not hold and listing only directories that changed since the
+    /// index recorded their items, and records what it saw. What it listed
+    /// is recorded only when it records something else. Each JSON file the walk reads
     /// in full is parsed on the thread that read it, and what the index does
     /// not hold yet is judged and stored into `kept` on this thread while
     /// the walk goes on, in the order the threads finish reading them; the
@@ -169,10 +191,11 @@ impl Board {
     ) -> Result<(Vec<Entry>, Listings), RefreshError> {
         let timed = self.timed("index.refresh.load");
         let mut worktree = writer.worktree()?;
+        let directories = writer.directories()?;
         drop(timed);
         let timed = self.timed("index.refresh.walk");
         let (entries, listings) = self.repository().walk_working_tree(
-            &mut |path, stat| worktree.known(path, stat),
+            (&mut |path, stat| worktree.known(path, stat), &directories),
             &|path, contents| {
                 Role::of(path).map(|role| parse(contents.blob, role, Some(&contents.bytes)))
             },
@@ -187,6 +210,11 @@ impl Board {
         drop(timed);
         let _timed = self.timed("index.refresh.sync");
         work.hashed += writer.sync_worktree(worktree, &entries)?;
+        // Only a run that writes anyway stores what it listed, so a run
+        // that finds nothing changed takes no write lock.
+        if writer.wrote()? {
+            writer.sync_directories(&directories, listings.directories())?;
+        }
         Ok((entries, listings))
     }
 }
@@ -371,16 +399,15 @@ impl Kept {
 }
 
 /// What the index holds about each entry of `source` in `repository`,
-/// parsing each blob and validating each record it does not hold yet. An
-/// entry that changed after the walk is left out. What the walk `kept` is
-/// not read again.
+/// parsing each blob it does not hold yet. An entry that changed after the
+/// walk is left out. What the walk `kept` is not read again.
 pub(crate) fn facts(
     writer: &Writer,
     repository: &Repository,
     source: &Source,
     entries: &[Entry],
     work: &mut Refreshed,
-    mut kept: Kept,
+    kept: &mut Kept,
 ) -> Result<HashMap<String, Indexed>, RefreshError> {
     let mut facts: HashMap<String, Indexed> = HashMap::new();
     let reader = &mut repository.reader();
@@ -420,9 +447,29 @@ pub(crate) fn facts(
         };
         facts.insert(entry.path.clone(), indexed);
     }
-    validate_all(writer, reader, source, &mut facts, &mut kept, work)?;
-    work.compiled += kept.compiled;
     Ok(facts)
+}
+
+/// Adds to `facts` what checking each record of `source` in `repository`
+/// against its schema found, validating each pair the index does not hold
+/// yet, and counts the schemas `kept` compiled.
+pub(crate) fn validated(
+    writer: &Writer,
+    repository: &Repository,
+    source: &Source,
+    facts: &mut HashMap<String, Indexed>,
+    mut kept: Kept,
+    work: &mut Refreshed,
+) -> Result<(), RefreshError> {
+    let reader = &mut repository.reader();
+    validate_all(writer, reader, source, facts, &mut kept, work)?;
+    work.compiled += kept.compiled;
+    Ok(())
+}
+
+/// Counts the schemas `kept` compiled, for a run that validates nothing.
+pub(crate) fn unvalidated(kept: &Kept, work: &mut Refreshed) {
+    work.compiled += kept.compiled;
 }
 
 /// Sets what checking each record against its schema found: from the index

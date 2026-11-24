@@ -163,13 +163,13 @@ mod tests {
                 "index.open",
                 "index.refresh",
                 "index.refresh.facts",
-                "index.refresh.head",
                 "index.refresh.load",
                 "index.refresh.sync",
                 "index.refresh.walk",
                 "snapshot",
                 "snapshot.commit",
                 "snapshot.decide",
+                "snapshot.head",
                 "snapshot.mounts",
             ]
         );
@@ -186,6 +186,7 @@ mod tests {
                 ("pointers_read", work.pointers_read),
                 ("kept", work.kept),
                 ("walked", work.walked),
+                ("decided", work.decided),
             ])
         );
         assert!(report.entries.len() > 1 && work.parsed > 0);

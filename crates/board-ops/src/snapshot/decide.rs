@@ -49,6 +49,8 @@ pub(super) struct Decisions {
     pub(super) checked: Vec<Checked>,
     pub(super) resolved: Vec<Resolved>,
     pub(super) references: Vec<Referenced>,
+    /// How many entries were decided, as against read from kept rows.
+    pub(super) decided: usize,
 }
 
 /// One reference a record makes, and where it led this run.
@@ -82,6 +84,7 @@ impl Decisions {
         logical: Option<LogicalPath>,
         change: Change,
     ) -> Result<(), IndexError> {
+        self.decided += 1;
         let fact = decide.facts.get(&entry.path);
         let role = Role::of(&entry.path);
         let kind = match (role, fact) {

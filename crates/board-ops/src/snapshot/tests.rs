@@ -22,21 +22,25 @@ use super::{Decide, Facts, Indexing, Need, Referenced, Snapshot, known};
 struct Filled {
     view: View,
     report: CheckReport,
-    references: Vec<Referenced>,
+}
+
+/// Every reference each record of `board` makes, decided through `index`
+/// as refs decides them.
+fn referenced(board: &crate::Board, index: Index) -> Vec<Referenced> {
+    board
+        .snapshot(index, None, Need::Report)
+        .unwrap()
+        .references
 }
 
 /// Decides every entry of `board` through `index` and fills the views.
 fn filled(board: &crate::Board, index: Index) -> Filled {
     let Snapshot {
-        decided,
-        report,
-        references,
-        ..
+        decided, report, ..
     } = board.snapshot(index, None, Need::View).unwrap();
     Filled {
         view: board.view(decided).unwrap(),
         report,
-        references,
     }
 }
 
@@ -44,6 +48,7 @@ mod cache;
 mod decisions;
 mod mounts;
 mod scoped;
+mod worktree;
 
 /// How many validations and how many blob facts deciding `scenario`
 /// through the index in `cache` looks up.
@@ -325,6 +330,7 @@ fn decided_only(work: Refreshed) -> Refreshed {
         pointers_read: work.pointers_read,
         repositories: work.repositories,
         walked: work.walked,
+        decided: work.decided,
         ..Refreshed::default()
     }
 }
@@ -470,8 +476,9 @@ fn replaced_by(replacement: &str) -> (usize, i64, i64) {
 #[test]
 fn a_snapshot_that_writes_once_the_index_has_doubled_prunes_what_the_tree_left() {
     let (deleted, prunes, extra) = replaced_by(&large_task('b', 800_000));
-    // The first task's blob, body and validation.
-    assert_eq!(deleted, 3);
+    // The first task's blob, body and validation, and the five rows of
+    // the working tree's earlier decision.
+    assert_eq!(deleted, 3 + 5);
     assert_eq!(prunes, 1);
     assert_eq!(extra, 0);
 }
@@ -739,8 +746,7 @@ fn pointer_bytes_at_a_json_path_and_behind_a_symlink_are_followed_and_at_a_schem
 }
 
 #[test]
-fn a_check_lists_each_directory_once_and_a_scoped_one_lists_the_directory_holding_its_scope_once_more()
- {
+fn a_check_lists_each_directory_once_and_a_warm_one_only_those_that_changed() {
     let scenario = board();
     let see = |target: &str| task(&format!(r#", "see": "{target}""#));
     scenario
@@ -749,20 +755,34 @@ fn a_check_lists_each_directory_once_and_a_scoped_one_lists_the_directory_holdin
         .write(
             "notes/n.md",
             Item::File("[a](/tasks/a) [p](../projects/p.json)"),
-        );
+        )
+        .settle_directories();
     let board = open(&scenario);
     let cache = tempfile::tempdir().unwrap();
     let listed = |scope: Option<&str>| {
         let scope = scope.map(|scope| scope.parse().unwrap());
         let before = board.repository().directories_listed();
-        board.check(scope.as_ref(), Some(cache.path())).unwrap();
-        board.repository().directories_listed() - before
+        let report = board.check(scope.as_ref(), Some(cache.path())).unwrap();
+        let listed = board.repository().directories_listed() - before;
+        let cold = board.check(scope.as_ref(), None).unwrap();
+        assert_eq!(report.entries, cold.entries);
+        listed
     };
     // The root, `.board`, its `types`, `lr`, `task` and `project`, then
-    // `projects`, `tasks` and `notes`, cold and warm.
-    assert_eq!([listed(None), listed(None)], [9, 9]);
-    // Resolving the scope before the snapshot lists the root once more.
-    assert_eq!(listed(Some("/tasks")), 9 + 1);
+    // `projects`, `tasks` and `notes`; a warm check lists none of them.
+    assert_eq!([listed(None), listed(None)], [9, 0]);
+    // Resolving the scope before the snapshot lists the root.
+    assert_eq!(listed(Some("/tasks")), 1);
+    // A file added changes its directory, which the next walk lists again.
+    scenario.write("tasks/c.json", Item::File(&see("/tasks/a")));
+    assert_eq!(listed(None), 1);
+    // Every directory's time changes, and a file changes in place, so the
+    // run that lists them all again also writes, and keeps what it listed.
+    scenario
+        .settle_directories()
+        .write("tasks/a.json", Item::File(&see("/projects/q")));
+    assert_eq!(listed(None), 9);
+    assert_eq!(listed(None), 0);
 }
 
 #[test]
@@ -775,7 +795,7 @@ fn a_file_added_between_warm_runs_is_resolved_by_the_second() {
     let warm = || Index::open(Some(cache.path()), &root).unwrap();
     let led = |scenario: &Scenario| {
         agrees(scenario, &warm).unwrap();
-        led(&filled(&open(scenario), warm()).references)
+        led(&referenced(&open(scenario), warm()))
     };
     assert_eq!(led(&scenario), [("tasks/a.json".to_owned(), None)]);
     scenario.write(

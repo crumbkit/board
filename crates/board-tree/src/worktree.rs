@@ -6,6 +6,7 @@ mod read;
 mod settle;
 mod uncommitted;
 
+pub use crate::worktree::list::{Directories, DirectoryListing, Item, ItemType};
 pub use crate::worktree::read::{Directory, Reader, Working};
 pub use crate::worktree::uncommitted::uncommitted;
 
@@ -26,7 +27,7 @@ use gix::worktree::stack::state::ignore;
 use crate::address::{self, Named, Pointers};
 use crate::git::{Contents, GitError, Repository};
 use crate::tree::{Folded, Kind, RawEntry, Settled, Tree, Unhashed, Visit, is_alike};
-use crate::worktree::list::{Item, Raw, RawKind};
+use crate::worktree::list::{Raw, RawKind};
 use crate::worktree::settle::hash_stream;
 
 /// Given a file's `/`-separated path and metadata, its blob if already known.
@@ -76,6 +77,14 @@ pub(crate) struct WorkingTree<'r, 'k, T = ()> {
     listed: HashMap<PathBuf, Listing>,
     /// Each file settled, by path, so it keeps one blob in this snapshot.
     settled: HashMap<PathBuf, (Kind<PathBuf>, Option<Stat>)>,
+    /// What an earlier walk listed in each directory, which this one reads
+    /// in place of listing a directory that has not changed since.
+    earlier: &'k Directories,
+    /// When this tree began to be read, in nanoseconds since the epoch.
+    started_ns: i64,
+    /// How this tree listed each directory it listed or read from
+    /// `earlier`.
+    directories: Directories,
 }
 
 /// What one snapshot of the working tree listed and hashed, so that a later
@@ -85,12 +94,48 @@ pub(crate) struct WorkingTree<'r, 'k, T = ()> {
 pub struct Listings {
     listed: HashMap<PathBuf, Listing>,
     settled: HashMap<PathBuf, (Kind<PathBuf>, Option<Stat>)>,
+    directories: Directories,
+}
+
+impl Listings {
+    /// How the walk listed each directory it listed, or read from what an
+    /// earlier walk listed, for a later walk to read in turn.
+    pub fn directories(&self) -> &Directories {
+        &self.directories
+    }
+
+    /// Each directory and submodule git sees in the directories the walk
+    /// listed, as its path from the root and whether it is a submodule,
+    /// sorted by path. A resolution can reach a directory that holds no
+    /// entry, so these name what the entries alone do not.
+    pub fn seen_directories(&self) -> Vec<(PathBuf, bool)> {
+        let mut seen = Vec::new();
+        for (directory, listing) in &self.listed {
+            for (item, cell) in listing.items.iter().zip(&listing.seen) {
+                let submodule = match cell.get() {
+                    Some(Some(RawEntry {
+                        kind: Kind::Directory(_),
+                        ..
+                    })) => false,
+                    Some(Some(RawEntry {
+                        kind: Kind::Submodule,
+                        ..
+                    })) => true,
+                    _ => continue,
+                };
+                let name = gix::path::from_bstr(item.name.as_bstr());
+                seen.push((directory.join(name), submodule));
+            }
+        }
+        seen.sort();
+        seen
+    }
 }
 
 /// One directory's items, each classified the first time a lookup returns
 /// it, so that it keeps one answer in this snapshot.
 #[derive(Debug)]
-struct Listing {
+pub(crate) struct Listing {
     items: Vec<Item>,
     /// Each item as git sees it, once classified: `None` when git does not
     /// see it.
@@ -137,6 +182,16 @@ impl Repository {
         &self,
         known: Option<Known<'k>>,
     ) -> Result<WorkingTree<'_, 'k>, GitError> {
+        self.working_tree_after(known, &NONE_LISTED)
+    }
+
+    /// The working tree, reading what `earlier` listed in place of listing
+    /// a directory that has not changed since.
+    pub(crate) fn working_tree_after<'k>(
+        &self,
+        known: Option<Known<'k>>,
+        earlier: &'k Directories,
+    ) -> Result<WorkingTree<'_, 'k>, GitError> {
         if self.git().workdir().is_none() {
             return Err(GitError::NoWorkingTree {
                 repository: self.path().to_path_buf(),
@@ -153,8 +208,23 @@ impl Repository {
             on_demand: false,
             listed: HashMap::new(),
             settled: HashMap::new(),
+            earlier,
+            started_ns: now_ns(),
+            directories: HashMap::new(),
         })
     }
+}
+
+/// No directory listed, for a walk that reads none from an earlier one.
+static NONE_LISTED: std::sync::LazyLock<Directories> = std::sync::LazyLock::new(HashMap::new);
+
+/// The time now, in nanoseconds since the epoch; 0 before it.
+fn now_ns() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| {
+            i64::try_from(since.as_nanos()).unwrap_or(i64::MAX)
+        })
 }
 
 impl<'r, 'k> WorkingTree<'r, 'k> {
@@ -178,6 +248,9 @@ impl<'r, 'k> WorkingTree<'r, 'k> {
             on_demand: self.on_demand,
             listed: self.listed,
             settled: self.settled,
+            earlier: self.earlier,
+            started_ns: self.started_ns,
+            directories: self.directories,
         }
     }
 }
@@ -193,6 +266,7 @@ impl<T: Send> WorkingTree<'_, '_, T> {
     /// hashed is not read again.
     pub(crate) fn listed(mut self, listings: Listings) -> Self {
         (self.listed, self.settled) = (listings.listed, listings.settled);
+        self.directories = listings.directories;
         self
     }
 
@@ -201,6 +275,7 @@ impl<T: Send> WorkingTree<'_, '_, T> {
         Listings {
             listed: self.listed,
             settled: self.settled,
+            directories: self.directories,
         }
     }
 
@@ -265,13 +340,17 @@ impl<T: Send> WorkingTree<'_, '_, T> {
     fn listing(&mut self, directory: &Path) -> Result<&Listing, GitError> {
         if !self.listed.contains_key(directory) {
             let root = self.repository.path();
-            let items =
-                list::items(root, self.repository.listings(), directory).map_err(|source| {
-                    GitError::File {
+            let earlier = (self.earlier, self.started_ns);
+            let (items, listed) =
+                list::items((root, directory), self.repository.listings(), earlier).map_err(
+                    |source| GitError::File {
                         path: root.join(directory),
                         source,
-                    }
-                })?;
+                    },
+                )?;
+            if let Some(listed) = listed {
+                self.directories.insert(directory.to_path_buf(), listed);
+            }
             self.listed
                 .insert(directory.to_path_buf(), Listing::new(items));
         }

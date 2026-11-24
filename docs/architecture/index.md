@@ -25,7 +25,8 @@ directory of each other board whose recorded root it can see is gone.
 | `links` | a Markdown file's links to board paths outside its frontmatter, in order, as written | blob, ordinal |
 | `mounts` | each mount point and the commit it reaches, or its code | source, path |
 | `pointers` | a mounted tree's mount pointers | scan key, path |
-| `decided` | a mounted source's entries as decided ([performance/decisions.md](performance/decisions.md)) | decision key, path |
+| `directories` | each directory's stat and items as a walk listed them ([performance/warm.md](performance/warm.md)) | path |
+| `decided` | a source's entries as decided ([performance/decisions.md](performance/decisions.md)) | decision key, path |
 | `state` | index format, and when the last refresh that hashed or recorded a file began | key |
 
 The `entries` view joins these across the root and its mounts, one row per
@@ -56,10 +57,9 @@ process holds the lock or wrote first, the refresh runs again, waiting up to 5
 seconds for the lock. If the wait runs out, it runs in an index in memory, so
 the index lock never refuses a `query` or a `call`. A
 JSON or Markdown file of up to 16 MiB is parsed from the bytes hashed, so a cold refresh
-opens each file once. The walk lists directories and reads each entry's stat
-on up to four threads, one per core, never listing an ignored
-directory, then hashes the files whose stat the index does not hold on as
-many new threads; the entries and the index are the same whatever the count.
+opens each file once. The walk reads each entry's stat on up to four
+threads, never listing an ignored directory, then hashes the files whose
+stat changed on as many threads; the thread count changes no result.
 A cold refresh compiles each schema once: the compilation that judges the
 schema also validates the records of its type.
 A file read again that changed after hashing

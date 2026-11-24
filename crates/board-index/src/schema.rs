@@ -3,13 +3,14 @@
 
 /// The index format, which names the index file. `open.rs` and
 /// docs/architecture/index.md say what a new format does to older files.
-pub const INDEX_VERSION: u32 = 26;
+pub const INDEX_VERSION: u32 = 27;
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
 /// record's references are numbered in the order the schema finds them, and
 /// a Markdown file's links in document order. A kept decision's `detail`
-/// is what check reports beyond the row, as JSON, or null.
+/// is what check reports beyond the row, as JSON, or null, and its `change`
+/// is null for a mounted entry, which is committed.
 pub(crate) const TABLES: &str = "
 CREATE TABLE state (
     key TEXT PRIMARY KEY,
@@ -47,6 +48,21 @@ CREATE TABLE worktree (
     changed_ns INTEGER,
     inode INTEGER,
     mode INTEGER
+) WITHOUT ROWID;
+-- What the last walk listed in each directory, so the next lists again only
+-- the directories that changed: `path` is the directory's path in the
+-- working tree, kept only when it is UTF-8, the stat columns its metadata before it was
+-- listed, `listed_ns` when that walk began, and `items` each item's type
+-- (d, l, f or ?) and name, each name ended by a zero byte.
+CREATE TABLE directories (
+    path TEXT PRIMARY KEY,
+    size INTEGER NOT NULL,
+    modified_ns INTEGER NOT NULL,
+    changed_ns INTEGER NOT NULL,
+    inode INTEGER NOT NULL,
+    mode INTEGER NOT NULL,
+    listed_ns INTEGER NOT NULL,
+    items BLOB NOT NULL
 ) WITHOUT ROWID;
 CREATE TABLE blobs (
     blob TEXT NOT NULL,
@@ -107,18 +123,19 @@ CREATE TABLE decided (
     kind TEXT NOT NULL,
     code TEXT,
     detail TEXT,
+    change TEXT,
     PRIMARY KEY (key, path)
 ) WITHOUT ROWID;
 ";
 
-/// Each mounted source a run reached: the key its decision is kept under
-/// when the index holds it, and the key of its pointer list. Every
+/// Each source a run reached: the key its decision is kept under when the
+/// index holds it, and the key of a mounted source's pointer list. Every
 /// transaction starts with it empty.
 pub(crate) const REACHED: &str = "
 CREATE TEMP TABLE IF NOT EXISTS reached (
     source TEXT PRIMARY KEY,
     key TEXT,
-    scan TEXT NOT NULL
+    scan TEXT
 ) WITHOUT ROWID;
 DELETE FROM temp.reached;
 ";
@@ -137,7 +154,8 @@ pub(crate) const PRUNE: [&str; 8] = [
     "DELETE FROM main.refs WHERE record NOT IN temp.kept OR schema NOT IN temp.kept",
     "DELETE FROM main.decided
      WHERE key NOT IN (SELECT key FROM temp.reached WHERE key IS NOT NULL)",
-    "DELETE FROM main.pointers WHERE scan NOT IN (SELECT scan FROM temp.reached)",
+    "DELETE FROM main.pointers
+     WHERE scan NOT IN (SELECT scan FROM temp.reached WHERE scan IS NOT NULL)",
 ];
 
 /// Counts a prune in `state`, so a run can tell when another process has
@@ -193,7 +211,7 @@ CREATE TEMP TABLE IF NOT EXISTS fresh (
 DELETE FROM temp.fresh;
 CREATE TEMP VIEW IF NOT EXISTS resolved AS
 SELECT r.source, d.path, d.logical, d.blob, d.size, d.role, d.schema, d.kind, d.code,
-    'committed' AS change
+    coalesce(d.change, 'committed') AS change
 FROM temp.reached AS r CROSS JOIN main.decided AS d ON d.key = r.key
 UNION ALL
 SELECT * FROM temp.fresh;

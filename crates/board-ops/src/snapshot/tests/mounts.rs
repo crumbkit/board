@@ -610,7 +610,7 @@ fn a_plain_record_that_becomes_a_link_between_warm_runs_is_followed_in_the_worki
     let warm = || board_index::Index::open(Some(cache.path()), &root).unwrap();
     let led = |scenario: &Scenario| {
         super::agrees(scenario, &warm).unwrap();
-        super::led(&super::filled(&open(scenario), warm()).references)
+        super::led(&super::referenced(&open(scenario), warm()))
     };
     let reached = |task: &str, path: &str, pointers| {
         (

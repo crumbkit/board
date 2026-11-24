@@ -125,6 +125,11 @@ impl Opened {
 }
 
 impl Repositories {
+    /// The moved prefixes a resolution that names nothing tries.
+    pub fn moved(&self) -> &[Moved] {
+        &self.moved
+    }
+
     /// Opens the repository at `root`. `home` is what a mount's `~/` means.
     pub fn open(root: &Path, home: Option<PathBuf>) -> Result<Self, GitError> {
         let root = Repository::open(root)?;
