@@ -19,8 +19,8 @@ use board_model::{
     Change, Code, Digest, Kind, LogicalPath, ObjectId, REPO_TYPE, RecordType, Role, Source, Stat,
 };
 use board_tree::{
-    Cache, Entry, Held, Listings, Mounted, Place, Repository, Scopes, Status, TreeRow, TreeRows,
-    in_scope,
+    Cache, Entry, Held, Listings, Mounted, Place, Probed, Repository, Scopes, Status, TreeRow,
+    TreeRows, in_scope,
 };
 
 use crate::board::Board;
@@ -371,7 +371,8 @@ impl Board {
         decided: &mut Decisions,
     ) -> Result<usize, RefreshError> {
         let source = Source::Commit(mounted.commit);
-        let in_commit = (self.repositories()).in_commit(&mounted.repository, mounted.commit)?;
+        let repository = self.repositories().open_at(&mounted.repository)?;
+        let in_commit = (self.repositories()).in_commit(&repository, mounted.commit)?;
         let mut in_commit = in_commit.knowing(plain);
         let decide = Decide {
             repositories: self.repositories(),
@@ -618,6 +619,14 @@ impl Cache for Indexing<'_> {
     fn kept(&mut self, key: &Digest) -> bool {
         self.writer.has_decision(key).unwrap_or(false)
     }
+
+    fn probe(&mut self, stamp: &Digest) -> Option<Probed> {
+        self.writer.probe(stamp).ok().flatten()
+    }
+
+    fn put_probe(&mut self, stamp: &Digest, probed: &Probed) -> Result<(), RefreshError> {
+        Ok(self.writer.put_probe(stamp, probed)?)
+    }
 }
 
 /// Whether the entry at the physical `path` holds a valid repo record, with
@@ -640,7 +649,7 @@ fn record(mounts: &Mounts, writer: &Writer, root: &Repository) -> Result<(), Ind
         (
             Source::Commit(mounted.commit),
             Some(mounted.root),
-            mounted.repository.path(),
+            mounted.repository.as_path(),
         )
     }));
     writer.set_mounts(&sources, &mounts.points)

@@ -260,6 +260,12 @@ impl Repositories {
         }
     }
 
+    /// The repository at `path`, such as a mounted source's
+    /// [`crate::Mounted::repository`], opened from disk the first time.
+    pub fn open_at(&self, path: &Path) -> Result<Repository, GitError> {
+        self.lend(path)
+    }
+
     /// The repository `mount`, a pointer in the repository at `from`, names:
     /// its `repo` read against `from`, or against the home directory for
     /// `~/`. `None` when it cannot be opened.

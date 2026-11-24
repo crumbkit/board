@@ -352,7 +352,7 @@ impl Decide<'_> {
     fn value(&self, entry: &Entry, indexed: &Indexed) -> Option<serde_json::Value> {
         let board = match self.mounted {
             Some(mounted) => Board {
-                repository: mounted.repository.path().to_path_buf(),
+                repository: mounted.repository.clone(),
                 source: Source::Commit(mounted.commit),
             },
             None => Board {

@@ -57,10 +57,7 @@ impl<F> Reached<F> {
         let Some(mounted) = (self.sources.iter()).find(|mounted| mounted.commit == commit) else {
             return HashSet::new();
         };
-        let start = (
-            Source::Commit(commit),
-            mounted.repository.path().to_path_buf(),
-        );
+        let start = (Source::Commit(commit), mounted.repository.clone());
         self.crossings_from(start)
     }
 
@@ -78,7 +75,7 @@ impl<F> Reached<F> {
                 held.insert((repository.clone(), probe.repo.clone(), probe.commit));
                 let child = (self.sources.iter()).find(|mounted| mounted.commit == probe.commit);
                 if let (Ok(_), Some(child)) = (&probe.landed, child) {
-                    let path = child.repository.path().to_path_buf();
+                    let path = child.repository.clone();
                     pending.push((Source::Commit(probe.commit), path));
                 }
             }
@@ -134,12 +131,7 @@ impl<F> Reached<F> {
         let from = Source::Commit(commit);
         let mut fields = vec![
             mounted.root.to_string().into_bytes(),
-            mounted
-                .repository
-                .path()
-                .as_os_str()
-                .as_encoded_bytes()
-                .to_vec(),
+            mounted.repository.as_os_str().as_encoded_bytes().to_vec(),
         ];
         fields.extend(self.probed(&from, closures)?);
         let closure = hashed(&fields);
@@ -185,7 +177,7 @@ impl<F> Reached<F> {
                         .sources
                         .iter()
                         .find(|child| child.commit == probe.commit)?;
-                    if child.repository.path() != opened {
+                    if child.repository != *opened {
                         return None;
                     }
                     let closure = self.closure(probe.commit, closures)?;
@@ -201,7 +193,7 @@ impl<F> Reached<F> {
 
 /// The digest of `fields`, each preceded by its length so that no two
 /// lists of fields give the same bytes.
-fn hashed<T: AsRef<[u8]>>(fields: &[T]) -> Digest {
+pub(super) fn hashed<T: AsRef<[u8]>>(fields: &[T]) -> Digest {
     let mut bytes = Vec::new();
     for field in fields {
         let field = field.as_ref();
