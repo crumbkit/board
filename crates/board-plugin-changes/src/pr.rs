@@ -11,8 +11,10 @@ use serde_json::{Map, Value, json};
 use crate::board;
 use crate::change::{attached, kind_of, pull_of, read, referenced};
 use crate::flow::of_change;
-use crate::gates::{Observed, REPORT_TYPE, RUN_TYPE, objects, ran_on, reviewed_head, sections};
-use crate::phases::{PathInput, after_review, plan_file, plan_text};
+use crate::gates::{
+    Observed, REPORT_TYPE, RUN_TYPE, objects, ran_on, reviewed_head, same_commit, sections,
+};
+use crate::phases::{PathInput, after_review, fixes, plan_file, plan_text};
 use crate::{PLUGIN, to_value};
 
 /// Severities in the order a report's findings are counted.
@@ -200,21 +202,57 @@ fn report_line(path: &str, report: &Map<String, Value>) -> String {
 }
 
 /// What a report's line adds when commits after the one it covers left it
-/// counting: those commits.
+/// counting: those commits, with each fix commit listed apart under the
+/// `changes/fix/v1` that names it.
 fn accepted_line(observed: &Observed, report: &Map<String, Value>) -> String {
     let reviewed = reviewed_head(report);
-    let commits = (reviewed.as_ref().and_then(Value::as_str))
-        .and_then(|commit| observed.after_review.get(commit))
+    let Some(reviewed) = reviewed.as_ref().and_then(Value::as_str) else {
+        return String::new();
+    };
+    let Some(commits) = (observed.after_review.get(reviewed))
         .and_then(|walked| walked.as_ref().ok())
-        .filter(|commits| !commits.is_empty());
-    commits.map_or_else(String::new, |commits| {
-        let shown: Vec<String> = commits.iter().map(|commit| quoted_text(commit)).collect();
-        format!(
-            "; accepted after it, editing only record paths or the lifecycle doc, cleanly \
-             merging main, or fixing findings a changes/fix/v1 names: {}",
-            shown.join(", ")
-        )
-    })
+        .filter(|commits| !commits.is_empty())
+    else {
+        return String::new();
+    };
+    let (fixed, _) = fixes(observed, &[REPORT_TYPE], reviewed);
+    let fixed_by = |commit: &str| {
+        (fixed.iter())
+            .find(|(_, each)| same_commit(Some(&Value::from(each.as_str())), commit))
+            .map(|(path, _)| path.as_str())
+    };
+    let mut line = String::new();
+    let others: Vec<String> = (commits.iter())
+        .filter(|commit| fixed_by(commit).is_none())
+        .map(|commit| quoted_text(commit))
+        .collect();
+    if !others.is_empty() {
+        let _ = write!(
+            line,
+            "; accepted after it, editing only record paths or the lifecycle doc or cleanly \
+             merging main: {}",
+            others.join(", ")
+        );
+    }
+    let mut paths: Vec<&str> = Vec::new();
+    for path in commits.iter().filter_map(|commit| fixed_by(commit)) {
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    for path in paths {
+        let named: Vec<String> = (commits.iter())
+            .filter(|commit| fixed_by(commit) == Some(path))
+            .map(|commit| quoted_text(commit))
+            .collect();
+        let _ = write!(
+            line,
+            "; accepted after it, fixing findings {} names: {}",
+            quoted_text(path),
+            named.join(", ")
+        );
+    }
+    line
 }
 
 /// `lines` as a Markdown list.

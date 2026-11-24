@@ -190,6 +190,7 @@ pub(crate) fn after_review<'a>(
     let doc = lifecycle_doc(host, &found.path)?;
     for commit in covered {
         let (fixed, refused) = fixes(found, &kinds, &commit);
+        let fixed: Vec<String> = fixed.into_iter().map(|(_, commit)| commit).collect();
         let walk = match after(host, &at, &commit, head) {
             Ok(steps) => {
                 allowed(host, &rules, doc.as_deref(), &steps).map(|(allowed, absent)| {
@@ -205,11 +206,16 @@ pub(crate) fn after_review<'a>(
 }
 
 /// The commits the attached `changes/fix/v1` records name that answer an
-/// attached report of one of `kinds` covering `commit`, and why each other
-/// such fix record does not count. A fix record counts when its report has
-/// no high finding, each finding number it gives is one of the report's,
-/// and it records no deviation from the plan.
-fn fixes(found: &Observed, kinds: &[&str], commit: &str) -> (Vec<String>, Vec<String>) {
+/// attached report of one of `kinds` covering `commit`, each with the path
+/// of the fix record that names it, and why each other such fix record
+/// does not count. A fix record counts when its report has no high
+/// finding, each finding number it gives is one of the report's, and it
+/// records no deviation from the plan.
+pub(crate) fn fixes(
+    found: &Observed,
+    kinds: &[&str],
+    commit: &str,
+) -> (Vec<(String, String)>, Vec<String>) {
     let mut fixed = Vec::new();
     let mut refused = Vec::new();
     for (path, fix) in found.records.of_type(FixRecord::TYPE) {
@@ -246,10 +252,9 @@ fn fixes(found: &Observed, kinds: &[&str], commit: &str) -> (Vec<String>, Vec<St
         };
         match why {
             Some(why) => refused.push(why),
-            None => fixed.extend(
-                objects(fix, "commits")
-                    .filter_map(|each| Some(each.get("commit")?.as_str()?.to_owned())),
-            ),
+            None => fixed.extend(objects(fix, "commits").filter_map(|each| {
+                Some((path.to_owned(), each.get("commit")?.as_str()?.to_owned()))
+            })),
         }
     }
     (fixed, refused)

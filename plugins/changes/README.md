@@ -1017,7 +1017,7 @@ head's first-parent chain and each commit after it edits only files those
 rules list or the change's lifecycle `doc`, or is a merge whose second parent
 is on the branch the mount follows and whose tree is the one `git merge-tree
 --write-tree` gives, or is a fix commit. A commit that edits a file outside
-the directory the mount shows, and is not a fix commit, does not count. The
+the directory the mount shows does not count, even a fix commit. The
 pass detail names those commits, and `changes.pr` lists them under Review. A
 rebase leaves the record off the chain, so the detail says to merge main in
 place of rebasing. A rule the board does not hold

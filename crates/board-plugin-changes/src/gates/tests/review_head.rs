@@ -301,6 +301,21 @@ fn a_commit_that_edits_a_file_outside_the_mounts_directory_loses_the_review() {
 }
 
 #[test]
+fn a_fix_commit_that_edits_a_file_outside_the_mounts_directory_loses_the_review() {
+    let (repo, reviewed) = reviewed("fix-outside");
+    let fix = repo.commit("src/c.rs", "fixed\n", "fix finding 1");
+    let refused = repo
+        .judged_fixing("sub/", &reviewed, &fix, std::slice::from_ref(&fix))
+        .unwrap_err();
+    assert!(
+        refused.starts_with(&format!(
+            "the later commit {fix} edits src/c.rs, outside the directory /repos/x shows"
+        )),
+        "{refused}"
+    );
+}
+
+#[test]
 fn a_clean_merge_of_main_keeps_the_review_and_a_conflicted_one_does_not() {
     let (repo, reviewed_head) = reviewed("merge");
     repo.git(&["checkout", "-q", "main"]);

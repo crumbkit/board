@@ -378,8 +378,8 @@ fn clean_merge(
 
 /// The commits of `steps`, when each edits only files in `allowed`, is a
 /// clean merge or is one of the `fixed` commits, whole or abbreviated, or
-/// else why the first that does not fails. A file outside the directory
-/// the mount shows is never a record path.
+/// else why the first that does not fails. A commit that edits a file
+/// outside the directory the mount shows fails, even a fixed one.
 pub(crate) fn accepted(
     steps: &[Step],
     allowed: &BTreeSet<String>,
@@ -394,17 +394,17 @@ pub(crate) fn accepted(
                 files,
                 outside,
             } => {
-                if (fixed.iter()).any(|each| same_commit(Some(&Value::from(each.as_str())), commit))
-                {
-                    commits.push(commit.clone());
-                    continue;
-                }
                 if !outside.is_empty() {
                     return Err(format!(
                         "the later commit {commit} edits {}, outside the directory {mount} \
                          shows, which is not a record path; review the head",
                         outside.join(", ")
                     ));
+                }
+                if (fixed.iter()).any(|each| same_commit(Some(&Value::from(each.as_str())), commit))
+                {
+                    commits.push(commit.clone());
+                    continue;
                 }
                 let other: Vec<&str> = (files.iter())
                     .filter(|file| !allowed.contains(*file))
