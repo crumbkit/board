@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A confirmed priority in `board priorities list` also turns stale 7 days
+  after its confirmation, even on a board with few commits.
+
 - `board changes advance` moves a change that records a pull request into
   `done` only once GitHub reports the pull request merged, and records its
   merge commit. Before the merge it refuses with
