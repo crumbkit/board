@@ -21,3 +21,10 @@ codes are frozen from 0.1.0.
 
 After 0.1.1, `runs/suite/v1` gained an optional `kind` in place, because
 the release had few users. `runs.migrate` adds it to existing suites.
+
+After 0.1.1, the `blocks` of `plans/question/v1` and the `subject` of
+`artifacts/artifact/v1` gained `tasks/task/v3` in place, beside
+`tasks/task/v2`, because `tasks add` writes v3 tasks and the release had few
+users. A board whose `.board/types/` holds the 0.1.1 copies reports a
+reference to a v3 task as `board::ref::wrong_type` until
+`board plugin enable` replaces them.

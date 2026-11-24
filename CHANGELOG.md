@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- A `plans/question/v1` whose `blocks` names a `tasks/task/v3`, and an
+  `artifacts/artifact/v1` whose `subject` names one, are no longer degraded
+  with `board::ref::wrong_type`. Run `board plugin enable plans` and
+  `board plugin enable artifacts` to replace a board's copies of the two
+  schemas, then `board check` to clear the degraded records.
+
 - `board changes plan` refuses a plan whose first heading is the title of
   another change that is not dropped, with `changes::plan::other_change`,
   and warns with `changes::plan::title_differs` when the first heading
