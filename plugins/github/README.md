@@ -189,8 +189,9 @@ result it recorded.
   `--head` that differs is refused. Without `--change`, `--head` is
   required. After gh exits 0, it records the pull request's URL on the
   crossing and asks `gh api repos/<owner>/<repo>/pulls/<n>` whether it
-  merged. When it did, it runs `changes.advance` and returns the new phase
-  as `phase`. When a merge queue only queued it, it returns `queued: true`
+  merged. When it did, it runs `changes.advance`, which reads the pull
+  request again and moves the change to `done` because GitHub reports it
+  merged, and returns the new phase as `phase`. When a merge queue only queued it, it returns `queued: true`
   and no `phase`; run `board changes advance --path <change>` in the same
   board once the queue merges it. It returns the merged commit as `head`; `sent` is the
   pull request's URL. Then it moves the mount of the merged repository: the

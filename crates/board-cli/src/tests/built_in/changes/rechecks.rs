@@ -9,9 +9,10 @@ const RECORD: &str = "/changes/t/understanding/data";
 
 /// A change in land with stored data whose plan attaches the understanding
 /// check at [`RECORD`], holding rechecks with the given `points`, and a
-/// decision that signs it off.
+/// decision that signs it off. The stub gh reports its pull request merged.
 fn built(points: &[Option<&str>]) -> Changes {
-    let board = Changes::new();
+    let board = gh();
+    board.answers(7, &json!({"state": "closed", "merged": true}));
     board.write(
         "decisions/data.json",
         &typed(

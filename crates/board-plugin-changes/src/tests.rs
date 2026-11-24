@@ -63,7 +63,16 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
             ("start", vec![], Some(120)),
             ("next", vec![], None),
             ("attach", vec![], None),
-            ("advance", days.clone(), None),
+            (
+                "advance",
+                vec![
+                    "BOARD_CHANGES_ACTIVE_DAYS",
+                    "GH_TOKEN",
+                    "GITHUB_TOKEN",
+                    "GH_CONFIG_DIR"
+                ],
+                None
+            ),
             ("open", vec![], None),
             ("owed", vec![], None),
             ("ask", vec![], Some(120)),

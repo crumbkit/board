@@ -1,5 +1,6 @@
 //! The `sync` and `drop` capabilities: a change ends when its pull request
-//! closes, or when it is dropped by hand.
+//! closes, or when it is dropped by hand. `advance` into done reads the
+//! pull request here too, through [`require_merged`].
 //!
 //! `sync` reads each open change's pull request once with `gh api` and
 //! writes every move in one commit, or, when gh fails, writes nothing.
@@ -150,23 +151,30 @@ fn gh_failed(endpoint: &str, why: &str) -> PluginError {
     )
 }
 
+/// Why `gh api <endpoint>` gave no answer.
+struct GhFailed {
+    endpoint: String,
+    why: String,
+}
+
 /// What GitHub says of the pull request, or none when it answers 404; gh
 /// runs at most until `deadline`.
 fn pull_state(
     host: &dyn Host,
     pull: &Pull,
     deadline: Instant,
-) -> Result<Option<Map<String, Value>>, PluginError> {
+) -> Result<Option<Map<String, Value>>, GhFailed> {
     let endpoint = format!("repos/{}/{}/pulls/{}", pull.owner, pull.repo, pull.number);
+    let failed = |why: String| GhFailed {
+        endpoint: endpoint.clone(),
+        why,
+    };
     let left = deadline.saturating_duration_since(Instant::now());
     if left.is_zero() {
-        return Err(gh_failed(
-            &endpoint,
-            &format!(
-                "was not run because sync's gh calls took {} s in all",
-                SYNC_SECONDS.as_secs()
-            ),
-        ));
+        return Err(failed(format!(
+            "was not run because sync's gh calls took {} s in all",
+            SYNC_SECONDS.as_secs()
+        )));
     }
     let arguments = ["api".to_owned(), endpoint.clone()];
     let run = Run {
@@ -180,9 +188,9 @@ fn pull_state(
     let exited = match host.run(&run) {
         Ok(exited) => exited,
         Err(ProcessError::Timeout { .. }) => {
-            return Err(gh_failed(&endpoint, "ran past its time limit"));
+            return Err(failed("ran past its time limit".to_owned()));
         }
-        Err(error) => return Err(gh_failed(&endpoint, &format!("could not run: {error}"))),
+        Err(error) => return Err(failed(format!("could not run: {error}"))),
     };
     let stderr = String::from_utf8_lossy(&exited.stderr).trim().to_owned();
     if exited.code != Some(0) {
@@ -192,12 +200,28 @@ fn pull_state(
         let code = exited
             .code
             .map_or_else(|| "on a signal".to_owned(), |code| code.to_string());
-        return Err(gh_failed(&endpoint, &format!("exited {code}: {stderr}")));
+        return Err(failed(format!("exited {code}: {stderr}")));
     }
     match parse_json(&exited.stdout) {
         Ok(Value::Object(answer)) => Ok(Some(answer)),
-        _ => Err(gh_failed(&endpoint, "printed no JSON object")),
+        _ => Err(failed("printed no JSON object".to_owned())),
     }
+}
+
+/// The page of the commit GitHub's `answer` gives as the pull request's
+/// merge, or none when it gives no full commit.
+fn merge_commit_url(pull: &Pull, answer: &Map<String, Value>) -> Option<String> {
+    let sha = answer.get("merge_commit_sha").and_then(Value::as_str)?;
+    let full = sha.len() == 40
+        && sha
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'));
+    full.then(|| {
+        format!(
+            "https://github.com/{}/{}/commit/{sha}",
+            pull.owner, pull.repo
+        )
+    })
 }
 
 /// Each change of the board's own that a closing pull request can end, with
@@ -311,20 +335,9 @@ fn merged(
     let mut ended = change.clone();
     DONE.clone_into(&mut ended.phase);
     let mut detail = format!("its pull request {url} merged");
-    let sha = answer.get("merge_commit_sha").and_then(Value::as_str);
-    match sha.filter(|sha| {
-        sha.len() == 40
-            && sha
-                .bytes()
-                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
-    }) {
-        Some(sha) => {
-            ended.merge_commit_url = Some(format!(
-                "https://github.com/{}/{}/commit/{sha}",
-                pull.owner, pull.repo
-            ));
-        }
-        None => detail.push_str(", and GitHub gave no merge commit, so none is recorded"),
+    ended.merge_commit_url = merge_commit_url(pull, answer);
+    if ended.merge_commit_url.is_none() {
+        detail.push_str(", and GitHub gave no merge commit, so none is recorded");
     }
     match change.phase.as_str() {
         "build" => detail.push_str("; it left build without passing the build and review gates"),
@@ -364,7 +377,9 @@ fn synced(
         return Ok((unread, None));
     };
     let url = pull.url.clone();
-    let Some(answer) = pull_state(host, &pull, deadline)? else {
+    let answer = pull_state(host, &pull, deadline)
+        .map_err(|failed| gh_failed(&failed.endpoint, &failed.why))?;
+    let Some(answer) = answer else {
         let detail = format!(
             "GitHub answers 404 for {url}: no such pull request, or gh's account cannot see the \
              repository; check `gh auth status`, then drop the change or record the right URL"
@@ -408,6 +423,80 @@ fn synced(
         format!("its pull request {url} is open"),
     );
     Ok((open, None))
+}
+
+/// Refuses to move the change at `path` into done until GitHub reports
+/// its newest pull request merged, and then records the merge commit on
+/// `change`, as sync does. A change that records no pull request moves as
+/// before.
+pub(crate) fn require_merged(
+    host: &dyn Host,
+    path: &str,
+    change: &mut ChangeRecord,
+) -> Result<(), PluginError> {
+    let Some(reference) = change.pulls().last().cloned() else {
+        return Ok(());
+    };
+    let Some(pull) = pull_of(host, &reference)? else {
+        return Err(not_merged(
+            path,
+            &reference,
+            &format!(
+                "{reference} is not a github/pull/v1 record Board reads, so whether it merged \
+                 cannot be read; record it with `board github ref` and attach it with `board \
+                 changes attach --path {path} --pull <record>`"
+            ),
+        ));
+    };
+    let url = pull.url.as_str();
+    let answer = pull_state(host, &pull, Instant::now() + GH_SECONDS).map_err(|failed| {
+        refusal(
+            "changes::land::gh_failed",
+            format!(
+                "the change at {path} stays in {}: `gh api {}` {}, so whether {url} merged is \
+                 not known; check gh on PATH and `gh auth status`, then advance again",
+                change.phase, failed.endpoint, failed.why
+            ),
+            [("path", json!(path)), ("endpoint", json!(failed.endpoint))],
+        )
+    })?;
+    let Some(answer) = answer else {
+        return Err(not_merged(
+            path,
+            url,
+            &format!(
+                "GitHub answers 404 for {url}: no such pull request, or gh's account cannot see \
+                 the repository; check `gh auth status` and the pull request the change records"
+            ),
+        ));
+    };
+    if answer.get("merged") == Some(&Value::Bool(true)) {
+        change.merge_commit_url = merge_commit_url(&pull, &answer);
+        return Ok(());
+    }
+    let why = if answer.get("state").and_then(Value::as_str) == Some("closed") {
+        format!(
+            "GitHub reports {url} closed without merging; drop the change with `board changes \
+             drop --path {path} --reason '<why>'`"
+        )
+    } else {
+        format!(
+            "GitHub reports {url} not merged; merge it with `board github merge --change \
+             {path}`, which moves the change to done once GitHub reports the merge"
+        )
+    };
+    Err(not_merged(path, url, &why))
+}
+
+/// `changes::land::not_merged`: the change at `path` stays where it is
+/// because GitHub has not reported its pull request at `pull` merged, for
+/// the reason `why`.
+fn not_merged(path: &str, pull: &str, why: &str) -> PluginError {
+    refusal(
+        "changes::land::not_merged",
+        format!("the change at {path} reaches done only after its pull request merges: {why}"),
+        [("path", json!(path)), ("pull_request", json!(pull))],
+    )
 }
 
 const BOARD_REFUSED: &str = "changes::board::refused";

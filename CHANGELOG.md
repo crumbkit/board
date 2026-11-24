@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `board changes advance` moves a change that records a pull request into
+  `done` only once GitHub reports the pull request merged, and records its
+  merge commit. Before the merge it refuses with
+  `changes::land::not_merged`, which says to merge with
+  `board github merge --change`; a gh failure is
+  `changes::land::gh_failed`. A run whose stop is `done` no longer lets a
+  change end before its pull request merges.
+
 - The new `map` plugin keeps a map as one `map/layout/v1` record at
   `/maps/<name>`: a sheet, titled regions, items with a stored position
   and label side, typed lines, and notes anchored to an item or a line.

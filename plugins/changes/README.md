@@ -414,8 +414,18 @@ of `changes` still fails `review`.
   of the data without rechecks, `changes::paths::outside_plan` for a
   `paths` check, `changes::prototype::never_lands` for a prototype's
   `verdict` check, else `changes::gate::unmet`. Moving into `build` is also subject to the WIP
-  limit, below; `--over_limit '<why>'` goes past it. A paused change is
-  refused with
+  limit, below; `--over_limit '<why>'` goes past it. Moving into `done`,
+  once the gate passes, reads the change's newest pull request with
+  `gh api repos/<owner>/<repo>/pulls/<n>`, as `sync` does. The change
+  moves only when GitHub reports it merged, and then records
+  `merge_commit_url`. An open pull request, one closed without merging, a
+  404 and a newest pull reference that is not a `github/pull/v1` Board
+  reads are refused with `changes::land::not_merged`, whose message says to
+  merge with `board github merge --change <path>` or, for a closed one, to
+  drop the change. A gh failure is `changes::land::gh_failed`. Neither
+  writes anything. A change that records no pull request moves into
+  `done` without gh. The call receives `GH_TOKEN`, `GITHUB_TOKEN` and
+  `GH_CONFIG_DIR` for gh. A paused change is refused with
   `changes::phase::paused`. Leaving `done` or `dropped` is
   `changes::phase::final`, which points to `open` and `start`.
 - `reflow --path /changes/<name> --flow <name>` moves the change to the
@@ -1072,6 +1082,26 @@ one commit, so a crash leaves the previous snapshot or the new one. A
 snapshot is never edited after it is written. A plan a migration writes
 fresh has no answers, and a migration's copy of a plan carries the source's
 answers unchanged, so a migration never invents an answer.
+
+A change moves into `done` through these states:
+
+| State | Event | Next state | Owner |
+| --- | --- | --- | --- |
+| last phase, pull request open | `advance`, gate passes | unchanged; refused `changes::land::not_merged` | the agent merges with `board github merge --change` |
+| last phase, pull request closed unmerged | `advance` | unchanged; refused `changes::land::not_merged` | the agent drops the change |
+| last phase, pull request merged | `advance`, gate passes | `done`, with `merge_commit_url` | Board |
+| last phase, pull request open | `github.merge --change`; GitHub reports the merge | `done`, through `advance` | Board |
+| last phase, pull request open | `github.merge --change`; a merge queue holds it | unchanged; `queued` is true | the agent runs `advance` once it merges |
+| any open phase but plan, pull request merged | `sync` | `done`, or left while a task is open | Board |
+| last phase, no pull request | `advance`, gate passes | `done` | Board |
+| last phase | gh fails | unchanged; refused `changes::land::gh_failed` | the agent checks `gh auth status` |
+
+`advance` reads GitHub before it writes, so a crash or a refusal leaves the
+change in its phase, and running it again reads GitHub again. `github.merge`
+sends the merge before it runs `advance`; a crash between them leaves the
+pull request merged and the change in land, and `advance` then moves it.
+The write names the change's blob, so a concurrent writer makes it fail
+with nothing written. A change in `done` or `dropped` never moves again.
 
 The review gate's `paths` check reads the whole change's diff, whatever
 range a review report covers: `git diff --name-only --no-renames

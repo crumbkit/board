@@ -23,6 +23,7 @@ use crate::records::{
     TICKET_TYPES, is_final,
 };
 use crate::stop::{Shown, holds, reached, stop_reached};
+use crate::sync::require_merged;
 use crate::wip::{Limit, Move, active_days, admit};
 use crate::{PLUGIN, refusal, to_value};
 
@@ -615,6 +616,9 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
             format!("the change at {path} has no next phase"),
         ));
     };
+    if to == DONE {
+        require_merged(host, &path, &mut change)?;
+    }
     change.phase.clone_from(&to);
     let mut limit = None;
     if to == BUILD {
