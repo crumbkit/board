@@ -504,7 +504,7 @@ mod write;
 
 pub use decide::{AnswerReport, DecideReport, Shown, answer};
 pub use order::{SignOrderError, VerifyOrderError};
-pub(crate) use order::{legacy, sign_order, verify_order};
+pub(crate) use order::{legacy, order_signers, sign_order, verify_order};
 pub use write::OwnerWriteError;
 pub(crate) use write::{sign_owner_write, verify_owner_write};
 

@@ -411,10 +411,22 @@ fn plugins_must_each_be_known_and_name_at_least_one_and_one_with_no_skill_select
     }
 }
 
+/// A skill names its plugin by the directory that ships it, which may be a
+/// built-in plugin's former name, as plugins/attention/ ships the orders
+/// plugin's skill until Board drops the name attention.
 #[test]
 fn every_embedded_skills_plugin_is_built_in() {
     let built_in: BTreeSet<String> = (board_plugins::BUILT_IN.0.iter())
-        .map(|plugin| plugin.manifest().name.as_str().to_owned())
+        .flat_map(|plugin| {
+            let manifest = plugin.manifest();
+            let former = manifest
+                .former_names
+                .iter()
+                .map(|name| name.as_str().to_owned());
+            std::iter::once(manifest.name.as_str().to_owned())
+                .chain(former)
+                .collect::<Vec<_>>()
+        })
         .collect();
     for skill in SKILLS {
         assert!(

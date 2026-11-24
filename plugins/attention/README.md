@@ -88,7 +88,16 @@ release, when no line of Board's file admits an order's key, Board checks
 the attention file, keeps the order and warns `orders::signers::legacy`,
 naming the command that prints the lines to add. Board's next release stops
 reading the attention file, and those orders then fail with
-`orders::order::bad_signature`. A Board file that group or others may write
+`orders::order::bad_signature`.
+
+`board --personal orders signers` prints those lines: Board's file with each
+key of the attention file merged in. It writes neither file; the owner reads
+the lines and writes Board's file. A key in both files keeps Board's line,
+which gains `attention/order/v1` when its `namespaces=` lacks it; a key only
+in the attention file gets `owner namespaces="attention/order/v1" <key>`;
+and two lines of Board's file with one key are listed in `duplicates` and
+printed as one line holding both lines' namespaces. `changes` gives each
+printed line that differs, as `gained`, `added` or `merged`. A Board file that group or others may write
 stops orders as it stops approvals, with `orders::signers::untrusted`.
 
 `board skills install` installs `SKILL.md`, which tells an agent when and
@@ -167,6 +176,11 @@ refuses only with `orders::board::refused` and
   may write it.
 - `orders::verify::failed` (`verify`): the signature could not be
   checked.
+- `orders::signers::missing`, `orders::signers::untrusted` and
+  `orders::signers::failed` (`signers`): Board's allowed signers file is not
+  named, a file is not the owner's alone, or the files could not be read.
+- `orders::signers::legacy`, a warning beside a verified order: only the
+  attention file admits its key.
 - `orders::sign::declined` (`sign`): the owner asked for changes, given
   in `feedback`.
 - `orders::sign::cancelled` (`sign`): the owner closed the window

@@ -13,7 +13,7 @@ use board_model::{
     CapabilityName, Code, Fields, LogicalPath, Moved, Order, PluginName, RecordType, Refusal,
 };
 use board_plugin::child::{Exited, ProcessError};
-use board_plugin::{CallReport, Manifest, Target};
+use board_plugin::{CallReport, Manifest, Signers, Target};
 pub use board_tree::Origin;
 use serde_json::Value;
 
@@ -269,16 +269,16 @@ pub trait Host {
     fn sign_order(&self, _order: &Order) -> Result<String, SignOrderError> {
         Err(SignOrderError::NotOffered)
     }
-    /// The principal, `owner`, whose key Board's allowed signers file, or
-    /// else the attention file with an `orders::signers::legacy` warning,
-    /// lists and whose `signature` of `order`'s statement verifies in the
-    /// order's namespace, or why it does not. Only Board's own host
-    /// verifies; any other refuses with [`VerifyOrderError::NotOffered`].
-    fn verify_order(
-        &self,
-        _order: &Order,
-        _signature: &str,
-    ) -> Result<&'static str, VerifyOrderError> {
+    /// `owner`, when Board's allowed signers file, or else the attention
+    /// file with an `orders::signers::legacy` warning, admits the key whose
+    /// `signature` of `order`'s statement verifies, or why not. Only Board's
+    /// own host verifies; any other refuses with `NotOffered`.
+    fn verify_order(&self, _order: &Order, _sig: &str) -> Result<&'static str, VerifyOrderError> {
+        Err(VerifyOrderError::NotOffered)
+    }
+    /// Board's allowed signers file with the attention file's keys merged in
+    /// for orders, read and never written; only Board's own host reads them.
+    fn order_signers(&self) -> Result<Signers, VerifyOrderError> {
         Err(VerifyOrderError::NotOffered)
     }
     /// Each board the known boards file lists. A host with no known boards
@@ -732,6 +732,10 @@ impl Host for Hosted<'_> {
         let signer = crate::effects::verify_order(signing, order, signature)?;
         crate::effects::legacy(signing, &signer).inspect(|warning| self.warn(warning));
         Ok(signer.principal)
+    }
+
+    fn order_signers(&self) -> Result<Signers, VerifyOrderError> {
+        crate::effects::order_signers(&self.plugins.signing)
     }
 
     fn known_boards(&self) -> Vec<PathBuf> {

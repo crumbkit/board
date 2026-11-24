@@ -74,7 +74,8 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
         [
             ("verify", None),
             ("pinned", None),
-            ("sign", Some(Duration::from_secs(10 * 60 + 10)))
+            ("sign", Some(Duration::from_secs(10 * 60 + 10))),
+            ("signers", None)
         ]
     );
     assert_eq!(super::manifest()["description"], skill_description());
@@ -393,11 +394,46 @@ fn a_capability_the_plugin_does_not_offer_is_refused_naming_what_it_offers_and_o
     assert_eq!(refused.code, "orders::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "orders offers no capability statement; it offers verify, pinned and sign"
+        "orders offers no capability statement; it offers verify, pinned, sign and signers"
     );
     let verify: CapabilityName = "verify".parse().unwrap();
     let bad = Orders
         .call(&Nowhere, &verify, json!({"paths": "/orders/a"}))
         .unwrap_err();
     assert_eq!(bad.code, "orders::call::bad_input");
+}
+
+#[test]
+fn each_refusal_of_the_signers_read_maps_to_its_code() {
+    let cases = [
+        (VerifyOrderError::NoneNamed, "orders::signers::missing"),
+        (
+            VerifyOrderError::Untrusted {
+                file: file(),
+                why: "its group or others may write it",
+            },
+            "orders::signers::untrusted",
+        ),
+        (
+            VerifyOrderError::Failed {
+                source: sign_error(),
+            },
+            "orders::signers::failed",
+        ),
+        (VerifyOrderError::NotOffered, "orders::signers::failed"),
+    ];
+    for (error, code) in cases {
+        assert_eq!(signers::unread(&error).code, code, "{error}");
+    }
+    let untrusted = signers::unread(&VerifyOrderError::Untrusted {
+        file: file(),
+        why: "its group or others may write it",
+    });
+    assert!(
+        untrusted
+            .message
+            .contains("chmod 644 /home/owner/allowed_signers"),
+        "{}",
+        untrusted.message
+    );
 }

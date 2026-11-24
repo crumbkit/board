@@ -9,6 +9,7 @@ mod order;
 mod pinned;
 pub mod records;
 mod sign;
+mod signers;
 mod verify;
 
 use board_model::{CapabilityName, ORDER_TYPE, RecordType, Refusal};
@@ -47,10 +48,11 @@ impl Plugin for Orders {
             "verify" => verify::verify(host, &input),
             "pinned" => pinned::pinned(host, &input),
             "sign" => sign::sign(host, &input),
+            "signers" => signers::signers(host, &input),
             other => Err(PluginError {
                 code: "orders::call::unknown_capability".to_owned(),
                 message: format!(
-                    "orders offers no capability {other}; it offers verify, pinned and sign"
+                    "orders offers no capability {other}; it offers verify, pinned, sign and signers"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -136,6 +138,15 @@ fn manifest() -> Value {
                 "openWorldHint": false,
             },
             "timeout": SIGN_TIMEOUT,
+            "_meta": {},
+        }, {
+            "name": "signers",
+            "description": "Board's allowed signers file with each key of the attention allowed \
+                signers file merged in for orders, which the owner reads and writes to Board's \
+                file themselves. It writes neither file.",
+            "inputSchema": schema_of::<signers::Input>(input()),
+            "outputSchema": schema_of::<signers::Output>(output()),
+            "annotations": reads,
             "_meta": {},
         }],
     })

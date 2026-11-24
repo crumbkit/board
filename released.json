@@ -9352,6 +9352,98 @@
         ]
       }
     },
+    "orders.signers": {
+      "input": {
+        "type": [
+          "object"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "changes",
+            "duplicates",
+            "file",
+            "text"
+          ]
+        ]
+      },
+      "output.changes": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.changes[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "change",
+            "line"
+          ]
+        ]
+      },
+      "output.changes[].change": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "gained",
+          "added",
+          "merged"
+        ]
+      },
+      "output.changes[].line": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.duplicates": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.duplicates[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "key",
+            "lines"
+          ]
+        ]
+      },
+      "output.duplicates[].key": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.duplicates[].lines": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.duplicates[].lines[]": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.file": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.text": {
+        "type": [
+          "string"
+        ]
+      }
+    },
     "orders.verify": {
       "input": {
         "type": [
@@ -16333,6 +16425,7 @@
     "orders::sign::declined",
     "orders::sign::failed",
     "orders::sign::no_signer",
+    "orders::signers::failed",
     "orders::signers::missing",
     "orders::signers::untrusted",
     "orders::verify::failed",

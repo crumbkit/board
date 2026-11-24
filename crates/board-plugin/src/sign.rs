@@ -268,5 +268,277 @@ fn failed(program: &OsString, finished: &Finished) -> SignError {
     }
 }
 
+/// Board's allowed signers file with each key of the attention file merged
+/// in for orders, as `board orders signers` prints it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Signers {
+    /// Board's allowed signers file, which the owner writes the text to.
+    pub file: std::path::PathBuf,
+    /// The merged file, for the owner to read and write themselves.
+    pub text: String,
+    /// Each printed line that differs from Board's file.
+    pub changes: Vec<Changed>,
+    /// Each key Board's file lists on more than one line.
+    pub duplicates: Vec<Duplicate>,
+}
+
+/// A printed line, numbered from 1, and how it differs from Board's file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Changed {
+    pub line: usize,
+    pub change: LineChange,
+}
+
+/// How a printed line differs from Board's file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineChange {
+    /// Board's line for a key the attention file lists, with the order
+    /// namespace added to its `namespaces=`.
+    Gained,
+    /// A key only the attention file lists, admitted for orders alone.
+    Added,
+    /// Board's lines for one key, printed as the first of them with every
+    /// line's principals and namespaces.
+    Merged,
+}
+
+/// A key, as `<type> <base64>`, and the lines of Board's file, numbered
+/// from 1, that list it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Duplicate {
+    pub key: String,
+    pub lines: Vec<usize>,
+}
+
+/// Board's allowed signers file `board` with each key of the attention file
+/// `attention` merged in for `namespace`, read as `verify` reads them and
+/// never written. A missing file reads as empty.
+pub fn signers(
+    board: &Path,
+    attention: Option<&Path>,
+    namespace: &str,
+) -> Result<Signers, SignError> {
+    let attention = attention.map(read_signers).transpose()?.unwrap_or_default();
+    let mut merged = merged_signers(&read_signers(board)?, &attention, namespace);
+    board.clone_into(&mut merged.file);
+    Ok(merged)
+}
+
+/// The text of the allowed signers file `file`, empty when there is none.
+fn read_signers(file: &Path) -> Result<String, SignError> {
+    if !file.exists() {
+        return Ok(String::new());
+    }
+    trusted(file)?;
+    std::fs::read_to_string(file).map_err(|_| SignError::Untrusted {
+        file: file.to_owned(),
+        why: "it cannot be read as text",
+    })
+}
+
+/// One key's line of an allowed signers file.
+#[derive(Debug, Clone)]
+struct Entry {
+    principals: Vec<String>,
+    options: Vec<String>,
+    key: String,
+    comment: Option<String>,
+}
+
+impl Entry {
+    /// The line's key, its principals, options and comment around it, or
+    /// none for a comment, a blank line or a line it cannot read.
+    fn parse(line: &str) -> Option<Self> {
+        let words = split_outside_quotes(line.trim(), char::is_whitespace);
+        let is_type = |word: &str| {
+            ["ssh-", "ecdsa-", "sk-"]
+                .iter()
+                .any(|t| word.starts_with(t))
+        };
+        let (options, at) = match words.as_slice() {
+            [first, ..] if first.starts_with('#') => return None,
+            [_, kind, _, ..] if is_type(kind) => (Vec::new(), 1),
+            [_, options, kind, _, ..] if is_type(kind) => {
+                (split_outside_quotes(options, |c| c == ','), 2)
+            }
+            _ => return None,
+        };
+        let comment = words[at + 2..].join(" ");
+        Some(Self {
+            principals: words[0].split(',').map(str::to_owned).collect(),
+            options,
+            key: format!("{} {}", words[at], words[at + 1]),
+            comment: (!comment.is_empty()).then_some(comment),
+        })
+    }
+
+    /// The namespaces its `namespaces=` names, or none when it has none and
+    /// so admits every namespace.
+    fn namespaces(&self) -> Option<Vec<String>> {
+        let value = (self.options.iter()).find_map(|option| {
+            let (name, value) = option.split_once('=')?;
+            name.eq_ignore_ascii_case("namespaces").then_some(value)
+        })?;
+        Some(
+            value
+                .trim_matches('"')
+                .split(',')
+                .map(str::to_owned)
+                .collect(),
+        )
+    }
+
+    /// Sets its `namespaces=` to `namespaces`, or removes it for none.
+    fn set_namespaces(&mut self, namespaces: Option<&[String]>) {
+        let named = |option: &String| {
+            (option.split_once('='))
+                .is_some_and(|(name, _)| name.eq_ignore_ascii_case("namespaces"))
+        };
+        let at = self.options.iter().position(named);
+        let option = namespaces.map(|all| format!("namespaces=\"{}\"", all.join(",")));
+        match (at, option) {
+            (Some(at), Some(option)) => self.options[at] = option,
+            (Some(at), None) => drop(self.options.remove(at)),
+            (None, Some(option)) => self.options.insert(0, option),
+            (None, None) => {}
+        }
+    }
+
+    fn line(&self) -> String {
+        let mut words = vec![self.principals.join(",")];
+        if !self.options.is_empty() {
+            words.push(self.options.join(","));
+        }
+        words.push(self.key.clone());
+        words.extend(self.comment.clone());
+        words.join(" ")
+    }
+}
+
+/// `text` split at each character `at` admits outside double quotes,
+/// without empty pieces.
+fn split_outside_quotes(text: &str, at: impl Fn(char) -> bool) -> Vec<String> {
+    let (mut pieces, mut piece, mut quoted) = (Vec::new(), String::new(), false);
+    for c in text.chars() {
+        if c == '"' {
+            quoted = !quoted;
+        }
+        if !quoted && at(c) {
+            pieces.push(std::mem::take(&mut piece));
+        } else {
+            piece.push(c);
+        }
+    }
+    pieces.push(piece);
+    pieces.retain(|piece| !piece.is_empty());
+    pieces
+}
+
+/// A line of the printed file: Board's line as it was, or a key's line with
+/// how it changed.
+enum Printed {
+    Kept(String),
+    Key(Entry, Option<LineChange>, String),
+}
+
+/// `board`, the text of Board's allowed signers file, with each key of
+/// `attention` admitted in `namespace`: Board's line for a key in both
+/// gains `namespace` when its `namespaces=` lacks it; a key only in
+/// `attention` gets `owner namespaces="<namespace>" <key>`; two lines of
+/// Board's with one key print as one. Comments and other lines print as
+/// they were.
+fn merged_signers(board: &str, attention: &str, namespace: &str) -> Signers {
+    let mut printed: Vec<Printed> = Vec::new();
+    let mut at: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut duplicates: Vec<Duplicate> = Vec::new();
+    for (number, line) in (1..).zip(board.lines()) {
+        let Some(entry) = Entry::parse(line) else {
+            printed.push(Printed::Kept(line.to_owned()));
+            continue;
+        };
+        let Some(&first) = at.get(&entry.key) else {
+            at.insert(entry.key.clone(), printed.len());
+            printed.push(Printed::Key(entry, None, line.to_owned()));
+            continue;
+        };
+        if let Printed::Key(kept, change, _) = &mut printed[first] {
+            let namespaces = kept
+                .namespaces()
+                .zip(entry.namespaces())
+                .map(|(mut all, more)| {
+                    all.extend(
+                        more.into_iter()
+                            .filter(|n| !all.contains(n))
+                            .collect::<Vec<_>>(),
+                    );
+                    all
+                });
+            kept.set_namespaces(namespaces.as_deref());
+            for principal in entry.principals {
+                if !kept.principals.contains(&principal) {
+                    kept.principals.push(principal);
+                }
+            }
+            *change = Some(LineChange::Merged);
+        }
+        match duplicates.iter_mut().find(|found| found.key == entry.key) {
+            Some(found) => found.lines.push(number),
+            None => duplicates.push(Duplicate {
+                key: entry.key.clone(),
+                lines: vec![first_line(board, &entry.key), number],
+            }),
+        }
+    }
+    for entry in attention.lines().filter_map(Entry::parse) {
+        if let Some(&first) = at.get(&entry.key) {
+            if let Printed::Key(kept, change, _) = &mut printed[first]
+                && let Some(mut namespaces) = kept.namespaces()
+                && !namespaces.iter().any(|n| n == namespace)
+            {
+                namespaces.push(namespace.to_owned());
+                kept.set_namespaces(Some(&namespaces));
+                change.get_or_insert(LineChange::Gained);
+            }
+            continue;
+        }
+        let added = Entry {
+            principals: vec![PRINCIPAL.to_owned()],
+            options: vec![format!("namespaces=\"{namespace}\"")],
+            ..entry
+        };
+        at.insert(added.key.clone(), printed.len());
+        printed.push(Printed::Key(added, Some(LineChange::Added), String::new()));
+    }
+    let mut text = String::new();
+    let mut changes = Vec::new();
+    for (number, line) in (1..).zip(&printed) {
+        match line {
+            Printed::Kept(line) | Printed::Key(_, None, line) => text.push_str(line),
+            Printed::Key(entry, Some(change), _) => {
+                text.push_str(&entry.line());
+                changes.push(Changed {
+                    line: number,
+                    change: *change,
+                });
+            }
+        }
+        text.push('\n');
+    }
+    Signers {
+        file: std::path::PathBuf::new(),
+        text,
+        changes,
+        duplicates,
+    }
+}
+
+/// The number, from 1, of the first line of `board` that lists `key`.
+fn first_line(board: &str, key: &str) -> usize {
+    (1..)
+        .zip(board.lines())
+        .find(|(_, line)| Entry::parse(line).is_some_and(|entry| entry.key == key))
+        .map_or(0, |(number, _)| number)
+}
+
 #[cfg(test)]
 mod tests;

@@ -4,8 +4,8 @@
 
 use std::path::{Path, PathBuf};
 
-use board_model::{Order, PluginCode, PluginName, Refusal};
-use board_plugin::{PRINCIPAL, SignError, Verb};
+use board_model::{ORDER_TYPE, Order, PluginCode, PluginName, Refusal};
+use board_plugin::{PRINCIPAL, SignError, Signers, Verb};
 use serde_json::{Map, json};
 
 use super::Signing;
@@ -163,6 +163,18 @@ pub(crate) fn legacy(signing: &Signing, signer: &OrderSigner) -> Option<Refusal>
     let hint =
         format!("run `board --personal orders signers`, read its lines and write them to {board}");
     Some(Refusal::plugin(code, message, fields).with_hint(hint))
+}
+
+/// Board's allowed signers file with the attention file's keys merged in
+/// for orders, as `board orders signers` prints it. It reads both files and
+/// writes neither.
+pub(crate) fn order_signers(signing: &Signing) -> Result<Signers, VerifyOrderError> {
+    let board = (signing.allowed.as_deref()).ok_or(VerifyOrderError::NoneNamed)?;
+    let attention = signing.attention_allowed.as_deref();
+    board_plugin::signers(board, attention, ORDER_TYPE).map_err(|error| match error {
+        SignError::Untrusted { file, why } => VerifyOrderError::Untrusted { file, why },
+        source => VerifyOrderError::Failed { source },
+    })
 }
 
 #[cfg(test)]

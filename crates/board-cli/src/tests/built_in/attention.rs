@@ -433,6 +433,66 @@ fn an_order_only_the_attention_file_admits_verifies_with_a_legacy_warning() {
     );
 }
 
+/// `orders signers` prints Board's file with the attention file's key
+/// merged in for orders and writes neither file; Board's file holding the
+/// printed lines verifies the order with no legacy warning.
+#[test]
+fn signers_prints_boards_file_with_the_attention_key_merged_in_and_those_lines_verify_the_order() {
+    use board_model::APPROVAL_HEADER;
+
+    let personal = personal();
+    draft(&personal, "push", &json!({}), CONTEXT);
+    signed(&personal, "push");
+    let attention = personal.signer.allowed();
+    let public = std::fs::read_to_string(personal.signer.directory().join("key.pub")).unwrap();
+    let board_line = format!("owner namespaces=\"{APPROVAL_HEADER}\" {}", public.trim());
+    personal
+        .signer
+        .write("board_signers", Item::File(&format!("{board_line}\n")));
+    let board = personal.signer.directory().join("board_signers");
+    let before = (
+        std::fs::read(&board).unwrap(),
+        std::fs::read(&attention).unwrap(),
+    );
+    let ran = run_with(
+        &personal,
+        (board.clone(), attention.clone()),
+        None,
+        &["--json", "call", "orders.signers"],
+    );
+    let output = admitted(&ran);
+    assert_eq!(
+        output["text"],
+        format!(
+            "owner namespaces=\"{APPROVAL_HEADER},{ORDER_TYPE}\" {}\n",
+            public.trim()
+        )
+    );
+    assert_eq!(output["file"], board.display().to_string());
+    assert_eq!(output["changes"], json!([{"line": 1, "change": "gained"}]));
+    assert_eq!(output["duplicates"], json!([]));
+    assert_eq!(
+        before,
+        (
+            std::fs::read(&board).unwrap(),
+            std::fs::read(&attention).unwrap()
+        )
+    );
+    let absent = personal.signer.directory().join("absent");
+    let legacy = run_with(&personal, (board.clone(), absent.clone()), None, &VERIFY);
+    assert_eq!(refused(&legacy), "orders::order::bad_signature");
+    personal.signer.write(
+        "board_signers",
+        Item::File(output["text"].as_str().unwrap()),
+    );
+    let ran = run_with(&personal, (board, absent), None, &VERIFY);
+    admitted(&ran);
+    assert_eq!(
+        warned(&ran, "orders::signers::legacy"),
+        Vec::<String>::new()
+    );
+}
+
 /// The `board::plugin::former_name` warnings `output` printed.
 fn former(output: &Output) -> Vec<String> {
     (text(&output.stderr).lines())

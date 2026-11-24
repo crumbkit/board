@@ -58,6 +58,7 @@ notes.daily disabled Sync the notes repo and print a day's daily note, unless th
 orders.verify disabled An order and its context, when the owner's key signed it and it has not expired; otherwise the reason it cannot be trusted.
 orders.pinned disabled Every pinned order in the board's own tree that verifies, for an agent session to start with, and the code of each one left out.
 orders.sign disabled Show the owner an order in the signing window and, once they sign it with Touch ID, write their signature into it. Refuses with the owner's requested changes when they ask for some.
+orders.signers disabled Board's allowed signers file with each key of the attention allowed signers file merged in for orders, which the owner reads and writes to Board's file themselves. It writes neither file.
 params.get disabled A calibrated value for a scope, or its heuristic's default and why the default applies.
 params.due disabled The values an agent should derive again, oldest first: those on the default, those readers cannot use, those whose latest check failed, and those older than their recheck_after in calendar days.
 places.attach disabled Write the join of an mxv workspace on this machine to a change, at /places/<machine>/<workspace>/changes/<change-name>, with the workspace's id from mxv. The workspace is the one --workspace names, or the one that holds the caller's directory.
@@ -97,4 +98,3 @@ tasks.tree disabled List a task and its descendants in every status, nested by t
 tasks.add disabled Write a new open task to tasks/<slug>.md in the repo the caller's remote routes to. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.claim disabled Claim an open task for an owner, refused when another owner holds it. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.done disabled Mark a task done, or defer a repeating one to its next occurrence. It syncs the task's repo first and pushes after, unless --push false makes it commit in the clone alone, and sets reviewed.
-tasks.defer disabled Defer a task until a date or a horizon from today, written as a date. It syncs the task's repo first and pushes after, and sets reviewed.
