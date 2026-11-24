@@ -106,15 +106,22 @@ const REPORT: &str = "/repos/personal/tasks/report.md";
 const SESSION: &str = "local_0a1b";
 
 /// A notes repo that still stores the tasks/task/v2 schema from before the
-/// shapes migration would refuse the Actor a claim writes as its owner, so
-/// the claim is refused as stale before it syncs or writes, and says how to
-/// migrate the clone. It proves the claim stops and names the remedy; the
-/// migration itself is the xtask's own tests'.
+/// shapes migration, on its remote as in its clone, would refuse the Actor
+/// a claim writes as its owner. The claim syncs the clone first, so it
+/// takes a commit another clone pushed, and then refuses as stale before it
+/// writes the task, with a hint that says the clone was synced and how to
+/// migrate it, and no sync code. It proves the claim stops and names the remedy; the migration itself
+/// is the xtask's own tests'.
 #[test]
-fn a_claim_in_a_mounted_notes_repo_with_the_old_task_schema_is_refused_as_stale_and_writes_nothing()
-{
+fn a_claim_in_a_mounted_notes_repo_with_the_old_task_schema_is_refused_as_stale_after_the_sync_and_writes_nothing()
+ {
     let (tasks, clone) = notes_with_task(true);
-    let head = git(&clone, &["rev-parse", "HEAD"]);
+    let phone = tasks.phone("personal");
+    write_file(&phone.join("note.md"), "pushed from another clone\n");
+    git(&phone, &["add", "note.md"]);
+    git(&phone, &["commit", "-qm", "a note from another clone"]);
+    git(&phone, &["push", "-q", "origin", "main"]);
+    let pushed = git(&phone, &["rev-parse", "HEAD"]);
     let before = std::fs::read_to_string(clone.join("tasks/report.md")).unwrap();
     let refused = tasks.refused("claim", &["--path", REPORT, "--session", SESSION]);
     assert_eq!(refused["code"], "tasks::repo::schema_stale", "{refused}");
@@ -123,10 +130,53 @@ fn a_claim_in_a_mounted_notes_repo_with_the_old_task_schema_is_refused_as_stale_
         refused["fields"]["clone"],
         json!(clone.canonicalize().unwrap())
     );
+    assert_eq!(refused["fields"].get("unsynced"), None, "{refused}");
     let said = refused.to_string();
-    assert!(said.contains("migrate-shapes"), "{said}");
-    assert!(said.contains("plugin enable tasks"), "{said}");
-    assert!(said.contains("mount update"), "{said}");
+    assert!(said.contains("the task was not written"), "{said}");
+    for step in [
+        "was synced",
+        "checkout of the Board source",
+        "migrate-shapes",
+        "--map",
+        "--write",
+        "plugin enable",
+        "board check",
+        "mount update",
+    ] {
+        assert!(said.contains(step), "{step}: {said}");
+    }
+    assert_eq!(git(&clone, &["rev-parse", "HEAD"]), pushed);
+    let after = std::fs::read_to_string(clone.join("tasks/report.md")).unwrap();
+    assert_eq!(after, before);
+}
+
+/// A claim whose sync cannot reach the remote checks the schema the clone
+/// already holds, so a stale one is refused. The refusal carries the sync's
+/// code, and its hint says to sync and to migrate only once the sync
+/// reaches the remote and the claim is still refused, so an offline clone
+/// is not migrated a second time.
+#[test]
+fn a_claim_whose_sync_fails_in_a_stale_notes_repo_is_refused_with_the_sync_code_and_a_hint_to_sync_first()
+ {
+    let (tasks, clone) = notes_with_task(true);
+    let gone = clone.with_file_name("no-such-remote.git");
+    git(
+        &clone,
+        &["remote", "set-url", "origin", gone.to_str().unwrap()],
+    );
+    let head = git(&clone, &["rev-parse", "HEAD"]);
+    let before = std::fs::read_to_string(clone.join("tasks/report.md")).unwrap();
+    let refused = tasks.refused("claim", &["--path", REPORT, "--session", SESSION]);
+    assert_eq!(refused["code"], "tasks::repo::schema_stale", "{refused}");
+    let code = refused["fields"]["unsynced"].as_str().unwrap_or_default();
+    assert!(!code.is_empty(), "{refused}");
+    let hint = refused["recovery"]["text"].as_str().unwrap();
+    let canonical = clone.canonicalize().unwrap();
+    let sync = format!("board -C {} sync", canonical.display());
+    assert!(hint.contains(&sync), "{hint}");
+    assert!(hint.contains(code), "{hint}");
+    assert!(hint.contains("reaches the remote"), "{hint}");
+    assert!(!hint.contains("was synced"), "{hint}");
     assert_eq!(git(&clone, &["rev-parse", "HEAD"]), head);
     let after = std::fs::read_to_string(clone.join("tasks/report.md")).unwrap();
     assert_eq!(after, before);
@@ -152,4 +202,53 @@ fn a_claim_in_a_mounted_notes_repo_with_the_shipped_task_schema_is_stored_and_li
     assert_eq!(entry.get("code"), None, "{entry}");
     let listed = tasks.call("available", &["--session", SESSION]).unwrap();
     assert_eq!(listed["available"]["tasks"][0]["path"], REPORT, "{listed}");
+}
+
+/// A notes repo migrated and pushed from another clone, while this mount
+/// still pins the commit with the old schema, is claimed: the claim syncs
+/// the clone and re-pins the mount before it checks the stored schema.
+#[test]
+fn a_claim_in_a_mounted_notes_repo_whose_schema_another_clone_migrated_and_pushed_is_stored() {
+    let (tasks, clone) = notes_with_task(true);
+    let phone = tasks.phone("personal");
+    write_file(
+        &phone.join(".board/types/tasks/task/v2.schema.json"),
+        SCHEMA,
+    );
+    git(&phone, &["commit", "-qam", "the shipped task schema"]);
+    git(&phone, &["push", "-q", "origin", "main"]);
+    let output = tasks.call("claim", &["--path", REPORT, "--session", SESSION]);
+    assert_eq!(output.unwrap()["owner"], json!({"session": SESSION}));
+    let stored = std::fs::read_to_string(clone.join("tasks/report.md")).unwrap();
+    assert!(
+        stored.contains("owner: {\"session\":\"local_0a1b\"}\n"),
+        "{stored}"
+    );
+}
+
+/// The board's own tree is left out of the claim's stale check, since
+/// `board call` checks the schemas the plugin ships there: a claim in a
+/// board whose own tasks/task/v2 schema is the old one is refused by that
+/// check, whose hint is `board plugin enable tasks`, and never as a stale
+/// notes repo, whose hint names a clone the board's own tree lacks.
+#[test]
+fn a_claim_in_the_boards_own_tree_with_the_old_task_schema_is_refused_by_board_call_and_not_as_a_stale_repo()
+ {
+    let tasks = Tasks::new();
+    let mut schema: Value = serde_json::from_str(SCHEMA).unwrap();
+    schema["properties"]["owner"] = json!({"type": "string", "minLength": 1});
+    tasks.write(
+        ".board/types/tasks/task/v2.schema.json",
+        &schema.to_string(),
+    );
+    tasks.write("tasks/a.md", &open("A", json!({})));
+    let refused = tasks.refused("claim", &["--path", "/tasks/a.md", "--session", SESSION]);
+    assert_eq!(
+        refused["code"], "board::plugin::schema_differs",
+        "{refused}"
+    );
+    let enabled = tasks.run(&["plugin", "enable", "tasks"], 0, None, "");
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    let output = tasks.call("claim", &["--path", "/tasks/a.md", "--session", SESSION]);
+    assert_eq!(output.unwrap()["owner"], json!({"session": SESSION}));
 }

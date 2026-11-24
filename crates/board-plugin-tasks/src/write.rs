@@ -293,8 +293,20 @@ pub(crate) fn stamped(
     change: &Change<'_>,
     landing: Landing,
 ) -> Result<Value, PluginError> {
-    let found = listed(host, PLUGIN)?;
-    let repo = held(&found, logical);
+    let repo = held(&listed(host, PLUGIN)?, logical);
+    stamped_in(host, &repo, logical, (&|_| Ok(()), change), landing)
+}
+
+/// [`stamped`] on the task at `logical` in `repo`, which the caller has
+/// already found, refused when `check` refuses the synced and pinned
+/// repo before `change` runs.
+pub(crate) fn stamped_in(
+    host: &dyn Host,
+    repo: &Repo,
+    logical: &str,
+    (check, change): (&Check<'_>, &Change<'_>),
+    landing: Landing,
+) -> Result<Value, PluginError> {
     let stamp = |record: &Map<String, Value>, day: Date| {
         let mut values = change(record, day)?;
         values.push(("reviewed", Some(day.to_string().into())));
@@ -302,11 +314,11 @@ pub(crate) fn stamped(
     };
     let clones = Through::new(host);
     let writer = writer(host, &clones);
-    let edited = edit(writer, &repo, logical, &stamp, landing)?;
-    let (commit, unpushed) = landed_with(writer, &repo, edited.commit, landing.push)?;
-    let conflicts = writer.conflicts_at(&repo, &[&edited.path]);
+    let edited = edit_checked(writer, repo, logical, (check, &stamp), landing)?;
+    let (commit, unpushed) = landed_with(writer, repo, edited.commit, landing.push)?;
+    let conflicts = writer.conflicts_at(repo, &[&edited.path]);
     Ok(json!(written(
-        &repo,
+        repo,
         &edited.path,
         &edited.record,
         (commit, edited.synced, unpushed),
@@ -425,6 +437,10 @@ fn parented(
 /// What a call changes, from the task's record and the person's today.
 pub(crate) type Change<'a> = dyn Fn(&Map<String, Value>, Date) -> Result<Values, PluginError> + 'a;
 
+/// What refuses a write once the repo is synced and pinned, from the code
+/// of the sync, none when it reached the remote.
+pub(crate) type Check<'a> = dyn Fn(Option<&str>) -> Result<(), PluginError> + 'a;
+
 /// A task as an edit left it: its path in its repo, its record with the
 /// change made, the commit that holds it, the code of the sync before, and
 /// whether the edit wrote, which a change that names no field does not.
@@ -450,6 +466,18 @@ pub(crate) fn edit(
     change: &Change<'_>,
     landing: Landing,
 ) -> Result<Edited, PluginError> {
+    edit_checked(writer, repo, logical, (&|_| Ok(()), change), landing)
+}
+
+/// [`edit`], refused when `check` refuses, which it calls with the code of
+/// the sync after the pin and the read, on every attempt, before `change`.
+fn edit_checked(
+    writer: Writer<'_>,
+    repo: &Repo,
+    logical: &str,
+    (check, change): (&Check<'_>, &Change<'_>),
+    landing: Landing,
+) -> Result<Edited, PluginError> {
     let host = writer.host;
     let path = repo.repo_path(logical).trim_start_matches('/').to_owned();
     let synced = synced(writer, repo, landing.push);
@@ -470,6 +498,7 @@ pub(crate) fn edit(
             });
         }
         let record = checked(host, &task, repo, logical, landing.finished)?;
+        check(synced.as_deref())?;
         let values = change(&record, day)?;
         if values.is_empty() {
             return Ok(Edited {

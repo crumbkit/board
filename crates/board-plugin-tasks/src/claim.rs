@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::write::{Landing, Values, held, stamped};
+use crate::write::{Landing, Values, held, stamped_in};
 use crate::{PLUGIN, Tasks, hinted, refusal};
 
 /// The task to claim, and who claims it.
@@ -69,13 +69,18 @@ pub(crate) fn claim(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         ));
     };
     let repo = held(&listed(host, PLUGIN)?, &given.path);
-    if let Some(stale) = stale_schema(host, &repo)? {
-        return Err(schema_stale(&repo, &given.path, &stale));
-    }
     let same = |held: &Value| {
         serde_json::from_value::<Actor>(held.clone()).is_ok_and(|held| held.same(&owner))
     };
     let owner = json!(owner);
+    // `edit` calls the check after it syncs the clone and re-pins the
+    // mount, so a schema another clone migrated and pushed is read here.
+    let check = |unsynced: Option<&str>| -> Result<(), PluginError> {
+        match stale_schema(host, &repo)? {
+            Some(stale) => Err(schema_stale(&repo, &given.path, &stale, unsynced)),
+            None => Ok(()),
+        }
+    };
     let change = |record: &Map<String, Value>, _: Date| -> Result<Values, PluginError> {
         match record.get("owner") {
             None | Some(Value::Null) => {}
@@ -99,7 +104,7 @@ pub(crate) fn claim(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         }
         Ok(vec![("owner", Some(owner.clone()))])
     };
-    stamped(host, &given.path, &change, Landing::open())
+    stamped_in(host, &repo, &given.path, (&check, &change), Landing::open())
 }
 
 /// The owner that `owner` or the parts `[session, program, person, agent]`
@@ -137,6 +142,7 @@ pub(crate) fn owner(
 /// notes repo holds, and tasks/task/v3 when it holds it. `put` checks a
 /// task against the schemas stored where the task lives, so a copy from
 /// before the shapes migration, whose `owner` is text, refuses every claim.
+/// It reads every schema in one `get_each`, at the mount's current pin.
 /// The board's own tree is left out, since `board call` checks its schemas.
 fn stale_schema(host: &dyn Host, repo: &Repo) -> Result<Option<String>, PluginError> {
     if repo.clone.is_none() {
@@ -146,22 +152,26 @@ fn stale_schema(host: &dyn Host, repo: &Repo) -> Result<Option<String>, PluginEr
         PluginError::board_refused(PLUGIN, "get", &error.refusal("get"))
     };
     let root = repo.root.trim_end_matches('/');
-    for (kind, shipped) in Tasks.schemas() {
-        let stored = format!("{root}/.board/types/{kind}.schema");
-        let path: LogicalPath = stored.parse().expect("a repo's root is a board path");
-        let answer = host
-            .get_each(&[path])
-            .map_err(|error| refused(&error))?
-            .pop();
+    let schemas: Vec<(String, String, Value)> = (Tasks.schemas().into_iter())
+        .map(|(kind, shipped)| {
+            let stored = format!("{root}/.board/types/{kind}.schema");
+            (kind.as_str().to_owned(), stored, shipped)
+        })
+        .collect();
+    let paths: Vec<LogicalPath> = (schemas.iter())
+        .map(|(_, stored, _)| stored.parse().expect("a repo's root is a board path"))
+        .collect();
+    let answers = host.get_each(&paths).map_err(|error| refused(&error))?;
+    for ((kind, stored, shipped), answer) in schemas.into_iter().zip(answers) {
         let schema: Value = match answer {
-            Some(Ok(report)) => serde_json::from_slice(&report.bytes).unwrap_or(Value::Null),
-            Some(Err(error)) if error.code() != Code::PathNotFound => {
+            Ok(report) => serde_json::from_slice(&report.bytes).unwrap_or(Value::Null),
+            Err(error) if error.code() != Code::PathNotFound => {
                 return Err(refused(&error));
             }
             // A repo without v3 takes v2 tasks alone; one without v2 has
             // never had the plugin's schemas.
-            _ if kind.as_str() != crate::records::V2_TYPE => continue,
-            _ => return Ok(Some(stored)),
+            Err(_) if kind != crate::records::V2_TYPE => continue,
+            Err(_) => return Ok(Some(stored)),
         };
         if owner_shape(&schema) != owner_shape(&shipped) {
             return Ok(Some(stored));
@@ -196,27 +206,41 @@ fn without_descriptions(schema: &mut Value) {
 }
 
 /// The refusal of a claim on `logical` in `repo`, whose clone stores
-/// `schema` older than the plugin's.
-fn schema_stale(repo: &Repo, logical: &str, schema: &str) -> PluginError {
+/// `schema` older than the plugin's after the claim's sync, whose code is
+/// `unsynced` when it did not reach the remote. A synced clone needs the
+/// shapes migration of docs/plugins/lifecycle/updating.md; an unsynced one
+/// may lack a migration another clone pushed, so it is synced first.
+fn schema_stale(repo: &Repo, logical: &str, schema: &str, unsynced: Option<&str>) -> PluginError {
     let clone = repo.clone.as_deref().unwrap_or_default();
     let mount = &repo.root;
     let why = format!(
         "{logical} is in {clone}, whose {schema}.json predates the owner the plugin writes, so \
-         `put` would refuse the claim; nothing was written"
+         `put` would refuse the claim; the task was not written"
     );
-    let hint = format!(
-        "run `cargo xtask migrate-shapes {clone}`, then with `--write`, then `board -C {clone} \
-         plugin enable tasks` and commit, then `board mount update {mount}`, and claim again"
+    let migrate = format!(
+        "from a checkout of the Board source, run `cargo xtask migrate-shapes {clone}`, read \
+         what it could not map and write a `--map <file>`, run it again with `--write` and the \
+         map, then in {clone} run `board plugin enable <name>` for each enabled plugin and \
+         `board check`, commit and push, then `board mount update {mount}`, and claim again"
     );
-    hinted(
-        "tasks::repo::schema_stale",
-        why,
-        [
-            ("path", json!(logical)),
-            ("clone", json!(clone)),
-            ("mount", json!(mount)),
-            ("schema", json!(schema)),
-        ],
-        &hint,
-    )
+    let hint = match unsynced {
+        None => format!(
+            "the clone was synced and still stores the old schema, so migrate it: {migrate}"
+        ),
+        Some(code) => format!(
+            "the sync before the claim did not reach the remote ({code}), so the clone may lack \
+             a migration another clone pushed: run `board -C {clone} sync`, and once it reaches \
+             the remote, claim again; only if the claim is still refused, migrate it: {migrate}"
+        ),
+    };
+    let mut fields = vec![
+        ("path", json!(logical)),
+        ("clone", json!(clone)),
+        ("mount", json!(mount)),
+        ("schema", json!(schema)),
+    ];
+    if let Some(code) = unsynced {
+        fields.push(("unsynced", json!(code)));
+    }
+    hinted("tasks::repo::schema_stale", why, fields, &hint)
 }
