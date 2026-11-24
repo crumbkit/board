@@ -38,4 +38,4 @@ its capability.
 A release writes the file by running that test with `SNAPSHOTS=overwrite`,
 then checks it with `RELEASED=all`, which fails unless the file lists
 everything the checkout ships. It lists 0.1.1, except the
-[unstable interfaces](released/unstable.md).
+[unstable interfaces and `map/layout/v1`](released/unstable.md).

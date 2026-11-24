@@ -21,3 +21,13 @@ codes are frozen from 0.1.0.
 
 After 0.1.1, `runs/suite/v1` gained an optional `kind` in place, because
 the release had few users. `runs.migrate` adds it to existing suites.
+
+The map plugin's `map/layout/v1` changes in place until map increment 4
+lands, because increments 3 and 4 add optional fields to it. The unstable
+list cannot hold it, because the list accepts only the external plugin
+protocol's types, so the released test skips
+`crates/board-plugin-map/types/` through `UNFROZEN` in
+crates/board-cli/src/tests/released.rs, as it skips the changes plugin's
+types. The change that lands increment 4 removes that entry and lists the
+type. `map.check` and the `map::` codes are listed as released, because the
+increments only add capabilities and codes beside them.

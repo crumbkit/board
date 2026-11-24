@@ -1886,6 +1886,88 @@
       "failures[].url",
       "schema"
     ],
+    "board/timing-check-report/v2": [
+      "data",
+      "data.commands",
+      "data.commands[].budget_ms",
+      "data.commands[].command",
+      "data.commands[].judged",
+      "data.commands[].killed",
+      "data.commands[].p50_ms",
+      "data.commands[].p90_ms",
+      "data.commands[].state",
+      "data.mode",
+      "data.recorded",
+      "data.skipped",
+      "dry_run",
+      "failures",
+      "failures[].alternatives",
+      "failures[].alternatives[].all",
+      "failures[].alternatives[].args",
+      "failures[].alternatives[].call",
+      "failures[].alternatives[].kind",
+      "failures[].alternatives[].program",
+      "failures[].alternatives[].reason",
+      "failures[].alternatives[].repair",
+      "failures[].alternatives[].run",
+      "failures[].alternatives[].text",
+      "failures[].alternatives[].then",
+      "failures[].alternatives[].then.all",
+      "failures[].alternatives[].then.call",
+      "failures[].alternatives[].then.kind",
+      "failures[].cause",
+      "failures[].causes",
+      "failures[].code",
+      "failures[].fields",
+      "failures[].index",
+      "failures[].key",
+      "failures[].labels",
+      "failures[].labels[].column",
+      "failures[].labels[].excerpt",
+      "failures[].labels[].excerpt.line",
+      "failures[].labels[].excerpt.text",
+      "failures[].labels[].length",
+      "failures[].labels[].line",
+      "failures[].labels[].name",
+      "failures[].labels[].offset",
+      "failures[].labels[].text",
+      "failures[].message",
+      "failures[].recovery",
+      "failures[].recovery.all",
+      "failures[].recovery.args",
+      "failures[].recovery.call",
+      "failures[].recovery.kind",
+      "failures[].recovery.program",
+      "failures[].recovery.reason",
+      "failures[].recovery.repair",
+      "failures[].recovery.run",
+      "failures[].recovery.text",
+      "failures[].recovery.then",
+      "failures[].recovery.then.all",
+      "failures[].recovery.then.call",
+      "failures[].recovery.then.kind",
+      "failures[].related",
+      "failures[].related[].cause",
+      "failures[].related[].code",
+      "failures[].related[].help",
+      "failures[].related[].labels",
+      "failures[].related[].labels[].column",
+      "failures[].related[].labels[].excerpt",
+      "failures[].related[].labels[].excerpt.line",
+      "failures[].related[].labels[].excerpt.text",
+      "failures[].related[].labels[].length",
+      "failures[].related[].labels[].line",
+      "failures[].related[].labels[].name",
+      "failures[].related[].labels[].offset",
+      "failures[].related[].labels[].text",
+      "failures[].related[].message",
+      "failures[].related[].related",
+      "failures[].related[].severity",
+      "failures[].related[].url",
+      "failures[].sentence",
+      "failures[].url",
+      "schema"
+    ],
     "board/ui-kinds-report/v2": [
       "cut",
       "cut.budget",
@@ -3977,6 +4059,68 @@
         ]
       }
     },
+    "changes.ask": {
+      "input": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "by",
+            "path",
+            "project"
+          ]
+        ]
+      },
+      "input.by": {
+        "type": [
+          "object"
+        ]
+      },
+      "input.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.project": {
+        "type": [
+          "string"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "approve",
+            "outcome",
+            "path",
+            "question"
+          ]
+        ]
+      },
+      "output.approve": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.outcome": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.question": {
+        "type": [
+          "string"
+        ]
+      }
+    },
     "changes.attach": {
       "input": {
         "type": [
@@ -4982,6 +5126,16 @@
           "string"
         ]
       },
+      "output.not_required": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.not_required[]": {
+        "type": [
+          "string"
+        ]
+      },
       "output.path": {
         "type": [
           "string"
@@ -5313,6 +5467,191 @@
         "type": [
           "integer"
         ]
+      },
+      "output.warnings": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.warnings[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "code",
+            "detail"
+          ]
+        ]
+      },
+      "output.warnings[].code": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.warnings[].detail": {
+        "type": [
+          "string"
+        ]
+      }
+    },
+    "changes.owed": {
+      "input": {
+        "type": [
+          "object"
+        ]
+      },
+      "input.limit": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "changes",
+            "total",
+            "truncated",
+            "unreadable"
+          ]
+        ]
+      },
+      "output.changes": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.changes[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "checks",
+            "path",
+            "questions",
+            "title",
+            "touched"
+          ]
+        ]
+      },
+      "output.changes[].checks": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.changes[].checks[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "actor",
+            "blocks",
+            "check",
+            "detail",
+            "status"
+          ]
+        ]
+      },
+      "output.changes[].checks[].actor": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "agent",
+          "owner",
+          "reviewer"
+        ]
+      },
+      "output.changes[].checks[].blocks": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.changes[].checks[].check": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.changes[].checks[].detail": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.changes[].checks[].remedy": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.changes[].checks[].status": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "pass",
+          "missing"
+        ]
+      },
+      "output.changes[].path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.changes[].questions": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.changes[].questions[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "question",
+            "record"
+          ]
+        ]
+      },
+      "output.changes[].questions[].question": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.changes[].questions[].record": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.changes[].title": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.changes[].touched": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.total": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.truncated": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.unreadable": {
+        "type": [
+          "integer"
+        ]
       }
     },
     "changes.pause": {
@@ -5547,6 +5886,11 @@
       "input.considered[].why": {
         "type": [
           "string"
+        ]
+      },
+      "input.correct": {
+        "type": [
+          "boolean"
         ]
       },
       "input.owed": {
@@ -8649,6 +8993,7 @@
         ],
         "requires": [
           [
+            "binary_skipped",
             "branch",
             "commits",
             "crossing",
@@ -8658,6 +9003,32 @@
             "path",
             "sent"
           ]
+        ]
+      },
+      "output.binary_skipped": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.binary_skipped[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "commit",
+            "path"
+          ]
+        ]
+      },
+      "output.binary_skipped[].commit": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.binary_skipped[].path": {
+        "type": [
+          "string"
         ]
       },
       "output.branch": {
@@ -8877,6 +9248,7 @@
         ],
         "requires": [
           [
+            "binary_skipped",
             "branch",
             "commits",
             "crossing",
@@ -8884,6 +9256,32 @@
             "note",
             "sent"
           ]
+        ]
+      },
+      "output.binary_skipped": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.binary_skipped[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "commit",
+            "path"
+          ]
+        ]
+      },
+      "output.binary_skipped[].commit": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.binary_skipped[].path": {
+        "type": [
+          "string"
         ]
       },
       "output.branch": {
@@ -9238,6 +9636,148 @@
       "output.written": {
         "type": [
           "boolean"
+        ]
+      }
+    },
+    "map.check": {
+      "input": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "path"
+          ]
+        ]
+      },
+      "input.limit": {
+        "type": [
+          "integer"
+        ]
+      },
+      "input.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "accepted",
+            "findings",
+            "left_out",
+            "path",
+            "problems"
+          ]
+        ]
+      },
+      "output.accepted": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.findings": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.findings[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "estimated",
+            "kind",
+            "message"
+          ]
+        ]
+      },
+      "output.findings[].estimated": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.findings[].estimated[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "of",
+            "x0",
+            "x1",
+            "y0",
+            "y1"
+          ]
+        ]
+      },
+      "output.findings[].estimated[].of": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.findings[].estimated[].x0": {
+        "type": [
+          "number"
+        ]
+      },
+      "output.findings[].estimated[].x1": {
+        "type": [
+          "number"
+        ]
+      },
+      "output.findings[].estimated[].y0": {
+        "type": [
+          "number"
+        ]
+      },
+      "output.findings[].estimated[].y1": {
+        "type": [
+          "number"
+        ]
+      },
+      "output.findings[].kind": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "accept-unused",
+          "item-unplaced",
+          "items-overlap",
+          "label-nearer-other",
+          "label-off-sheet",
+          "label-outside-region",
+          "label-overlap",
+          "line-through-item",
+          "line-through-label",
+          "lines-share-angle",
+          "note-adrift",
+          "note-nearer-other",
+          "note-overlap"
+        ]
+      },
+      "output.findings[].message": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.left_out": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.problems": {
+        "type": [
+          "integer"
         ]
       }
     },
@@ -13237,6 +13777,161 @@
         ]
       }
     },
+    "runs.migrate": {
+      "input": {
+        "type": [
+          "object"
+        ]
+      },
+      "input.apply": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "applied",
+            "counts",
+            "suites",
+            "total",
+            "truncated",
+            "unclassified",
+            "unreadable"
+          ]
+        ]
+      },
+      "output.applied": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.counts": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "benchmark",
+            "compliance",
+            "eval",
+            "kept",
+            "test",
+            "unclassified"
+          ]
+        ]
+      },
+      "output.counts.benchmark": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.counts.compliance": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.counts.eval": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.counts.kept": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.counts.test": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.counts.unclassified": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.suites": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.suites[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "by",
+            "kind",
+            "path"
+          ]
+        ]
+      },
+      "output.suites[].by": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "zero-rule",
+          "apply-standard",
+          "eval-name",
+          "eval-suites",
+          "review-name",
+          "test-name",
+          "benchmark-name"
+        ]
+      },
+      "output.suites[].kind": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "compliance",
+          "benchmark",
+          "eval",
+          "test"
+        ]
+      },
+      "output.suites[].path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.total": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.truncated": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.unclassified": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.unclassified[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.unreadable": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.unreadable[]": {
+        "type": [
+          "string"
+        ]
+      }
+    },
     "runs.trend": {
       "input": {
         "type": [
@@ -16188,6 +16883,7 @@
     "changes::agent::not_started",
     "changes::agent::timeout",
     "changes::approve::not_chosen",
+    "changes::ask::no_plan",
     "changes::attach::no_plan",
     "changes::board::over_budget",
     "changes::board::refused",
@@ -16215,6 +16911,8 @@
     "changes::flow::unknown_placeholder",
     "changes::flow::unreadable",
     "changes::gate::unmet",
+    "changes::land::gh_failed",
+    "changes::land::not_merged",
     "changes::lifecycle::doc_is_a_pattern",
     "changes::lifecycle::doc_not_a_file",
     "changes::lifecycle::doc_outside_mount",
@@ -16224,6 +16922,7 @@
     "changes::migrate::unread",
     "changes::mount::needs_repository",
     "changes::mount::not_found",
+    "changes::owed::rechecks",
     "changes::paths::outside_plan",
     "changes::pause::not_building",
     "changes::phase::final",
@@ -16232,7 +16931,9 @@
     "changes::plan::directory",
     "changes::plan::no_answers",
     "changes::plan::no_paths",
+    "changes::plan::other_change",
     "changes::plan::outside_mount",
+    "changes::plan::title_differs",
     "changes::plan::too_long",
     "changes::plan::uses_too_long",
     "changes::prototype::never_lands",
@@ -16303,6 +17004,7 @@
     "github::merge::number",
     "github::merge::pull",
     "github::merge::unreadable",
+    "github::push::binary_skipped",
     "github::push::failed",
     "github::push::lfs",
     "github::push::not_commit",
@@ -16326,6 +17028,13 @@
     "jira::key::invalid",
     "jira::record::unreadable",
     "jira::site::invalid",
+    "map::board::refused",
+    "map::call::bad_input",
+    "map::call::unknown_capability",
+    "map::layout::duplicate_id",
+    "map::layout::not_found",
+    "map::layout::unknown_id",
+    "map::layout::unreadable",
     "notes::board::refused",
     "notes::call::bad_input",
     "notes::call::unknown_capability",
@@ -16458,6 +17167,7 @@
     "runs::board::refused",
     "runs::call::bad_input",
     "runs::call::unknown_capability",
+    "runs::migrate::over_budget",
     "runs::suite::not_found",
     "share::attachment::local",
     "share::board::refused",
@@ -16493,6 +17203,7 @@
     "tasks::repo::not_pushed",
     "tasks::repo::not_synced",
     "tasks::repo::origin_unread",
+    "tasks::repo::schema_stale",
     "tasks::repo::sync_timeout",
     "tasks::task::busy",
     "tasks::task::finished",

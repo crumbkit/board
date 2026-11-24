@@ -32,8 +32,13 @@ const SCHEMAS: &[&str] = &["plugins", "crates"];
 /// Schemas that change in place until a later release (released.md). The
 /// changes plugin's records were split as it was ported, and its types stay
 /// unfrozen until that shape has been used, both in its old directory and
-/// in its crate.
-const UNFROZEN: &[&str] = &["plugins/changes/", "crates/board-plugin-changes/types/"];
+/// in its crate. The map plugin's `map/layout/v1` gains optional fields in
+/// map increments 3 and 4, so it stays unfrozen until increment 4 lands.
+const UNFROZEN: &[&str] = &[
+    "plugins/changes/",
+    "crates/board-plugin-changes/types/",
+    "crates/board-plugin-map/types/",
+];
 
 /// Where the repository keeps the vectors other repositories test against.
 const VECTORS: &str = "vectors";
