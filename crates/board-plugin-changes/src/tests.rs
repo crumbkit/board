@@ -156,6 +156,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "plan.owed",
         "plan.paths",
         "plan.answers",
+        "plan.correct",
         "brief.path",
         "prototype.mount",
         "prototype.question",

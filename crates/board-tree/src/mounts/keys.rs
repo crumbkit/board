@@ -1,5 +1,5 @@
 //! The keys a cache keeps mounted sources' decisions and pointer lists
-//! under (docs/architecture/performance/decisions.md).
+//! under (docs/architecture/performance/warm/decisions.md).
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -57,10 +57,7 @@ impl<F> Reached<F> {
         let Some(mounted) = (self.sources.iter()).find(|mounted| mounted.commit == commit) else {
             return HashSet::new();
         };
-        let start = (
-            Source::Commit(commit),
-            mounted.repository.path().to_path_buf(),
-        );
+        let start = (Source::Commit(commit), mounted.repository.clone());
         self.crossings_from(start)
     }
 
@@ -78,7 +75,7 @@ impl<F> Reached<F> {
                 held.insert((repository.clone(), probe.repo.clone(), probe.commit));
                 let child = (self.sources.iter()).find(|mounted| mounted.commit == probe.commit);
                 if let (Ok(_), Some(child)) = (&probe.landed, child) {
-                    let path = child.repository.path().to_path_buf();
+                    let path = child.repository.clone();
                     pending.push((Source::Commit(probe.commit), path));
                 }
             }
@@ -134,12 +131,7 @@ impl<F> Reached<F> {
         let from = Source::Commit(commit);
         let mut fields = vec![
             mounted.root.to_string().into_bytes(),
-            mounted
-                .repository
-                .path()
-                .as_os_str()
-                .as_encoded_bytes()
-                .to_vec(),
+            mounted.repository.as_os_str().as_encoded_bytes().to_vec(),
         ];
         fields.extend(self.probed(&from, closures)?);
         let closure = hashed(&fields);
@@ -159,6 +151,28 @@ impl<F> Reached<F> {
         from: &Source,
         closures: &mut HashMap<ObjectId, Option<Digest>>,
     ) -> Option<Vec<Vec<u8>>> {
+        let each = self.probed_each(from, closures)?;
+        Some(each.into_iter().flat_map(|(_, fields)| fields).collect())
+    }
+
+    /// What each mount pointer of the working tree names and reached, as
+    /// its key holds it, hashed, by the pointer's physical path. `None`
+    /// when the working tree's decision has no key.
+    pub fn worktree_probes(&self) -> Option<Vec<(String, Digest)>> {
+        let each = self.probed_each(&Source::WorkingTree, &mut HashMap::new())?;
+        Some(
+            (each.into_iter())
+                .map(|(path, fields)| (path, hashed(&fields)))
+                .collect(),
+        )
+    }
+
+    /// [`Reached::probed`], by each pointer's physical path in path order.
+    fn probed_each(
+        &self,
+        from: &Source,
+        closures: &mut HashMap<ObjectId, Option<Digest>>,
+    ) -> Option<Vec<(String, Vec<Vec<u8>>)>> {
         if self.unread.contains(from) {
             return None;
         }
@@ -166,8 +180,9 @@ impl<F> Reached<F> {
             .filter(|probe| probe.from == *from)
             .collect();
         probes.sort_by(|a, b| a.path.cmp(&b.path));
-        let mut fields = Vec::new();
+        let mut each = Vec::new();
         for probe in probes {
+            let mut fields = Vec::new();
             fields.push(probe.path.clone().into_bytes());
             fields.push(probe.repo.clone().into_bytes());
             fields.push(probe.commit.to_string().into_bytes());
@@ -185,7 +200,7 @@ impl<F> Reached<F> {
                         .sources
                         .iter()
                         .find(|child| child.commit == probe.commit)?;
-                    if child.repository.path() != opened {
+                    if child.repository != *opened {
                         return None;
                     }
                     let closure = self.closure(probe.commit, closures)?;
@@ -194,14 +209,15 @@ impl<F> Reached<F> {
                     fields.push(closure.hex().into_bytes());
                 }
             }
+            each.push((probe.path.clone(), fields));
         }
-        Some(fields)
+        Some(each)
     }
 }
 
 /// The digest of `fields`, each preceded by its length so that no two
 /// lists of fields give the same bytes.
-fn hashed<T: AsRef<[u8]>>(fields: &[T]) -> Digest {
+pub(super) fn hashed<T: AsRef<[u8]>>(fields: &[T]) -> Digest {
     let mut bytes = Vec::new();
     for field in fields {
         let field = field.as_ref();

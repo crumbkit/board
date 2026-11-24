@@ -2593,5 +2593,6 @@ mod refused;
 mod relative;
 mod released;
 mod repo;
+mod search;
 mod sync;
 mod types;

@@ -2,6 +2,7 @@
 //! paths it will edit.
 
 pub(crate) mod answers;
+mod heading;
 
 use std::time::SystemTime;
 
@@ -77,6 +78,12 @@ pub(crate) struct Input {
                        record; a flow whose checks read an answer needs it."
     )]
     answers: Answers,
+    #[serde(default)]
+    #[schemars(
+        description = "True to correct the plan of a change that is done or dropped; the change \
+                       keeps its phase. Left out, such a change takes no new plan."
+    )]
+    correct: bool,
 }
 
 /// The headings the gates no longer read from a plan's text, in lower case.
@@ -261,17 +268,19 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         considered,
         owed,
         answers,
+        correct,
     } = PluginError::read_input(PLUGIN, "plan", input)?;
     let uses = once(uses);
     let paths = once(paths.unwrap_or_default());
     let (mut change, blob) = read(host, &path)?;
-    if is_final(&change.phase) {
+    if is_final(&change.phase) && !correct {
         return Err(final_phase(
             &path,
             &change.phase,
             format!(
-                "the change at {path} is {}, so it takes no new plan; list open changes with \
-                 `board changes open`, or start a new one",
+                "the change at {path} is {}, so it takes no new plan; to correct its plan, send \
+                 the plan again with \"correct\": true, or list open changes with `board changes \
+                 open` and start a new one",
                 change.phase
             ),
         ));
@@ -295,7 +304,8 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     let records = check_named(host, &path, &uses, &considered, &owed)?;
     check_uses(host, &path, &uses, &records)?;
     let count = uses.len();
-    let warnings = text_warnings(&text);
+    let mut warnings = text_warnings(&text);
+    warnings.extend(heading::check(host, &path, &change.title, &text)?);
     let planned = Planned {
         uses,
         paths,

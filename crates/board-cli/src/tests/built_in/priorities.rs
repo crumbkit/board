@@ -238,6 +238,43 @@ fn an_entry_is_stale_once_the_board_has_more_commits_since_its_confirmation_than
     );
 }
 
+/// The UTC day `days` before today, as YYYY-MM-DD.
+fn days_ago(days: i64) -> String {
+    jiff::Timestamp::now()
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .date()
+        .checked_sub(jiff::Span::new().days(days))
+        .unwrap()
+        .to_string()
+}
+
+#[test]
+fn an_entry_is_stale_seven_days_after_its_confirmation_on_a_quiet_board() {
+    let board = board();
+    let confirmed = |id: &str, days: i64| {
+        json!({
+            "id": id,
+            "title": format!("Work on {id}"),
+            "covers": [],
+            "confirmed": days_ago(days),
+        })
+    };
+    let record = json!({
+        "$type": "priorities/list/v1",
+        "short": [confirmed("a", 7), confirmed("b", 6)],
+        "long": [],
+    });
+    board.write("priorities.json", &record.to_string());
+    let listed = board.call("priorities.list", &[]);
+    let flags: Vec<(Value, Value)> = (listed["short"].as_array().unwrap().iter())
+        .map(|row| (row["id"].clone(), row["stale"].clone()))
+        .collect();
+    assert_eq!(
+        flags,
+        vec![(json!("a"), json!(true)), (json!("b"), json!(false))]
+    );
+}
+
 /// Each refusal writes nothing and makes no commit; its twin, one value
 /// apart, is admitted.
 #[test]

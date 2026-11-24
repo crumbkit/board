@@ -10,6 +10,7 @@ mod open;
 mod query;
 mod schema;
 mod server;
+mod slots;
 mod state;
 mod store;
 mod timing;
@@ -23,6 +24,7 @@ pub use crate::server::{
     empty_directory, read_server, remove_opener, remove_server, server_file, write_opener,
     write_server, write_statement,
 };
+pub use crate::slots::{Input, Slot};
 pub use crate::state::{
     append_state, lock_state, remove_scratch, remove_state, replace_file, scratch_directory,
     write_state,
@@ -30,7 +32,9 @@ pub use crate::state::{
 pub use crate::store::{
     BlobFact, Decided, RefFact, Resolved, ValidationFact, View, Worktree, Writer, source_name,
 };
-pub use crate::timing::append_timing;
+pub use crate::timing::{
+    Summarise, Timings, append_timing, read_timings, stamp_timing, timing_stamped,
+};
 pub use crate::values::{cache, cached};
 
 #[cfg(test)]

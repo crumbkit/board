@@ -37,8 +37,8 @@ fn default_threads() -> usize {
 /// What tells a repository apart from others (see [`Repository::identity`]).
 #[derive(Clone, Debug)]
 pub(crate) struct Identity {
-    common: Option<PathBuf>,
-    origin: Option<String>,
+    pub(crate) common: Option<PathBuf>,
+    pub(crate) origin: Option<String>,
 }
 
 impl Identity {

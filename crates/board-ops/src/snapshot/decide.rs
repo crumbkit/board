@@ -75,6 +75,13 @@ pub(crate) struct Referenced {
 }
 
 impl Decisions {
+    /// Puts the entries decided from `start` on in path order, as a run
+    /// that decides every entry in order leaves them.
+    pub(super) fn sort_from(&mut self, start: usize) {
+        self.resolved[start..].sort_by(|a, b| a.path.cmp(&b.path));
+        self.checked[start..].sort_by(|a, b| a.path.cmp(&b.path));
+    }
+
     /// Decides `entry` of `source`, named `logical` from the root.
     pub(super) fn push(
         &mut self,
@@ -352,7 +359,7 @@ impl Decide<'_> {
     fn value(&self, entry: &Entry, indexed: &Indexed) -> Option<serde_json::Value> {
         let board = match self.mounted {
             Some(mounted) => Board {
-                repository: mounted.repository.path().to_path_buf(),
+                repository: mounted.repository.clone(),
                 source: Source::Commit(mounted.commit),
             },
             None => Board {

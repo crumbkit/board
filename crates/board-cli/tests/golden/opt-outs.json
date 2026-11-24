@@ -240,15 +240,15 @@
     {
       "rule": "help-budget/root",
       "applies_to": "board",
-      "reason": "The root page lists all twenty-two commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.",
+      "reason": "The root page lists all twenty-three commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.",
       "costs": [
-        "Each read of the page can cost 1600 bytes more than the default, about 400 tokens."
+        "Each read of the page can cost 1700 bytes more than the default, about 425 tokens."
       ],
       "budget": {
-        "bytes": 3100,
+        "bytes": 3200,
         "default": 1500,
-        "extra_bytes": 1600,
-        "extra_tokens": 400
+        "extra_bytes": 1700,
+        "extra_tokens": 425
       }
     },
     {
@@ -291,6 +291,20 @@
         "default": 1200,
         "extra_bytes": 800,
         "extra_tokens": 200
+      }
+    },
+    {
+      "rule": "help-budget/command",
+      "applies_to": "board search",
+      "reason": "search shows on one page each part of the query syntax with an example, the ten short type names, what from:me reads, that words match by substring and the order results come in, so a reader can write a query without opening docs/commands/search.md.",
+      "costs": [
+        "Each read of the page can cost 500 bytes more than the default, about 125 tokens."
+      ],
+      "budget": {
+        "bytes": 1700,
+        "default": 1200,
+        "extra_bytes": 500,
+        "extra_tokens": 125
       }
     },
     {
@@ -383,7 +397,7 @@
     },
     {
       "declaration": "root-verbs",
-      "applies_to": "board init, board check, board get, board ls, board log, board refs, board uri, board put, board rm, board sync, board call, board decide, board answer, board query, board serve",
+      "applies_to": "board init, board check, board get, board ls, board log, board refs, board uri, board put, board rm, board sync, board call, board decide, board answer, board query, board search, board serve",
       "declares": "Each command sits directly under the root as a verb.",
       "reason": "board's root commands are the verbs an agent types most, each acting on the board or a record, and a resource word before them would lengthen every call"
     },
@@ -514,6 +528,11 @@
     },
     {
       "declaration": "document-name",
+      "applies_to": "board search",
+      "declares": "The command prints board/search-report/v1, where its path gives the name search."
+    },
+    {
+      "declaration": "document-name",
       "applies_to": "board decide",
       "declares": "The command prints board/decide-report/v2, where its path gives the name decide."
     },
@@ -541,6 +560,11 @@
       "declaration": "document-name",
       "applies_to": "board ui open",
       "declares": "The command prints board/ui-open-report/v2, where its path gives the name ui-open."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board timing check",
+      "declares": "The command prints board/timing-check-report/v2, where its path gives the name timing-check."
     },
     {
       "declaration": "document-name",

@@ -540,7 +540,17 @@ of `changes` still fails `review`.
   start with the change's mount and `/` (`changes::plan::outside_mount`,
   whose `paths` lists them). It writes the plan record and its text and points the change's `plan` at the
   text, in one write, in any phase but `done` and `dropped`
-  (`changes::phase::final`). The new plan keeps the `records` of the plan
+  (`changes::phase::final`). With `"correct": true` it writes a done or
+  dropped change's plan too, and the change keeps its phase. It refuses a
+  plan whose first `# ` heading is the title of another change that is not
+  dropped, before it writes anything (`changes::plan::other_change`, whose
+  `other` names that change): such a text is most likely the other change's
+  plan, as when two agents build their input in one shared file. It finds
+  that change at the name `start` derives from the heading, so a change
+  started with another `--name` is not found. A first heading that differs
+  from the change's title in any other way gives the warning
+  `changes::plan::title_differs`, because many plans shorten their change's
+  title. The new plan keeps the `records` of the plan
   the change named before. A plan whose text, `uses`, `paths` and `answers` equal
   those of the plan record the change names writes nothing and returns
   that record with `unchanged: true`; otherwise `unchanged` is false. It keeps each reference in `uses` once. It

@@ -19,12 +19,15 @@ import {
   parseForPath,
   reminder,
   sections,
+  SPEED_CHECK,
   stateBadges,
 } from './rules'
 
-// The mod reads the rules plugin and writes nothing to the board. It shares
-// nothing with other mods but the band, which each mod draws a part of: the
-// session's state badges and the Rules button.
+// The mod reads the rules plugin. The one write it starts is the speed
+// check's run record, which `board timing check --record` writes on its own
+// after the hook returns. It shares nothing with other mods but the band,
+// which each mod draws a part of: the session's state badges and the Rules
+// button.
 
 const checked = atom({ plugin: 'board-rules', key: 'checked' } as const, null as Checked | null)
 const told = atom({ plugin: 'board-rules', key: 'told' } as const, {} as Record<string, string[]>)
@@ -38,6 +41,7 @@ const WHERE = `PATH=${PATH} exec board --json ls / --limit 1 < /dev/null`
 // A configured badge's command runs with the PATH the board calls use, each
 // value of its argv its own argument through "$@".
 const BADGE = `PATH=${PATH} exec "$@" < /dev/null`
+const SPEED = `PATH=${PATH} ${SPEED_CHECK}`
 const PANE = 'board-rules'
 
 // A slow or hung board holds the session start or the edit no longer than this.
@@ -114,6 +118,15 @@ async function readState($: EngineInterface, cwd: string, root: string) {
   await update($, state, () => stateBadges(shown, board))
 }
 
+/** Starts the speed check detached; a check that cannot start is logged and changes nothing else. */
+async function speed($: EngineInterface, root: string) {
+  try {
+    await $.process.run(['/bin/sh', '-c', SPEED], { cwd: root, timeoutMs: TIMEOUT_MS })
+  } catch (error) {
+    $.ui.log(`board: the speed check did not start: ${String(error)}`, { to: 'debug' })
+  }
+}
+
 /** The rules the context block names. */
 const toldBy = (answer: Checked | null) => (answer?.kind === 'read' ? answer.rules.map(c => c.rule) : [])
 
@@ -165,7 +178,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     const root = await repositoryRoot($, e.cwd)
-    await Promise.all([check($, root), readState($, e.cwd, root)])
+    await Promise.all([check($, root), readState($, e.cwd, root), speed($, root)])
     return started
   })
 

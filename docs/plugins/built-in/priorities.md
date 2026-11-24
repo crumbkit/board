@@ -24,9 +24,8 @@ work kept in another board is covered by a local task, or not at all.
 An entry stores `confirmed`, the day the owner last confirmed it. `set`
 removes it when the entry's title or covers change, so an agent may edit
 the list and the owner still sees what they have not confirmed. `list`
-derives `stale` from the board's commits since that day and the params
-value `priorities-reconfirm`, so staleness follows activity, and a quiet
-board marks nothing stale.
+marks an entry `stale` 7 days after that day, or sooner when the board's
+commits since that day exceed the params value `priorities-reconfirm`.
 
 ## Sharing
 

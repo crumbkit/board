@@ -413,4 +413,4 @@ appends a record of its phases to a timing log, described in
 [architecture/performance/timing.md](architecture/performance/timing.md).
 The index keeps each source's decision under a key of what it
 depends on, so a warm query reads it instead of deciding again
-([architecture/performance/decisions.md](architecture/performance/decisions.md)).
+([architecture/performance/warm/decisions.md](architecture/performance/warm/decisions.md)).

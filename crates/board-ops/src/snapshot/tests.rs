@@ -47,6 +47,7 @@ fn filled(board: &crate::Board, index: Index) -> Filled {
 mod cache;
 mod decisions;
 mod mounts;
+mod probes;
 mod scoped;
 mod worktree;
 
@@ -476,10 +477,11 @@ fn replaced_by(replacement: &str) -> (usize, i64, i64) {
 #[test]
 fn a_snapshot_that_writes_once_the_index_has_doubled_prunes_what_the_tree_left() {
     let (deleted, prunes, extra) = replaced_by(&large_task('b', 800_000));
-    // The first task's blob, body and validation, and the five rows of
-    // the working tree's earlier decision.
-    assert_eq!(deleted, 3 + 5);
-    assert_eq!(prunes, 1);
+    // The first task's blob, body and validation. The working tree's slot
+    // replaced its changed row in place, so no decision row is left over.
+    assert_eq!(deleted, 3);
+    // The prune, and the slot's rewrite, which counts as one.
+    assert_eq!(prunes, 2);
     assert_eq!(extra, 0);
 }
 
@@ -487,7 +489,7 @@ fn a_snapshot_that_writes_once_the_index_has_doubled_prunes_what_the_tree_left()
 fn a_snapshot_that_writes_before_the_index_has_doubled_keeps_what_the_tree_left() {
     let (deleted, prunes, extra) = replaced_by(&large_task('b', 10));
     assert_eq!(deleted, 0);
-    assert_eq!(prunes, 0);
+    assert_eq!(prunes, 1, "the slot's rewrite counts as a prune");
     assert_eq!(extra, 1, "the first task's blob is still cached");
 }
 

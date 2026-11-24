@@ -18,7 +18,10 @@ fn a_source_holding_a_pointer_that_could_not_be_read_has_no_key_and_its_twin_has
         let source = Mounted::<()> {
             commit,
             root: commit,
-            repository: Repository::open(scenario.workdir()).unwrap(),
+            repository: Repository::open(scenario.workdir())
+                .unwrap()
+                .path()
+                .to_path_buf(),
             route: "/vendor".parse().unwrap(),
             key: None,
             scan: Digest::of(b""),
@@ -53,7 +56,10 @@ fn a_source_whose_mount_is_a_cycle_has_a_key_of_its_own_and_one_for_each_board_i
         let source = Mounted::<()> {
             commit,
             root: commit,
-            repository: Repository::open(scenario.workdir()).unwrap(),
+            repository: Repository::open(scenario.workdir())
+                .unwrap()
+                .path()
+                .to_path_buf(),
             route: "/vendor".parse().unwrap(),
             key: None,
             scan: Digest::of(b""),

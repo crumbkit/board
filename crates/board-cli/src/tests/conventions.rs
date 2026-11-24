@@ -57,7 +57,7 @@ const ROOT: &str = "board's root commands are the verbs an agent types most, eac
 /// Board's single-word root commands.
 const ROOT_VERBS: &[&str] = &[
     "init", "check", "get", "ls", "log", "refs", "uri", "put", "rm", "sync", "call", "decide",
-    "answer", "query", "serve",
+    "answer", "query", "search", "serve",
 ];
 
 /// The verbs below a resource that crumbkit's own list does not hold.

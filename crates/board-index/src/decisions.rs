@@ -1,11 +1,11 @@
 //! Each source's decision and mounted sources' pointer lists, kept under keys that
 //! board-tree makes and this crate never reads into
-//! (docs/architecture/performance/decisions.md), and the views that show
+//! (docs/architecture/performance/warm/decisions.md), and the views that show
 //! what one run decided.
 
-use board_model::{Change, Code, Digest, Kind, LogicalPath, ObjectId, Role, Source};
-use board_tree::Held;
-use rusqlite::params;
+use board_model::{Change, Code, Digest, Kind, LogicalPath, Mount, ObjectId, Role, Source};
+use board_tree::{Held, Probed};
+use rusqlite::{OptionalExtension, params};
 
 use crate::open::{IndexError, Storage};
 use crate::schema::RESOLVED;
@@ -81,17 +81,25 @@ impl Decided {
 }
 
 impl Writer {
-    /// The pointers listed under `scan`, or `None` when the index holds no
-    /// such list or cannot read it.
+    /// The pointers listed under `scan`, each with the mount it holds, or
+    /// `None` when the index holds no such list or cannot read it.
     pub fn pointers(&self, scan: &Digest) -> Result<Option<Vec<Held>>, IndexError> {
-        type Row = (String, Option<String>, Option<String>);
+        type Row = [Option<String>; 6];
         let rows = self
             .connection()
             .prepare_cached(
-                "SELECT path, logical, blob FROM main.pointers WHERE scan = ?1 ORDER BY path",
+                "SELECT path, logical, blob, repo, follow, commit_id FROM main.pointers
+                 WHERE scan = ?1 ORDER BY path",
             )?
             .query_map([scan.hex()], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                Ok([
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ])
             })?
             .collect::<Result<Vec<Row>, _>>()?;
         if rows.is_empty() {
@@ -99,29 +107,109 @@ impl Writer {
         }
         let held = rows
             .into_iter()
-            .filter(|(path, _, _)| !path.is_empty())
-            .map(|(path, logical, blob)| {
+            .filter(|[path, ..]| path.as_deref() != Some(""))
+            .map(|[path, logical, blob, repo, follow, commit]| {
+                let mount = match (repo, follow, commit) {
+                    (Some(repo), Some(follow), Some(commit)) => Some(Mount {
+                        repo,
+                        follow,
+                        commit: ObjectId::from_hex(&commit)?,
+                    }),
+                    _ => None,
+                };
                 Some(Held {
-                    path,
+                    path: path?,
                     logical: logical?.parse().ok()?,
                     blob: ObjectId::from_hex(&blob?)?,
+                    mount,
                 })
             })
             .collect();
         Ok(held)
     }
 
+    /// Keeps the pointers `held` under `scan`, each with the mount it holds.
     pub fn put_pointers(&self, scan: &Digest, held: &[Held]) -> Result<(), IndexError> {
         let scan = scan.hex();
         let mut statement = self.connection().prepare_cached(
-            "INSERT OR REPLACE INTO main.pointers (scan, path, logical, blob)
-             VALUES (?1, ?2, ?3, ?4)",
+            "INSERT OR REPLACE INTO main.pointers
+             (scan, path, logical, blob, repo, follow, commit_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         )?;
-        statement.execute(params![scan, "", None::<String>, None::<String>])?;
+        let none = None::<String>;
+        statement.execute(params![scan, "", none, none, none, none, none])?;
         for held in held {
             let (logical, blob) = (held.logical.to_string(), held.blob.to_string());
-            statement.execute(params![scan, held.path, logical, blob])?;
+            let mount = held.mount.as_ref();
+            statement.execute(params![
+                scan,
+                held.path,
+                logical,
+                blob,
+                mount.map(|mount| &mount.repo),
+                mount.map(|mount| &mount.follow),
+                mount.map(|mount| mount.commit.to_string()),
+            ])?;
         }
+        Ok(())
+    }
+
+    /// What opening a mounted repository found, kept under `stamp`, or
+    /// `None` when the index holds none or cannot read it. A probe read is
+    /// one this run used, so a prune keeps it.
+    pub fn probe(&self, stamp: &Digest) -> Result<Option<Probed>, IndexError> {
+        type Row = (String, String, Option<String>, Option<String>);
+        let row: Option<Row> = self
+            .connection()
+            .prepare_cached("SELECT path, root, common, origin FROM main.probes WHERE stamp = ?1")?
+            .query_row([stamp.hex()], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .optional()?;
+        let Some((path, root, common, origin)) = row else {
+            return Ok(None);
+        };
+        let Some(root) = ObjectId::from_hex(&root) else {
+            return Ok(None);
+        };
+        self.used(stamp)?;
+        Ok(Some(Probed {
+            path: path.into(),
+            root,
+            common: common.map(Into::into),
+            origin,
+        }))
+    }
+
+    /// Keeps `probed` under `stamp`. A path that is not UTF-8 is not kept.
+    pub fn put_probe(&self, stamp: &Digest, probed: &Probed) -> Result<(), IndexError> {
+        let (Some(path), common) = (probed.path.to_str(), probed.common.as_deref()) else {
+            return Ok(());
+        };
+        let common = match common.map(|common| common.to_str()) {
+            Some(None) => return Ok(()),
+            common => common.flatten(),
+        };
+        self.connection()
+            .prepare_cached(
+                "INSERT OR REPLACE INTO main.probes (stamp, path, root, common, origin)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?
+            .execute(params![
+                stamp.hex(),
+                path,
+                probed.root.to_string(),
+                common,
+                probed.origin
+            ])?;
+        self.used(stamp)
+    }
+
+    /// Records that this run used the probe under `stamp`.
+    fn used(&self, stamp: &Digest) -> Result<(), IndexError> {
+        self.connection()
+            .prepare_cached("INSERT OR IGNORE INTO temp.probed (stamp) VALUES (?1)")?
+            .execute([stamp.hex()])?;
         Ok(())
     }
 

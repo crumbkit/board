@@ -5,7 +5,7 @@
 //! index; whether a reference or pointer resolves depends on the whole tree,
 //! so each run decides it again, except for a mounted source whose decision
 //! the index keeps under a key of all it depends on
-//! (docs/architecture/performance/decisions.md). The index's `entries` and `records` views
+//! (docs/architecture/performance/warm/decisions.md). The index's `entries` and `records` views
 //! show what a snapshot decided, so they are read only through one. This
 //! snapshot is a decided run over the index; `Repositories::snapshot` is a
 //! different thing, a view of the git working tree for resolving paths.
@@ -13,27 +13,31 @@
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
-use board_index::{Decided, Index, IndexError, Resolved, Storage, View, Writer};
+use board_index::{Decided, Index, IndexError, Input, Resolved, Storage, View, Writer};
 use board_model::{
     Change, Code, Digest, Kind, LogicalPath, ObjectId, REPO_TYPE, RecordType, Role, Source, Stat,
 };
+use board_tree::reads::Reads;
 use board_tree::{
-    Cache, Entry, Held, Listings, Mounted, Place, Repository, Scopes, Status, TreeRow, TreeRows,
-    in_scope,
+    Cache, Entry, Held, Listings, Mounted, Place, Probed, Repository, Scopes, Status, TreeRow,
+    TreeRows, in_scope,
 };
 
 use crate::board::Board;
 use crate::check::{CheckError, CheckReport};
 use crate::index::{
-    Indexed, Kept, Refresh, RefreshError, Refreshed, Run, attempt, facts, plain, transact,
-    unvalidated, validated,
+    Indexed, Kept, Refresh, RefreshError, Refreshed, Run, Validating, attempt, facts, plain,
+    transact, unvalidated, validated,
 };
 
 mod decide;
+mod partial;
 
 use decide::{Decide, Decisions};
 pub(crate) use decide::{Referenced, read_type};
+use partial::{Again, Heads, REMOTES, Slotted};
 
 /// Every file each source's walk listed, sorted by path: the working tree
 /// first, then each mounted commit.
@@ -199,46 +203,39 @@ impl Board {
         drop(timed);
         let _timed = self.timed("snapshot.decide");
         // A scoped run decides the working tree only in part.
-        let keyed = scope
-            .is_none()
-            .then(|| self.worktree_key(&mounts, (&entries, &listings), head))
-            .flatten();
-        let key = keyed.as_ref().map(|(key, _)| key);
-        let held = match key {
-            Some(key) => writer.has_decision(key)?,
-            None => false,
+        let slotted = match scope {
+            None => self.slotted(writer, &mounts, (&entries, &listings), head)?,
+            Some(_) => None,
         };
+        let held = slotted.as_ref().is_some_and(Slotted::held);
         let mut decided = Decisions::default();
         let root = Source::WorkingTree;
-        if let Some(key) = key.filter(|_| held && need.reads_kept()) {
-            unvalidated(&kept, &mut work);
-            if need == Need::Check {
-                for row in writer.decision(key)? {
-                    decided.checked.push(crate::check::from_kept(&root, row)?);
+        let validating =
+            if let Some(slotted) = slotted.as_ref().filter(|_| held && need.reads_kept()) {
+                unvalidated(&kept, &mut work);
+                if need == Need::Check {
+                    for row in writer.decision(&slotted.slot)? {
+                        decided.checked.push(crate::check::from_kept(&root, row)?);
+                    }
                 }
-            }
-            writer.reach(&root, Some(key), None)?;
-        } else {
-            validated(
-                writer,
-                self.repository(),
-                &root,
-                &mut facts,
-                kept,
-                &mut work,
-            )?;
-        }
+                writer.reach(&root, Some(&slotted.slot), None)?;
+                None
+            } else {
+                Some(Validating::new(self.repository(), kept))
+            };
         let scopes = &mounts.scopes;
         let walked_facts = mounts
             .sources
             .iter()
             .filter_map(|m| Some(&m.walked.as_ref()?.1));
         let plain = plain(std::iter::once(&facts).chain(walked_facts));
-        if !(held && need.reads_kept()) {
-            let listed = (entries.as_slice(), &facts, listings, head);
+        if let Some(mut validating) = validating {
+            let listed = (entries.as_slice(), &mut facts, listings, head);
             let read = (writer, &plain, scopes, &mounts.cycles);
-            let rows = self.decide_worktree(read, listed, &mut decided, &mut work)?;
-            keep_worktree(writer, (keyed.as_ref(), held), &rows, &mut decided)?;
+            let slotted = (slotted.as_ref(), held);
+            let into = (&mut decided, &mut work);
+            self.decide_slotted(read, listed, slotted, (need, &mut validating), into)?;
+            validating.finish(&mut work);
         }
         for mounted in &mounts.sources {
             let read_kept = need.reads_kept() && mounted.kept && mounted.whole;
@@ -300,62 +297,198 @@ impl Board {
         mounts.worktree_key(self.build, self.repository(), &fields)
     }
 
-    /// Decides each entry of the working tree in scope into `decided`, and
-    /// says whether its rows may be kept: nothing failed to read, no two
-    /// names share a path and no file could not be read, with each mount its
-    /// resolutions crossed.
+    /// Decides the working tree, and keeps its rows in the slot when they
+    /// may be kept: after a change, only the entries the change could alter
+    /// when the slot allows ([`Board::again`]), else every entry. A run whose
+    /// tree the slot holds (`held`) keeps nothing more.
+    fn decide_slotted(
+        &self,
+        read: (&Writer, &HashSet<ObjectId>, &Scopes, &Cycles),
+        (entries, facts, listings, head): (&[Entry], &mut Facts, Listings, Option<ObjectId>),
+        (slotted, in_slot): (Option<&Slotted>, bool),
+        (need, validating): (Need, &mut Validating<'_>),
+        (decided, work): (&mut Decisions, &mut Refreshed),
+    ) -> Result<(), RefreshError> {
+        let writer = read.0;
+        let partial = match slotted.filter(|_| need.reads_kept() && !in_slot) {
+            Some(slotted) => Self::again(writer, slotted, entries, facts)?,
+            None => None,
+        };
+        let partial = match (partial, slotted) {
+            (Some(again), Some(slotted)) => {
+                let heads = self.heads(writer, (slotted, head), (entries, &again.only), work)?;
+                heads.map(|(heads, flipped)| (again, heads, flipped, slotted))
+            }
+            _ => None,
+        };
+        // A run whose tree the slot holds keeps nothing, so it records no
+        // reads.
+        let crossings = slotted
+            .filter(|_| !in_slot)
+            .map(|slotted| &slotted.crossings);
+        if let Some((again, mut heads, flipped, slotted)) = partial {
+            let Again { only, removed } = again;
+            let plan = (Some(&only), crossings, &mut *validating);
+            let listed = (entries, &mut *facts, listings, &mut heads);
+            let rows = self.decide_worktree(read, listed, plan, decided, work)?;
+            if rows.storable {
+                let gone: Vec<&str> = (only.iter().chain(&removed)).map(String::as_str).collect();
+                let kept = (&rows.inputs[..], &flipped[..]);
+                Self::keep_slot(writer, (slotted, Some(&gone)), kept, decided)?;
+                if need == Need::Check {
+                    Self::report_slot(writer, slotted, decided)?;
+                }
+            }
+            return Ok(());
+        }
+        let timed = self.timed("snapshot.head");
+        let mut heads = Heads::Listed(self.head(writer, head, &mut work.trees)?);
+        drop(timed);
+        let listed = (entries, facts, listings, &mut heads);
+        let plan = (None, crossings, validating);
+        let rows = self.decide_worktree(read, listed, plan, decided, work)?;
+        match slotted {
+            Some(slotted) if in_slot => {
+                decided.resolved.clear();
+                writer.reach(&Source::WorkingTree, Some(&slotted.slot), None)?;
+            }
+            Some(slotted) if rows.storable => {
+                let kept = (&rows.inputs[..], &[][..]);
+                Self::keep_slot(writer, (slotted, None), kept, decided)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Decides each entry of the working tree in scope into `decided`, or
+    /// with `only` each entry it names, checking each record it decides
+    /// against its schema first, and says whether the rows may be kept:
+    /// nothing failed to read, no two names share a path, no file could not
+    /// be read, and each mount the resolutions crossed is among `crossings`.
+    /// When the entries `only` names may not be kept, every other entry is
+    /// decided too, and the rows are not kept. Only with `crossings` does it
+    /// record what each decision read.
     fn decide_worktree(
         &self,
         (writer, plain, scopes, cycles): (&Writer, &HashSet<ObjectId>, &Scopes, &Cycles),
-        (entries, facts, listings, head): (&[Entry], &Facts, Listings, Option<ObjectId>),
+        (entries, facts, listings, heads): (&[Entry], &mut Facts, Listings, &mut Heads<'_>),
+        (only, crossings, validating): (
+            Option<&HashSet<String>>,
+            Option<&HashSet<board_tree::Crossing>>,
+            &mut Validating<'_>,
+        ),
         decided: &mut Decisions,
         work: &mut Refreshed,
     ) -> Result<Rows, RefreshError> {
-        let timed = self.timed("snapshot.head");
-        let head = self.head(writer, head, &mut work.trees)?;
-        drop(timed);
+        let first = |path: &str| only.is_none_or(|only| only.contains(path));
+        validating.validate(writer, facts, &first, &mut work.validated)?;
         let mut known = known(entries, &mut work.hashed);
+        let reads = crossings.map(|_| Reads::default());
         let resolver = self.repositories().resolver(&mut known, listings)?;
-        let mut resolver = resolver.knowing(plain);
-        let root = Decide {
+        let resolver = resolver.knowing(plain);
+        let mut resolver = match &reads {
+            Some(reads) => resolver.reading(Rc::clone(reads)),
+            None => resolver,
+        };
+        let wanted =
+            |entry: &&Entry| in_scope(scopes, &Source::WorkingTree, entry.logical.as_ref());
+        let whole = entries.iter().all(|entry| wanted(&entry));
+        let mut inputs = Vec::new();
+        let start = decided.resolved.len();
+        let failed = {
+            let facts = &*facts;
+            let root = self.decider((writer, entries, facts, cycles), &mut resolver);
+            for entry in (entries.iter().filter(wanted)).filter(|entry| first(&entry.path)) {
+                let reads = reads.as_ref();
+                Self::decide_entry(&root, (entry, facts), (heads, reads), decided, &mut inputs)?;
+            }
+            root.failed.get()
+        };
+        let crossed = resolver.crossed();
+        let held = |crossed: &board_tree::Crossing| crossings.is_some_and(|c| c.contains(crossed));
+        let mut storable =
+            keepable(whole && !failed, &decided.resolved[start..]) && crossed.iter().all(held);
+        if let Some(only) = only.filter(|_| !storable) {
+            let rest = |path: &str| !only.contains(path);
+            validating.validate(writer, facts, &rest, &mut work.validated)?;
+            let facts = &*facts;
+            let root = self.decider((writer, entries, facts, cycles), &mut resolver);
+            let rest = |entry: &&Entry| !only.contains(&entry.path);
+            for entry in entries.iter().filter(wanted).filter(rest) {
+                let reads = reads.as_ref();
+                Self::decide_entry(&root, (entry, facts), (heads, reads), decided, &mut inputs)?;
+            }
+            drop(root);
+            decided.sort_from(start);
+            storable = false;
+        }
+        work.pointers_read += resolver.pointers_read();
+        Ok(Rows { storable, inputs })
+    }
+
+    /// What deciding the working tree's entries reads, resolving through
+    /// `resolver`.
+    fn decider<'d>(
+        &'d self,
+        (writer, entries, facts, cycles): (&'d Writer, &'d [Entry], &'d Facts, &'d Cycles),
+        resolver: &'d mut board_tree::Resolver<'_, '_>,
+    ) -> Decide<'d> {
+        Decide {
             repositories: self.repositories(),
             mounted: None,
             writer,
             listed: entries,
             facts,
-            resolve: RefCell::new(Box::new(|path: &LogicalPath| resolver.resolve(path))),
+            resolve: RefCell::new(Box::new(move |path: &LogicalPath| resolver.resolve(path))),
             reader: RefCell::new(self.repositories().root().reader()),
             failed: Cell::new(false),
             remotes: OnceCell::new(),
             cycles,
-        };
-        let mut whole = true;
-        for entry in entries {
-            if !in_scope(scopes, &Source::WorkingTree, entry.logical.as_ref()) {
-                whole = false;
-                continue;
-            }
-            // A symlink is committed when its own blob is.
-            let own = entry.link.as_ref().map(|link| link.blob).or(entry.blob);
-            let change = if head.get(&entry.path) == Some(&own) {
-                Change::Committed
-            } else {
-                Change::Uncommitted
-            };
-            decided.push(
-                &root,
-                &Source::WorkingTree,
-                entry,
-                entry.logical.clone(),
-                change,
-            )?;
         }
-        let failed = root.failed.get();
-        drop(root);
-        work.pointers_read += resolver.pointers_read();
-        let crossed = resolver.crossed();
-        let storable = keepable(whole && !failed, &decided.resolved);
-        Ok(Rows { storable, crossed })
+    }
+
+    /// Decides the working tree's `entry` into `decided`. With `reads`, it
+    /// records in `inputs` its digest and what its decision read: what
+    /// `reads` holds of its resolutions, its schema's path and each
+    /// directory above it, and for a repo record every repo record's
+    /// `remote`.
+    fn decide_entry(
+        root: &Decide<'_>,
+        (entry, facts): (&Entry, &Facts),
+        (heads, reads): (&mut Heads<'_>, Option<&Reads>),
+        decided: &mut Decisions,
+        inputs: &mut Vec<Input>,
+    ) -> Result<(), RefreshError> {
+        let change = partial::change(heads, entry)?;
+        let logical = entry.logical.clone();
+        let Some(reads) = reads else {
+            return Ok(decided.push(root, &Source::WorkingTree, entry, logical, change)?);
+        };
+        reads.borrow_mut().clear();
+        decided.push(root, &Source::WorkingTree, entry, logical, change)?;
+        let mut names = std::mem::take(&mut *reads.borrow_mut());
+        let indexed = facts.get(&entry.path);
+        if let Some(schema) = indexed.and_then(crate::index::schema_type) {
+            let path = schema.schema_path();
+            let above = path.rmatch_indices('/').map(|(at, _)| &path[..at]);
+            names.extend(
+                std::iter::once(&path[..])
+                    .chain(above)
+                    .map(board_tree::reads::named),
+            );
+        }
+        if is_repo(facts, &entry.path) {
+            names.push(REMOTES.to_owned());
+        }
+        names.sort_unstable();
+        names.dedup();
+        inputs.push(Input {
+            path: entry.path.clone(),
+            entry: partial::digest(entry),
+            reads: names,
+        });
+        Ok(())
     }
 
     /// Decides each entry of `mounted` in scope into `decided`, and keeps
@@ -371,7 +504,8 @@ impl Board {
         decided: &mut Decisions,
     ) -> Result<usize, RefreshError> {
         let source = Source::Commit(mounted.commit);
-        let in_commit = (self.repositories()).in_commit(&mounted.repository, mounted.commit)?;
+        let repository = self.repositories().open_at(&mounted.repository)?;
+        let in_commit = (self.repositories()).in_commit(&repository, mounted.commit)?;
         let mut in_commit = in_commit.knowing(plain);
         let decide = Decide {
             repositories: self.repositories(),
@@ -506,38 +640,10 @@ fn listed(entries: &[Entry]) -> Vec<u8> {
 /// What the index holds about one source's entries, by physical path.
 type Facts = HashMap<String, Indexed>;
 
-/// Keeps the working tree's rows in `decided` under its key, when the key
-/// already holds them or when they are storable and every mount they crossed
-/// is one the key holds. Kept rows leave `decided`'s rows, as the views read
-/// them from the index.
-fn keep_worktree(
-    writer: &Writer,
-    (keyed, held): (Option<&(Digest, HashSet<board_tree::Crossing>)>, bool),
-    rows: &Rows,
-    decided: &mut Decisions,
-) -> Result<(), RefreshError> {
-    let Some((key, crossings)) = keyed else {
-        return Ok(());
-    };
-    let storable =
-        rows.storable && (rows.crossed.iter()).all(|crossed| crossings.contains(crossed));
-    if !(held || storable) {
-        return Ok(());
-    }
-    if !held {
-        let details = decided.checked.iter().map(crate::check::to_kept);
-        writer.put_decision(key, decided.resolved.iter().zip(details))?;
-    }
-    decided.resolved.clear();
-    writer.reach(&Source::WorkingTree, Some(key), None)?;
-    Ok(())
-}
-
-/// Whether the working tree's rows may be kept, and each mount its
-/// resolutions crossed.
+/// Whether the working tree's rows may be kept, and each entry's input.
 struct Rows {
     storable: bool,
-    crossed: Vec<board_tree::Crossing>,
+    inputs: Vec<Input>,
 }
 
 /// Every mounted source, with what the index holds about its entries.
@@ -618,6 +724,14 @@ impl Cache for Indexing<'_> {
     fn kept(&mut self, key: &Digest) -> bool {
         self.writer.has_decision(key).unwrap_or(false)
     }
+
+    fn probe(&mut self, stamp: &Digest) -> Option<Probed> {
+        self.writer.probe(stamp).ok().flatten()
+    }
+
+    fn put_probe(&mut self, stamp: &Digest, probed: &Probed) -> Result<(), RefreshError> {
+        Ok(self.writer.put_probe(stamp, probed)?)
+    }
 }
 
 /// Whether the entry at the physical `path` holds a valid repo record, with
@@ -640,7 +754,7 @@ fn record(mounts: &Mounts, writer: &Writer, root: &Repository) -> Result<(), Ind
         (
             Source::Commit(mounted.commit),
             Some(mounted.root),
-            mounted.repository.path(),
+            mounted.repository.as_path(),
         )
     }));
     writer.set_mounts(&sources, &mounts.points)

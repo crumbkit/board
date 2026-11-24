@@ -1,5 +1,5 @@
 {
-  "summary": "The board commits a confirmed priority may see before the lead asks the owner to confirm it again.",
+  "summary": "The board commits a confirmed priority may see before the lead asks the owner to confirm it again; the lead also asks after 7 days.",
   "unit": "commits",
   "inputs": [
     {

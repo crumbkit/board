@@ -1016,6 +1016,8 @@ fn samples() -> Vec<(String, Value)> {
         (&["get", "/projects/p", "/tasks/a"], b""),
         (&["ls", "/"], b""),
         (&["refs", "/tasks/a", "/tasks/b"], b""),
+        (&["search", "a", "--limit", "1"], b""),
+        (&["search", "--filters"], b""),
         (
             &[
                 "decide",
@@ -1082,6 +1084,9 @@ fn rendered() -> Vec<(Vec<&'static str>, Output)> {
         &path,
     );
     rendered.push((vec!["uri"], uri));
+    let timed =
+        printer(&["timing", "check"]).print(render::TIMING_CHECK, Ok(crate::timing::sample()));
+    rendered.push((vec!["timing", "check"], timed));
     let opened = Opened {
         binding: "/bindings/review".parse().unwrap(),
         port: 1,

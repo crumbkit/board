@@ -26,12 +26,14 @@ Board: a fast, validated view of a git tree.
 - [`board decide`](#board-decide): Ask the owner to admit a plugin's capability
 - [`board answer`](#board-answer): Answer a pending effect
 - [`board query`](#board-query): Run one read-only SQL statement over the index
+- [`board search`](#board-search): Find the records a query matches
 - [`board serve`](#board-serve): Serve this board's pages on 127.0.0.1 until it is idle
 - [`board ui`](#board-ui): List kinds, print a slot, or open a page
 - [`board skills`](#board-skills): Install or list the skills Board ships
 - [`board completion`](#board-completion): Set up Board's completion in a shell
 - [`board commands`](#board-commands): Describe Board's commands
 - [`board schemas`](#board-schemas): Describe the JSON documents that Board prints
+- [`board timing`](#board-timing): Time hot commands against their budgets
 
 ### Arguments
 
@@ -418,6 +420,20 @@ Effects: read-only, closed-world.
 
 Text: one line per row, `<ENTRY>`.
 
+## `board search`
+
+Find the records a query matches
+
+### Arguments
+
+- `<QUERY>`: The query, quoted as one argument, such as 'budget type:question -from:me'
+- `--filters`: List the filters and the short type names a query can use, and run no search
+- `--after <CURSOR>`: Start after the result this cursor names, which the last page printed as `next`
+- `--limit <N>`: Print at most this many rows, up to 1000. Default: `50`.
+- `--all`: Print every row
+
+Effects: read-only, closed-world.
+
 ## `board serve`
 
 Serve this board's pages on 127.0.0.1 until it is idle
@@ -682,3 +698,23 @@ Print the JSON Schema of each document
 - `schema`: The document's 2020-12 JSON Schema.
 
 Effects: read-only, closed-world.
+
+## `board timing`
+
+Time hot commands against their budgets
+
+### Commands
+
+- [`board timing check`](#board-timing-check): Judge each hot command's p90 on the personal board against its budget
+
+## `board timing check`
+
+Judge each hot command's p90 on the personal board against its budget.
+
+A command is judged on its last 20 top-level runs on the personal board at a load no higher than the core count, and is unjudged with fewer than 5. The runs come from the timing log and its digest.
+
+### Arguments
+
+- `--record`: Also write a run of /suites/board-speed-local to the personal board, at most once an hour
+
+Effects: additive, not idempotent, closed-world.
