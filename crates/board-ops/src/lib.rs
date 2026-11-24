@@ -68,7 +68,7 @@ pub use crate::query::{DEFAULT_LIMIT, MAX_LIMIT, QueryError, QueryReport};
 pub use crate::read::{GetReport, Listed, LsReport, ReadError};
 pub use crate::refs::{Absent, Fielded, Incoming, Missing, Outgoing, RefsError, RefsReport};
 pub use crate::search::{
-    Cursor, Hit, Owner, SEARCH_LIMIT, SEARCH_MAX, SearchReport, Statement, TITLE_CHARS, compile,
+    Cursor, Hit, SEARCH_LIMIT, SEARCH_MAX, SearchReport, Statement, TITLE_CHARS, compile,
 };
 pub use crate::sync::{BeforePush, Conflicted, Guard, Pushing, SyncError, Synced};
 pub use crate::trace::{Phase, Trace};

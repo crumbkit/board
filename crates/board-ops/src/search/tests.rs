@@ -316,3 +316,52 @@ fn a_word_matches_in_any_ascii_case_and_by_substring() {
         ["/changes/passkey-login"]
     );
 }
+
+#[test]
+fn a_percent_sign_an_underscore_and_a_backslash_match_only_themselves() {
+    let scenario = fixture();
+    scenario.write(
+        "tasks/discount.json",
+        Item::File(r#"{"$type": "tasks/task/v2", "title": "Cut 50% off the_plan at C:\\ops", "status": "open"}"#),
+    );
+    let board = open(&scenario);
+    for text in ["50%", "the_plan", "\"c:\\ops\""] {
+        assert_eq!(
+            paths(&search(&board, text, 50, None).results),
+            ["/tasks/discount"],
+            "{text}"
+        );
+    }
+    for text in ["%", "_", "b_dget", "5%off"] {
+        let report = search(&board, text, 50, None);
+        let found = paths(&report.results);
+        assert!(
+            !found.contains(&"/tasks/budget-review"),
+            "{text}: {found:?}"
+        );
+    }
+}
+
+#[test]
+fn a_word_with_a_quote_matches_a_title_whose_json_escapes_the_quote() {
+    let scenario = fixture();
+    scenario.write(
+        "tasks/quoted.json",
+        Item::File(
+            r#"{"$type": "tasks/task/v2", "title": "Read \"Dune\" twice", "status": "open"}"#,
+        ),
+    );
+    let board = open(&scenario);
+    let report = search(&board, r#"dune""#, 50, None);
+    assert_eq!(paths(&report.results), ["/tasks/quoted"]);
+    assert_eq!(report.results[0].title_hits, 1);
+}
+
+#[test]
+fn a_filter_s_condition_comes_before_any_word_s_in_the_statement() {
+    let sql = statement("budget type:task").sql(None);
+    let condition = &sql[sql.find("FROM c WHERE ").unwrap()..];
+    let filter = condition.find("substr(k, 1,").unwrap();
+    let word = condition.find(" LIKE ").unwrap();
+    assert!(filter < word, "{sql}");
+}

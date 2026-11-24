@@ -3,7 +3,9 @@
 //! the same snapshot as `board query` (docs/commands/search.md).
 //!
 //! A word matches, in any ASCII case, as a substring of the record's path,
-//! its title and its body. A phrase matches as one string. `type:` takes
+//! its title and its body. A phrase matches as one string. The match is
+//! SQLite's `LIKE`, which folds ASCII case as it compares, so no lower-case
+//! copy of a body is made. `type:` takes
 //! the short names of [`board_search::fields::TYPES`], each matching every
 //! version of its type. `from:` matches `by.person`, `by.agent` or
 //! `by.program`, and `from:me` the owner the known boards file names. A
@@ -100,10 +102,6 @@ pub struct SearchReport {
     pub memory: Option<board_index::Fallback>,
 }
 
-/// The owner `from:me` names, from the known boards file, or `None` when
-/// it names none.
-pub type Owner<'a> = Option<&'a str>;
-
 impl Board {
     /// Runs `query` over every record of the board and its mounts, through
     /// the index kept under `cache`, returning at most `limit` results that
@@ -151,35 +149,42 @@ fn found(row: &[Value]) -> Option<Hit> {
 pub struct Statement {
     /// The `WHERE` condition, or `1` for a query with no parts.
     condition: String,
-    /// The words and phrases that are not excluded, lower-cased, which the
-    /// ranking counts.
+    /// The words and phrases that are not excluded, which the ranking
+    /// counts.
     ranked: Vec<String>,
 }
 
-/// The statement for `query`, with `from:me` read as `owner`.
+/// The statement for `query`, with `from:me` read as `owner`, the owner the
+/// known boards file names, or `None` when it names none.
 ///
 /// # Errors
 ///
 /// Returns every `type:` value that names no short type and every `from:me`
 /// when `owner` is `None`, in the order of the text, so nothing runs for a
 /// query with an error.
-pub fn compile(query: &Query, owner: Owner<'_>) -> Result<Statement, Vec<SyntaxError>> {
+pub fn compile(query: &Query, owner: Option<&str>) -> Result<Statement, Vec<SyntaxError>> {
     let mut errors = fields::check(query);
-    let mut conditions = Vec::new();
+    let (mut filters, mut words) = (Vec::new(), Vec::new());
     let mut ranked = Vec::new();
     for part in query.parts() {
+        let texts = matches!(part.term, Term::Word { .. } | Term::Phrase { .. });
         match condition(part, owner) {
-            Ok(condition) => conditions.push(condition),
+            Ok(condition) if texts => words.push(condition),
+            Ok(condition) => filters.push(condition),
             Err(mut unknown) => errors.append(&mut unknown),
         }
         if let (false, Term::Word { text } | Term::Phrase { text }) = (part.negated, &part.term) {
-            ranked.push(text.to_ascii_lowercase());
+            ranked.push(text.clone());
         }
     }
     if !errors.is_empty() {
         errors.sort_by_key(|error| error.span.start);
         return Err(errors);
     }
+    // The filters come first, so a record they rule out is never searched
+    // for the words, which read the whole body.
+    filters.append(&mut words);
+    let conditions = filters;
     let condition = if conditions.is_empty() {
         "1".to_owned()
     } else {
@@ -191,11 +196,15 @@ pub fn compile(query: &Query, owner: Owner<'_>) -> Result<Statement, Vec<SyntaxE
 /// The SQL condition of one part, or the `from:me` values that name nobody
 /// because `owner` is `None`. A `type:` value that names no short type
 /// matches nothing; [`fields::check`] reports it.
-fn condition(part: &Part, owner: Owner<'_>) -> Result<String, Vec<SyntaxError>> {
+fn condition(part: &Part, owner: Option<&str>) -> Result<String, Vec<SyntaxError>> {
     let matched = match &part.term {
         Term::Word { text } | Term::Phrase { text } => {
-            let needle = literal(&text.to_ascii_lowercase());
-            format!("(instr(p, {needle}) > 0 OR instr(t, {needle}) > 0 OR instr(b, {needle}) > 0)")
+            let (body, path) = (holds("b", text), holds("path", text));
+            if in_body(text) {
+                format!("({body} OR {path})")
+            } else {
+                format!("({body} OR {path} OR {})", holds("t", text))
+            }
         }
         Term::Filter {
             field: Field::Type,
@@ -241,6 +250,35 @@ fn condition(part: &Part, owner: Owner<'_>) -> Result<String, Vec<SyntaxError>> 
     })
 }
 
+/// SQL that is 1 when `column` holds `text` in any ASCII case and 0 when it
+/// does not: `LIKE`, with each `%`, `_` and `\` in `text` escaped by `\`.
+fn holds(column: &str, text: &str) -> String {
+    let mut pattern = String::with_capacity(text.len() + 2);
+    pattern.push('%');
+    for character in text.chars() {
+        if matches!(character, '%' | '_' | '\\') {
+            pattern.push('\\');
+        }
+        pattern.push(character);
+    }
+    pattern.push('%');
+    format!(
+        "({column} LIKE {} ESCAPE {})",
+        literal(&pattern),
+        literal("\\")
+    )
+}
+
+/// Whether a title that holds `text` always has a body that holds it too,
+/// so the title need not be read to decide a match. The body is the
+/// record's JSON, which writes a string as it is apart from `"`, `\` and
+/// control characters, so a title holds such text only when the body does.
+fn in_body(text: &str) -> bool {
+    !text
+        .chars()
+        .any(|character| matches!(character, '"' | '\\') || character.is_control())
+}
+
 /// `conditions` joined by `OR` in parentheses, or `0` when there are none.
 fn any_of(conditions: &[String]) -> String {
     if conditions.is_empty() {
@@ -250,11 +288,13 @@ fn any_of(conditions: &[String]) -> String {
     }
 }
 
-/// The records with the columns the conditions read: `p`, `t` and `b`, the
-/// path, title and body in lower case; `k`, the type; and `person`, `agent`
-/// and `program`, from `by`, in lower case. The title is the first of
-/// `title`, `summary`, `decision`, `words` and `question` that the record
-/// has, so a question or a decision has one.
+/// The records with the columns the conditions read: `path`; `t` and `b`,
+/// the title and the body, or empty text for a record without one; `k`, the
+/// type; and `person`, `agent` and `program`,
+/// from `by`, in lower case. The title is the first of `title`, `summary`,
+/// `decision`, `words` and `question` that the record has, so a question or
+/// a decision has one. A word's condition reads the body and the path before
+/// the title, because the title costs a read of the JSON for each record.
 const RECORDS: &str = "\
 WITH r AS (
     SELECT logical AS path, type, body,
@@ -264,7 +304,7 @@ WITH r AS (
     FROM records WHERE logical IS NOT NULL
 ), c AS (
     SELECT path, type, title,
-        lower(path) AS p, lower(coalesce(title, '')) AS t, lower(coalesce(body, '')) AS b,
+        coalesce(title, '') AS t, coalesce(body, '') AS b,
         coalesce(type, '') AS k,
         lower(coalesce(json_extract(body, '$.by.person'), '')) AS person,
         lower(coalesce(json_extract(body, '$.by.agent'), '')) AS agent,
@@ -283,7 +323,7 @@ impl Statement {
                 return "0".to_owned();
             }
             let counted: Vec<String> = (self.ranked.iter())
-                .map(|word| format!("(instr({column}, {}) > 0)", literal(word)))
+                .map(|word| holds(column, word))
                 .collect();
             counted.join(" + ")
         };
