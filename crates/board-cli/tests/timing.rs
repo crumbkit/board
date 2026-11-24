@@ -360,9 +360,25 @@ fn a_run_sent_sigterm_writes_one_line_that_says_it_was_killed() {
         .status()
         .unwrap();
     assert!(sent.success());
-    let status = child.wait().unwrap();
+    // `try_wait` leaves stdin open. A put the signal never ends fails the
+    // test after 30 seconds instead of holding it until CI's time limit.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if std::time::Instant::now() > deadline {
+            child.kill().unwrap();
+            panic!("the put was still running 30 seconds after SIGTERM");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
     drop(stdin);
     assert_eq!(status.signal(), Some(SIGTERM), "{status}");
+    assert!(
+        log(home.path()).exists(),
+        "the run wrote no timing line; the signal may have landed before the handler was installed"
+    );
     let records = records(home.path());
     assert_eq!(records.len(), 1, "{records:?}");
     let killed = &records[0];
