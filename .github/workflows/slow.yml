@@ -1,9 +1,7 @@
 # STANDARDS.md 21: the slow lane. It runs what costs too much or catches too
-# little to run on every pull request: the gates on macOS, the tests that
-# spawn git against git 2.39, mutation testing, fuzzing and the timing job.
-# It runs nightly on main and by hand. release.yml calls it before a release,
-# and a release run runs only the base and git-floor jobs. The jobs on macOS
-# run in the Monday night run only, and in every hand-run.
+# little to run on every pull request: the gates on macOS, mutation testing,
+# fuzzing and the timing job. It runs nightly on main and by hand. The jobs on
+# macOS run in the Monday night run only, and in every hand-run.
 name: slow
 
 on:
@@ -15,12 +13,6 @@ on:
         description: Commit to mutate the changes since; the diff starts where it meets this run's commit. Empty means the nightly base. It does not move the nightly base.
         type: string
         default: ""
-  workflow_call:
-    inputs:
-      release:
-        description: Run for a release, which runs only the base and git-floor jobs.
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -131,11 +123,9 @@ jobs:
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "macos=$macos" >> "$GITHUB_OUTPUT"
 
-  # A release skips the jobs on macOS, fuzzing and timing, so a release does
-  # not wait for a macOS runner; the Monday run catches a macOS-only failure.
   macos:
     needs: base
-    if: needs.base.outputs.macos == 'true' && !inputs.release
+    if: needs.base.outputs.macos == 'true'
     runs-on: macos-15
     timeout-minutes: 45
     steps:
@@ -151,60 +141,22 @@ jobs:
       - run: bin/lint rust
       - run: bin/test rust && bin/test doc
 
-  # The tests that spawn git, against git 2.39, the oldest Board supports.
-  # Debian bookworm's git is 2.39.5, and the image's toolchain is the one
-  # rust-toolchain.toml pins. ci.yml runs only a newer git, so a flag newer
-  # than 2.39 fails here, on the first night main has it or at release.
-  # Container jobs run as root, which reads files a test made unreadable, so
-  # the tests run as an unprivileged user. The container's own first process
-  # never reaps an orphan, so a process a test killed would stay a zombie
-  # that still counts as running; --init starts one that reaps them.
-  git-floor:
-    needs: base
-    if: needs.base.outputs.run == 'true'
-    runs-on: ubuntu-24.04
-    container:
-      image: rust:1.99.1-bookworm
-      options: --init
-    timeout-minutes: 45
-    steps:
-      - run: git --version
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
-        with:
-          tool: cargo-nextest@0.9.146
-      # cargo installs the components rust-toolchain.toml names, which the
-      # unprivileged user could not.
-      - run: |
-          cargo --version
-          useradd --create-home tester
-          chown -R tester .
-      - run: |
-          runuser -u tester -- env CARGO_HOME=/home/tester/.cargo PATH="$PATH" \
-            bin/test rust -E "$TESTS"
-        env:
-          TESTS: package(board-plugin-github) | package(board-tree) | (package(board-cli) & test(/^tests::built_in::(github|changes|review)::/))
-
   # Fuzzing is randomised, so it runs every night, even on an unchanged main.
   fuzz:
-    if: ${{ !inputs.release }}
     uses: $/.github/workflows/fuzz.yml
 
   # A Monday run on an unchanged main still times Linux when it times macOS.
   timing:
     needs: base
-    if: (needs.base.outputs.run == 'true' || needs.base.outputs.macos == 'true') && !inputs.release
+    if: needs.base.outputs.run == 'true' || needs.base.outputs.macos == 'true'
     uses: $/.github/workflows/timing.yml
     with:
       macos: ${{ needs.base.outputs.macos == 'true' }}
 
-  # Mutation testing of the lines changed since the base commit. A release
-  # skips it: a mutant does not gate a release, and the nightly run has
-  # already covered each day's changes. board-scenario is test support with
-  # no tests of its own, and cargo-mutants runs its baseline on the mutated
-  # crates only, so it is not mutated.
+  # Mutation testing of the lines changed since the base commit.
+  # board-scenario is test support with no tests of its own, and
+  # cargo-mutants runs its baseline on the mutated crates only, so it is not
+  # mutated.
   #
   # It runs in two passes. The first tests each mutant with its own crate's
   # tests only, which rebuilds and tests far less. The second tests the
@@ -232,7 +184,7 @@ jobs:
   # each shard's baseline then runs board-cli's tests once.
   mutants-crate:
     needs: base
-    if: needs.base.outputs.run == 'true' && needs.base.outputs.base != '' && !inputs.release
+    if: needs.base.outputs.run == 'true' && needs.base.outputs.base != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
@@ -379,7 +331,7 @@ jobs:
   # Files the mutants the second pass missed or timed out as GitHub issues,
   # one for each source file, titled "Mutants missed in <file>". It comments
   # on that file's issue while one is open, and opens one otherwise. Scheduled
-  # runs and hand-runs file; a release skips mutants, so it files nothing.
+  # runs and hand-runs file.
   # The base job moves the nightly base only past a run whose missed-mutants
   # job passed, so a night whose filing failed is mutated again.
   missed-mutants:
@@ -429,14 +381,22 @@ jobs:
             echo "- \`$file\`: $url" >> "$GITHUB_STEP_SUMMARY"
           done < files.txt
 
-  # A nightly failure shows nowhere else, so it opens one issue and later
-  # failures comment on it until someone closes it. A job that runs past its
-  # timeout ends cancelled, and so does the run's conclusion, but cancelled()
-  # stays false for the jobs after it, so it is reported. A run cancelled by
-  # hand makes cancelled() true and reports nothing.
+  # A nightly failure shows nowhere else, so each job that failed or ran past
+  # its timeout gets its own issue, titled "Slow lane job <job> failed" and
+  # labelled red-lane. A later failure of that job comments on its issue while
+  # the issue is open, and opens a new one once it is closed. When the job
+  # passes in a later scheduled run, the report job closes its open issue with
+  # a comment naming that run. A skipped job leaves its issue as it is. A
+  # re-run of a scheduled run closes nothing, because a later night may have
+  # opened the issue. The timing job closes its issue only in a run that also
+  # times macOS, because a Linux-only pass says nothing about the macOS leg.
+  # A job that runs past its timeout ends cancelled, and so does the
+  # run's conclusion, but cancelled() stays false for the jobs after it, so
+  # the job comments on its issue or opens one. A run cancelled by hand makes cancelled() true and reports
+  # nothing. Only scheduled runs report.
   report:
-    needs: [base, macos, git-floor, fuzz, timing, mutants-crate, mutants-misses, mutants-workspace, missed-mutants]
-    if: ${{ !cancelled() && github.event_name == 'schedule' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+    needs: [base, macos, fuzz, timing, mutants-crate, mutants-misses, mutants-workspace, missed-mutants]
+    if: ${{ !cancelled() && github.event_name == 'schedule' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -446,13 +406,42 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          RESULTS: "base: ${{ needs.base.result }}, macos: ${{ needs.macos.result }}, git-floor: ${{ needs.git-floor.result }}, fuzz: ${{ needs.fuzz.result }}, timing: ${{ needs.timing.result }}, mutants-crate: ${{ needs.mutants-crate.result }}, mutants-misses: ${{ needs.mutants-misses.result }}, mutants-workspace: ${{ needs.mutants-workspace.result }}, missed-mutants: ${{ needs.missed-mutants.result }}"
+          SHA: ${{ github.sha }}
+          NEEDS: ${{ toJSON(needs) }}
+          ATTEMPT: ${{ github.run_attempt }}
+          MACOS: ${{ needs.base.outputs.macos }}
         run: |
-          title="Slow lane failed"
-          body="$RUN failed ($RESULTS). A fuzz failure's crash inputs are in its crashes-* artifacts. Missed mutants are filed as issues titled \"Mutants missed in <file>\"."
-          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
-          if [ -n "$number" ]; then
-            gh issue comment "$number" --body "$body"
-          else
-            gh issue create --title "$title" --body "$body"
-          fi
+          label=red-lane
+          gh label create "$label" --force --color B60205 --description "A job of the scheduled slow lane failed or ran past its timeout" < /dev/null
+          gh issue list --state open --label "$label" --limit 1000 --json number,title > open.json
+          jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled" or .value.result == "success") | "\(.key)\t\(.value.result)"' <<< "$NEEDS" > results.tsv
+          while IFS=$'\t' read -r job result; do
+            title="Slow lane job $job failed"
+            number=$(jq -r --arg title "$title" '[.[] | select(.title == $title)][0].number // empty' open.json)
+            if [ "$result" = success ]; then
+              if [ "$job" = timing ] && [ "$MACOS" != true ]; then
+                continue
+              fi
+              if [ -n "$number" ] && [ "$ATTEMPT" = 1 ]; then
+                gh issue close "$number" --comment "The job \`$job\` passed in slow lane run $RUN, at $SHA." < /dev/null
+                echo "- \`$job\` passed: closed #$number" >> "$GITHUB_STEP_SUMMARY"
+              fi
+              continue
+            fi
+            if [ "$result" = cancelled ]; then
+              what="ran past its timeout"
+            else
+              what="failed"
+            fi
+            body="The job \`$job\` of slow lane run $RUN, at $SHA, $what."
+            if [ "$job" = fuzz ]; then
+              body="$body Its crash inputs are in the run's crashes-* artifacts."
+            fi
+            body="$body The next scheduled run in which the job passes closes this issue."
+            if [ -n "$number" ]; then
+              url=$(gh issue comment "$number" --body "$body" < /dev/null)
+            else
+              url=$(gh issue create --title "$title" --label "$label" --body "$body" < /dev/null)
+            fi
+            echo "- \`$job\` $what: $url" >> "$GITHUB_STEP_SUMMARY"
+          done < results.tsv

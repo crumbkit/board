@@ -11,10 +11,12 @@ map; PLAN.md says what is being built now.
 
 Run `bin/lint` and `bin/test` before every push. With no argument they also
 run the ui part, which needs Docker. CI runs the same scripts on
-Linux, split across parallel jobs. A slow lane runs them on macOS weekly,
+Linux, split across parallel jobs, and runs the tests that spawn git against
+git 2.39 on every pull request. A slow lane runs the scripts on macOS weekly,
 without the ui part, which CI runs on Linux. The slow lane also runs fuzzing,
-timing and mutants nightly, and the tests that spawn git against git 2.39
-nightly and at release. A release runs CI and that git 2.39 job only.
+timing and mutants nightly. A scheduled slow-lane job that fails opens or
+comments on its own issue labelled `red-lane`, and the next scheduled run in
+which it passes closes that issue. A release runs CI only.
 STANDARDS.md lists what they enforce and the rules they cannot.
 The check suite is `/suites/board-gates`, which runs these gates on the commit
 under test.

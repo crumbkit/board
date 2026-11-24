@@ -3,8 +3,8 @@ name: ci
 
 # Pull requests and main run the checks that catch failures often, on Linux,
 # in parallel jobs. slow.yml runs mutants, fuzzing and Linux timing nightly,
-# the jobs on macOS weekly, and only git-floor before a release. release.yml
-# calls this workflow too.
+# and the jobs on macOS weekly. release.yml calls this workflow before a
+# release.
 on:
   pull_request:
   push:
@@ -77,6 +77,45 @@ jobs:
       - run: bin/test rust --partition "hash:${PARTITION}/3"
         env:
           PARTITION: ${{ matrix.partition }}
+
+  # The tests that spawn git, against git 2.39, the oldest Board supports.
+  # Debian bookworm's git is 2.39.5, and the image's toolchain is the one
+  # rust-toolchain.toml pins. The other jobs run a newer git, so a flag newer
+  # than 2.39 fails only here. Apple's git on macOS 15 is built from git
+  # 2.39.5, and git refuses an unknown flag by version, so this Linux job
+  # catches what a Mac with that git would refuse.
+  # Container jobs run as root, which reads files a test made unreadable, so
+  # the tests run as an unprivileged user that owns the checkout and the
+  # image's CARGO_HOME, which the cache restores. The container's own first
+  # process never reaps an orphan, so a process a test killed would stay a
+  # zombie that still counts as running; --init starts one that reaps them.
+  git-floor:
+    runs-on: ubuntu-24.04
+    container:
+      image: rust:1.99.1-bookworm
+      options: --init
+    timeout-minutes: 20
+    steps:
+      - run: git --version
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: cargo-nextest@0.9.146
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: git-floor
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # cargo installs the components rust-toolchain.toml names, which the
+      # unprivileged user could not.
+      - run: |
+          cargo --version
+          useradd --create-home tester
+          chown -R tester . "$CARGO_HOME"
+      - run: runuser -u tester -- env PATH="$PATH" bin/test rust -E "$TESTS"
+        env:
+          TESTS: package(board-plugin-github) | package(board-tree) | (package(board-cli) & test(/^tests::built_in::(github|changes|review)::/))
 
   # board-ui builds and its screenshots are compared in the pinned arm64
   # Playwright image, so this job runs on an arm64 runner.
