@@ -1,7 +1,7 @@
 //! `list`: each entry in rank order, with what it covers, and whether the
-//! owner must confirm it. An entry is stale when the board has more
-//! commits since the day it was confirmed than the value
-//! `priorities-reconfirm` allows, so a quiet board never asks.
+//! owner must confirm it. A confirmed entry is stale from [`STALE_DAYS`]
+//! days after the day it was confirmed, or sooner when the board has more
+//! commits since that day than the value `priorities-reconfirm` allows.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -23,6 +23,10 @@ pub(crate) const RECONFIRM: &str = "priorities-reconfirm";
 /// The commits an entry may see when no heuristic of [`RECONFIRM`] is
 /// found.
 const RECONFIRM_DEFAULT: f64 = 300.0;
+
+/// The whole UTC days after its confirmation at which an entry is stale,
+/// however few commits the board has.
+const STALE_DAYS: i64 = 7;
 
 /// How long git may take to count a day's commits.
 const GIT_DEADLINE: Duration = Duration::from_secs(10);
@@ -48,8 +52,9 @@ pub(crate) struct Output {
 }
 
 /// One entry: its rank in its horizon, from 1; `unconfirmed` when the
-/// owner has not confirmed it since it last changed; `stale` when the
-/// board has more commits since `confirmed` than `stale_after`.
+/// owner has not confirmed it since it last changed; `stale` when
+/// [`STALE_DAYS`] days have passed since `confirmed`, or the board has
+/// more commits since `confirmed` than `stale_after`.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Row {
@@ -87,6 +92,7 @@ pub(crate) fn list(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     let asked: Input = PluginError::read_input("priorities", "list", input)?;
     let (record, _) = held(host)?;
     let stale_after = reconfirm(host);
+    let today = board_repos::today(host.settings().now, 0, Duration::ZERO);
     let titles = covered(host, &record)?;
     let mut counted: BTreeMap<String, Option<u32>> = BTreeMap::new();
     let mut rows = |horizon: Horizon| -> Vec<Row> {
@@ -98,7 +104,7 @@ pub(crate) fn list(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
                 let stale = entry.confirmed.as_ref().is_some_and(|day| {
                     let since =
                         (counted.entry(day.clone())).or_insert_with(|| commits_since(host, day));
-                    since.is_some_and(|since| f64::from(since) > stale_after)
+                    is_stale(board_repos::Date::parse(day), today, *since, stale_after)
                 });
                 Row {
                     rank: index + 1,
@@ -132,6 +138,19 @@ pub(crate) fn list(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         stale_after,
     };
     Ok(serde_json::to_value(output).expect("the output is plain strings and numbers"))
+}
+
+/// Whether an entry confirmed on `confirmed`, or on a day that did not
+/// parse when none, is stale on `today`: [`STALE_DAYS`] or more whole
+/// days have passed, or more than `stale_after` commits are known since.
+pub(crate) fn is_stale(
+    confirmed: Option<board_repos::Date>,
+    today: board_repos::Date,
+    commits: Option<u32>,
+    stale_after: f64,
+) -> bool {
+    let aged = confirmed.is_some_and(|day| today.days() - day.days() >= STALE_DAYS);
+    aged || commits.is_some_and(|since| f64::from(since) > stale_after)
 }
 
 /// The commits an entry may see, from params, or the built-in default

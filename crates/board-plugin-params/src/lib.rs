@@ -22,7 +22,8 @@ pub use get::{Got, Reason, Source, Warning, WarningCode, get};
 use records::{HeuristicRecord, ValueRecord};
 
 /// The heuristics the plugin ships, by name: the two overflow graces and
-/// the commits a confirmed priority may see. A
+/// the commits a confirmed priority may see before it is stale, which
+/// it also is 7 days after its confirmation. A
 /// record at `/params/heuristics/<name>` overrides the one of that name.
 /// The files hold no `$type`, so `board check` in Board's own repository does
 /// not read them as records of a type it has no schema for.
