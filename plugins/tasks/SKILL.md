@@ -21,7 +21,9 @@ may be on a phone, so keep each message short.
 2. When one does, claim it with
    `tasks.claim --path <path> --session <your session's local_ id>` and
    finish it with `tasks.done --path <path>`. On `tasks::task::held`,
-   another session holds the task: stop and tell the person.
+   another session holds the task: stop and tell the person. On
+   `tasks::repo::schema_stale`, the notes repo needs migrating: tell the
+   person the hint's commands, and work without the claim.
 3. When none covers the work, add one. If the work goes through the changes
    plugin, run `changes.start` without `--task`, which adds the task.
    Otherwise run `tasks.add`.
@@ -139,6 +141,9 @@ it.
   person the code once, and go on.
 - `tasks::task::finished`: the task was finished elsewhere. Go on.
 - `tasks::task::held`: another owner holds the task. Go on.
+- `tasks::repo::schema_stale`: the notes repo stores a task schema from
+  before the shapes migration, so no claim there can be stored. Tell the
+  person the commands the refusal's hint names, and go on without the claim.
 - `tasks::task::busy`: call again once; then tell the person, and go on.
 - `tasks::task::not_plain` or `tasks::task::not_task`: offer Edit.
 - Any other code: tell the person the message, and go on.

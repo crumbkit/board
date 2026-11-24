@@ -76,3 +76,80 @@ fn owner_with_another_owner_flag_is_refused_by_claim_and_available_and_owner_alo
         assert!(admitted.is_ok(), "{capability}: {admitted:?}");
     }
 }
+
+/// A personal notes repo holding one open task, committed and mounted, with
+/// the tasks/task/v2 schema the plugin ships, or with the copy written
+/// before the shapes migration, whose `owner` is text, when `stale`: the
+/// board and the clone.
+fn notes_with_task(stale: bool) -> (Tasks, PathBuf) {
+    let tasks = Tasks::new();
+    tasks.configure(true);
+    let personal = json!({"covers": [], "personal": true});
+    let task = open("Report", json!({}));
+    let clone = tasks.notes_repo("personal", Some(personal), &[("report", &task)], true);
+    if stale {
+        let mut schema: Value = serde_json::from_str(SCHEMA).unwrap();
+        schema["properties"]["owner"] = json!({"type": "string", "minLength": 1});
+        let file = clone.join(".board/types/tasks/task/v2.schema.json");
+        write_file(&file, &schema.to_string());
+        git(
+            &clone,
+            &["commit", "-qam", "the schema before the shapes migration"],
+        );
+        git(&clone, &["push", "-q", "origin", "main"]);
+        tasks.mount("personal", &clone);
+    }
+    (tasks, clone)
+}
+
+const REPORT: &str = "/repos/personal/tasks/report.md";
+const SESSION: &str = "local_0a1b";
+
+/// A notes repo that still stores the tasks/task/v2 schema from before the
+/// shapes migration would refuse the Actor a claim writes as its owner, so
+/// the claim is refused as stale before it syncs or writes, and says how to
+/// migrate the clone. It proves the claim stops and names the remedy; the
+/// migration itself is the xtask's own tests'.
+#[test]
+fn a_claim_in_a_mounted_notes_repo_with_the_old_task_schema_is_refused_as_stale_and_writes_nothing()
+{
+    let (tasks, clone) = notes_with_task(true);
+    let head = git(&clone, &["rev-parse", "HEAD"]);
+    let before = std::fs::read_to_string(clone.join("tasks/report.md")).unwrap();
+    let refused = tasks.refused("claim", &["--path", REPORT, "--session", SESSION]);
+    assert_eq!(refused["code"], "tasks::repo::schema_stale", "{refused}");
+    assert_eq!(refused["fields"]["path"], REPORT);
+    assert_eq!(
+        refused["fields"]["clone"],
+        json!(clone.canonicalize().unwrap())
+    );
+    let said = refused.to_string();
+    assert!(said.contains("migrate-shapes"), "{said}");
+    assert!(said.contains("plugin enable tasks"), "{said}");
+    assert!(said.contains("mount update"), "{said}");
+    assert_eq!(git(&clone, &["rev-parse", "HEAD"]), head);
+    let after = std::fs::read_to_string(clone.join("tasks/report.md")).unwrap();
+    assert_eq!(after, before);
+}
+
+/// The twin: with the schema the plugin ships, the claim is stored as the
+/// Actor, `board check` finds the task valid and `available` lists it as
+/// held by the session.
+#[test]
+fn a_claim_in_a_mounted_notes_repo_with_the_shipped_task_schema_is_stored_and_listed_as_held() {
+    let (tasks, clone) = notes_with_task(false);
+    let output = tasks.call("claim", &["--path", REPORT, "--session", SESSION]);
+    assert_eq!(output.unwrap()["owner"], json!({"session": SESSION}));
+    let stored = std::fs::read_to_string(clone.join("tasks/report.md")).unwrap();
+    assert!(
+        stored.contains("owner: {\"session\":\"local_0a1b\"}\n"),
+        "{stored}"
+    );
+    let report = json(&tasks.run(&["--json", "check", "--healthy", "--all"], 0, None, ""));
+    let entry = (report["data"].as_array().unwrap().iter())
+        .find(|entry| entry["logical"] == REPORT)
+        .unwrap();
+    assert_eq!(entry.get("code"), None, "{entry}");
+    let listed = tasks.call("available", &["--session", SESSION]).unwrap();
+    assert_eq!(listed["available"]["tasks"][0]["path"], REPORT, "{listed}");
+}
