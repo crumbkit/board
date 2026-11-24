@@ -63,8 +63,8 @@ pub(crate) enum Reason {
     /// `!`, `*` or `?`, or with an element of 1023 bytes or more, which are
     /// not compared.
     Pattern,
-    /// It cannot be read as ssh-keygen reads it, or its `namespaces=` is not
-    /// one quoted value.
+    /// It cannot be read the way `verify` reads it, or its `namespaces=` is
+    /// not one quoted value.
     Unreadable,
     /// An earlier line of the attention file already gave its key.
     Duplicate,
