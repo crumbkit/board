@@ -82,6 +82,9 @@ const SYNC_TIMEOUT: u64 = 600;
 const ACTIVE_DAYS_ENV: [&str; 1] = [wip::ACTIVE_DAYS_VARIABLE];
 /// The variables gh reads for its account and configuration.
 const GH_ENV: [&str; 3] = ["GH_TOKEN", "GITHUB_TOKEN", "GH_CONFIG_DIR"];
+/// The variables `advance` reads: the WIP limit's into build, and gh's
+/// into done.
+const ADVANCE_ENV: [&str; 4] = [wip::ACTIVE_DAYS_VARIABLE, GH_ENV[0], GH_ENV[1], GH_ENV[2]];
 
 /// One capability: its name, what it does, the function that runs it, its
 /// input and output schemas, its MCP hints (read-only, destructive,
@@ -154,12 +157,14 @@ const CAPABILITIES: [Capability; 23] = [
         description: "Move the change to the next phase of its flow when every check of its gate \
             that blocks passes; otherwise refuse and say what is missing and the remedy. Into build, refuse while three active changes of its kind \
             are in build for its mount, unless over_limit gives a reason, which the change \
-            records and the output warns about.",
+            records and the output warns about. Into done, a change that records a pull request \
+            moves only once GitHub reports it merged, read with gh, and records its merge \
+            commit.",
         run: phases::advance,
         input: input::<phases::AdvanceInput>,
         output: output::<phases::Moved>,
-        hints: [false, true, false, false],
-        env: &ACTIVE_DAYS_ENV,
+        hints: [false, true, false, true],
+        env: &ADVANCE_ENV,
         timeout: None,
     },
     Capability {

@@ -710,6 +710,41 @@ impl Changes {
     }
 }
 
+/// A stub gh, first on the plugins' `PATH`. It answers
+/// `gh api repos/<owner>/<repo>/pulls/<number>` with `pulls/<number>.json`
+/// from its own directory, with GitHub's 404 when that file is missing, and
+/// with a 502 when `fail` is there. It records each call in `gh-calls.txt`.
+const GH: &str = r#"#!/bin/sh
+here="$(dirname "$0")"
+echo "$@" >> "$here/gh-calls.txt"
+if [ -f "$here/fail" ]; then echo "HTTP 502: Bad Gateway" >&2; exit 1; fi
+number="${2##*/}"
+if [ -f "$here/pulls/$number.json" ]; then cat "$here/pulls/$number.json"; exit 0; fi
+echo "gh: Not Found (HTTP 404)" >&2
+exit 1
+"#;
+
+/// The fixture board with the stub gh [`GH`] first on its plugins' `PATH`.
+fn gh() -> Changes {
+    let board = Changes::new();
+    board.bin.write("gh", Item::Executable(GH));
+    board
+}
+
+impl Changes {
+    /// Makes the stub gh answer pull request `number` with `fields`.
+    fn answers(&self, number: u32, fields: &Value) {
+        let answer = record(json!({"number": number}), fields);
+        (self.bin).write(&format!("pulls/{number}.json"), Item::Fresh(&answer));
+    }
+
+    /// The calls the stub gh recorded, one per line.
+    fn gh_calls(&self) -> Vec<String> {
+        let calls = std::fs::read_to_string(self.bin.workdir().join("gh-calls.txt")).unwrap();
+        calls.lines().map(str::to_owned).collect()
+    }
+}
+
 /// Splits `line` as a POSIX shell does, for the commands the plugin
 /// quotes: single quotes, double quotes and backslashes.
 fn shell_words(line: &str) -> Vec<String> {

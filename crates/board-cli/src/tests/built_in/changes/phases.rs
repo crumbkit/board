@@ -435,21 +435,53 @@ fn next_on_a_done_change_has_no_gate_and_nothing_to_do() {
     );
 }
 
-#[test]
-fn advance_runs_from_land_to_done_and_refuses_to_leave_done() {
-    let board = Changes::new();
+/// The page of pull request 1 of o/r, which [`landing`] records.
+const PULL: &str = "https://github.com/o/r/pull/1";
+/// The commit GitHub gives as pull request 1's merge.
+const MERGED: &str = "0123456789abcdef0123456789abcdef01234567";
+
+/// A board with the stub gh and /changes/t in land, with `fields`, whose
+/// plan holds the sections the land gate asks for.
+fn landing(fields: &Value) -> Changes {
+    let board = gh();
+    let given = record(json!({"plan": "/changes/t/plan.md"}), fields);
     board.change_at(
         "changes/t.json",
         "land",
-        &json!({"pull_request": "https://github.com/o/r/pull/1", "plan": "/changes/t/plan.md"}),
+        &serde_json::from_str(&given).unwrap(),
     );
-    board.write("changes/t/plan.md", "# T\n");
-    assert_eq!(missing(&board), json!(["test-sections"]));
     board.write(
         "changes/t/plan.md",
         "# T\n\n## What the tests prove\n\nIt lands.\n\n## What the tests do not prove\n\nRetries.\n",
     );
+    board
+}
+
+#[test]
+fn advance_from_land_is_refused_while_the_pull_request_is_open_and_moves_to_done_once_it_merged() {
+    let board = landing(&json!({"pull_request": PULL}));
+    board.answers(1, &json!({"state": "open", "merged": false}));
+    let refused = board.refusal("advance", &path());
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["pull_request"]),
+        (&json!("changes::land::not_merged"), &json!(PULL))
+    );
+    let message = refused["message"].as_str().unwrap();
+    assert!(
+        message.contains("board github merge --change /changes/t"),
+        "{message}"
+    );
+    assert_eq!(board.read("changes/t.json")["phase"], "land");
+    board.answers(
+        1,
+        &json!({"state": "closed", "merged": true, "merge_commit_sha": MERGED}),
+    );
     assert_eq!(advanced(&board), "done");
+    assert_eq!(
+        board.read("changes/t.json")["merge_commit_url"],
+        format!("https://github.com/o/r/commit/{MERGED}")
+    );
+    assert_eq!(board.gh_calls(), ["api repos/o/r/pulls/1"; 2]);
     let refused = board.refusal("advance", &path());
     assert_eq!(
         (&refused["code"], &refused["fields"]["phase"]),
@@ -457,6 +489,41 @@ fn advance_runs_from_land_to_done_and_refuses_to_leave_done() {
     );
     let message = refused["message"].as_str().unwrap();
     assert!(message.contains("`board changes open`"), "{message}");
+}
+
+#[test]
+fn advance_from_land_is_refused_for_a_pull_request_closed_unmerged_and_one_github_cannot_find() {
+    let board = landing(&json!({"pull_request": PULL}));
+    board.answers(1, &json!({"state": "closed", "merged": false}));
+    let refused = board.refusal("advance", &path());
+    assert_eq!(refused["code"], "changes::land::not_merged");
+    let message = refused["message"].as_str().unwrap();
+    assert!(
+        message.contains("board changes drop --path /changes/t"),
+        "{message}"
+    );
+    board.bin.write("pulls/1.json", Item::Deleted);
+    let refused = board.refusal("advance", &path());
+    assert_eq!(refused["code"], "changes::land::not_merged");
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.contains("404"), "{message}");
+    assert_eq!(board.read("changes/t.json")["phase"], "land");
+    board.answers(1, &json!({"state": "closed", "merged": true}));
+    assert_eq!(advanced(&board), "done");
+}
+
+#[test]
+fn advance_from_land_is_refused_when_gh_fails_and_moves_once_gh_answers() {
+    let board = landing(&json!({"pull_request": PULL}));
+    board.answers(1, &json!({"state": "closed", "merged": true}));
+    board.bin.write("fail", Item::Fresh(""));
+    let refused = board.refusal("advance", &path());
+    assert_eq!(refused["code"], "changes::land::gh_failed");
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.contains("HTTP 502"), "{message}");
+    assert_eq!(board.read("changes/t.json")["phase"], "land");
+    board.bin.write("fail", Item::Deleted);
+    assert_eq!(advanced(&board), "done");
 }
 
 #[test]

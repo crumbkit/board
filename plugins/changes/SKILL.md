@@ -119,7 +119,9 @@ blocks is missing.
    answers `ux` none and `data` none needs no approval. After a change
    lands, `board -C <board> changes owed` lists the rechecks it still owes.
 4. Run `board -C <board> changes advance --path /changes/<name>`
-   when every check passes. To send a change back to build for a fix
+   when every check passes. A change that records a pull request moves
+   into `done` only once GitHub reports it merged, so land it with
+   `board github merge --change /changes/<name>`. To send a change back to build for a fix
    round, such as after a review asks for fixes, run
    `board -C <board> changes reopen --path /changes/<name> --reason '<why>' --agent '<your name>'`.
    Never move its phase with `board put`.
@@ -306,5 +308,11 @@ to replace the flow copies changes kept before versions.
   `proto/<name>`; switch to it.
 - `changes::guard::unknown`: the guard could not check. It refuses in a known
   board's checkout and advises elsewhere. Fix what it names.
+- `changes::land::not_merged`: GitHub has not reported the change's pull
+  request merged, so the change stays out of `done`. Merge it with
+  `board github merge --change /changes/<name>`, which moves the change to
+  `done` after the merge; drop the change when the pull request closed.
+- `changes::land::gh_failed`: gh could not read the pull request, and
+  nothing was written. Check `gh auth status` and advance again.
 - `changes::phase::final`: the change is done or dropped. Run `open`, or
   `start` a new change.

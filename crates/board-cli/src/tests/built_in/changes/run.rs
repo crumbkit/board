@@ -226,6 +226,37 @@ fn recording_the_stop_of_an_inline_run_leaves_advance_refused_until_a_later_run_
 }
 
 #[test]
+fn a_run_that_stops_at_done_lets_advance_end_the_change_only_once_its_pull_request_merged() {
+    let board = quick();
+    board.bin.write("gh", Item::Executable(GH));
+    board.call("run", &starting(&json!({"inline": true})));
+    board.call("advance", &json!({"path": CHANGE}));
+    let pull = "gh/o/r/pulls/1.json";
+    let page = "https://github.com/o/r/pull/1";
+    let body = json!({"owner": "o", "repo": "r", "number": 1, "url": page});
+    board.write(pull, &typed("github/pull/v1", &body));
+    board.call(
+        "attach",
+        &json!({"path": CHANGE, "pull": "/gh/o/r/pulls/1"}),
+    );
+    board.call("run", &resuming(&json!({"inline": true, "until": "done"})));
+    board.answers(1, &json!({"state": "open", "merged": false}));
+    let refused = board.refusal("advance", &json!({"path": CHANGE}));
+    assert_eq!(refused["code"], "changes::land::not_merged");
+    let message = refused["message"].as_str().unwrap();
+    assert!(
+        message.contains("board github merge --change /changes/quick-fix"),
+        "{message}"
+    );
+    assert_eq!(board.read("changes/quick-fix.json")["phase"], "land");
+    board.answers(1, &json!({"state": "closed", "merged": true}));
+    assert_eq!(
+        board.call("advance", &json!({"path": CHANGE}))["to"],
+        "done"
+    );
+}
+
+#[test]
 fn a_run_whose_agent_does_not_start_puts_back_the_stop_the_change_held() {
     let board = quick();
     board.call("run", &starting(&json!({"inline": true})));
