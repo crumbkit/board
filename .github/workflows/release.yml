@@ -1,5 +1,5 @@
-# A release: the pull-request lane and the slow lane's git-floor job (the
-# tests that spawn git against git 2.39), then `board` built with
+# A release: the pull-request lane, whose git-floor job runs the tests that
+# spawn git against git 2.39, then `board` built with
 # `cargo auditable` for each target, bin/install-check run from the archives
 # on each platform, and the archives attached to a GitHub release with
 # SHA256SUMS and a build provenance attestation for each archive. The tag is
@@ -8,7 +8,7 @@
 # (docs/architecture/released.md).
 # A pull request that changes this file, and workflow_dispatch, build and
 # install-check every archive and publish nothing. A pull request skips the
-# two lanes, which ci.yml already runs on it.
+# pull-request lane, which ci.yml already runs on it.
 name: release
 
 on:
@@ -28,21 +28,6 @@ jobs:
   ci:
     if: github.event_name != 'pull_request'
     uses: $/.github/workflows/ci.yml
-
-  # A called workflow may not ask for more than its caller grants. The slow
-  # lane's base job reads earlier runs, and its report job may open an issue
-  # on a nightly failure; it opens none here. A release runs only the slow
-  # lane's base and git-floor jobs, and skips macOS, fuzzing, timing and
-  # mutants, which the nightly runs cover.
-  slow:
-    if: github.event_name != 'pull_request'
-    uses: $/.github/workflows/slow.yml
-    permissions:
-      actions: read
-      contents: read
-      issues: write
-    with:
-      release: true
 
   # The tag names the version the binary prints, and released.json lists
   # what the release ships.
@@ -154,7 +139,7 @@ jobs:
   # archives.
   release:
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: [version, ci, slow, install]
+    needs: [version, ci, install]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
