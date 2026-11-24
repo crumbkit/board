@@ -7,6 +7,7 @@ mod git;
 mod history;
 mod mounts;
 mod moved;
+pub mod reads;
 mod repositories;
 mod resolve;
 mod symlink;
@@ -25,7 +26,7 @@ pub use crate::git::{Contents, GitError, Repository, latest};
 pub use crate::history::{Change, End, History, MAX_WALKED, Walk};
 pub use crate::mounts::{
     Cache, Choice, Crossing, Held, Matched, MountPoint, Mounted, Origin, Pin, PinError, Place,
-    Reached, Scopes, head_of, in_scope, origin, own_origin, within,
+    Probed, Reached, Scopes, head_of, in_scope, origin, own_origin, within,
 };
 pub use crate::repositories::{Checkout, Repositories, WriteGate, take_unchecked_notes};
 pub use crate::resolve::{Ancestor, InCommit, MAX_HOPS, ResolveError, Resolver};

@@ -56,6 +56,10 @@ pub(crate) trait Tree {
         entry: &RawEntry<Self::Directory>,
     ) -> Result<Option<Vec<u8>>, GitError>;
 
+    /// Notes that a resolution followed a symlink in this tree. Only a
+    /// working tree that records its reads keeps the note.
+    fn followed_symlink(&mut self) {}
+
     /// `entry` of `directory` with its blob, for a source that lists a file
     /// before hashing it.
     fn settle(

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use board_model::Digest;
 
 use super::*;
-use crate::{Cache, GitError, Held, Reached, TreeRow, TreeRows};
+use crate::{Cache, GitError, Held, Probed, Reached, TreeRow, TreeRows};
 
 /// The facts of a source: the physical paths that hold a pointer.
 type Facts = HashSet<String>;
@@ -19,6 +19,7 @@ struct Memory {
     pointers: HashMap<Digest, Vec<Held>>,
     kept: bool,
     pointing: Facts,
+    probes: HashMap<Digest, Probed>,
 }
 
 impl Cache for Memory {
@@ -67,6 +68,15 @@ impl Cache for Memory {
     fn kept(&mut self, _: &Digest) -> bool {
         self.kept
     }
+
+    fn probe(&mut self, stamp: &Digest) -> Option<Probed> {
+        self.probes.get(stamp).cloned()
+    }
+
+    fn put_probe(&mut self, stamp: &Digest, probed: &Probed) -> Result<(), GitError> {
+        self.probes.insert(*stamp, probed.clone());
+        Ok(())
+    }
 }
 
 /// A board whose working tree mounts, at `/m`, a library that holds `p.json`.
@@ -109,22 +119,38 @@ fn a_walk_that_skips_kept_sources_walks_a_listed_source_only_when_its_decision_i
 }
 
 #[test]
-fn a_source_whose_listed_pointer_cannot_be_read_has_no_key_and_its_readable_twin_has_one() {
-    let (board, library) = mounting();
-    let mut cache = Memory::default();
-    let scan = walk_mounts(&board, &mut cache, false).sources[0].scan;
-    // A blob of the board's own repository, which the library lacks.
-    let missing = board.blob("only in the board");
-    for (blob, keyed) in [(missing, false), (library.blob("{}"), true)] {
-        let listed = Held {
-            path: "p.json".to_owned(),
-            logical: path("/p"),
-            blob,
-        };
-        cache.pointers.insert(scan, vec![listed]);
+fn a_source_whose_pointer_cannot_be_read_keeps_no_pointer_list_and_no_key_and_its_readable_twin_keeps_both()
+ {
+    for (lost, kept) in [(true, false), (false, true)] {
+        let (board, library) = mounting();
+        if lost {
+            let hex = library.blob("{}").to_string();
+            let object = format!(".git/objects/{}/{}", &hex[..2], &hex[2..]);
+            library.write(&object, Item::Deleted);
+        }
+        let mut cache = Memory::default();
+        cache.pointing.insert("p.json".to_owned());
         let reached = walk_mounts(&board, &mut cache, false);
-        assert_eq!(reached.sources[0].key.is_some(), keyed, "{blob}");
+        assert_eq!(reached.sources[0].key.is_some(), kept, "lost: {lost}");
+        assert_eq!(!cache.pointers.is_empty(), kept, "lost: {lost}");
     }
+}
+
+#[test]
+fn a_second_walk_opens_no_mounted_repository_and_finds_what_the_first_found() {
+    let (board, _library) = mounting();
+    let mut cache = Memory::default();
+    let first = walk_mounts(&board, &mut cache, false);
+    // A kept decision, so the second walk need not walk the source.
+    cache.kept = true;
+    let repositories = board.repositories();
+    let entries = board.open().walk(&Source::WorkingTree).unwrap();
+    let facts = Facts::from(["m.json".to_owned()]);
+    let second =
+        (repositories.walk_mounts(&entries, &facts, &mut cache, ("test", true), None)).unwrap();
+    assert_eq!(repositories.opened(), 0);
+    assert_eq!(second.points, first.points);
+    assert_eq!(second.sources[0].repository, first.sources[0].repository);
 }
 
 #[test]
