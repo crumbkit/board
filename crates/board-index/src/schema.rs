@@ -3,7 +3,7 @@
 
 /// The index format, which names the index file. `open.rs` and
 /// docs/architecture/index.md say what a new format does to older files.
-pub const INDEX_VERSION: u32 = 27;
+pub const INDEX_VERSION: u32 = 28;
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
@@ -104,13 +104,52 @@ CREATE TABLE links (
     destination TEXT NOT NULL,
     PRIMARY KEY (blob, ordinal)
 ) WITHOUT ROWID;
--- A row with an empty path says the list under `scan` is stored.
+-- A row with an empty path says the list under `scan` is stored. `repo`,
+-- `follow` and `commit` are the mount the pointer holds, or null when it
+-- holds none.
 CREATE TABLE pointers (
     scan TEXT NOT NULL,
     path TEXT NOT NULL,
     logical TEXT,
     blob TEXT,
+    repo TEXT,
+    follow TEXT,
+    commit_id TEXT,
     PRIMARY KEY (scan, path)
+) WITHOUT ROWID;
+-- What opening a mounted repository found, under a stamp of the files that
+-- decide it: the repository's path, the pinned commit's root tree, and its
+-- common git directory and stored `origin` when it has them.
+CREATE TABLE probes (
+    stamp TEXT PRIMARY KEY,
+    path TEXT NOT NULL,
+    root TEXT NOT NULL,
+    common TEXT,
+    origin TEXT
+) WITHOUT ROWID;
+-- The working tree's decision one build keeps for one board root, whose
+-- rows `decided` holds under `slot`: `key` is the key of the tree they
+-- describe, `frame` the digest of the moved prefixes, `head` the tree HEAD
+-- named, `directories` each directory and submodule the walk saw and
+-- `probes` each mount pointer's path and probe digest, each ended by a zero
+-- byte.
+CREATE TABLE slots (
+    slot TEXT PRIMARY KEY,
+    key TEXT NOT NULL,
+    frame TEXT NOT NULL,
+    head TEXT,
+    directories BLOB NOT NULL,
+    probes BLOB NOT NULL
+) WITHOUT ROWID;
+-- Each entry of a slot's tree: `entry` is the digest of the entry as
+-- deciding reads it, and `reads` each name its decision read
+-- (board_tree::reads), each ended by a zero byte.
+CREATE TABLE inputs (
+    slot TEXT NOT NULL,
+    path TEXT NOT NULL,
+    entry TEXT NOT NULL,
+    reads BLOB NOT NULL,
+    PRIMARY KEY (slot, path)
 ) WITHOUT ROWID;
 CREATE TABLE decided (
     key TEXT NOT NULL,
@@ -129,8 +168,8 @@ CREATE TABLE decided (
 ";
 
 /// Each source a run reached: the key its decision is kept under when the
-/// index holds it, and the key of a mounted source's pointer list. Every
-/// transaction starts with it empty.
+/// index holds it, and the key of a mounted source's pointer list; and the
+/// stamp of each probe it used. Every transaction starts with them empty.
 pub(crate) const REACHED: &str = "
 CREATE TEMP TABLE IF NOT EXISTS reached (
     source TEXT PRIMARY KEY,
@@ -138,13 +177,16 @@ CREATE TEMP TABLE IF NOT EXISTS reached (
     scan TEXT
 ) WITHOUT ROWID;
 DELETE FROM temp.reached;
+CREATE TEMP TABLE IF NOT EXISTS probed (stamp TEXT PRIMARY KEY) WITHOUT ROWID;
+DELETE FROM temp.probed;
 ";
 
 /// Deletes the facts nothing current reaches: each tree beneath a source's
 /// root, each object those trees hold, and each working-tree blob. A
-/// validation and its references go unless both blobs are reached, and a
-/// decision or pointer list unless this run reached its key.
-pub(crate) const PRUNE: [&str; 8] = [
+/// validation and its references go unless both blobs are reached, a
+/// decision, a slot or a pointer list unless this run reached its key, and
+/// a probe unless this run used it.
+pub(crate) const PRUNE: [&str; 11] = [
     "DELETE FROM main.trees WHERE tree NOT IN temp.kept",
     "DELETE FROM main.blobs WHERE blob NOT IN temp.kept",
     "DELETE FROM main.links WHERE blob NOT IN temp.kept",
@@ -156,6 +198,11 @@ pub(crate) const PRUNE: [&str; 8] = [
      WHERE key NOT IN (SELECT key FROM temp.reached WHERE key IS NOT NULL)",
     "DELETE FROM main.pointers
      WHERE scan NOT IN (SELECT scan FROM temp.reached WHERE scan IS NOT NULL)",
+    "DELETE FROM main.probes WHERE stamp NOT IN temp.probed",
+    "DELETE FROM main.slots
+     WHERE slot NOT IN (SELECT key FROM temp.reached WHERE key IS NOT NULL)",
+    "DELETE FROM main.inputs
+     WHERE slot NOT IN (SELECT key FROM temp.reached WHERE key IS NOT NULL)",
 ];
 
 /// Counts a prune in `state`, so a run can tell when another process has

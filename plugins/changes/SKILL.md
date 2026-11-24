@@ -244,6 +244,11 @@ to replace the flow copies changes kept before versions.
   names clears it, and the owner's waiver decision, or answer whose chosen
   option names `<change>#design-conformance`, passes a partial build or a page
   Playwright cannot screenshot.
+- `changes::plan::other_change`: the plan's first heading is the title of
+  the change in `other`, so the text is most likely that change's plan.
+  Send this change's own plan, or make its first heading this change's
+  title. The warning `changes::plan::title_differs` says only that the
+  heading differs from the title; check the text is this change's plan.
 - `changes::plan::no_answers`: send the plan again with the `answers` the
   message names, such as `{"ux": "none", "data": "none", "lifecycle": "none"}`.
 - A check whose detail says the plan gives no typed answer: the plan was
@@ -315,4 +320,5 @@ to replace the flow copies changes kept before versions.
 - `changes::land::gh_failed`: gh could not read the pull request, and
   nothing was written. Check `gh auth status` and advance again.
 - `changes::phase::final`: the change is done or dropped. Run `open`, or
-  `start` a new change.
+  `start` a new change. To correct a done or dropped change's plan, send
+  the plan again with `"correct": true`; the change keeps its phase.

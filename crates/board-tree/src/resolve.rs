@@ -440,6 +440,14 @@ impl<'k> Resolver<'_, 'k> {
         self.pointers.read
     }
 
+    /// This resolver, recording into `reads` what each resolution reads of
+    /// the working tree ([`crate::reads`]).
+    #[must_use]
+    pub fn reading(mut self, reads: crate::reads::Reads) -> Self {
+        self.tree = self.tree.reading(reads);
+        self
+    }
+
     /// Each mount its resolutions crossed or tried since the last call.
     pub fn crossed(&mut self) -> Vec<crate::Crossing> {
         std::mem::take(&mut self.pointers.crossed)
@@ -697,6 +705,7 @@ fn through<T: Tree>(
     let Some((end, target)) = chains.follow(tree, at)? else {
         return Ok((entry, at));
     };
+    tree.followed_symlink();
     match end {
         End::File { blob, at, .. } => {
             entry.kind = Kind::File(blob);

@@ -12,16 +12,18 @@ use board_model::{
 
 use crate::git::{Contents, GitError, Identity, Repository, latest, remote_url};
 use crate::repositories::Repositories;
-use crate::tree::Tree;
+
 use crate::trees::{TreeRow, TreeRows, walk_stored};
 use crate::walk::{Entry, Status};
 use crate::write::{Target, WriteError};
 
 mod choice;
 mod keys;
+mod probes;
 
 pub use choice::Choice;
 use keys::{Probe, scan};
+pub use probes::Probed;
 
 /// What a cache, such as the index, holds about trees and blobs, so a walk
 /// through mounts reads only what it does not hold.
@@ -51,14 +53,20 @@ pub trait Cache {
     fn put_pointers(&mut self, scan: &Digest, held: &[Held]) -> Result<(), Self::Error>;
     /// Whether the cache holds the decision of the source keyed `key`.
     fn kept(&mut self, key: &Digest) -> bool;
+    /// What opening a mounted repository found, kept under `stamp`, or
+    /// `None` when not held.
+    fn probe(&mut self, stamp: &Digest) -> Option<Probed>;
+    fn put_probe(&mut self, stamp: &Digest, probed: &Probed) -> Result<(), Self::Error>;
 }
 
-/// An entry holding a pointer that parses, as a walk listed it.
+/// An entry holding a pointer that parses, as a walk listed it, with the
+/// mount it holds once read, or `None` before or when it holds none.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Held {
     pub path: String,
     pub logical: LogicalPath,
     pub blob: ObjectId,
+    pub mount: Option<Mount>,
 }
 
 /// A mounted commit, its entries and the cache's facts about them.
@@ -66,9 +74,11 @@ pub struct Held {
 pub struct Mounted<F> {
     pub commit: ObjectId,
     pub root: ObjectId,
-    /// The repository it was first read from. A relative `repo` in one of
-    /// its own mounts is read against this repository.
-    pub repository: Repository,
+    /// The path of the repository it was first read from, as
+    /// [`Repository::path`] gives it, which is opened only when its
+    /// objects are read. A relative `repo` in one of its own mounts is read
+    /// against this repository.
+    pub repository: PathBuf,
     /// The display path of its first route, by shortest display path and
     /// then lexically; its entries are named beneath it.
     pub route: LogicalPath,
@@ -142,7 +152,7 @@ struct Candidate {
     route: LogicalPath,
     commit: ObjectId,
     root: ObjectId,
-    repository: Repository,
+    repository: PathBuf,
     chain: Chain,
 }
 
@@ -181,13 +191,15 @@ impl Repositories {
         let keeping = !build.is_empty();
         let mut candidates = Vec::new();
         let root = self.root();
+        let shared = keeping.then(|| probes::shared(root)).flatten();
         let is_pointer = |path: &str| C::is_pointer(facts, path);
         let found = pointers(root, &Source::WorkingTree, entries, &is_pointer);
         let from = root.path();
         let route = LogicalPath::root();
         let chain = vec![(root.identity(), route.clone())];
         let at = (&Source::WorkingTree, &route, chain.as_slice());
-        reached.add(self, from, at, found, &mut candidates);
+        let probing = (&mut *cache, shared.as_deref());
+        reached.add((self, probing), from, at, found, &mut candidates)?;
         let mut seen: HashSet<ObjectId> = HashSet::new();
         while let Some(at) = first(&candidates) {
             let candidate = candidates.swap_remove(at);
@@ -204,28 +216,31 @@ impl Repositories {
             let source = Source::Commit(commit);
             let scan = scan(build, root);
             let listed = if keeping { cache.pointers(&scan) } else { None };
-            let (walked, held) = if let Some(held) = listed {
-                (None, held)
+            // A kept list holds each pointer's mount, so the repository is
+            // opened only to walk the source.
+            let (walked, held, unread) = if let Some(held) = listed {
+                (None, held, false)
             } else {
-                let (entries, facts) = walk(&repository, commit, root, cache)?;
-                let held = held(&entries, &|path| C::is_pointer(&facts, path));
-                if keeping && C::complete(&facts, &entries) {
+                let opened = self.open_at(&repository)?;
+                let (entries, facts) = walk(&opened, commit, root, cache)?;
+                let mut held = held(&entries, &|path| C::is_pointer(&facts, path));
+                let unread = read_mounts(&opened, &source, &mut held);
+                if keeping && !unread && C::complete(&facts, &entries) {
                     cache.put_pointers(&scan, &held)?;
                 }
-                (Some((entries, facts)), held)
+                (Some((entries, facts)), held, unread)
             };
-            let (found, unread) = mounts_in(&repository, &source, &held);
             if unread {
                 reached.unread.push(source.clone());
             }
-            let from = repository.path();
+            let probing = (&mut *cache, shared.as_deref());
             reached.add(
-                self,
-                from,
+                (self, probing),
+                &repository,
                 (&source, &route, &chain),
-                found,
+                mounts(&held),
                 &mut candidates,
-            );
+            )?;
             reached.sources.push(Mounted {
                 commit,
                 root,
@@ -250,7 +265,8 @@ impl Repositories {
             let wanted = states.is_some();
             let skip = skip_kept && mounted.kept && mounted.whole;
             if mounted.walked.is_none() && wanted && !skip {
-                let walked = walk(&mounted.repository, mounted.commit, mounted.root, cache)?;
+                let opened = self.open_at(&mounted.repository)?;
+                let walked = walk(&opened, mounted.commit, mounted.root, cache)?;
                 mounted.walked = Some(walked);
             }
         }
@@ -573,80 +589,6 @@ impl PinError {
 }
 
 impl<F> Reached<F> {
-    /// Records the mounts `found` in `source` of the repository at `from`,
-    /// whose route is `route` and whose `chain` ends with its own board, and
-    /// adds each one that can be read, whose route is a logical path and
-    /// whose repository is on no board of `chain`, as a candidate.
-    fn add(
-        &mut self,
-        repositories: &Repositories,
-        from: &Path,
-        (source, route, chain): (&Source, &LogicalPath, &[(Identity, LogicalPath)]),
-        found: Vec<(LogicalPath, String, Mount)>,
-        candidates: &mut Vec<Candidate>,
-    ) {
-        let found: Vec<_> = (found.into_iter())
-            .map(|(at, path, mount)| (at, path.clone(), repositories.read_as(source, &path, mount)))
-            .collect();
-        let wanted: Vec<_> = (found.iter())
-            .filter(|(at, _, _)| route.beneath(at).is_ok())
-            .filter_map(|(_, _, mount)| Some((repositories.named(from, mount)?, mount.commit)))
-            .collect();
-        repositories.open_all(&wanted);
-        for (at, path, mount) in found {
-            let route = route.beneath(&at).map_err(|_| Code::PathMalformed);
-            let mounted = route.and_then(|route| {
-                let mounted = (repositories.mounted(from, &mount)).ok_or(Code::MountRepoMissing)?;
-                let tree = mounted.commit_tree(mount.commit);
-                let root = tree.map_err(|_| Code::MountCommitMissing)?.root();
-                Ok((route, mounted, root))
-            });
-            let identity = (mounted.as_ref().ok()).map(|(_, mounted, _)| mounted.identity());
-            let repeats = identity.as_ref().and_then(|identity| {
-                let above = chain.iter().find(|(above, _)| above.same(identity));
-                above.map(|(_, repeats)| repeats.clone())
-            });
-            let mounted = match repeats {
-                Some(repeats) => {
-                    self.cycles.insert((source.clone(), path.clone()), repeats);
-                    Err(Code::MountCycle)
-                }
-                None => mounted,
-            };
-            self.probes.push(Probe {
-                from: source.clone(),
-                path: path.clone(),
-                repo: mount.repo.clone(),
-                commit: mount.commit,
-                landed: (mounted.as_ref())
-                    .map(|(_, mounted, _)| mounted.path().to_path_buf())
-                    .map_err(|code| *code),
-            });
-            self.points.push(MountPoint {
-                source: source.clone(),
-                path,
-                target: mounted.as_ref().map(|_| mount.commit).map_err(|code| *code),
-            });
-            let (Ok((route, mounted, root)), Some(identity)) = (mounted, identity) else {
-                continue;
-            };
-            let mut below = chain.to_vec();
-            below.push((identity, route.clone()));
-            candidates.push(Candidate {
-                route,
-                commit: mount.commit,
-                root,
-                repository: mounted,
-                chain: below,
-            });
-            self.edges.push(Edge {
-                from: source.clone(),
-                at,
-                to: mount.commit,
-            });
-        }
-    }
-
     /// For each source, what remains of `scope` at its root on each route
     /// that reaches it: `None` when the whole source is in scope. Without a
     /// scope, every source is wholly in it.
@@ -752,6 +694,7 @@ fn held(entries: &[Entry], is_pointer: &dyn Fn(&str) -> bool) -> Vec<Held> {
                 path: entry.path.clone(),
                 logical: entry.logical.clone()?,
                 blob: entry.blob?,
+                mount: None,
             })
         })
         .collect()
@@ -764,23 +707,37 @@ fn mounts_in(
     source: &Source,
     held: &[Held],
 ) -> (Vec<(LogicalPath, String, Mount)>, bool) {
+    let mut held = held.to_vec();
+    let unread = read_mounts(repository, source, &mut held);
+    (mounts(&held), unread)
+}
+
+/// Each mount among `held`, with its logical and physical paths.
+fn mounts(held: &[Held]) -> Vec<(LogicalPath, String, Mount)> {
+    (held.iter())
+        .filter_map(|held| Some((held.logical.clone(), held.path.clone(), held.mount.clone()?)))
+        .collect()
+}
+
+/// Reads the mount each of `held`, pointers in `source`, holds, and says
+/// whether the blob of one could not be read.
+fn read_mounts(repository: &Repository, source: &Source, held: &mut [Held]) -> bool {
     let reader = &mut repository.reader();
     let mut unread = false;
-    let found = held
-        .iter()
-        .filter_map(|held| {
-            // A pointer rewritten since the walk is the mount it now says;
-            // only a commit's pointers cannot change, so only the working
-            // tree's can differ.
-            let read = latest(reader.read(source, &held.path, held.blob));
-            unread |= read.is_err();
-            match board_model::pointer(&read.ok()??.bytes) {
-                Ok(Some(Pointer::Mount(mount))) => {
-                    Some((held.logical.clone(), held.path.clone(), mount))
-                }
-                _ => None,
-            }
-        })
-        .collect();
-    (found, unread)
+    for held in held {
+        // A pointer rewritten since the walk is the mount it now says;
+        // only a commit's pointers cannot change, so only the working
+        // tree's can differ.
+        let read = latest(reader.read(source, &held.path, held.blob));
+        unread |= read.is_err();
+        held.mount = match read
+            .ok()
+            .flatten()
+            .map(|read| board_model::pointer(&read.bytes))
+        {
+            Some(Ok(Some(Pointer::Mount(mount)))) => Some(mount),
+            _ => None,
+        };
+    }
+    unread
 }

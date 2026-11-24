@@ -29,10 +29,11 @@ A source's key hashes:
   repository it opened, or the code that says why it did not;
 - for each mount it reaches, the same of that source, without its route.
 
-Every run opens each mounted repository and looks up each pinned commit, so
-a deleted repository or a lost commit changes the key. The repositories one
-source's mounts name are opened in parallel, one thread each, before its
-mounts are read in order.
+A run opens a mounted repository and looks up its pinned commit only when
+the repository's stamp changed ([warm.md](warm.md)), so a deleted repository
+or a lost commit still changes the key. The repositories one source's mounts
+name are opened in parallel, one thread each, before its mounts are read in
+order.
 
 ## Who reads and who fills
 
