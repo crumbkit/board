@@ -72,10 +72,12 @@ and `board mount update <mount>`. Until it is, a task there whose `owner`
 is still a string is unreadable and drops out of `tasks.available`, and a
 question there whose `session` is still a string drops out of
 `plans.open`. `tasks.claim` there syncs the clone first, so a repository
-migrated and pushed from another clone is claimed. While the synced clone
-still stores the old tasks/task/v2 schema, the claim refuses with
-`tasks::repo::schema_stale` and writes nothing. A crossing with a bare
-hash is degraded until its board is migrated.
+migrated and pushed from another clone is claimed. While the clone still
+stores the old tasks/task/v2 schema after that sync, the claim refuses with
+`tasks::repo::schema_stale` and the task is not written. When the sync did
+not reach the remote, the refusal carries the sync's code and its hint says
+to sync first. A crossing with a bare hash is degraded until its board is
+migrated.
 
 The migration leaves seen records and Board.app alone. A seen record keeps
 naming its effect by `/effects/answered/<id>`, which Board.app reads. A

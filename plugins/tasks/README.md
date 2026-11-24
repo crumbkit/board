@@ -249,14 +249,17 @@ In a mounted notes repo, `claim` syncs the clone and updates the mount
 before it reads the task schemas the clone stores, so a repo migrated and
 pushed from another clone is claimed. When the synced clone stores a
 tasks/task/v2 or v3 schema whose `owner` differs from the plugin's, or no
-v2 schema, `claim` refuses with `tasks::repo::schema_stale` before it
-writes, since `put` would refuse the owner it writes. The refusal names the
-task, the clone, the mount and the schema, and its hint gives the shapes
-migration in docs/plugins/lifecycle/updating.md: from a checkout of the
-Board source, `cargo xtask migrate-shapes <clone>`, a `--map` for what it
-could not map, the same with `--write`, `board plugin enable` for each
+v2 schema, `claim` refuses with `tasks::repo::schema_stale` and the task is
+not written, since `put` would refuse the owner it writes. The refusal
+names the task, the clone, the mount and the schema, and its hint gives the
+shapes migration in docs/plugins/lifecycle/updating.md: from a checkout of
+the Board source, `cargo xtask migrate-shapes <clone>`, a `--map` for what
+it could not map, the same with `--write`, `board plugin enable` for each
 enabled plugin and `board check` in the clone, a commit and a push, then
-`board mount update <mount>`.
+`board mount update <mount>`. When the sync did not reach the remote, the
+refusal's `unsynced` field holds the sync's code, and the hint says to run
+`board -C <clone> sync` and to migrate only if the claim is still refused
+once the sync reaches the remote.
 
 `done`, `defer`, `drop` and `reviewed` leave `owner` as it is, so a
 finished task still says who held it. No call clears `owner`; edit the task
