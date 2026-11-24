@@ -68,7 +68,8 @@ It reads only the board's own tree, so each mounted board and each mounted
 notes repository is migrated on its own, with
 `cargo xtask migrate-shapes <its checkout>`. Until it is, a task there whose
 `owner` is still a string is unreadable and drops out of `tasks.available`,
-and a question there whose `session` is still a string drops out of
+`tasks.claim` there refuses with `tasks::repo::schema_stale` while the
+repository stores the old tasks/task/v2 schema, and a question there whose `session` is still a string drops out of
 `plans.open`. A crossing with a bare hash is degraded until its board is
 migrated.
 
