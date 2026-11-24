@@ -269,7 +269,8 @@ fn failed(program: &OsString, finished: &Finished) -> SignError {
 }
 
 /// Board's allowed signers file with each key of the attention file merged
-/// in for orders, as `board orders signers` prints it.
+/// in for orders, as `board orders signers` prints it. No printed line
+/// admits more than the lines it came from admitted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signers {
     /// Board's allowed signers file, which the owner writes the text to.
@@ -280,6 +281,8 @@ pub struct Signers {
     pub changes: Vec<Changed>,
     /// Each key Board's file lists on more than one line.
     pub duplicates: Vec<Duplicate>,
+    /// Each line of the attention file that gave the printed file nothing.
+    pub left_out: Vec<LeftOut>,
 }
 
 /// A printed line, numbered from 1, and how it differs from Board's file.
@@ -292,34 +295,54 @@ pub struct Changed {
 /// How a printed line differs from Board's file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LineChange {
-    /// Board's line for a key the attention file lists, with the order
-    /// namespace added to its `namespaces=`.
+    /// Board's line for a key the attention file admits in orders, with the
+    /// order namespace added to its `namespaces=`.
     Gained,
-    /// A key only the attention file lists, admitted for orders alone.
+    /// A key only the attention file lists, with that line's principals and
+    /// options, admitted for orders alone.
     Added,
-    /// Board's lines for one key, printed as the first of them with every
-    /// line's principals and namespaces.
+    /// Board's lines for one key with the same principals and other
+    /// options, printed as one line holding both lines' namespaces.
     Merged,
 }
 
-/// A key, as `<type> <base64>`, and the lines of Board's file, numbered
-/// from 1, that list it.
+/// A key, as `<type> <base64>`, the lines of Board's file, numbered from 1,
+/// that list it, and whether they print as one line. Lines whose
+/// principals or other options differ print unchanged.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Duplicate {
     pub key: String,
     pub lines: Vec<usize>,
+    pub merged: bool,
+}
+
+/// A line of the attention file, numbered from 1, that gave the printed
+/// file nothing, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeftOut {
+    pub line: usize,
+    pub key: String,
+    pub reason: LeftOutReason,
+}
+
+/// Why a line of the attention file gave the printed file nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LeftOutReason {
+    /// Its principals do not name `owner`.
+    NotOwner,
+    /// Its `namespaces=` leaves out the order namespace.
+    NotOrders,
+    /// Board's lines for its key name other principals or other options,
+    /// so adding the order namespace would admit more than it does.
+    Differs,
 }
 
 /// Board's allowed signers file `board` with each key of the attention file
-/// `attention` merged in for `namespace`, read as `verify` reads them and
-/// never written. A missing file reads as empty.
-pub fn signers(
-    board: &Path,
-    attention: Option<&Path>,
-    namespace: &str,
-) -> Result<Signers, SignError> {
+/// `attention` merged in for orders, read as `verify` reads them and never
+/// written. A missing file reads as empty.
+pub fn signers(board: &Path, attention: Option<&Path>) -> Result<Signers, SignError> {
     let attention = attention.map(read_signers).transpose()?.unwrap_or_default();
-    let mut merged = merged_signers(&read_signers(board)?, &attention, namespace);
+    let mut merged = merged_signers(&read_signers(board)?, &attention);
     board.clone_into(&mut merged.file);
     Ok(merged)
 }
@@ -340,9 +363,19 @@ fn read_signers(file: &Path) -> Result<String, SignError> {
 #[derive(Debug, Clone)]
 struct Entry {
     principals: Vec<String>,
-    options: Vec<String>,
+    /// Its options other than `namespaces=`, such as `cert-authority` or
+    /// `valid-before=`, as written.
+    others: Vec<String>,
+    /// The namespaces its `namespaces=` names, or none when it has none and
+    /// so admits every namespace.
+    namespaces: Option<Vec<String>>,
     key: String,
     comment: Option<String>,
+}
+
+/// Whether `option` is a `namespaces=` option.
+fn is_namespaces(option: &str) -> bool {
+    (option.split_once('=')).is_some_and(|(name, _)| name.eq_ignore_ascii_case("namespaces"))
 }
 
 impl Entry {
@@ -363,51 +396,43 @@ impl Entry {
             }
             _ => return None,
         };
+        let namespaces = (options.iter())
+            .find(|option| is_namespaces(option))
+            .map(|option| {
+                let (_, value) = option.split_once('=').expect("is_namespaces found an =");
+                value
+                    .trim_matches('"')
+                    .split(',')
+                    .map(str::to_owned)
+                    .collect()
+            });
         let comment = words[at + 2..].join(" ");
         Some(Self {
             principals: words[0].split(',').map(str::to_owned).collect(),
-            options,
+            others: options
+                .into_iter()
+                .filter(|option| !is_namespaces(option))
+                .collect(),
+            namespaces,
             key: format!("{} {}", words[at], words[at + 1]),
             comment: (!comment.is_empty()).then_some(comment),
         })
     }
 
-    /// The namespaces its `namespaces=` names, or none when it has none and
-    /// so admits every namespace.
-    fn namespaces(&self) -> Option<Vec<String>> {
-        let value = (self.options.iter()).find_map(|option| {
-            let (name, value) = option.split_once('=')?;
-            name.eq_ignore_ascii_case("namespaces").then_some(value)
-        })?;
-        Some(
-            value
-                .trim_matches('"')
-                .split(',')
-                .map(str::to_owned)
-                .collect(),
-        )
-    }
-
-    /// Sets its `namespaces=` to `namespaces`, or removes it for none.
-    fn set_namespaces(&mut self, namespaces: Option<&[String]>) {
-        let named = |option: &String| {
-            (option.split_once('='))
-                .is_some_and(|(name, _)| name.eq_ignore_ascii_case("namespaces"))
-        };
-        let at = self.options.iter().position(named);
-        let option = namespaces.map(|all| format!("namespaces=\"{}\"", all.join(",")));
-        match (at, option) {
-            (Some(at), Some(option)) => self.options[at] = option,
-            (Some(at), None) => drop(self.options.remove(at)),
-            (None, Some(option)) => self.options.insert(0, option),
-            (None, None) => {}
-        }
+    /// Whether it admits `principal` in `namespace`, by its principals and
+    /// `namespaces=` alone.
+    fn admits(&self, principal: &str, namespace: &str) -> bool {
+        self.principals.iter().any(|p| p == principal)
+            && (self.namespaces.as_ref()).is_none_or(|all| all.iter().any(|n| n == namespace))
     }
 
     fn line(&self) -> String {
         let mut words = vec![self.principals.join(",")];
-        if !self.options.is_empty() {
-            words.push(self.options.join(","));
+        let namespaces =
+            (self.namespaces.as_ref()).map(|all| format!("namespaces=\"{}\"", all.join(",")));
+        let options: Vec<String> = self.others.iter().cloned().chain(namespaces).collect();
+        if !options.is_empty() {
+            words.push(options.join(","));
         }
         words.push(self.key.clone());
         words.extend(self.comment.clone());
@@ -441,103 +466,173 @@ enum Printed {
     Key(Entry, Option<LineChange>, String),
 }
 
-/// `board`, the text of Board's allowed signers file, with each key of
-/// `attention` admitted in `namespace`: Board's line for a key in both
-/// gains `namespace` when its `namespaces=` lacks it; a key only in
-/// `attention` gets `owner namespaces="<namespace>" <key>`; two lines of
-/// Board's with one key print as one. Comments and other lines print as
-/// they were.
-fn merged_signers(board: &str, attention: &str, namespace: &str) -> Signers {
-    let mut printed: Vec<Printed> = Vec::new();
-    let mut at: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    let mut duplicates: Vec<Duplicate> = Vec::new();
-    for (number, line) in (1..).zip(board.lines()) {
-        let Some(entry) = Entry::parse(line) else {
-            printed.push(Printed::Kept(line.to_owned()));
-            continue;
-        };
-        let Some(&first) = at.get(&entry.key) else {
-            at.insert(entry.key.clone(), printed.len());
-            printed.push(Printed::Key(entry, None, line.to_owned()));
-            continue;
-        };
-        if let Printed::Key(kept, change, _) = &mut printed[first] {
-            let namespaces = kept
-                .namespaces()
-                .zip(entry.namespaces())
-                .map(|(mut all, more)| {
-                    all.extend(
-                        more.into_iter()
-                            .filter(|n| !all.contains(n))
-                            .collect::<Vec<_>>(),
-                    );
-                    all
-                });
-            kept.set_namespaces(namespaces.as_deref());
-            for principal in entry.principals {
-                if !kept.principals.contains(&principal) {
-                    kept.principals.push(principal);
-                }
-            }
-            *change = Some(LineChange::Merged);
-        }
-        match duplicates.iter_mut().find(|found| found.key == entry.key) {
-            Some(found) => found.lines.push(number),
-            None => duplicates.push(Duplicate {
-                key: entry.key.clone(),
-                lines: vec![first_line(board, &entry.key), number],
-            }),
-        }
-    }
-    for entry in attention.lines().filter_map(Entry::parse) {
-        if let Some(&first) = at.get(&entry.key) {
-            if let Printed::Key(kept, change, _) = &mut printed[first]
-                && let Some(mut namespaces) = kept.namespaces()
-                && !namespaces.iter().any(|n| n == namespace)
-            {
-                namespaces.push(namespace.to_owned());
-                kept.set_namespaces(Some(&namespaces));
-                change.get_or_insert(LineChange::Gained);
-            }
-            continue;
-        }
-        let added = Entry {
-            principals: vec![PRINCIPAL.to_owned()],
-            options: vec![format!("namespaces=\"{namespace}\"")],
-            ..entry
-        };
-        at.insert(added.key.clone(), printed.len());
-        printed.push(Printed::Key(added, Some(LineChange::Added), String::new()));
-    }
-    let mut text = String::new();
-    let mut changes = Vec::new();
-    for (number, line) in (1..).zip(&printed) {
-        match line {
-            Printed::Kept(line) | Printed::Key(_, None, line) => text.push_str(line),
-            Printed::Key(entry, Some(change), _) => {
-                text.push_str(&entry.line());
-                changes.push(Changed {
-                    line: number,
-                    change: *change,
-                });
-            }
-        }
-        text.push('\n');
-    }
-    Signers {
-        file: std::path::PathBuf::new(),
-        text,
-        changes,
-        duplicates,
-    }
+/// The printed file as it is built, with the printed index and Board line
+/// number of each key's lines.
+#[derive(Default)]
+struct Merge {
+    printed: Vec<Printed>,
+    at: std::collections::HashMap<String, Vec<(usize, usize)>>,
+    duplicates: Vec<Duplicate>,
+    left_out: Vec<LeftOut>,
 }
 
-/// The number, from 1, of the first line of `board` that lists `key`.
-fn first_line(board: &str, key: &str) -> usize {
-    (1..)
-        .zip(board.lines())
-        .find(|(_, line)| Entry::parse(line).is_some_and(|entry| entry.key == key))
-        .map_or(0, |(number, _)| number)
+/// `board`, the text of Board's allowed signers file, with each key of
+/// `attention` admitted in the order namespace, such that no printed line
+/// admits more than the lines it came from:
+/// - two lines of Board's with one key, the same principals and the same
+///   other options print as one with both lines' namespaces, or none when
+///   either names none; other pairs print unchanged; both are reported;
+/// - an attention line that does not admit `owner` in orders is left out;
+/// - Board's line for a key such a line lists gains the order namespace
+///   when it names `owner`, the attention line admits all its principals and
+///   the other options are the same; otherwise it is left as it was and the
+///   attention line left out;
+/// - a key only in `attention` is added with that line's principals and
+///   options, for orders alone.
+fn merged_signers(board: &str, attention: &str) -> Signers {
+    let mut merge = Merge::default();
+    for (number, line) in (1..).zip(board.lines()) {
+        merge.board_line(number, line);
+    }
+    for (number, line) in (1..).zip(attention.lines()) {
+        merge.attention_line(number, line);
+    }
+    merge.finish()
+}
+
+impl Merge {
+    fn board_line(&mut self, number: usize, line: &str) {
+        let Some(entry) = Entry::parse(line) else {
+            self.printed.push(Printed::Kept(line.to_owned()));
+            return;
+        };
+        let seen = self.at.entry(entry.key.clone()).or_default();
+        let same = (seen.iter()).find_map(|&(index, _)| match &self.printed[index] {
+            Printed::Key(kept, ..)
+                if kept.principals == entry.principals && kept.others == entry.others =>
+            {
+                Some(index)
+            }
+            _ => None,
+        });
+        let merged = same.is_some();
+        if let Some(index) = same
+            && let Printed::Key(kept, change, _) = &mut self.printed[index]
+        {
+            kept.namespaces =
+                (kept.namespaces.take())
+                    .zip(entry.namespaces.clone())
+                    .map(|(mut all, more)| {
+                        for namespace in more {
+                            if !all.contains(&namespace) {
+                                all.push(namespace);
+                            }
+                        }
+                        all
+                    });
+            *change = Some(LineChange::Merged);
+        } else {
+            seen.push((self.printed.len(), number));
+            self.printed
+                .push(Printed::Key(entry.clone(), None, line.to_owned()));
+        }
+        if let Some(&(_, first)) = seen.first()
+            && first != number
+        {
+            match (self.duplicates.iter_mut()).find(|found| found.key == entry.key) {
+                Some(found) => {
+                    found.lines.push(number);
+                    found.merged &= merged;
+                }
+                None => self.duplicates.push(Duplicate {
+                    key: entry.key,
+                    lines: vec![first, number],
+                    merged,
+                }),
+            }
+        }
+    }
+
+    fn attention_line(&mut self, number: usize, line: &str) {
+        let namespace = board_model::ORDER_TYPE;
+        let Some(entry) = Entry::parse(line) else {
+            return;
+        };
+        let reason = if !entry.principals.iter().any(|p| p == PRINCIPAL) {
+            Some(LeftOutReason::NotOwner)
+        } else if !entry.admits(PRINCIPAL, namespace) {
+            Some(LeftOutReason::NotOrders)
+        } else if let Some(seen) = self.at.get(&entry.key) {
+            let lines = || {
+                (seen.iter()).filter_map(|&(index, _)| match &self.printed[index] {
+                    Printed::Key(kept, ..) => Some((index, kept)),
+                    Printed::Kept(_) => None,
+                })
+            };
+            if lines().any(|(_, kept)| kept.admits(PRINCIPAL, namespace)) {
+                return;
+            }
+            let fits = lines().find(|(_, kept)| {
+                kept.others == entry.others
+                    && kept.principals.iter().any(|p| p == PRINCIPAL)
+                    && (kept.principals.iter()).all(|p| entry.principals.contains(p))
+            });
+            match fits.map(|(index, _)| index) {
+                Some(index) => {
+                    if let Printed::Key(kept, change, _) = &mut self.printed[index]
+                        && let Some(namespaces) = &mut kept.namespaces
+                    {
+                        namespaces.push(namespace.to_owned());
+                        change.get_or_insert(LineChange::Gained);
+                    }
+                    None
+                }
+                None => Some(LeftOutReason::Differs),
+            }
+        } else {
+            let added = Entry {
+                namespaces: Some(vec![namespace.to_owned()]),
+                ..entry.clone()
+            };
+            self.at
+                .insert(added.key.clone(), vec![(self.printed.len(), 0)]);
+            self.printed
+                .push(Printed::Key(added, Some(LineChange::Added), String::new()));
+            None
+        };
+        if let Some(reason) = reason {
+            self.left_out.push(LeftOut {
+                line: number,
+                key: entry.key,
+                reason,
+            });
+        }
+    }
+
+    fn finish(self) -> Signers {
+        let mut text = String::new();
+        let mut changes = Vec::new();
+        for (number, line) in (1..).zip(&self.printed) {
+            match line {
+                Printed::Kept(line) | Printed::Key(_, None, line) => text.push_str(line),
+                Printed::Key(entry, Some(change), _) => {
+                    text.push_str(&entry.line());
+                    changes.push(Changed {
+                        line: number,
+                        change: *change,
+                    });
+                }
+            }
+            text.push('\n');
+        }
+        Signers {
+            file: std::path::PathBuf::new(),
+            text,
+            changes,
+            duplicates: self.duplicates,
+            left_out: self.left_out,
+        }
+    }
 }
 
 #[cfg(test)]

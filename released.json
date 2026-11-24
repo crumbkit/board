@@ -9367,6 +9367,7 @@
             "changes",
             "duplicates",
             "file",
+            "left_out",
             "text"
           ]
         ]
@@ -9414,7 +9415,8 @@
         "requires": [
           [
             "key",
-            "lines"
+            "lines",
+            "merged"
           ]
         ]
       },
@@ -9433,9 +9435,51 @@
           "integer"
         ]
       },
+      "output.duplicates[].merged": {
+        "type": [
+          "boolean"
+        ]
+      },
       "output.file": {
         "type": [
           "string"
+        ]
+      },
+      "output.left_out": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.left_out[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "key",
+            "line",
+            "reason"
+          ]
+        ]
+      },
+      "output.left_out[].key": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.left_out[].line": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.left_out[].reason": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "not_owner",
+          "not_orders",
+          "differs"
         ]
       },
       "output.text": {

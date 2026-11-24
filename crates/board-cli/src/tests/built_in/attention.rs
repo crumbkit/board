@@ -471,6 +471,7 @@ fn signers_prints_boards_file_with_the_attention_key_merged_in_and_those_lines_v
     assert_eq!(output["file"], board.display().to_string());
     assert_eq!(output["changes"], json!([{"line": 1, "change": "gained"}]));
     assert_eq!(output["duplicates"], json!([]));
+    assert_eq!(output["left_out"], json!([]));
     assert_eq!(
         before,
         (

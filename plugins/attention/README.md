@@ -92,13 +92,24 @@ reading the attention file, and those orders then fail with
 
 `board --personal orders signers` prints those lines: Board's file with each
 key of the attention file merged in. It writes neither file; the owner reads
-the lines and writes Board's file. A key in both files keeps Board's line,
-which gains `attention/order/v1` when its `namespaces=` lacks it; a key only
-in the attention file gets `owner namespaces="attention/order/v1" <key>`;
-and two lines of Board's file with one key are listed in `duplicates` and
-printed as one line holding both lines' namespaces. `changes` gives each
-printed line that differs, as `gained`, `added` or `merged`. A Board file that group or others may write
-stops orders as it stops approvals, with `orders::signers::untrusted`.
+the lines and writes Board's file. A printed line never admits more than the
+lines it came from:
+
+- An attention line counts only when it admits `owner` for orders.
+- A key only in the attention file gets that line's principals and options,
+  with `namespaces="attention/order/v1"`.
+- A key in both files keeps Board's lines. When none admits orders, the first
+  that names `owner`, has the same options and no principal the attention
+  line lacks gains `attention/order/v1`.
+- Two lines of Board's file with one key print as one only when their
+  principals and other options match.
+
+`changes` gives each printed line that differs, as `gained`, `added` or
+`merged`. `duplicates` lists Board's lines that share a key, and `merged` says
+whether they printed as one. `left_out` gives each attention line that added
+nothing, as `not_owner`, `not_orders` or `differs`. A Board file that group or
+others may write stops orders as it stops approvals, with
+`orders::signers::untrusted`.
 
 `board skills install` installs `SKILL.md`, which tells an agent when and
 how to read, check and draft orders.

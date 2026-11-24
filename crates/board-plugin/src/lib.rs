@@ -29,6 +29,6 @@ pub use crate::process::{Limits, Spawned};
 pub use crate::process::{clean_up_on_signals, stop_on_signals};
 pub use crate::protocol::{BadOutput, CALL_RESULT_TYPE, CALL_TYPE, ERROR_TYPE, PluginFailure};
 pub use crate::sign::{
-    CANCELLED, Changed, Duplicate, LineChange, PRINCIPAL, SignError, Signers, Verb, sign, signers,
-    verify,
+    CANCELLED, Changed, Duplicate, LeftOut, LeftOutReason, LineChange, PRINCIPAL, SignError,
+    Signers, Verb, sign, signers, verify,
 };

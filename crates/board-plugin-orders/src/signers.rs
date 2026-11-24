@@ -3,7 +3,7 @@
 //! themselves. It writes neither file.
 
 use board_ops::{Host, PluginError, VerifyOrderError};
-use board_plugin::{LineChange, Signers};
+use board_plugin::{LeftOutReason, LineChange, Signers};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -44,6 +44,32 @@ pub(crate) struct Duplicate {
     /// The key, as `<type> <base64>`.
     pub(crate) key: String,
     pub(crate) lines: Vec<usize>,
+    /// Whether they print as one line, which they do only when their
+    /// principals and other options are the same.
+    pub(crate) merged: bool,
+}
+
+/// Why a line of the attention file gave the printed file nothing.
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Reason {
+    /// Its principals do not name `owner`.
+    NotOwner,
+    /// Its `namespaces=` leaves out orders.
+    NotOrders,
+    /// Board's lines for its key name other principals or other options.
+    Differs,
+}
+
+/// A line of the attention file, numbered from 1, that gave the printed
+/// file nothing.
+#[derive(Debug, Serialize, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub(crate) struct LeftOut {
+    pub(crate) line: usize,
+    /// The key, as `<type> <base64>`.
+    pub(crate) key: String,
+    pub(crate) reason: Reason,
 }
 
 /// The merged lines and what changed.
@@ -56,6 +82,7 @@ pub(crate) struct Output {
     pub(crate) text: String,
     pub(crate) changes: Vec<Changed>,
     pub(crate) duplicates: Vec<Duplicate>,
+    pub(crate) left_out: Vec<LeftOut>,
 }
 
 pub(crate) fn signers(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
@@ -83,6 +110,18 @@ pub(crate) fn output(merged: Signers) -> Output {
             .map(|duplicate| Duplicate {
                 key: duplicate.key,
                 lines: duplicate.lines,
+                merged: duplicate.merged,
+            })
+            .collect(),
+        left_out: (merged.left_out.into_iter())
+            .map(|left| LeftOut {
+                line: left.line,
+                key: left.key,
+                reason: match left.reason {
+                    LeftOutReason::NotOwner => Reason::NotOwner,
+                    LeftOutReason::NotOrders => Reason::NotOrders,
+                    LeftOutReason::Differs => Reason::Differs,
+                },
             })
             .collect(),
     }

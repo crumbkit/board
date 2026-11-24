@@ -11,8 +11,8 @@ use board_scenario::signer::Signer;
 use std::time::Duration;
 
 use super::{
-    CANCELLED, Duplicate, LineChange, SignError, Signers, Verb, merged_signers, sign, signers,
-    verify,
+    CANCELLED, Duplicate, LeftOutReason, LineChange, SignError, Signers, Verb, merged_signers,
+    sign, signers, verify,
 };
 
 const STATEMENT: &str = "board/approve/v1\neffect: 1\n";
@@ -396,8 +396,6 @@ fn a_cancel_line_after_other_stderr_lines_is_a_cancel_and_one_followed_or_change
     }
 }
 
-const ORDERS: &str = "attention/order/v1";
-
 /// The lines of `signers` that differ from Board's file, as `(line, change)`.
 fn changes(signers: &Signers) -> Vec<(usize, LineChange)> {
     (signers.changes.iter())
@@ -405,19 +403,28 @@ fn changes(signers: &Signers) -> Vec<(usize, LineChange)> {
         .collect()
 }
 
+/// What `merged_signers` left out of the attention file, as `(line, reason)`.
+fn left_out(signers: &Signers) -> Vec<(usize, LeftOutReason)> {
+    (signers.left_out.iter())
+        .map(|left| (left.line, left.reason))
+        .collect()
+}
+
 /// A key Board's file limits to other namespaces gains the order
-/// namespace; comments and other keys are printed as they were.
+/// namespace when the attention line admits owner in orders; comments and
+/// other keys are printed as they were.
 #[test]
 fn a_key_in_both_files_keeps_boards_line_and_gains_the_order_namespace() {
     let board = "# the owner's key\nowner namespaces=\"board/approve/v1,board/write/v1\" ecdsa-sha2-nistp256 AAAA one\nci ssh-ed25519 CCCC ci\n";
     let attention = "owner ecdsa-sha2-nistp256 AAAA attention\n";
-    let signers = merged_signers(board, attention, ORDERS);
+    let signers = merged_signers(board, attention);
     assert_eq!(
         signers.text,
         "# the owner's key\nowner namespaces=\"board/approve/v1,board/write/v1,attention/order/v1\" ecdsa-sha2-nistp256 AAAA one\nci ssh-ed25519 CCCC ci\n"
     );
     assert_eq!(changes(&signers), [(2, LineChange::Gained)]);
     assert_eq!(signers.duplicates, []);
+    assert_eq!(left_out(&signers), []);
 }
 
 /// A Board line with no `namespaces=` already admits every namespace, and
@@ -428,32 +435,83 @@ fn a_board_line_that_already_admits_orders_is_printed_unchanged() {
         "owner ecdsa-sha2-nistp256 AAAA one\n",
         "owner namespaces=\"attention/order/v1\" ecdsa-sha2-nistp256 AAAA one\n",
     ] {
-        let signers = merged_signers(board, "owner ecdsa-sha2-nistp256 AAAA\n", ORDERS);
+        let signers = merged_signers(board, "owner ecdsa-sha2-nistp256 AAAA\n");
         assert_eq!(signers.text, board);
         assert_eq!(changes(&signers), []);
     }
 }
 
-/// A key only the attention file lists is added for orders alone, though
-/// its attention line names no namespace.
+/// Board's line gains the order namespace only when it names `owner` and
+/// every principal on it is one the attention line admits in orders, with
+/// the same other options; otherwise it is left as it was and the attention line is
+/// reported.
+#[test]
+fn a_board_line_with_other_principals_or_options_gains_nothing_and_is_reported() {
+    let attention = "owner ecdsa-sha2-nistp256 AAAA\n";
+    for board in [
+        "owner,bob namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA\n",
+        "owner valid-before=\"20270101\",namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA\n",
+    ] {
+        let signers = merged_signers(board, attention);
+        assert_eq!(signers.text, board);
+        assert_eq!(changes(&signers), []);
+        assert_eq!(left_out(&signers), [(1, LeftOutReason::Differs)]);
+    }
+    let board = "bob namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA\n";
+    let signers = merged_signers(board, "owner,bob ecdsa-sha2-nistp256 AAAA\n");
+    assert_eq!(signers.text, board);
+    assert_eq!(left_out(&signers), [(1, LeftOutReason::Differs)]);
+}
+
+/// A key only the attention file lists is added for orders alone, keeping
+/// the attention line's principals and other options, though its line
+/// names no namespace.
 #[test]
 fn a_key_only_in_the_attention_file_is_added_for_the_order_namespace_alone() {
     let board = "owner namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA one";
-    let attention = "# old\nowner ssh-ed25519 BBBB laptop\nowner ssh-ed25519 BBBB laptop\n";
-    let signers = merged_signers(board, attention, ORDERS);
+    let attention = "# old\nowner ssh-ed25519 BBBB laptop\nowner ssh-ed25519 BBBB laptop\nowner valid-before=\"20200101\" ssh-ed25519 DDDD old\nowner cert-authority ssh-ed25519 EEEE ca\n";
+    let signers = merged_signers(board, attention);
     assert_eq!(
         signers.text,
-        "owner namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA one\nowner namespaces=\"attention/order/v1\" ssh-ed25519 BBBB laptop\n"
+        "owner namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA one\nowner namespaces=\"attention/order/v1\" ssh-ed25519 BBBB laptop\nowner valid-before=\"20200101\",namespaces=\"attention/order/v1\" ssh-ed25519 DDDD old\nowner cert-authority,namespaces=\"attention/order/v1\" ssh-ed25519 EEEE ca\n"
     );
-    assert_eq!(changes(&signers), [(2, LineChange::Added)]);
+    assert_eq!(
+        changes(&signers),
+        [
+            (2, LineChange::Added),
+            (3, LineChange::Added),
+            (4, LineChange::Added)
+        ]
+    );
 }
 
-/// Two lines of Board's file with one key are reported by their line
-/// numbers and printed as one line holding both lines' namespaces.
+/// An attention line that does not admit owner in orders adds nothing and
+/// gives Board's line nothing; it is reported by its line number.
 #[test]
-fn two_board_lines_with_one_key_are_reported_and_printed_as_one() {
+fn an_attention_line_for_another_principal_or_other_namespaces_is_left_out() {
+    let board = "owner namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA\n";
+    let attention = "bob ssh-ed25519 BBBB\nowner namespaces=\"git\" ssh-ed25519 CCCC\nbob ecdsa-sha2-nistp256 AAAA\nowner namespaces=\"git\" ecdsa-sha2-nistp256 AAAA\n";
+    let signers = merged_signers(board, attention);
+    assert_eq!(signers.text, board);
+    assert_eq!(changes(&signers), []);
+    assert_eq!(
+        left_out(&signers),
+        [
+            (1, LeftOutReason::NotOwner),
+            (2, LeftOutReason::NotOrders),
+            (3, LeftOutReason::NotOwner),
+            (4, LeftOutReason::NotOrders),
+        ]
+    );
+}
+
+/// Two lines of Board's file with one key, the same principals and the same
+/// other options print as one line holding both lines' namespaces, or none
+/// when one line names none; both are reported by their line numbers.
+#[test]
+fn two_board_lines_with_one_key_and_the_same_principals_and_options_print_as_one() {
     let board = "owner namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA one\nci ssh-ed25519 CCCC ci\nowner namespaces=\"board/write/v1\" ecdsa-sha2-nistp256 AAAA two\n";
-    let signers = merged_signers(board, "", ORDERS);
+    let signers = merged_signers(board, "");
     assert_eq!(
         signers.text,
         "owner namespaces=\"board/approve/v1,board/write/v1\" ecdsa-sha2-nistp256 AAAA one\nci ssh-ed25519 CCCC ci\n"
@@ -464,8 +522,36 @@ fn two_board_lines_with_one_key_are_reported_and_printed_as_one() {
         [Duplicate {
             key: "ecdsa-sha2-nistp256 AAAA".to_owned(),
             lines: vec![1, 3],
+            merged: true,
         }]
     );
+    let unrestricted = "owner namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA\nowner ecdsa-sha2-nistp256 AAAA\n";
+    let signers = merged_signers(unrestricted, "");
+    assert_eq!(signers.text, "owner ecdsa-sha2-nistp256 AAAA\n");
+    assert_eq!(changes(&signers), [(1, LineChange::Merged)]);
+}
+
+/// Two lines with one key whose principals or other options differ would
+/// admit more as one line, so both print unchanged and are reported.
+#[test]
+fn two_board_lines_with_one_key_and_other_principals_or_options_print_unchanged() {
+    for board in [
+        "owner namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA\nbob namespaces=\"git\" ecdsa-sha2-nistp256 AAAA\n",
+        "owner namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA\nbob ecdsa-sha2-nistp256 AAAA\n",
+        "owner valid-before=\"20270101\",namespaces=\"board/approve/v1\" ecdsa-sha2-nistp256 AAAA\nowner namespaces=\"board/write/v1\" ecdsa-sha2-nistp256 AAAA\n",
+    ] {
+        let signers = merged_signers(board, "");
+        assert_eq!(signers.text, board);
+        assert_eq!(changes(&signers), []);
+        assert_eq!(
+            signers.duplicates,
+            [Duplicate {
+                key: "ecdsa-sha2-nistp256 AAAA".to_owned(),
+                lines: vec![1, 2],
+                merged: false,
+            }]
+        );
+    }
 }
 
 /// The printed lines admit an order the attention file alone admitted, and
@@ -489,7 +575,7 @@ fn the_merged_lines_admit_an_order_and_reading_the_files_writes_neither() {
         std::fs::read(&board).unwrap(),
         std::fs::read(signer.allowed()).unwrap(),
     );
-    let read = signers(&board, Some(&signer.allowed()), ORDERS).unwrap();
+    let read = signers(&board, Some(&signer.allowed())).unwrap();
     assert_eq!(read.file, board);
     assert_eq!(
         before,
@@ -508,10 +594,10 @@ fn the_merged_lines_admit_an_order_and_reading_the_files_writes_neither() {
     .unwrap();
 
     let absent = signer.directory().join("absent");
-    assert_eq!(signers(&absent, Some(&absent), ORDERS).unwrap().text, "");
-    assert_eq!(signers(&absent, None, ORDERS).unwrap().text, "");
+    assert_eq!(signers(&absent, Some(&absent)).unwrap().text, "");
+    assert_eq!(signers(&absent, None).unwrap().text, "");
     shared(&board);
-    let refused = signers(&board, Some(&signer.allowed()), ORDERS);
+    let refused = signers(&board, Some(&signer.allowed()));
     assert!(
         matches!(&refused, Err(SignError::Untrusted { file, .. }) if *file == board),
         "{refused:?}"

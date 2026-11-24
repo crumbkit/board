@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use board_model::{ORDER_TYPE, Order, PluginCode, PluginName, Refusal};
+use board_model::{Order, PluginCode, PluginName, Refusal};
 use board_plugin::{PRINCIPAL, SignError, Signers, Verb};
 use serde_json::{Map, json};
 
@@ -171,7 +171,7 @@ pub(crate) fn legacy(signing: &Signing, signer: &OrderSigner) -> Option<Refusal>
 pub(crate) fn order_signers(signing: &Signing) -> Result<Signers, VerifyOrderError> {
     let board = (signing.allowed.as_deref()).ok_or(VerifyOrderError::NoneNamed)?;
     let attention = signing.attention_allowed.as_deref();
-    board_plugin::signers(board, attention, ORDER_TYPE).map_err(|error| match error {
+    board_plugin::signers(board, attention).map_err(|error| match error {
         SignError::Untrusted { file, why } => VerifyOrderError::Untrusted { file, why },
         source => VerifyOrderError::Failed { source },
     })
