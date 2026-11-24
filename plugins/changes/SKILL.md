@@ -62,6 +62,7 @@ blocks is missing.
    `[{"records": ["<path>"], "why": "<reason>"}]`. Obligations the change
    leaves owed go in `owed`, as `[{"rule": "<path>", "why": "<reason>"}]`.
    Both fields take paths, and the gates do not read paths in the text.
+   Keep the plan near 900 words; `plan` refuses one over 3,000.
    Failure paths has one row per step that can fail: what fails, the state
    it leaves, the recovery, and the order of the check against the
    destructive step it guards. Consumers lists every caller and reader of

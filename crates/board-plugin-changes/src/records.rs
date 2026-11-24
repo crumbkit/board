@@ -9,9 +9,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 mod conformance;
+mod fix;
 mod understanding;
 
 pub(crate) use conformance::ConformanceRecord;
+pub(crate) use fix::FixRecord;
 pub(crate) use understanding::{Subject, UnderstandingRecord};
 
 /// The record types a change's `tickets` may reference; the jira and github

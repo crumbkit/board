@@ -278,9 +278,10 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
             &path,
             &change.phase,
             format!(
-                "the change at {path} is {}, so it takes no new plan; to correct its plan, send \
-                 the plan again with \"correct\": true, or list open changes with `board changes \
-                 open` and start a new one",
+                "the change at {path} is {}, so it takes no new plan; list open changes with \
+                 `board changes open` and send the plan to its own change, or start a new one. \
+                 Only when the text is this done change's own plan, corrected, send it again \
+                 with \"correct\": true",
                 change.phase
             ),
         ));
