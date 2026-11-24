@@ -24,7 +24,7 @@
     {
       "name": "review",
       "agent": "lead",
-      "instruction": "Review {head} with clean context with `board review run`, fix every critical or high finding and review again.",
+      "instruction": "Review {head} with clean context with `board review run`, fix every critical or high finding and review again. After a review with no high finding, fix its findings in one round, write a changes/fix/v1 at /changes/<name>/fixes/<n> naming the report, each fix commit and the findings it answers, attach it and record the new head; the review check counts the review at that head unless the fix record gives a `deviation` from the plan.",
       "checks": [
         {"id": "review", "kind": "records", "actor": "reviewer", "type": "review/report/v1",
          "where": {"at_head": "range", "values": {"verdict": ["approve", "comment"]}, "no_findings": ["critical", "high"], "unchanged_by": ["/rules/{repo}/record-paths"]}},

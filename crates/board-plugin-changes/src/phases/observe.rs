@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use board_ops::{Host, PluginError};
 use board_plugin::shape::Record;
+use serde_json::Value;
 
 use crate::approve::approval;
 use crate::board::{self, get_text};
@@ -15,9 +16,9 @@ use crate::diff::{Step, accepted, after, edited, mounted, outside};
 use crate::flow::{self, Kind as CheckKind, of_change};
 use crate::gates::kinds::named_rules;
 use crate::gates::remedy::{fill, unfilled, values};
-use crate::gates::{Observed, Read, reads, reviewed_head, same_commit};
+use crate::gates::{Observed, Read, objects, reads, reviewed_head, same_commit};
 use crate::lifecycle::LifecycleRecord;
-use crate::records::ChangeRecord;
+use crate::records::{ChangeRecord, FixRecord};
 use crate::repo::check_suite;
 use crate::rules::{current as current_rule, listed_by, obligations, on_paths};
 
@@ -139,8 +140,8 @@ pub(crate) fn observe_in(
 /// For each commit that a record a `records` check of `checks` counts
 /// covers, other than the change's head: the commits after it to the head
 /// when each edits only paths its `unchanged_by` rules list or the
-/// change's lifecycle doc, or cleanly merges the branch the mount follows,
-/// or else why not.
+/// change's lifecycle doc, cleanly merges the branch the mount follows, or
+/// is a fix commit a counted `changes/fix/v1` names, or else why not.
 pub(crate) fn after_review<'a>(
     host: &dyn Host,
     found: &Observed,
@@ -152,6 +153,7 @@ pub(crate) fn after_review<'a>(
     };
     let filled = values(found);
     let mut rules = Vec::new();
+    let mut kinds = Vec::new();
     let mut covered = BTreeSet::new();
     for each in checks {
         let (Some(conditions), Some(kind)) = (&each.conditions, &each.record_type) else {
@@ -160,6 +162,7 @@ pub(crate) fn after_review<'a>(
         let Some(unchanged_by) = &conditions.unchanged_by else {
             continue;
         };
+        kinds.push(kind.as_str());
         rules.extend(
             unchanged_by
                 .iter()
@@ -186,10 +189,12 @@ pub(crate) fn after_review<'a>(
     };
     let doc = lifecycle_doc(host, &found.path)?;
     for commit in covered {
+        let (fixed, refused) = fixes(found, &kinds, &commit);
         let walk = match after(host, &at, &commit, head) {
             Ok(steps) => {
                 allowed(host, &rules, doc.as_deref(), &steps).map(|(allowed, absent)| {
-                    accepted(&steps, &allowed, &at.mount).map_err(|why| with_absent(why, &absent))
+                    accepted(&steps, &allowed, &fixed, &at.mount)
+                        .map_err(|why| with_absent(with_refused(why, &refused), &absent))
                 })?
             }
             Err(why) => Err(why),
@@ -197,6 +202,68 @@ pub(crate) fn after_review<'a>(
         walked.insert(commit, walk);
     }
     Ok(walked)
+}
+
+/// The commits the attached `changes/fix/v1` records name that answer an
+/// attached report of one of `kinds` covering `commit`, and why each other
+/// such fix record does not count. A fix record counts when its report has
+/// no high finding, each finding number it gives is one of the report's,
+/// and it records no deviation from the plan.
+fn fixes(found: &Observed, kinds: &[&str], commit: &str) -> (Vec<String>, Vec<String>) {
+    let mut fixed = Vec::new();
+    let mut refused = Vec::new();
+    for (path, fix) in found.records.of_type(FixRecord::TYPE) {
+        let Some(named) = fix.get("report").and_then(Value::as_str) else {
+            continue;
+        };
+        let report = (kinds.iter())
+            .flat_map(|kind| found.records.of_type(kind))
+            .find_map(|(each, body)| (each == named).then_some(body));
+        let Some(report) =
+            report.filter(|report| same_commit(reviewed_head(report).as_ref(), commit))
+        else {
+            continue;
+        };
+        let count = objects(report, "findings").count();
+        let high = objects(report, "findings")
+            .any(|finding| finding.get("severity").and_then(Value::as_str) == Some("high"));
+        let unknown = (objects(fix, "commits"))
+            .flat_map(|each| {
+                each.get("findings")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+            })
+            .filter_map(Value::as_u64)
+            .find(|number| *number > count as u64);
+        let why = if high {
+            Some(format!("{path} answers {named}, which has a high finding"))
+        } else if fix.contains_key("deviation") {
+            Some(format!("{path} records a deviation from the plan"))
+        } else {
+            unknown
+                .map(|number| format!("{path} names finding {number}, which {named} does not have"))
+        };
+        match why {
+            Some(why) => refused.push(why),
+            None => fixed.extend(
+                objects(fix, "commits")
+                    .filter_map(|each| Some(each.get("commit")?.as_str()?.to_owned())),
+            ),
+        }
+    }
+    (fixed, refused)
+}
+
+/// `why` with the reason each fix record `refused` names does not count.
+fn with_refused(why: String, refused: &[String]) -> String {
+    if refused.is_empty() {
+        return why;
+    }
+    format!(
+        "{why}; {}, so the commits it names need a review of the head",
+        refused.join("; ")
+    )
 }
 
 /// `why` with the rules `absent` names, which the board does not hold, so
