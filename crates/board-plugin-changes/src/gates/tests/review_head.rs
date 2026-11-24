@@ -216,8 +216,19 @@ impl Repo {
 
     /// [`Repo::judged`] with the mount showing the directory `prefix` names.
     fn judged_in(&self, prefix: &str, from: &str, to: &str) -> Result<Vec<String>, String> {
+        self.judged_fixing(prefix, from, to, &[])
+    }
+
+    /// [`Repo::judged_in`] with the commits a counted fix record names.
+    fn judged_fixing(
+        &self,
+        prefix: &str,
+        from: &str,
+        to: &str,
+        fixed: &[String],
+    ) -> Result<Vec<String>, String> {
         let steps = after(&self.host, &self.mounted(prefix), from, to)?;
-        accepted(&steps, &allowed(), "/repos/x")
+        accepted(&steps, &allowed(), fixed, "/repos/x")
     }
 }
 
@@ -250,6 +261,28 @@ fn a_commit_that_edits_only_a_record_path_keeps_the_review_and_a_code_commit_doe
 }
 
 #[test]
+fn a_code_commit_a_fix_record_names_keeps_the_review_and_one_it_does_not_name_loses_it() {
+    let (repo, reviewed) = reviewed("fix");
+    let fix = repo.commit("src/c.rs", "fixed\n", "fix finding 1");
+    let short = fix[..12].to_owned();
+    assert_eq!(
+        repo.judged_fixing("", &reviewed, &fix, std::slice::from_ref(&short)),
+        Ok(vec![fix.clone()])
+    );
+    let more = repo.commit("src/d.rs", "more\n", "unrecorded");
+    let refused = repo
+        .judged_fixing("", &reviewed, &more, &[short])
+        .unwrap_err();
+    assert_eq!(
+        refused,
+        format!(
+            "the later commit {more} edits /repos/x/src/d.rs, which is neither a record path nor \
+             the lifecycle doc, and no changes/fix/v1 names it; review the head"
+        )
+    );
+}
+
+#[test]
 fn a_commit_that_edits_a_file_outside_the_mounts_directory_loses_the_review() {
     let (repo, reviewed) = reviewed("outside");
     let record = repo.commit("sub/plan/notes.md", "noted\n", "note");
@@ -262,6 +295,21 @@ fn a_commit_that_edits_a_file_outside_the_mounts_directory_loses_the_review() {
     assert!(
         refused.starts_with(&format!(
             "the later commit {code} edits src/c.rs, outside the directory /repos/x shows"
+        )),
+        "{refused}"
+    );
+}
+
+#[test]
+fn a_fix_commit_that_edits_a_file_outside_the_mounts_directory_loses_the_review() {
+    let (repo, reviewed) = reviewed("fix-outside");
+    let fix = repo.commit("src/c.rs", "fixed\n", "fix finding 1");
+    let refused = repo
+        .judged_fixing("sub/", &reviewed, &fix, std::slice::from_ref(&fix))
+        .unwrap_err();
+    assert!(
+        refused.starts_with(&format!(
+            "the later commit {fix} edits src/c.rs, outside the directory /repos/x shows"
         )),
         "{refused}"
     );
@@ -389,7 +437,8 @@ fn the_review_check_passes_a_report_whose_later_commits_were_accepted_and_names_
         detail,
         format!(
             "/r/1 covers an earlier commit; the commits after it, {later}, edit only record \
-             paths or the lifecycle doc, or cleanly merge main, so it still counts"
+             paths or the lifecycle doc, cleanly merge main, or are fix commits a \
+             changes/fix/v1 names, so it still counts"
         )
     );
     let why = "the later commit c edits /repos/x/src/c.rs, which is neither a record path nor \

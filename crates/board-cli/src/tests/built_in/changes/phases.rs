@@ -1791,3 +1791,125 @@ fn a_review_survives_a_later_commit_to_the_lifecycle_doc() {
         "{review}"
     );
 }
+
+/// The fix round of decision 20261122T2130Z through the real index and
+/// git: a review with no high finding counts after a code commit once an
+/// attached changes/fix/v1 names that commit and the findings it answers.
+/// A fix record that records a deviation from the plan does not count, and
+/// neither does one that answers a review with a high finding.
+#[test]
+fn a_fix_commit_a_fix_record_answers_keeps_a_review_with_no_high_finding_and_not_one_with_a_high() {
+    let board = Changes::new();
+    let (base, reviewed) = reviewing(&board, &["/r/1"]);
+    let findings = |severity: &str| {
+        json!({"findings": [{"severity": severity, "text": "first"},
+                            {"severity": "low", "text": "second"}]})
+    };
+    board.write(
+        "r/1.json",
+        &report(&reviewed, "approve", &base, &findings("medium")),
+    );
+    record_paths(&board);
+    let fix = board.commit(&[("src/a.rs", "fixed\n")], None);
+    board.call("attach", &at(&json!({"head": fix})));
+    let review = |board: &Changes| {
+        let next = board.call("next", &path());
+        (next["gate"].as_array().unwrap().iter())
+            .find(|each| each["check"] == "review")
+            .unwrap()
+            .clone()
+    };
+    let unrecorded = review(&board);
+    assert_eq!(unrecorded["status"], "missing", "{unrecorded}");
+    assert!(
+        unrecorded["detail"]
+            .as_str()
+            .unwrap()
+            .contains("no changes/fix/v1 names it"),
+        "{unrecorded}"
+    );
+    let fixing = |fields: &Value| {
+        typed(
+            "changes/fix/v1",
+            &serde_json::from_str(&record(
+                json!({"report": "/r/1", "commits": [{"commit": fix, "findings": [1, 2]}]}),
+                fields,
+            ))
+            .unwrap(),
+        )
+    };
+    board.write("changes/t/fixes/1.json", &fixing(&json!({})));
+    board.call("attach", &at(&json!({"ref": "/changes/t/fixes/1"})));
+    let kept = review(&board);
+    assert_eq!(kept["status"], "pass", "{kept}");
+    assert!(kept["detail"].as_str().unwrap().contains(&fix), "{kept}");
+
+    board.write(
+        "changes/t/fixes/1.json",
+        &fixing(&json!({"deviation": "the fix also reorders the walk"})),
+    );
+    let deviated = review(&board);
+    assert_eq!(deviated["status"], "missing", "{deviated}");
+    assert!(
+        deviated["detail"].as_str().unwrap().contains(
+            "/changes/t/fixes/1 records a deviation from the plan, so the commits it names need \
+             a review of the head"
+        ),
+        "{deviated}"
+    );
+
+    board.write("changes/t/fixes/1.json", &fixing(&json!({})));
+    board.write(
+        "r/1.json",
+        &report(&reviewed, "approve", &base, &findings("high")),
+    );
+    let high = review(&board);
+    assert_eq!(high["status"], "missing", "{high}");
+    assert!(
+        high["detail"]
+            .as_str()
+            .unwrap()
+            .contains("/changes/t/fixes/1 answers /r/1, which has a high finding"),
+        "{high}"
+    );
+}
+
+/// A fix record that names a finding the report does not have counts for
+/// nothing, and the review check says which number.
+#[test]
+fn a_fix_record_naming_a_finding_the_review_lacks_counts_for_nothing() {
+    let board = Changes::new();
+    let (base, reviewed) = reviewing(&board, &["/r/1"]);
+    board.write(
+        "r/1.json",
+        &report(
+            &reviewed,
+            "approve",
+            &base,
+            &json!({"findings": [{"severity": "medium", "text": "only"}]}),
+        ),
+    );
+    record_paths(&board);
+    let fix = board.commit(&[("src/a.rs", "fixed\n")], None);
+    board.call("attach", &at(&json!({"head": fix})));
+    board.write(
+        "changes/t/fixes/1.json",
+        &typed(
+            "changes/fix/v1",
+            &json!({"report": "/r/1", "commits": [{"commit": fix, "findings": [2]}]}),
+        ),
+    );
+    board.call("attach", &at(&json!({"ref": "/changes/t/fixes/1"})));
+    let next = board.call("next", &path());
+    let review = (next["gate"].as_array().unwrap().iter())
+        .find(|each| each["check"] == "review")
+        .unwrap();
+    assert_eq!(review["status"], "missing", "{review}");
+    assert!(
+        review["detail"]
+            .as_str()
+            .unwrap()
+            .contains("/changes/t/fixes/1 names finding 2, which /r/1 does not have"),
+        "{review}"
+    );
+}

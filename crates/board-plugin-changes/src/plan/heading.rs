@@ -10,13 +10,29 @@ use board_ops::{Host, PluginError};
 use serde_json::{Value, json};
 
 use crate::board::get;
+use crate::gates::FENCES;
 use crate::start::name_of;
 use crate::{Warning, refusal};
 
-/// The first `# ` heading of `text`, trimmed; none when it has none.
+/// The first `# ` heading of `text` outside a code fence, trimmed; none
+/// when it has none.
 fn first_heading(text: &str) -> Option<&str> {
+    let mut fenced = false;
     (text.lines())
-        .find_map(|line| line.strip_prefix("# "))
+        .find_map(|line| {
+            if FENCES
+                .iter()
+                .any(|fence| line.trim_start().starts_with(fence))
+            {
+                fenced = !fenced;
+                return None;
+            }
+            if fenced {
+                None
+            } else {
+                line.strip_prefix("# ")
+            }
+        })
         .map(str::trim)
 }
 
@@ -78,5 +94,14 @@ mod tests {
             Some("Title")
         );
         assert_eq!(first_heading("## Problem\n"), None);
+    }
+
+    #[test]
+    fn a_line_inside_a_code_fence_is_never_the_first_heading() {
+        assert_eq!(
+            first_heading("## Steps\n```sh\n# install the tool\n```\n~~~\n# not\n~~~\n# Title\n"),
+            Some("Title")
+        );
+        assert_eq!(first_heading("```\n# install the tool\n```\n"), None);
     }
 }
