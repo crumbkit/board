@@ -38,13 +38,14 @@ fn kept_with(column: &str, value: &str) -> Result<Vec<KeptRow>, (Code, String)> 
 }
 
 #[test]
-fn a_kept_row_whose_logical_path_kind_or_code_cannot_be_read_fails_with_the_index_code_and_its_twin_reads()
+fn a_kept_row_whose_logical_path_kind_code_or_change_cannot_be_read_fails_with_the_index_code_and_its_twin_reads()
  {
     let named = "/vendor/tasks/a (tasks/a in its source)";
     for (column, admitted, refused, path) in [
         ("logical", "/vendor/tasks/a", "no/slash", "tasks/a"),
         ("kind", "record", "recorded", named),
         ("code", "board::ref::dangling", "board::ref::lost", named),
+        ("change", "uncommitted", "changed", named),
     ] {
         let rows = kept_with(column, admitted).unwrap();
         let expected = KeptRow {
@@ -53,6 +54,11 @@ fn a_kept_row_whose_logical_path_kind_or_code_cannot_be_read_fails_with_the_inde
             kind: Kind::Record,
             code: Some(Code::RefDangling),
             detail: None,
+            change: if column == "change" {
+                board_model::Change::Uncommitted
+            } else {
+                board_model::Change::Committed
+            },
         };
         assert_eq!(rows, [expected], "{column}");
         assert_eq!(
@@ -82,4 +88,31 @@ fn kept_rows_come_back_by_path_with_their_detail() {
         read,
         [("a", Some(Code::JsonParse), Some("{}")), ("b", None, None)]
     );
+}
+
+#[test]
+fn a_working_tree_row_keeps_its_change_and_a_mounted_row_reads_as_committed() {
+    let writer = Index::fall_back().unwrap().write().unwrap();
+    let key = board_model::Digest::of(b"key");
+    let uncommitted = |source| Resolved {
+        source,
+        change: board_model::Change::Uncommitted,
+        ..row("a", None)
+    };
+    let (worktree, mounted) = (
+        uncommitted(Source::WorkingTree),
+        uncommitted(Source::Commit(blob(9))),
+    );
+    for (entry, change) in [
+        (worktree, board_model::Change::Uncommitted),
+        (mounted, board_model::Change::Committed),
+    ] {
+        writer.put_decision(&key, [(&entry, None)]).unwrap();
+        assert_eq!(
+            writer.decision(&key).unwrap()[0].change,
+            change,
+            "{:?}",
+            entry.source
+        );
+    }
 }

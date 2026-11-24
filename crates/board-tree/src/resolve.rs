@@ -440,6 +440,11 @@ impl<'k> Resolver<'_, 'k> {
         self.pointers.read
     }
 
+    /// Each mount its resolutions crossed or tried since the last call.
+    pub fn crossed(&mut self) -> Vec<crate::Crossing> {
+        std::mem::take(&mut self.pointers.crossed)
+    }
+
     /// Resolves `path` as [`Repositories::resolve`] does in the working
     /// tree, trying a moved prefix when `path` names nothing.
     pub fn resolve(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {

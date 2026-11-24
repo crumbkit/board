@@ -5,6 +5,7 @@
 //! speed.
 
 mod decisions;
+mod directories;
 mod open;
 mod query;
 mod schema;

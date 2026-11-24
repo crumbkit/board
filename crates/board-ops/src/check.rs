@@ -117,7 +117,7 @@ pub(crate) fn from_kept(source: &Source, row: KeptRow) -> Result<Checked, IndexE
         kind: row.kind,
         status: row.code.map_or(Status::Ok, Status::Degraded),
         detail: kept.detail,
-        change: Change::Committed,
+        change: row.change,
         schema: kept.schema,
     })
 }

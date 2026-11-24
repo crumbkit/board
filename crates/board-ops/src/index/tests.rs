@@ -10,15 +10,17 @@ use crate::index::{Kept, Refreshed, facts, transact};
 use crate::snapshot::Need;
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
 
-/// Refreshes the index of `scenario` in `cache`.
+/// Refreshes the index of `scenario` in `cache`, and counts the refresh's
+/// work, leaving out the entries decided, which refs decides every time.
 fn build(scenario: &Scenario, cache: &std::path::Path) -> Refreshed {
     let board = open(scenario);
     let index = Index::open(Some(cache), board.repository().path()).unwrap();
-    board
+    let work = board
         .snapshot(index, None, Need::Report)
         .unwrap()
         .report
-        .work
+        .work;
+    Refreshed { decided: 0, ..work }
 }
 
 /// The board, plus two tasks with the same bytes and one invalid task.
@@ -544,7 +546,11 @@ fn a_transaction_no_other_process_wrote_under_runs_once_and_writes_to_the_file()
 fn unkept(board: &crate::Board) -> Result<Vec<board_tree::Entry>, board_tree::GitError> {
     board
         .repository()
-        .walk_working_tree(&mut |_, _| None, &|_, _| {}, &mut |()| Ok(()))
+        .walk_working_tree(
+            (&mut |_, _| None, &board_tree::Directories::new()),
+            &|_, _| {},
+            &mut |()| Ok(()),
+        )
         .map(|(entries, _)| entries)
 }
 
@@ -569,7 +575,7 @@ fn a_file_changed_after_the_walk_is_stored_under_its_new_blob_and_left_out_while
             &Source::WorkingTree,
             &entries,
             &mut work,
-            Kept::default(),
+            &mut Kept::default(),
         )?;
         let under_new = writer.blob(scenario.blob(&new), Role::Json)?;
         let under_old = writer.blob(scenario.blob(&old), Role::Json)?;
@@ -605,7 +611,7 @@ fn too_large_after(walked: usize, read: usize) -> Option<BlobFact> {
             &Source::WorkingTree,
             &entries,
             &mut Refreshed::default(),
-            Kept::default(),
+            &mut Kept::default(),
         )
         .map(|facts| (facts, Vec::new()))
     })

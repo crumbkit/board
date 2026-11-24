@@ -133,10 +133,14 @@ fn a_check_records_each_step_of_its_refresh() {
     let named: Vec<&str> = (records[0]["phases"].as_array().unwrap().iter())
         .map(|phase| phase["name"].as_str().unwrap())
         .collect();
-    for step in ["load", "walk", "sync", "facts", "head"] {
+    for step in ["load", "walk", "sync", "facts"] {
         let name = format!("index.refresh.{step}");
         assert!(named.contains(&name.as_str()), "{name} in {named:?}");
     }
+    assert!(
+        named.contains(&"snapshot.head"),
+        "snapshot.head in {named:?}"
+    );
 }
 
 /// When the phase `name` of `record` started and ended, in microseconds

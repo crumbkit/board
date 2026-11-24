@@ -333,26 +333,34 @@ fn a_binding_and_its_view_put_in_one_batch_fit_in_either_order_and_a_binding_wit
     assert_eq!(degraded(&report), Some(at(Code::RefDangling, "/view")));
 }
 
-/// How many files a warm check of `scenario` opens: the second of two.
-fn warm(scenario: &Scenario) -> usize {
+/// How many files a warm decision of `scenario` opens, and how many a warm
+/// check opens, each after a check.
+fn warm(scenario: &Scenario) -> (usize, usize) {
     let cache = tempfile::tempdir().unwrap();
     let board = open(scenario);
     board.check(None, Some(cache.path())).unwrap();
     let before = board.repository().files_opened();
+    let index = board_index::Index::open(Some(cache.path()), board.repository().path()).unwrap();
+    board
+        .snapshot(index, None, crate::snapshot::Need::Report)
+        .unwrap();
+    let decided = board.repository().files_opened() - before;
+    let before = board.repository().files_opened();
     board.check(None, Some(cache.path())).unwrap();
-    board.repository().files_opened() - before
+    (decided, board.repository().files_opened() - before)
 }
 
 #[test]
-fn a_warm_check_reads_a_binding_its_view_and_its_references_and_nothing_without_a_binding() {
+fn a_warm_decision_reads_a_binding_its_view_and_its_references_and_nothing_without_a_binding_and_a_warm_check_reads_none()
+ {
     let scenario = scenario();
-    assert_eq!(warm(&scenario), 0, "no binding");
+    assert_eq!(warm(&scenario), (0, 0), "no binding");
     let fitted = binding(json!({"ref": "/summaries/a"}), task());
     scenario.write("bindings/review.json", Item::File(&fitted));
     // The binding, its view, the summary and the task, each opened once to
     // read it. Resolving their paths opens none, because their facts say
-    // none holds a pointer.
-    assert_eq!(warm(&scenario), 4, "one binding");
+    // none holds a pointer. A check reads the decision the index keeps.
+    assert_eq!(warm(&scenario), (4, 0), "one binding");
 }
 
 #[test]

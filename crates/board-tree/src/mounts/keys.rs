@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use board_model::{Code, Digest, ObjectId, Source};
 
 use super::{Crossing, Reached};
+use crate::git::Repository;
 
 /// A mount pointer as probed: what it names, and the repository it opened
 /// or why it could not be read.
@@ -53,27 +54,60 @@ impl<F> Reached<F> {
     /// Each mount the probes of `commit`'s source and of every source it
     /// opens hold.
     fn crossings(&self, commit: ObjectId) -> HashSet<Crossing> {
+        let Some(mounted) = (self.sources.iter()).find(|mounted| mounted.commit == commit) else {
+            return HashSet::new();
+        };
+        let start = (
+            Source::Commit(commit),
+            mounted.repository.path().to_path_buf(),
+        );
+        self.crossings_from(start)
+    }
+
+    /// Each mount the probes of the source `from`, read in the repository
+    /// at the path beside it, and of every source it opens hold.
+    fn crossings_from(&self, from: (Source, PathBuf)) -> HashSet<Crossing> {
         let mut held = HashSet::new();
-        let mut pending = vec![commit];
+        let mut pending = vec![from];
         let mut seen = HashSet::new();
-        while let Some(commit) = pending.pop() {
-            let Some(mounted) = (self.sources.iter()).find(|mounted| mounted.commit == commit)
-            else {
-                continue;
-            };
-            if !seen.insert(commit) {
+        while let Some((from, repository)) = pending.pop() {
+            if !seen.insert(from.clone()) {
                 continue;
             }
-            let from = Source::Commit(commit);
             for probe in self.probes.iter().filter(|probe| probe.from == from) {
-                let repository = mounted.repository.path().to_path_buf();
-                held.insert((repository, probe.repo.clone(), probe.commit));
-                if probe.landed.is_ok() {
-                    pending.push(probe.commit);
+                held.insert((repository.clone(), probe.repo.clone(), probe.commit));
+                let child = (self.sources.iter()).find(|mounted| mounted.commit == probe.commit);
+                if let (Ok(_), Some(child)) = (&probe.landed, child) {
+                    let path = child.repository.path().to_path_buf();
+                    pending.push((Source::Commit(probe.commit), path));
                 }
             }
         }
         held
+    }
+
+    /// The key of the working tree's decision, when deciding it reads only
+    /// what the key holds: `build`, the code that decides, then `fields`,
+    /// what the caller knows it reads, then what each of the working tree's
+    /// mounts names and reaches, as a mounted source's key holds it. Also
+    /// each mount its decision may cross because the key holds its probe.
+    /// `None` as for a mounted source, or when `build` is empty.
+    pub fn worktree_key(
+        &self,
+        build: &str,
+        root: &Repository,
+        fields: &[&[u8]],
+    ) -> Option<(Digest, HashSet<Crossing>)> {
+        if build.is_empty() {
+            return None;
+        }
+        let mut closures = HashMap::new();
+        let mut all: Vec<Vec<u8>> = vec![b"worktree".to_vec(), build.as_bytes().to_vec()];
+        all.push(root.path().as_os_str().as_encoded_bytes().to_vec());
+        all.extend(fields.iter().map(|field| field.to_vec()));
+        all.extend(self.probed(&Source::WorkingTree, &mut closures)?);
+        let start = (Source::WorkingTree, root.path().to_path_buf());
+        Some((hashed(&all), self.crossings_from(start)))
     }
 
     /// What deciding the source of `commit` reads, hashed: its root tree,
@@ -98,13 +132,6 @@ impl<F> Reached<F> {
             .iter()
             .find(|mounted| mounted.commit == commit)?;
         let from = Source::Commit(commit);
-        if self.unread.contains(&from) {
-            return None;
-        }
-        let mut probes: Vec<&Probe> = (self.probes.iter())
-            .filter(|probe| probe.from == from)
-            .collect();
-        probes.sort_by(|a, b| a.path.cmp(&b.path));
         let mut fields = vec![
             mounted.root.to_string().into_bytes(),
             mounted
@@ -114,6 +141,32 @@ impl<F> Reached<F> {
                 .as_encoded_bytes()
                 .to_vec(),
         ];
+        fields.extend(self.probed(&from, closures)?);
+        let closure = hashed(&fields);
+        closures.insert(commit, Some(closure));
+        Some(closure)
+    }
+}
+
+impl<F> Reached<F> {
+    /// What each mount pointer of the source `from` names and what it
+    /// reached, or why not and, for a cycle, the route of the board it
+    /// repeats. `None` when one of its pointers could not be read, when one
+    /// of its mounts is not walked, or when one reaches a commit through a
+    /// repository other than the one that commit was walked in.
+    fn probed(
+        &self,
+        from: &Source,
+        closures: &mut HashMap<ObjectId, Option<Digest>>,
+    ) -> Option<Vec<Vec<u8>>> {
+        if self.unread.contains(from) {
+            return None;
+        }
+        let mut probes: Vec<&Probe> = (self.probes.iter())
+            .filter(|probe| probe.from == *from)
+            .collect();
+        probes.sort_by(|a, b| a.path.cmp(&b.path));
+        let mut fields = Vec::new();
         for probe in probes {
             fields.push(probe.path.clone().into_bytes());
             fields.push(probe.repo.clone().into_bytes());
@@ -142,9 +195,7 @@ impl<F> Reached<F> {
                 }
             }
         }
-        let closure = hashed(&fields);
-        closures.insert(commit, Some(closure));
-        Some(closure)
+        Some(fields)
     }
 }
 

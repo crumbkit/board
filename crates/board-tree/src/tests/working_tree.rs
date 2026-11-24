@@ -274,10 +274,13 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
     let (entries, _) = scenario
         .open()
         .walk_working_tree(
-            &mut |path, stat| {
-                asked.push((path.to_owned(), stat.size));
-                (path == "known.json").then_some(stand_in)
-            },
+            (
+                &mut |path, stat| {
+                    asked.push((path.to_owned(), stat.size));
+                    (path == "known.json").then_some(stand_in)
+                },
+                &crate::Directories::new(),
+            ),
             &|path, contents| (path.to_owned(), contents),
             &mut |kept_one| {
                 kept.push(kept_one);
@@ -327,7 +330,7 @@ fn walked_on(scenario: &Scenario, threads: usize) -> (Vec<Entry>, Vec<(String, C
     let mut kept = Vec::new();
     let (entries, _) = repository
         .walk_working_tree(
-            &mut |_, _| None,
+            (&mut |_, _| None, &crate::Directories::new()),
             &|path, contents| (path.to_owned(), contents),
             &mut |kept_one| {
                 kept.push(kept_one);
@@ -397,9 +400,11 @@ fn an_ignored_directory_is_never_listed_however_many_threads_list() {
         let repository = scenario.open();
         repository.set_threads(std::num::NonZeroUsize::new(threads).unwrap());
         let (entries, _) = repository
-            .walk_working_tree(&mut |_, _| None, &|_, _| {}, &mut |()| {
-                Ok::<(), GitError>(())
-            })
+            .walk_working_tree(
+                (&mut |_, _| None, &crate::Directories::new()),
+                &|_, _| {},
+                &mut |()| Ok::<(), GitError>(()),
+            )
             .unwrap();
         let paths: Vec<&str> = entries.iter().map(|entry| entry.path.as_str()).collect();
         assert_eq!(paths, [".gitignore", "src/a.json"], "{threads} threads");
@@ -564,7 +569,11 @@ fn a_visit_that_returns_ends_the_walk_and_one_that_panics_ends_it_with_its_panic
 
 /// A directory listed by a stand-in listing thread: the listing, or the
 /// payload of the panic that listing it raised.
-type StoodIn<R> = (PathBuf, (), std::thread::Result<std::io::Result<Vec<R>>>);
+type StoodIn<R> = (
+    PathBuf,
+    (),
+    std::thread::Result<std::io::Result<(Vec<R>, Option<crate::DirectoryListing>)>>,
+);
 
 /// Answers each directory sent to `take` with an empty listing, except
 /// `boom`, which it answers with a caught panic's payload, as a listing
@@ -581,7 +590,7 @@ fn list_or_panic<R>(
         let listed = if directory == Path::new("boom") {
             Err(Box::new("the listing panics") as Box<dyn std::any::Any + Send>)
         } else {
-            Ok(Ok(Vec::new()))
+            Ok(Ok((Vec::new(), None)))
         };
         if send.send((directory, payload, listed)).is_err() {
             return;
@@ -1025,4 +1034,73 @@ fn a_walked_file_carries_the_change_time_inode_and_mode_the_file_system_gives() 
             metadata.mode()
         )
     );
+}
+
+/// The paths a walk of `scenario` finds, and how many directories it
+/// lists, given what an earlier walk listed with each listing's start moved
+/// by `moved_ns` and the item `a.json` of `dir` renamed `b.json`, so a walk
+/// that reads the earlier listing finds `dir/b.json`.
+fn walked_after(scenario: &Scenario, moved_ns: i64) -> (Vec<String>, usize) {
+    let repository = scenario.open();
+    let walk = |earlier: &crate::Directories| {
+        repository
+            .walk_working_tree((&mut |_, _| None, earlier), &|_, _| {}, &mut |()| {
+                Ok::<(), GitError>(())
+            })
+            .unwrap()
+    };
+    let (_, listings) = walk(&crate::Directories::new());
+    let mut earlier = listings.directories().clone();
+    for listing in earlier.values_mut() {
+        listing.listed_ns += moved_ns;
+    }
+    let dir = earlier.get_mut(Path::new("dir")).unwrap();
+    dir.items[0].name = b"b.json".to_vec();
+    let before = repository.directories_listed();
+    let (entries, _) = walk(&earlier);
+    let paths = entries.into_iter().map(|entry| entry.path).collect();
+    (paths, repository.directories_listed() - before)
+}
+
+#[test]
+fn a_walk_reads_a_directory_unchanged_since_an_earlier_walk_listed_it_and_lists_one_listed_after_it_began()
+ {
+    let scenario = Scenario::new();
+    scenario
+        .write("dir/a.json", Item::File("{}"))
+        .settle_directories();
+    // Read from the earlier listing, `dir/b.json` is found, though only
+    // `dir/a.json` exists.
+    assert_eq!(
+        walked_after(&scenario, 0),
+        (vec!["dir/b.json".to_owned()], 0)
+    );
+    // A listing that began after this walk, as when the clock stepped back,
+    // is not trusted.
+    let hour_ns = 3_600 * 1_000_000_000;
+    assert_eq!(
+        walked_after(&scenario, hour_ns),
+        (vec!["dir/a.json".to_owned()], 2)
+    );
+}
+
+#[test]
+fn a_listing_of_a_directory_modified_in_the_second_its_walk_began_does_not_last_and_its_twin_a_second_earlier_does()
+ {
+    let second = 1_000_000_000;
+    for (modified_ns, lasts) in [(41 * second + 5, false), (40 * second + 5, true)] {
+        let stat = board_model::Stat {
+            size: 0,
+            modified_ns,
+            changed_ns: modified_ns,
+            inode: 1,
+            mode: 0o40_755,
+        };
+        let listing = crate::DirectoryListing {
+            stat,
+            listed_ns: 41 * second + 9,
+            items: Vec::new(),
+        };
+        assert_eq!(listing.lasts(), lasts, "{modified_ns}");
+    }
 }

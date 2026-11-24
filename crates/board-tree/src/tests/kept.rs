@@ -67,7 +67,7 @@ fn a_walk_keeps_every_file_and_holds_no_more_unkept_than_its_bound_and_one_per_t
         let mut kept = Vec::new();
         on_four_threads(&scenario)
             .walk_working_tree(
-                &mut |_, _| None,
+                (&mut |_, _| None, &crate::Directories::new()),
                 &|path, _| {
                     let now = held.fetch_add(1, Ordering::SeqCst) + 1;
                     most.fetch_max(now, Ordering::SeqCst);
@@ -98,7 +98,7 @@ fn a_keep_that_fails_ends_the_walk_with_its_error_and_each_thread_stops_at_its_n
         let repository = on_four_threads(&scenario);
         let prepared = AtomicUsize::new(0);
         let walked = repository.walk_working_tree(
-            &mut |_, _| None,
+            (&mut |_, _| None, &crate::Directories::new()),
             &|_, _| {
                 prepared.fetch_add(1, Ordering::SeqCst);
             },
@@ -121,7 +121,7 @@ fn a_keep_that_panics_ends_the_walk_with_its_panic() {
     let (scenario, _) = many_files();
     let ended = ended(move || {
         on_four_threads(&scenario).walk_working_tree(
-            &mut |_, _| None,
+            (&mut |_, _| None, &crate::Directories::new()),
             &|_, _| {},
             &mut |()| -> Result<(), Failed> { panic!("keep panics") },
         )
@@ -135,7 +135,7 @@ fn a_thread_that_panics_while_preparing_ends_the_walk_with_its_panic_while_the_o
     let (scenario, _) = many_files();
     let ended = ended(move || {
         on_four_threads(&scenario).walk_working_tree(
-            &mut |_, _| None,
+            (&mut |_, _| None, &crate::Directories::new()),
             &|path, _| assert_ne!(path, "r7.json", "preparing panics"),
             &mut |()| Ok::<(), Failed>(()),
         )
@@ -156,7 +156,7 @@ fn a_keep_that_fails_on_a_record_read_while_listing_is_not_called_again() {
     let ended = ended(move || {
         let mut calls = Vec::new();
         let walked = on_four_threads(&scenario).walk_working_tree(
-            &mut |_, _| None,
+            (&mut |_, _| None, &crate::Directories::new()),
             &|path, _| path.to_owned(),
             &mut |path| {
                 calls.push(path);
@@ -179,10 +179,14 @@ fn a_keep_that_takes_a_record_read_while_listing_is_called_for_every_file() {
     let calls = ended(move || {
         let mut calls = Vec::new();
         on_four_threads(&scenario)
-            .walk_working_tree(&mut |_, _| None, &|path, _| path.to_owned(), &mut |path| {
-                calls.push(path);
-                Ok::<(), Failed>(())
-            })
+            .walk_working_tree(
+                (&mut |_, _| None, &crate::Directories::new()),
+                &|path, _| path.to_owned(),
+                &mut |path| {
+                    calls.push(path);
+                    Ok::<(), Failed>(())
+                },
+            )
             .unwrap();
         calls
     })

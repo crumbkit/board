@@ -117,6 +117,8 @@ fn a_check_after_a_change_writes_what_changed() {
             compiled: 1,
             validated: 1,
             wrote: true,
+            // The working tree is decided again, all five of its entries.
+            decided: 5,
             ..Refreshed::default()
         }
     );

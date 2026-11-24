@@ -25,7 +25,7 @@ const BUILD: &str = "test";
 /// cold one, requires every table and an unordered, bounded query to
 /// answer alike, then requires a check to report alike through both, and
 /// returns the warm query's work.
-fn query_as(scenario: &Scenario, cache: &Path, build: &'static str) -> Refreshed {
+pub(super) fn query_as(scenario: &Scenario, cache: &Path, build: &'static str) -> Refreshed {
     let mut board = open(scenario);
     board.built_by(build);
     let root = board.repository().path().to_path_buf();
