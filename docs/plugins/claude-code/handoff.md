@@ -11,12 +11,10 @@ plugin, so it adds no capability.
 
 After each turn Claude Code gives a mod the session's context and the
 account's rate-limit windows (`session.measure`). The mod counts the tokens
-in the session's context from `context.tokens` in that payload. When the
-payload has no count, the mod reads the transcript that the last `Stop` hook
-input named in `transcript_path`, and adds `input_tokens`,
-`cache_read_input_tokens` and `cache_creation_input_tokens` of its last
-assistant entry. When neither gives a count, the mod skips the context check
-for that turn, logs once per session, and still checks usage.
+in the session's context from `context.tokens` in that payload. Claude Code
+leaves that count out only before the session has used any input tokens, such
+as just after `/clear`. The mod reads such a payload as no reading: it makes no
+context check that turn, re-arms nothing, and still checks usage.
 
 When the count reaches the param `handoff-context-tokens`, the mod submits one
 prompt that names the count and the limit and tells the session to follow the
@@ -39,12 +37,14 @@ board -C ~/Code/board get /params/heuristics/handoff-context-tokens \
 
 `board -C ~/Code/board call params.get --name handoff-context-tokens` prints
 the value in force. The mod reads `handoff-context-tokens` and
-`handoff-usage-share` with `board --personal call params.get` when a session
-first measures, and again on the first measurement after its copy is over 5
-minutes old. So a changed value reaches running sessions within 5 minutes,
-without a restart. One `params.get` call takes about 0.36 seconds, which is
-too slow to run after every turn. When `board` is missing or refuses, the mod
-uses 280,000 tokens and 85% usage and logs that once.
+`handoff-usage-share` together with `board --personal call params.get` when
+it first needs them, and again when it next needs them after its copy is over
+5 minutes old. A measurement or the 30-second poll can start that refresh. So
+a changed value reaches running sessions within 5 minutes, without a restart.
+One `params.get` call takes about 0.36 seconds, which is too slow to run after
+every turn. When `board` is missing or refuses, the mod keeps the value it
+last read, or uses 280,000 tokens and 85% usage when it has read none, and
+logs that once.
 
 ## Account usage
 
@@ -52,9 +52,10 @@ When a rate-limit window reaches `handoff-usage-share`, the mod submits the
 same kind of prompt, once, and writes `trigger.json` in `board-handoff/` under
 the account's Claude config directory. Every session on that account checks
 the file every 30 seconds. A session whose own latest reading of that window
-is under `handoff-usage-share` is not told, because the trigger is stale for
-it. Its next reading at or over the share tells it and writes a fresh
-trigger. A session that has no reading of that window yet is told, once,
+is under `handoff-usage-share` and newer than the trigger is not told, because
+the trigger is stale for it. Its next reading at or over the share tells it
+and writes a fresh trigger. A session whose reading is older than the trigger,
+such as an idle one, or that has no reading of that window yet, is told, once,
 until the window resets.
 
 A usage reset lowers a window's share but keeps its reset time. So when a

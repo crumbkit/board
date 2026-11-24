@@ -49,7 +49,6 @@ function host(on: On, who: string | { id: string }, shares: Shares = { tokens: 2
   on('command.register', () => ({ value: { command: 'handoff-lines' } }))
   on('session.id', () => ({ value: me.id }))
   mock.env(on, { HOME: '/home/user' })
-  on('classic.Stop', () => ({}))
   return { disk, submitted, logs, calls }
 }
 
@@ -343,7 +342,7 @@ test('a count back under the limit, as after /compact, re-arms the context promp
   expect(submitted).toHaveLength(2)
 })
 
-test('a measurement with no token count and no transcript does not re-arm the context prompt', async ($, on) => {
+test('a payload without context.tokens makes no context check and does not re-arm the context prompt', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { submitted } = host(on, 's1')
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -560,46 +559,6 @@ test('a changed limit applies once the copy is over 5 minutes old, without a res
   expect(calls).toHaveLength(4)
 })
 
-/** A transcript in Claude Code's JSONL shape: an earlier assistant turn, a subagent's, the last main-thread one, then a user entry. */
-const transcript = [
-  { type: 'assistant', message: { usage: { input_tokens: 5, cache_read_input_tokens: 4_000, cache_creation_input_tokens: 995, output_tokens: 7 } } },
-  { type: 'user', message: { content: 'go on' } },
-  { type: 'assistant', message: { usage: { input_tokens: 10, cache_read_input_tokens: 270_000, cache_creation_input_tokens: 9_990, output_tokens: 300 } } },
-  { type: 'assistant', isSidechain: true, message: { usage: { input_tokens: 1, cache_read_input_tokens: 1, cache_creation_input_tokens: 1 } } },
-  { type: 'user', message: { content: 'thanks' } },
-].map(entry => JSON.stringify(entry)).join('\n') + '\n'
-
-test('a measurement without context.tokens counts the last assistant usage of the transcript the Stop hook named', async ($, on) => {
-  mock.clock(on, { now: NOW })
-  const disk = new Map([['/t/s1.jsonl', transcript]])
-  const { submitted } = host(on, 's1', undefined, disk)
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('session.measure', (_, e) => ({ changed: e.changed }))
-  await start($)
-  await $.classic.Stop({ transcript_path: '/t/s1.jsonl', stop_hook_active: false })
-
-  await $.session.measure({ ...usage(0), context: { window: 1_000_000 } })
-
-  expect(submitted).toHaveLength(1)
-  expect(submitted[0]).toMatch(/its context holds 280,000 tokens/)
-})
-
-test('a missing transcript is logged once and the usage checks still run', async ($, on) => {
-  mock.clock(on, { now: NOW })
-  const { submitted, logs } = host(on, 's1')
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('session.measure', (_, e) => ({ changed: e.changed }))
-  await start($)
-  await $.classic.Stop({ transcript_path: '/t/gone.jsonl', stop_hook_active: false })
-
-  await $.session.measure({ ...usage(0, 86), context: { window: 1_000_000 } })
-  await $.session.measure({ ...usage(0, 87), context: { window: 1_000_000 } })
-
-  expect(submitted).toHaveLength(1)
-  expect(submitted[0]).toMatch(/five_hour usage limit is 86% used/)
-  expect(logs.filter(l => l.includes('could not count'))).toEqual(['handoff: could not count the context from /t/gone.jsonl: no assistant usage in it, or it could not be read'])
-})
-
 test('a session told about seven_day usage is still told when it reaches the context limit', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { submitted, disk } = host(on, 's1')
@@ -635,4 +594,42 @@ test('a live seven_day trigger does not tell a session whose own seven_day readi
   await clock.advance(30_000)
   expect(submitted).toHaveLength(1)
   expect(submitted[0]).toMatch(/seven_day usage limit is 86% used/)
+})
+
+test('a session whose own reading under the share is older than a fresh trigger is told', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const disk = new Map<string, string>()
+  const { submitted } = host(on, 's1', undefined, disk)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  await start($)
+  await $.session.measure(usage(10_000, 10, 41))
+
+  // Another session crosses 86% after this session's 41% reading, so its trigger is newer than the reading.
+  await clock.advance(10_000)
+  disk.set(`${STATE}/trigger.json`, JSON.stringify({ key: `seven_day@${SEVEN}`, why: 'the seven_day usage limit is 86% used', resetsAt: SEVEN, at: '2026-11-19T09:00:10Z' }))
+  await clock.advance(20_000)
+
+  expect(submitted).toHaveLength(1)
+  expect(submitted[0]).toMatch(/seven_day usage limit is 86% used/)
+})
+
+test('a failed params refresh keeps the last good value, so the session is not re-armed and told twice', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const shares: { tokens?: number; usage?: number } = { tokens: 150_000, usage: 85 }
+  const { submitted } = host(on, 's1', shares)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  await start($)
+  await $.session.measure(usage(200_000))
+  expect(submitted).toHaveLength(1)
+
+  shares.tokens = undefined
+  await clock.advance(300_001)
+  await $.session.measure(usage(200_000))
+  shares.tokens = 150_000
+  await clock.advance(300_001)
+  await $.session.measure(usage(200_000))
+
+  expect(submitted).toHaveLength(1)
 })

@@ -69,12 +69,8 @@ type Mem = {
   limits: { value: Promise<Limits>; at: number } | undefined
   /** Whether the session was told that the params are unreadable; it is told once. */
   paramsLogged: boolean
-  /** The transcript the last classic `Stop` named, read when a measurement has no `context.tokens`. */
-  transcript: string | undefined
-  /** Whether this session id was told that its transcript gave no count; it is told once. */
-  transcriptLogged: boolean
-  /** The session's own latest percentUsed of each usage window kind, held in memory only. */
-  usage: Map<string, number>
+  /** The session's own latest reading of each usage window kind: its percentUsed and when it was measured, held in memory only. */
+  usage: Map<string, { percent: number; at: number }>
   cwd: string
   asked: Set<string>
   status: Session['status']
@@ -107,63 +103,25 @@ async function readParam($: EngineInterface, name: string): Promise<number | und
 
 // Reads the calibrated values again once the copy is over PARAMS_MS old, so a changed value reaches a running session
 // without a restart; the defaults stand in for one the board lacks.
+// A value that cannot be read keeps the last one read, and the default stands in only before any was read.
 async function loadLimits($: EngineInterface, mem: Mem): Promise<Limits> {
   const now = await $.clock.now()
   if (mem.limits === undefined || now - mem.limits.at > PARAMS_MS) {
+    const last = mem.limits?.value ?? Promise.resolve(DEFAULTS)
     mem.limits = {
       at: now,
       value: (async () => {
-        const contextTokens = await readParam($, 'handoff-context-tokens')
-        const usage = await readParam($, 'handoff-usage-share')
+        const [contextTokens, usage] = await Promise.all([readParam($, 'handoff-context-tokens'), readParam($, 'handoff-usage-share')])
+        const before = await last
         if ((contextTokens === undefined || usage === undefined) && !mem.paramsLogged) {
           mem.paramsLogged = true
-          $.ui.log(`handoff: params unreadable, using ${count(DEFAULTS.contextTokens)} context tokens and ${DEFAULTS.usage}% usage`)
+          $.ui.log(`handoff: params unreadable, using ${count(before.contextTokens)} context tokens and ${before.usage}% usage`)
         }
-        return { contextTokens: contextTokens ?? DEFAULTS.contextTokens, usage: usage ?? DEFAULTS.usage }
+        return { contextTokens: contextTokens ?? before.contextTokens, usage: usage ?? before.usage }
       })(),
     }
   }
   return mem.limits.value
-}
-
-type TranscriptEntry = { type?: string; isSidechain?: boolean; message?: { usage?: Record<string, unknown> } }
-
-/** The input tokens of the transcript's last main-thread assistant entry that reports usage: uncached, cache-read and cache-written. */
-export function transcriptTokens(text: string): number | undefined {
-  const lines = text.split('\n')
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!.trim()
-    if (line === '') continue
-    let entry: TranscriptEntry
-    try {
-      entry = JSON.parse(line) as TranscriptEntry
-    } catch {
-      continue
-    }
-    const usage = entry.message?.usage
-    if (entry.type !== 'assistant' || entry.isSidechain === true || typeof usage !== 'object' || usage === null) continue
-    const part = (name: string) => (typeof usage[name] === 'number' ? (usage[name] as number) : 0)
-    return part('input_tokens') + part('cache_read_input_tokens') + part('cache_creation_input_tokens')
-  }
-  return undefined
-}
-
-/** The session's context in tokens: the measurement's own count, else the last usage of the transcript `Stop` named. */
-async function contextTokens($: EngineInterface, mem: Mem, reading: Reading): Promise<number | undefined> {
-  if (reading.context.tokens !== undefined) return reading.context.tokens
-  const path = mem.transcript
-  if (path === undefined) return undefined
-  let tokens: number | undefined
-  try {
-    tokens = transcriptTokens(await $.fs.read(path))
-  } catch {
-    tokens = undefined
-  }
-  if (tokens === undefined && !mem.transcriptLogged) {
-    mem.transcriptLogged = true
-    $.ui.log(`handoff: could not count the context from ${path}: no assistant usage in it, or it could not be read`)
-  }
-  return tokens
 }
 
 async function save($: EngineInterface, mem: Mem) {
@@ -183,7 +141,6 @@ async function load($: EngineInterface, mem: Mem, id: string) {
   // `context` is 0.1.1's key for a share of the window, which this version no longer measures.
   mem.asked = new Set((earlier?.asked ?? []).filter(key => key !== 'context'))
   mem.usage = new Map()
-  mem.transcriptLogged = false
   mem.status = earlier?.status ?? 'asked'
   mem.line = earlier?.line
 }
@@ -250,8 +207,6 @@ export const register: Register = (on) => {
     polling: false,
     limits: undefined,
     paramsLogged: false,
-    transcript: undefined,
-    transcriptLogged: false,
     usage: new Map(),
     cwd: '',
     asked: new Set(),
@@ -273,26 +228,24 @@ export const register: Register = (on) => {
         if (mem.asked.delete(trigger.key)) await save($, mem)
         return
       }
-      // A session whose own latest reading of the window is under the share is not told: the trigger is stale for it.
-      // Its next reading at or over the share tells it and writes a fresh trigger.
+      // A session whose own reading of the window is newer than the trigger and under the share is not told: the trigger
+      // is stale for it. Its next reading at or over the share tells it and writes a fresh trigger. A reading older than
+      // the trigger, as an idle session's is, does not hold the trigger back.
       const own = mem.usage.get(kindOf(trigger.key))
-      if (own !== undefined && own < (await loadLimits($, mem)).usage) return
+      if (own !== undefined && own.at > Date.parse(trigger.at) && own.percent < (await loadLimits($, mem)).usage) return
       await ask($, mem, [{ key: trigger.key, why: trigger.why }])
     })
-    return next(e)
-  })
-
-  // The classic Stop input names the transcript, which a measurement without `context.tokens` is counted from.
-  on('classic.Stop', async ($, e, next) => {
-    if (e.agent_id === undefined && e.transcript_path !== '') mem.transcript = e.transcript_path
     return next(e)
   })
 
   on('session.measure', async ($, e, next) => {
     await sync($, mem)
     const limits = await loadLimits($, mem)
-    for (const w of e.rateLimits) mem.usage.set(w.kind, w.percentUsed)
-    const tokens = await contextTokens($, mem, e)
+    const now = await $.clock.now()
+    for (const w of e.rateLimits) mem.usage.set(w.kind, { percent: w.percentUsed, at: now })
+    // Claude Code leaves `context.tokens` out only before the session has used any input tokens, such as just after
+    // /clear; such a payload is no reading, so it makes no context check and re-arms nothing.
+    const tokens = e.context.tokens
     const reading: Reading = { context: tokens === undefined ? {} : { tokens }, rateLimits: e.rateLimits }
     // A count back under the limit (after /compact) re-arms the context prompt.
     if (mem.asked.has(CONTEXT) && tokens !== undefined && tokens < limits.contextTokens) mem.asked.delete(CONTEXT)
