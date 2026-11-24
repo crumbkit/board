@@ -386,10 +386,13 @@ jobs:
   # labelled red-lane. A later failure of that job comments on its issue while
   # the issue is open, and opens a new one once it is closed. When the job
   # passes in a later scheduled run, the report job closes its open issue with
-  # a comment naming that run. A skipped or cancelled job leaves its issue as
-  # it is. A job that runs past its timeout ends cancelled, and so does the
-  # run's conclusion, but cancelled() stays false for the jobs after it, so it
-  # is reported. A run cancelled by hand makes cancelled() true and reports
+  # a comment naming that run. A skipped job leaves its issue as it is. A
+  # re-run of a scheduled run closes nothing, because a later night may have
+  # opened the issue. The timing job closes its issue only in a run that also
+  # times macOS, because a Linux-only pass says nothing about the macOS leg.
+  # A job that runs past its timeout ends cancelled, and so does the
+  # run's conclusion, but cancelled() stays false for the jobs after it, so
+  # the job comments on its issue or opens one. A run cancelled by hand makes cancelled() true and reports
   # nothing. Only scheduled runs report.
   report:
     needs: [base, macos, fuzz, timing, mutants-crate, mutants-misses, mutants-workspace, missed-mutants]
@@ -405,6 +408,8 @@ jobs:
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           SHA: ${{ github.sha }}
           NEEDS: ${{ toJSON(needs) }}
+          ATTEMPT: ${{ github.run_attempt }}
+          MACOS: ${{ needs.base.outputs.macos }}
         run: |
           label=red-lane
           gh label create "$label" --force --color B60205 --description "A job of the scheduled slow lane failed or ran past its timeout" < /dev/null
@@ -414,7 +419,10 @@ jobs:
             title="Slow lane job $job failed"
             number=$(jq -r --arg title "$title" '[.[] | select(.title == $title)][0].number // empty' open.json)
             if [ "$result" = success ]; then
-              if [ -n "$number" ]; then
+              if [ "$job" = timing ] && [ "$MACOS" != true ]; then
+                continue
+              fi
+              if [ -n "$number" ] && [ "$ATTEMPT" = 1 ]; then
                 gh issue close "$number" --comment "The job \`$job\` passed in slow lane run $RUN, at $SHA." < /dev/null
                 echo "- \`$job\` passed: closed #$number" >> "$GITHUB_STEP_SUMMARY"
               fi
