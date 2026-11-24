@@ -129,7 +129,7 @@ fn approve_asks_the_owner_and_owner_approval_passes_once_the_owner_signs_it() {
     assert_eq!(
         (&shown["plan_title"], &shown["answer"], &shown["chosen"]),
         (
-            &json!("Timeout"),
+            &json!("Let a suite declare a timeout"),
             &json!(ANSWER),
             &json!("Approve the plan at /changes/t.")
         )

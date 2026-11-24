@@ -64,7 +64,7 @@ const FOREIGN_TYPES: [&str; 8] = [
 const REVIEW_TYPE: &str = "review/report/v1";
 /// The task every fixture change does, which the fixture board holds.
 const TASK: &str = "/tasks/given.md";
-const PLAN: &str = "# Timeout\n\n## Problem\n\nSuites hang.\n\n## Outcome\n\nA suite stops.\n\n## Out of scope\n\nRetries.\n\n## UX\n\nNo UI change: suites run headless.\n\n## Data\n\nNone.\n\n## Failure paths\n\nNone: nothing can fail.\n\n## Consumers\n\nNone: nothing reads it.\n\n## Lifecycle\n\nNone: nothing changes state.\n";
+const PLAN: &str = "# Let a suite declare a timeout\n\n## Problem\n\nSuites hang.\n\n## Outcome\n\nA suite stops.\n\n## Out of scope\n\nRetries.\n\n## UX\n\nNo UI change: suites run headless.\n\n## Data\n\nNone.\n\n## Failure paths\n\nNone: nothing can fail.\n\n## Consumers\n\nNone: nothing reads it.\n\n## Lifecycle\n\nNone: nothing changes state.\n";
 /// The paths a fixture plan declares: everything under the fixture
 /// change's mount.
 const PATHS: [&str; 1] = ["/repos/x/**"];

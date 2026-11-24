@@ -143,6 +143,105 @@ fn a_plan_for_a_done_change_is_refused_and_one_for_a_change_in_build_is_written(
     assert_eq!(board.call_stdin("plan", &given(PLAN, &[]))["uses"], 0);
 }
 
+/// A done change takes a corrected plan only when the input says so, and
+/// stays done.
+#[test]
+fn a_done_change_s_plan_is_corrected_with_correct_and_the_change_stays_done() {
+    let board = Changes::new();
+    board.change_at(
+        "changes/t.json",
+        "done",
+        &json!({"plan": "/changes/t/plans/1"}),
+    );
+    let refused = board.refusal_stdin("plan", &given(PLAN, &[]));
+    assert_eq!(refused["code"], "changes::phase::final");
+    assert!(
+        refused["message"]
+            .as_str()
+            .unwrap()
+            .contains("\"correct\": true"),
+        "{refused}"
+    );
+    assert_eq!(board.read("changes/t.json")["plan"], "/changes/t/plans/1");
+    let corrected = board.call_stdin("plan", &with(PLAN, &json!({"correct": true})));
+    assert_eq!(corrected["unchanged"], false);
+    let held = board.read("changes/t.json");
+    assert_eq!(held["plan"], corrected["path"]);
+    assert_eq!(held["phase"], "done");
+    let dropped = Changes::new();
+    dropped.change_at("changes/t.json", "dropped", &json!({}));
+    let output = dropped.call_stdin("plan", &with(PLAN, &json!({"correct": true})));
+    assert_eq!(dropped.read("changes/t.json")["phase"], "dropped");
+    assert_eq!(dropped.read("changes/t.json")["plan"], output["path"]);
+}
+
+/// The text of another change's plan, headed by that change's title.
+const OTHER_PLAN: &str = "# Bouncer looks up IP locations\n\n## Problem\n\nLookups fail.\n";
+
+/// Writes the change /changes/bouncer-looks-up-ip-locations, the name
+/// `changes.start` gives the title [`OTHER_PLAN`] is headed by, in `phase`.
+fn other_change(board: &Changes, phase: &str) {
+    board.write(
+        "changes/bouncer-looks-up-ip-locations.json",
+        &change(phase, &json!({"title": "Bouncer looks up IP locations"})),
+    );
+}
+
+#[test]
+fn a_plan_headed_by_another_change_s_title_is_refused_and_writes_nothing() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "build", &json!({}));
+    other_change(&board, "build");
+    let refused = board.refusal_stdin("plan", &given(OTHER_PLAN, &[]));
+    assert_eq!(refused["code"], "changes::plan::other_change", "{refused}");
+    assert_eq!(
+        refused["fields"]["other"],
+        "/changes/bouncer-looks-up-ip-locations"
+    );
+    assert!(!board.exists("changes/t/plans"));
+    // A done change's correction is refused the same way.
+    board.change_at("changes/t.json", "done", &json!({}));
+    let mut correcting = given(OTHER_PLAN, &[]);
+    correcting["correct"] = json!(true);
+    let refused = board.refusal_stdin("plan", &correcting);
+    assert_eq!(refused["code"], "changes::plan::other_change", "{refused}");
+}
+
+#[test]
+fn a_plan_headed_by_a_dropped_change_s_title_or_by_no_change_s_title_is_written_with_a_warning() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "build", &json!({}));
+    let unknown = board.call_stdin("plan", &given(OTHER_PLAN, &[]));
+    assert_eq!(
+        unknown["warnings"][0]["code"], "changes::plan::title_differs",
+        "{unknown}"
+    );
+    assert!(
+        unknown["warnings"][0]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("Let a suite declare a timeout"),
+        "{unknown}"
+    );
+    other_change(&board, "dropped");
+    let dropped = board.call_stdin("plan", &given(&format!("{OTHER_PLAN}\nMore.\n"), &[]));
+    assert_eq!(dropped["unchanged"], false);
+    assert_eq!(
+        dropped["warnings"][0]["code"],
+        "changes::plan::title_differs"
+    );
+}
+
+#[test]
+fn a_plan_headed_by_its_own_title_or_with_no_heading_does_not_warn() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "build", &json!({}));
+    let headed = board.call_stdin("plan", &given(PLAN, &[]));
+    assert_eq!(headed["warnings"], json!([]));
+    let bare = board.call_stdin("plan", &given("## Problem\n\nSuites hang.\n", &[]));
+    assert_eq!(bare["warnings"], json!([]));
+}
+
 #[test]
 fn a_plan_that_uses_a_directory_is_refused_and_one_using_a_document_in_it_is_written() {
     let board = Changes::new();
