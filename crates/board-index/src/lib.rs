@@ -32,7 +32,9 @@ pub use crate::state::{
 pub use crate::store::{
     BlobFact, Decided, RefFact, Resolved, ValidationFact, View, Worktree, Writer, source_name,
 };
-pub use crate::timing::append_timing;
+pub use crate::timing::{
+    Summarise, Timings, append_timing, read_timings, stamp_timing, timing_stamped,
+};
 pub use crate::values::{cache, cached};
 
 #[cfg(test)]

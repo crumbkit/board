@@ -32,6 +32,7 @@ Board: a fast, validated view of a git tree.
 - [`board completion`](#board-completion): Set up Board's completion in a shell
 - [`board commands`](#board-commands): Describe Board's commands
 - [`board schemas`](#board-schemas): Describe the JSON documents that Board prints
+- [`board timing`](#board-timing): Time hot commands against their budgets
 
 ### Arguments
 
@@ -682,3 +683,23 @@ Print the JSON Schema of each document
 - `schema`: The document's 2020-12 JSON Schema.
 
 Effects: read-only, closed-world.
+
+## `board timing`
+
+Time hot commands against their budgets
+
+### Commands
+
+- [`board timing check`](#board-timing-check): Judge each hot command's p90 on the personal board against its budget
+
+## `board timing check`
+
+Judge each hot command's p90 on the personal board against its budget.
+
+A command is judged on its last 20 top-level runs on the personal board at a load no higher than the core count, and is unjudged with fewer than 5. The runs come from the timing log and its digest.
+
+### Arguments
+
+- `--record`: Also write a run of /suites/board-speed-local to the personal board, at most once an hour
+
+Effects: additive, not idempotent, closed-world.

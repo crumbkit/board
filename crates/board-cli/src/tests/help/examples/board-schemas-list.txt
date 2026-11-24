@@ -22,5 +22,5 @@ board/serve-report/v2           output  document  Where the server listened and 
 board/ui-kinds-report/v2        output  document  The component kinds a view's slot can name.
 board/ui-template-report/v2     output  document  A slot's fill for a component kind.
 board/ui-open-report/v2         output  document  The page opened, and whether its server was started.
+board/timing-check-report/v2    output  document  Each hot command's p50 and p90 against its budget, and the speed run recorded, if any.
 board/skills-install-report/v2  output  document  What install wrote, updated, left unchanged, removed, kept or backed up in a skills directory.
-board/skills-list-report/v2     output  document  Each skill this binary ships and each Board folder in a skills directory, with its state.

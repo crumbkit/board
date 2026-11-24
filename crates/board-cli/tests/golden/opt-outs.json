@@ -240,15 +240,15 @@
     {
       "rule": "help-budget/root",
       "applies_to": "board",
-      "reason": "The root page lists all twenty-two commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.",
+      "reason": "The root page lists all twenty-three commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.",
       "costs": [
-        "Each read of the page can cost 1600 bytes more than the default, about 400 tokens."
+        "Each read of the page can cost 1700 bytes more than the default, about 425 tokens."
       ],
       "budget": {
-        "bytes": 3100,
+        "bytes": 3200,
         "default": 1500,
-        "extra_bytes": 1600,
-        "extra_tokens": 400
+        "extra_bytes": 1700,
+        "extra_tokens": 425
       }
     },
     {
@@ -541,6 +541,11 @@
       "declaration": "document-name",
       "applies_to": "board ui open",
       "declares": "The command prints board/ui-open-report/v2, where its path gives the name ui-open."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board timing check",
+      "declares": "The command prints board/timing-check-report/v2, where its path gives the name timing-check."
     },
     {
       "declaration": "document-name",
