@@ -124,6 +124,21 @@ impl Inherited {
     pub fn or_insert(&mut self, name: &str, value: OsString) {
         self.0.entry(name.to_owned()).or_insert(value);
     }
+
+    /// The value Board inherited for `name`, none when it inherited none.
+    ///
+    /// ```
+    /// use std::ffi::OsString;
+    /// let inherited: board_plugin::Inherited =
+    ///     [(OsString::from("BOARD_TIMING_READY"), OsString::from("1"))]
+    ///         .into_iter()
+    ///         .collect();
+    /// assert_eq!(inherited.get("BOARD_TIMING_READY"), Some(&OsString::from("1")));
+    /// assert_eq!(inherited.get("BOARD_TIMINGS"), None);
+    /// ```
+    pub fn get(&self, name: &str) -> Option<&OsString> {
+        self.0.get(name)
+    }
 }
 
 impl fmt::Debug for Inherited {

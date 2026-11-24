@@ -16,6 +16,7 @@ use board_plugin::child::{Exited, ProcessError};
 use serde_json::Value;
 
 use crate::board::{self, rows, text};
+use crate::gates::same_commit;
 
 /// The variables that keep the user's and the system's git config out of a
 /// git command, and stop it prompting.
@@ -375,12 +376,14 @@ fn clean_merge(
     Ok(tree.lines().next().map(str::trim) == Some(written.trim()))
 }
 
-/// The commits of `steps`, when each edits only files in `allowed` or is
-/// a clean merge, or else why the first that does not fails. A file
-/// outside the directory the mount shows is never a record path.
+/// The commits of `steps`, when each edits only files in `allowed`, is a
+/// clean merge or is one of the `fixed` commits, whole or abbreviated, or
+/// else why the first that does not fails. A commit that edits a file
+/// outside the directory the mount shows fails, even a fixed one.
 pub(crate) fn accepted(
     steps: &[Step],
     allowed: &BTreeSet<String>,
+    fixed: &[String],
     mount: &str,
 ) -> Result<Vec<String>, String> {
     let mut commits = Vec::new();
@@ -398,6 +401,11 @@ pub(crate) fn accepted(
                         outside.join(", ")
                     ));
                 }
+                if (fixed.iter()).any(|each| same_commit(Some(&Value::from(each.as_str())), commit))
+                {
+                    commits.push(commit.clone());
+                    continue;
+                }
                 let other: Vec<&str> = (files.iter())
                     .filter(|file| !allowed.contains(*file))
                     .map(String::as_str)
@@ -405,7 +413,7 @@ pub(crate) fn accepted(
                 if !other.is_empty() {
                     return Err(format!(
                         "the later commit {commit} edits {}, which is neither a record path nor \
-                         the lifecycle doc; review the head",
+                         the lifecycle doc, and no changes/fix/v1 names it; review the head",
                         other.join(", ")
                     ));
                 }

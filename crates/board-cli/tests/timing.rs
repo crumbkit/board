@@ -8,11 +8,15 @@
 )]
 
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use board_scenario::{Item, Scenario};
 use serde_json::Value;
+
+/// SIGTERM's number on macOS and Linux.
+const SIGTERM: i32 = 15;
 
 fn board() -> Scenario {
     let scenario = Scenario::board();
@@ -335,26 +339,87 @@ fn a_record_names_the_machines_load_and_cores_and_that_the_run_was_not_killed() 
     assert!(record["load1"].as_f64().unwrap() >= 0.0, "{record}");
 }
 
+/// The line a run prints to stderr once its signal handler is installed,
+/// when `BOARD_TIMING_READY` is `1`.
+const READY: &str = "board: timing handler ready";
+
+#[test]
+fn a_run_says_its_handler_is_ready_only_when_board_timing_ready_is_1() {
+    let scenario = board();
+    let home = tempfile::tempdir().unwrap();
+    for (value, says) in [(None, false), (Some("0"), false), (Some("1"), true)] {
+        let mut command = command(&scenario, home.path(), &["get", "/notes/a"]);
+        if let Some(value) = value {
+            command.env("BOARD_TIMING_READY", value);
+        }
+        let output = command.output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(
+            stderr.lines().filter(|line| *line == READY).count(),
+            usize::from(says),
+            "{value:?}: {stderr}"
+        );
+    }
+}
+
+/// Reads `stderr` on a thread until it prints [`READY`], and fails the
+/// test when that takes over 30 seconds or the run closes stderr first.
+fn await_ready(stderr: std::process::ChildStderr) {
+    let (said, heard) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        use std::io::BufRead as _;
+        let ready = std::io::BufReader::new(stderr)
+            .lines()
+            .map_while(Result::ok)
+            .any(|line| line == READY);
+        let _ = said.send(ready);
+    });
+    let ready = heard
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .unwrap_or_else(|_| panic!("the put did not print {READY:?} within 30 seconds"));
+    assert!(ready, "the put closed stderr without printing {READY:?}");
+}
+
 #[test]
 fn a_run_sent_sigterm_writes_one_line_that_says_it_was_killed() {
     let scenario = board();
     let home = tempfile::tempdir().unwrap();
-    // A put waits for its record on stdin, which the test never closes.
+    // A put waits for its record on stdin. The test holds the stdin it took
+    // out of the child until the put has exited, so the put is still
+    // waiting when the signal lands.
     let mut child = command(&scenario, home.path(), &["put", "/notes/c"])
+        .env("BOARD_TIMING_READY", "1")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .spawn()
         .unwrap();
-    // Long enough for the put to parse its command line and wait on stdin.
-    std::thread::sleep(std::time::Duration::from_millis(1500));
+    let stdin = child.stdin.take().unwrap();
+    await_ready(child.stderr.take().unwrap());
+    // The handler is installed. The wait gives the run a known least time.
+    std::thread::sleep(std::time::Duration::from_millis(200));
     let sent = Command::new("kill")
         .args(["-s", "TERM", &child.id().to_string()])
         .status()
         .unwrap();
     assert!(sent.success());
-    let status = child.wait().unwrap();
-    assert!(!status.success(), "{status}");
+    // The loop bounds the wait: a put the signal never ends fails the test
+    // after 30 seconds instead of holding it until CI's time limit.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if std::time::Instant::now() > deadline {
+            child.kill().unwrap();
+            panic!("the put was still running 30 seconds after SIGTERM");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    drop(stdin);
+    assert_eq!(status.signal(), Some(SIGTERM), "{status}");
+    assert!(log(home.path()).exists(), "the run wrote no timing line");
     let records = records(home.path());
     assert_eq!(records.len(), 1, "{records:?}");
     let killed = &records[0];
@@ -362,10 +427,7 @@ fn a_run_sent_sigterm_writes_one_line_that_says_it_was_killed() {
         (&killed["command"], &killed["killed"], &killed["exit"]),
         (&"put".into(), &true.into(), &Value::Null)
     );
-    assert!(
-        killed["total_us"].as_u64().unwrap() >= 1_000_000,
-        "{killed}"
-    );
+    assert!(killed["total_us"].as_u64().unwrap() >= 200_000, "{killed}");
 }
 
 /// A personal board that holds the schemas of the runs the check writes,

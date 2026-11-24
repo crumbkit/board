@@ -99,6 +99,16 @@ as a hook that times out, writes its line with `killed: true` and a null
 signals themselves and write no such line. A run that SIGKILL ends, or that
 crashes, writes nothing.
 
+A run installs that signal handler once it has parsed its command line. A
+signal that lands earlier ends the run with no line. A test that signals a
+run sets `BOARD_TIMING_READY=1`, and the run then prints
+`board: timing handler ready` to stderr once the handler is installed; the
+test reads stderr for that line before it sends the signal. The run prints
+nothing when the variable is unset or has another value, when
+`BOARD_TIMINGS` is `0`, or when the handler could not be installed. Only
+tests set the variable, but a plugin inherits it, so a run a plugin starts
+inside such a test prints the line too.
+
 Before a line would take the log past 1 MiB, the run that takes the
 rotation lock (`timings.lock`, a kernel lock that a killed run releases)
 summarises the log into `timing-digest.jsonl`, then renames the log to

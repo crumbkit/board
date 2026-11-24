@@ -1,0 +1,67 @@
+{
+  "$defs": {
+    "FixCommit": {
+      "additionalProperties": false,
+      "description": "One fix commit and the findings it answers.",
+      "properties": {
+        "commit": {
+          "description": "The commit, whole or abbreviated.",
+          "pattern": "^[0-9a-f]{7,40}$",
+          "type": "string"
+        },
+        "findings": {
+          "description": "The numbers of the report's findings the commit answers, counting\nits first finding as 1.",
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "commit",
+        "findings"
+      ],
+      "title": "FixCommit",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`changes/fix/v1`: the commits a builder made after a review to answer\nits findings, each with the findings it answers.\n\nIt lives at `/changes/<name>/fixes/<n>`, attached to the change. A\nreview check whose `where` names `unchanged_by` accepts each commit it\nlists after the report it names, when that report has no high finding,\nevery finding number it gives is one of the report's, and it records no\n`deviation`.",
+  "properties": {
+    "$type": {
+      "const": "changes/fix/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "commits": {
+      "description": "Each fix commit, with the findings it answers.",
+      "items": {
+        "$ref": "#/$defs/FixCommit"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "deviation": {
+      "description": "How the fix departs from the plan, when it does. A fix that departs\nfrom the plan needs a new review of the head.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    },
+    "report": {
+      "description": "The review report whose findings the commits answer.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "review/report/v1"
+    }
+  },
+  "required": [
+    "$type",
+    "report",
+    "commits"
+  ],
+  "title": "FixRecord",
+  "type": "object",
+  "x-board-folder": "/changes/{change}/fixes/"
+}

@@ -29,11 +29,27 @@ const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 /// crate's copy is the one Board ships.
 const SCHEMAS: &[&str] = &["plugins", "crates"];
 
-/// Schemas that change in place until a later release (released.md). The
-/// changes plugin's records were split as it was ported, and its types stay
-/// unfrozen until that shape has been used, both in its old directory and
-/// in its crate.
-const UNFROZEN: &[&str] = &["plugins/changes/", "crates/board-plugin-changes/types/"];
+/// Schemas and reports that change in place until a later release
+/// (released/unstable.md). Each entry is a prefix of a schema file's path or
+/// of a report's `schema`. The changes plugin's records were split as it was
+/// ported, and its types stay unfrozen until that shape has been used, both
+/// in its old directory and in its crate. The map plugin's `map/layout/v1`
+/// gains optional fields in map increments 3 and 4, so it stays unfrozen
+/// until increment 4 lands. `timing check`'s report stays unfrozen while the
+/// command timing budgets run silently in their first week, because what
+/// that week shows may change the report's fields.
+const UNFROZEN: &[&str] = &[
+    "plugins/changes/",
+    "crates/board-plugin-changes/types/",
+    "crates/board-plugin-map/types/",
+    "board/timing-check-report/v2",
+];
+
+/// Whether `name`, a schema file's path or a report's `schema`, is one that
+/// [`UNFROZEN`] names.
+fn unfrozen(name: &str) -> bool {
+    UNFROZEN.iter().any(|prefix| name.starts_with(prefix))
+}
 
 /// Where the repository keeps the vectors other repositories test against.
 const VECTORS: &str = "vectors";
@@ -637,11 +653,7 @@ fn is_schema(relative: &str) -> bool {
     let in_types = relative.split('/').nth(2) == Some("types");
     let in_plugin = in_types
         && (relative.starts_with("plugins/") || relative.starts_with("crates/board-plugin-"));
-    relative.ends_with(".schema.json")
-        && in_plugin
-        && !UNFROZEN
-            .iter()
-            .any(|unfrozen| relative.starts_with(unfrozen))
+    relative.ends_with(".schema.json") && in_plugin && !unfrozen(relative)
 }
 
 fn is_vector(relative: &str) -> bool {
@@ -1214,8 +1226,8 @@ fn full_put() -> PutReport {
     }
 }
 
-/// Every report, with the fields its JSON Schema declares and those its
-/// samples hold.
+/// Every report outside [`UNFROZEN`], with the fields its JSON Schema
+/// declares and those its samples hold.
 fn reports() -> BTreeMap<String, BTreeSet<String>> {
     let mut reports = documents();
     for (schema, report) in samples() {
@@ -1224,6 +1236,7 @@ fn reports() -> BTreeMap<String, BTreeSet<String>> {
         paths("data", &report["data"], fields);
         paths("summary", &report["summary"], fields);
     }
+    reports.retain(|schema, _| !unfrozen(schema));
     reports
 }
 
@@ -1311,7 +1324,7 @@ fn every_released_type_report_and_code_is_as_it_was_released() {
         )
     });
     // What a release would list reaches every plugin's types and codes and
-    // every report, and leaves the changes plugin's types out.
+    // every report, and leaves out what UNFROZEN names.
     let built_in = "crates/board-plugin-rules/types/rules/rule/v1.schema.json";
     assert!(
         present.types.contains_key(built_in),
@@ -1319,12 +1332,15 @@ fn every_released_type_report_and_code_is_as_it_was_released() {
         present.types.keys()
     );
     assert!(
-        !(present.types.keys()).any(|path| UNFROZEN
-            .iter()
-            .any(|unfrozen| path.starts_with(unfrozen))
-            || path.starts_with(".board/")),
+        !(present.types.keys()).any(|path| unfrozen(path) || path.starts_with(".board/")),
         "{:?}",
         present.types.keys()
+    );
+    // The file lists no unfrozen report, which the check would freeze.
+    assert!(
+        !(released.reports.keys()).any(|schema| unfrozen(schema)),
+        "{:?}",
+        released.reports.keys()
     );
     for code in [
         "review::agent::failed",

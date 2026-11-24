@@ -156,10 +156,10 @@ fn a_done_change_s_plan_is_corrected_with_correct_and_the_change_stays_done() {
     let refused = board.refusal_stdin("plan", &given(PLAN, &[]));
     assert_eq!(refused["code"], "changes::phase::final");
     assert!(
-        refused["message"]
-            .as_str()
-            .unwrap()
-            .contains("\"correct\": true"),
+        refused["message"].as_str().unwrap().ends_with(
+            "Only when the text is this done change's own plan, corrected, send it again with \
+             \"correct\": true"
+        ),
         "{refused}"
     );
     assert_eq!(board.read("changes/t.json")["plan"], "/changes/t/plans/1");
@@ -205,6 +205,28 @@ fn a_plan_headed_by_another_change_s_title_is_refused_and_writes_nothing() {
     correcting["correct"] = json!(true);
     let refused = board.refusal_stdin("plan", &correcting);
     assert_eq!(refused["code"], "changes::plan::other_change", "{refused}");
+}
+
+/// A live change at the name the heading derives whose title differs from
+/// the heading, as after `--name` or a retitle, is not the plan's change.
+#[test]
+fn a_plan_headed_like_a_live_change_with_another_title_is_written_with_a_warning() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "build", &json!({}));
+    board.write(
+        "changes/bouncer-looks-up-ip-locations.json",
+        &change(
+            "build",
+            &json!({"title": "Bouncer looks up IP locations through a cache"}),
+        ),
+    );
+    let written = board.call_stdin("plan", &given(OTHER_PLAN, &[]));
+    assert_eq!(written["unchanged"], false, "{written}");
+    assert_eq!(
+        written["warnings"][0]["code"], "changes::plan::title_differs",
+        "{written}"
+    );
+    assert!(board.exists("changes/t/plans"));
 }
 
 #[test]

@@ -85,29 +85,43 @@ fn quoting_leaves_safe_words_bare_and_quotes_the_rest_for_a_posix_shell() {
 }
 
 /// Decision 1318Z: the body names the commits after a review that left it
-/// counting, and says nothing more for a review on the head.
+/// counting, and says nothing more for a review on the head. A fix commit
+/// is listed apart, under the changes/fix/v1 that names it.
 #[test]
 fn the_review_line_names_the_commits_accepted_after_the_report() {
     let base = "0123456789abcdef0123456789abcdef01234567";
     let reviewed = "a3f9c0de1234567890abcdef1234567890abcdef";
     let later = "b3f9c0de1234567890abcdef1234567890abcdef";
+    let fix = "c3f9c0de1234567890abcdef1234567890abcdef";
     let report = json!({"range": format!("{base}..{reviewed}"), "verdict": "approve",
-                        "by": "a reviewer", "findings": []});
+                        "by": "a reviewer",
+                        "findings": [{"severity": "low", "text": "a nit"}]});
+    let fixing = json!({"report": "/reviews/r/report",
+                        "commits": [{"commit": &fix[..12], "findings": [1]}]});
     let records = crate::change::Referenced {
-        records: [(
-            "/reviews/r/report".to_owned(),
+        records: [
             (
-                "review/report/v1".to_owned(),
-                report.as_object().unwrap().clone(),
+                "/reviews/r/report".to_owned(),
+                (
+                    "review/report/v1".to_owned(),
+                    report.as_object().unwrap().clone(),
+                ),
             ),
-        )]
+            (
+                "/changes/t/fixes/1".to_owned(),
+                (
+                    "changes/fix/v1".to_owned(),
+                    fixing.as_object().unwrap().clone(),
+                ),
+            ),
+        ]
         .into_iter()
         .collect(),
         ..crate::change::Referenced::default()
     };
     let change = crate::change::from_value(json!({
         "$type": "changes/change/v1", "title": "T", "mount": "/repos/x", "phase": "land",
-        "head": later,
+        "head": fix,
     }))
     .unwrap();
     let mut observed =
@@ -121,13 +135,15 @@ fn the_review_line_names_the_commits_accepted_after_the_report() {
         line.to_owned()
     };
     assert!(!review(&observed).contains("accepted after it"));
-    observed
-        .after_review
-        .insert(reviewed.to_owned(), Ok(vec![later.to_owned()]));
+    observed.after_review.insert(
+        reviewed.to_owned(),
+        Ok(vec![later.to_owned(), fix.to_owned()]),
+    );
     assert!(
         review(&observed).ends_with(&format!(
             "; accepted after it, editing only record paths or the lifecycle doc or cleanly \
-             merging main: `{later}`"
+             merging main: `{later}`; accepted after it, fixing findings `/changes/t/fixes/1` \
+             names: `{fix}`"
         )),
         "{}",
         review(&observed)

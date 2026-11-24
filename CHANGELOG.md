@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- A `plans/question/v1` whose `blocks` names a `tasks/task/v3`, and an
+  `artifacts/artifact/v1` whose `subject` names one, are no longer degraded
+  with `board::ref::wrong_type`. Run `board plugin enable plans` and
+  `board plugin enable artifacts` to replace a board's copies of the two
+  schemas, then `board check` to clear the degraded records.
+
 - `board search '<query>'` lists the records of the board and its mounts
   that match a query in the first slice of Flare's search syntax: words,
   `"phrases"`, `type:` and `from:` filters, commas for any-of and a leading
