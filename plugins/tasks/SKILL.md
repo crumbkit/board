@@ -20,7 +20,10 @@ may be on a phone, so keep each message short.
    `tasks.tree` does not sync. Look for an open task that covers the work.
    To find tasks by their words, run
    `board -C <board> search 'type:task <words>'`, which lists the matching
-   tasks of every status with their paths and titles.
+   tasks of every status with their paths and titles. Search finds a
+   Markdown task only by its title and other frontmatter fields, never by
+   the prose under them, so use words from a title, and read the tree
+   before you add a task that search did not find.
 2. When one does, claim it with
    `tasks.claim --path <path> --session <your session's local_ id>` and
    finish it with `tasks.done --path <path>`. On `tasks::task::held`,

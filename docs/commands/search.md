@@ -48,6 +48,10 @@ question's title is its question and a decision's title is its decision.
 Words match by substring, so `run` also matches `running` and `prune`. Word
 boundaries come in a later version of the syntax. The body a word matches is
 the record's JSON, so a word can also match a field's name, such as `status`.
+A Markdown record, such as a task written as a `.md` file, has only its
+frontmatter in that JSON, so a word matches its frontmatter fields and never
+the prose under them. Search a Markdown record by the words of its title or
+another frontmatter field.
 
 Any other filter, such as `updated:7d` or `in:/tasks`, is refused. The rest
 of Flare's syntax (dates, `in:`, `sort:` and the fields only Flare has) comes
@@ -61,7 +65,8 @@ path. An excluded word does not count.
 
 `--limit` sets how many results one page holds: 50 when it is left out, and
 at most 1000. When more records match, the text ends with a line that gives
-the command for the next page, and `--json` gives the cursor in `next`. Pass
+the command for the next page, with `--limit` when the page used one other
+than 50, and `--json` gives the cursor in `next`. Pass
 the cursor to `--after` for the following page. A cursor holds the last
 result's place in the order, so a record written between two pages can be
 missed or shown twice.
@@ -119,7 +124,11 @@ index and runs it through the same snapshot as `board query`. Every value from
 the query goes into the statement as a blob literal of its bytes in hex, so no
 text from the query reaches the SQL as text. A search runs for at most one
 second, as every query does, and is refused with `board::query::timeout` when
-it runs longer.
+it runs longer. The refusal's hint says to add a filter, such as `type:task`
+or `from:erin`, or to use a longer or less common word, because a word that
+most records hold makes the search read and rank most of the board. The
+statement checks the filters before the words, so a filter also saves reading
+the bodies of the records it rules out.
 
 ## Examples
 
