@@ -26,7 +26,7 @@ const RECONFIRM_DEFAULT: f64 = 300.0;
 
 /// The whole UTC days after its confirmation at which an entry is stale,
 /// however few commits the board has.
-const STALE_DAYS: i32 = 7;
+const STALE_DAYS: i64 = 7;
 
 /// How long git may take to count a day's commits.
 const GIT_DEADLINE: Duration = Duration::from_secs(10);
@@ -92,10 +92,7 @@ pub(crate) fn list(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     let asked: Input = PluginError::read_input("priorities", "list", input)?;
     let (record, _) = held(host)?;
     let stale_after = reconfirm(host);
-    let today = jiff::Timestamp::try_from(host.settings().now)
-        .unwrap_or(jiff::Timestamp::UNIX_EPOCH)
-        .to_zoned(jiff::tz::TimeZone::UTC)
-        .date();
+    let today = board_repos::today(host.settings().now, 0, Duration::ZERO);
     let titles = covered(host, &record)?;
     let mut counted: BTreeMap<String, Option<u32>> = BTreeMap::new();
     let mut rows = |horizon: Horizon| -> Vec<Row> {
@@ -107,7 +104,7 @@ pub(crate) fn list(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
                 let stale = entry.confirmed.as_ref().is_some_and(|day| {
                     let since =
                         (counted.entry(day.clone())).or_insert_with(|| commits_since(host, day));
-                    is_stale(day.parse().ok(), today, *since, stale_after)
+                    is_stale(board_repos::Date::parse(day), today, *since, stale_after)
                 });
                 Row {
                     rank: index + 1,
@@ -147,12 +144,12 @@ pub(crate) fn list(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
 /// parse when none, is stale on `today`: [`STALE_DAYS`] or more whole
 /// days have passed, or more than `stale_after` commits are known since.
 pub(crate) fn is_stale(
-    confirmed: Option<jiff::civil::Date>,
-    today: jiff::civil::Date,
+    confirmed: Option<board_repos::Date>,
+    today: board_repos::Date,
     commits: Option<u32>,
     stale_after: f64,
 ) -> bool {
-    let aged = confirmed.is_some_and(|day| (today - day).get_days() >= STALE_DAYS);
+    let aged = confirmed.is_some_and(|day| today.days() - day.days() >= STALE_DAYS);
     aged || commits.is_some_and(|since| f64::from(since) > stale_after)
 }
 

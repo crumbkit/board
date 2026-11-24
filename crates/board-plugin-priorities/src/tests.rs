@@ -121,9 +121,8 @@ fn a_record_with_a_malformed_field_is_refused_and_its_twin_is_admitted() {
 /// An entry confirmed `days` before 2026-11-24 with `commits` since,
 /// against the default 300 commits.
 fn stale(days: i64, commits: Option<u32>) -> bool {
-    let today = jiff::civil::date(2026, 11, 24);
-    let confirmed = today.checked_sub(jiff::Span::new().days(days)).unwrap();
-    list::is_stale(Some(confirmed), today, commits, 300.0)
+    let today = board_repos::Date::parse("2026-11-24").unwrap();
+    list::is_stale(Some(today.plus(-days)), today, commits, 300.0)
 }
 
 #[test]
@@ -151,7 +150,7 @@ fn an_entry_confirmed_after_today_is_not_stale() {
 
 #[test]
 fn when_the_confirmed_day_does_not_parse_the_commits_alone_decide() {
-    let today = jiff::civil::date(2026, 11, 24);
+    let today = board_repos::Date::parse("2026-11-24").unwrap();
     assert!(!list::is_stale(None, today, Some(300), 300.0));
     assert!(list::is_stale(None, today, Some(301), 300.0));
 }
