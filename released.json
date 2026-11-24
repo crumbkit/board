@@ -1,7 +1,7 @@
 {
   "types": {
     "crates/board-plugin-artifacts/types/artifacts/artifact/v1.schema.json": {
-      "shape": "0b5d69baa28cb6399ba7c76199ee7d930dd360e5",
+      "shape": "ae8bd817fd27cf1065b3104b00e3e885ad7a6b33",
       "enums": {
         "/properties/state/enum": [
           "draft",
@@ -100,7 +100,7 @@
       }
     },
     "crates/board-plugin-plans/types/plans/question/v1.schema.json": {
-      "shape": "19564840a47a90a277b6c83e36038d9e190ae965",
+      "shape": "bbfe82b7382e1038c314a9e4b099e248ff207348",
       "enums": {
         "/properties/status/enum": [
           "open",

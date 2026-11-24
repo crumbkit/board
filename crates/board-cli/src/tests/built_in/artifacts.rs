@@ -230,15 +230,19 @@ fn list_keeps_one_state_one_area_or_the_unfiled_artifacts() {
 }
 
 #[test]
-fn a_subject_naming_a_change_of_either_version_is_valid_and_one_naming_a_plan_is_not() {
+fn a_subject_naming_a_change_or_task_of_any_version_is_valid_and_one_naming_a_plan_is_not() {
     let board = board();
     board
         .write("changes/a.json", r#"{"$type": "changes/change/v1"}"#)
         .write("changes/b.json", r#"{"$type": "changes/change/v2"}"#)
-        .write("changes/c.json", r#"{"$type": "changes/plan/v1"}"#);
+        .write("changes/c.json", r#"{"$type": "changes/plan/v1"}"#)
+        .write("tasks/v2.json", r#"{"$type": "tasks/task/v2"}"#)
+        .write("tasks/v3.json", r#"{"$type": "tasks/task/v3"}"#);
     for (subject, code) in [
         ("/changes/a", None),
         ("/changes/b", None),
+        ("/tasks/v2", None),
+        ("/tasks/v3", None),
         ("/changes/c", Some("board::ref::wrong_type")),
     ] {
         let fields = json!({"subject": [subject]});

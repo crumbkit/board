@@ -80,13 +80,17 @@ pub enum State {
     Superseded,
 }
 
-/// The work an artifact belongs to: a change or a task.
+/// The work an artifact belongs to: a change or a task, of any version.
 #[derive(Debug)]
 pub enum Work {}
 
 impl Accepts for Work {
-    const TYPES: &'static [&'static str] =
-        &["changes/change/v1", "changes/change/v2", "tasks/task/v2"];
+    const TYPES: &'static [&'static str] = &[
+        "changes/change/v1",
+        "changes/change/v2",
+        "tasks/task/v2",
+        "tasks/task/v3",
+    ];
 }
 
 /// The plans plugin's decision record, which `agreed_by` names.

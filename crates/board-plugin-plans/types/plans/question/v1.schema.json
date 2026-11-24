@@ -103,7 +103,8 @@
       "x-board-type": [
         "changes/change/v1",
         "changes/change/v2",
-        "tasks/task/v2"
+        "tasks/task/v2",
+        "tasks/task/v3"
       ]
     },
     "by": {

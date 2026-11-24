@@ -19,8 +19,19 @@ the list. An external plugin written against 0.1.0 may need changes in
 plugins and to CLI users too. Built-in plugins' types, capabilities and
 codes are frozen from 0.1.0.
 
+Until a later release, the `changes/*` types change in place while the
+changes plugin is ported, and Board's own `board/*` types, which the
+released test skips, are not listed. The index may change freely.
+
 After 0.1.1, `runs/suite/v1` gained an optional `kind` in place, because
 the release had few users. `runs.migrate` adds it to existing suites.
+
+After 0.1.1, the `blocks` of `plans/question/v1` and the `subject` of
+`artifacts/artifact/v1` gained `tasks/task/v3` in place, beside
+`tasks/task/v2`, because `tasks add` writes v3 tasks and the release had few
+users. A board whose `.board/types/` holds the 0.1.1 copies reports a
+reference to a v3 task as `board::ref::wrong_type` until
+`board plugin enable` replaces them.
 
 The map plugin's `map/layout/v1` changes in place until map increment 4
 lands, because increments 3 and 4 add optional fields to it. The unstable

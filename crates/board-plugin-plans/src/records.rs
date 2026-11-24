@@ -73,23 +73,26 @@ impl Record for QuestionRecord {
     const TYPE: &'static str = "plans/question/v1";
 }
 
-/// A change of the changes plugin, of either version, or a task of the
-/// tasks plugin.
+/// A change of the changes plugin or a task of the tasks plugin, of any
+/// version either ships.
 #[derive(Debug)]
 pub enum AnyWork {}
 
 impl Accepts for AnyWork {
-    const TYPES: &'static [&'static str] = &[CHANGE_TYPES[0], CHANGE_TYPES[1], TASK_TYPE];
+    const TYPES: &'static [&'static str] = &[
+        CHANGE_TYPES[0],
+        CHANGE_TYPES[1],
+        TASK_TYPES[0],
+        TASK_TYPES[1],
+    ];
 }
 
 /// The record types of a change, which the changes plugin ships.
 pub(crate) const CHANGE_TYPES: [&str; 2] = ["changes/change/v1", "changes/change/v2"];
 
-/// The record type of a task that a question's `blocks` names. The
-/// question's schema is released, so it names v2 alone.
-pub(crate) const TASK_TYPE: &str = "tasks/task/v2";
-/// Every task type the tasks plugin ships, which a query reads.
-pub(crate) const TASK_TYPES: [&str; 2] = [TASK_TYPE, "tasks/task/v3"];
+/// Every task type the tasks plugin ships, which a question's `blocks`
+/// names and a query reads.
+pub(crate) const TASK_TYPES: [&str; 2] = ["tasks/task/v2", "tasks/task/v3"];
 
 /// Where a question stands.
 #[derive(Debug, JsonSchema)]
