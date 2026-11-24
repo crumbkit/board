@@ -6,14 +6,19 @@ import type { EngineInterface, Register } from 'claude-code'
 // too. The files sit in the account's Claude config directory, which every
 // session on that account shares and no other account does.
 
-type Shares = { context: number; usage: number }
+/** The context limit in tokens, and the share of a usage window, in percent, at which a session is told to hand off. */
+type Limits = { contextTokens: number; usage: number }
 export type Crossing = { key: string; why: string; window?: { kind: string; resetsAt: string | undefined } }
-type Reading = { context: { percent?: number }; rateLimits: readonly { kind: string; percentUsed: number; resetsAt?: string }[] }
+type Reading = { context: { tokens?: number }; rateLimits: readonly { kind: string; percentUsed: number; resetsAt?: string }[] }
 type Trigger = { key: string; why: string; resetsAt?: string | undefined; at: string }
 type Session = { cwd: string; asked: string[]; status: 'asked' | 'handed-off'; line?: string }
 
 // Used when the board gives no value; the calibrated values replace them.
-export const DEFAULTS: Shares = { context: 75, usage: 85 }
+export const DEFAULTS: Limits = { contextTokens: 280_000, usage: 85 }
+// The key a context crossing is asked under. 0.1.1 and earlier used `context` for a share of the window, which load() drops.
+const CONTEXT = 'context-tokens'
+// One `params.get` takes about 0.36 seconds, too slow for every turn, so the values are read again only once this old.
+const PARAMS_MS = 5 * 60_000
 const POLL_MS = 30_000
 // A trigger whose window gave no reset time stops telling sessions after the longest window.
 const NO_RESET_MS = 5 * 3_600_000
@@ -23,19 +28,24 @@ const MAX_LINES = 20
 const CLEAR_MARGIN = 10
 const SESSION_ID = /^[A-Za-z0-9_-]+$/
 
-/** Everything a measurement crosses: the context share, then each usage window at or over its share. */
-export function crossings(reading: Reading, shares: Shares): Crossing[] {
+/** A whole number with a comma every three digits: 280,000. */
+const count = (n: number) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+
+/** Everything a measurement crosses: the context limit, then each usage window at or over its share. */
+export function crossings(reading: Reading, limits: Limits): Crossing[] {
   const found: Crossing[] = []
-  const percent = reading.context.percent
-  if (percent !== undefined && percent >= shares.context) found.push({ key: 'context', why: `its context window is ${percent}% full` })
+  const tokens = reading.context.tokens
+  if (tokens !== undefined && tokens >= limits.contextTokens) {
+    found.push({ key: CONTEXT, why: `its context holds ${count(tokens)} tokens, at or over its limit of ${count(limits.contextTokens)}` })
+  }
   for (const w of reading.rateLimits) {
-    if (w.percentUsed >= shares.usage) found.push({ key: `${w.kind}@${w.resetsAt}`, why: `the ${w.kind} usage limit is ${w.percentUsed}% used`, window: { kind: w.kind, resetsAt: w.resetsAt } })
+    if (w.percentUsed >= limits.usage) found.push({ key: `${w.kind}@${w.resetsAt}`, why: `the ${w.kind} usage limit is ${w.percentUsed}% used`, window: { kind: w.kind, resetsAt: w.resetsAt } })
   }
   return found
 }
 
 /** The first crossing of a measurement, if any. */
-export const crossing = (reading: Reading, shares: Shares): Crossing | undefined => crossings(reading, shares)[0]
+export const crossing = (reading: Reading, limits: Limits): Crossing | undefined => crossings(reading, limits)[0]
 
 /** The line that resumes a session: its directory and id, then its own handoff line when it wrote one. */
 export function resumeLine(id: string, cwd: string, handoff?: string): string {
@@ -51,7 +61,21 @@ const message = (why: string) =>
   'Commit and push every branch in each checkout you used, record state in the board, and end your reply with the one-line handoff ' +
   '(`handoff: <board path> — resume: <command>`) and then READY TO ARCHIVE.'
 
-type Mem = { id: string | undefined; loading: Promise<void> | undefined; polling: boolean; shares: Promise<Shares> | undefined; cwd: string; asked: Set<string>; status: Session['status']; line: string | undefined }
+type Mem = {
+  id: string | undefined
+  loading: Promise<void> | undefined
+  polling: boolean
+  /** The limits in force and when they were read; read again once older than PARAMS_MS. */
+  limits: { value: Promise<Limits>; at: number } | undefined
+  /** Whether the session was told that the params are unreadable; it is told once. */
+  paramsLogged: boolean
+  /** The session's own latest reading of each usage window kind: its percentUsed and when it was measured, held in memory only. */
+  usage: Map<string, { percent: number; at: number }>
+  cwd: string
+  asked: Set<string>
+  status: Session['status']
+  line: string | undefined
+}
 
 async function dir($: EngineInterface) {
   const config = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${(await $.env.get('HOME')) ?? ''}/.claude`
@@ -66,7 +90,7 @@ async function readJson<T>($: EngineInterface, path: string): Promise<T | undefi
   }
 }
 
-async function readShare($: EngineInterface, name: string): Promise<number | undefined> {
+async function readParam($: EngineInterface, name: string): Promise<number | undefined> {
   try {
     const ran = await $.process.run(['board', '--personal', '--json', 'call', 'params.get', '--name', name])
     const value = Number(JSON.parse(ran.stdout)?.data?.output?.value)
@@ -77,17 +101,27 @@ async function readShare($: EngineInterface, name: string): Promise<number | und
   return undefined
 }
 
-// Reads each calibrated value once per session; the defaults stand in for one the board lacks.
-function loadShares($: EngineInterface, mem: Mem): Promise<Shares> {
-  mem.shares ??= (async () => {
-    const context = await readShare($, 'handoff-context-share')
-    const usage = await readShare($, 'handoff-usage-share')
-    if (context === undefined || usage === undefined) {
-      $.ui.log(`handoff: params unreadable, using ${DEFAULTS.context}% context and ${DEFAULTS.usage}% usage`)
+// Reads the calibrated values again once the copy is over PARAMS_MS old, so a changed value reaches a running session
+// without a restart; the defaults stand in for one the board lacks.
+// A value that cannot be read keeps the last one read, and the default stands in only before any was read.
+async function loadLimits($: EngineInterface, mem: Mem): Promise<Limits> {
+  const now = await $.clock.now()
+  if (mem.limits === undefined || now - mem.limits.at > PARAMS_MS) {
+    const last = mem.limits?.value ?? Promise.resolve(DEFAULTS)
+    mem.limits = {
+      at: now,
+      value: (async () => {
+        const [contextTokens, usage] = await Promise.all([readParam($, 'handoff-context-tokens'), readParam($, 'handoff-usage-share')])
+        const before = await last
+        if ((contextTokens === undefined || usage === undefined) && !mem.paramsLogged) {
+          mem.paramsLogged = true
+          $.ui.log(`handoff: params unreadable, using ${count(before.contextTokens)} context tokens and ${before.usage}% usage`)
+        }
+        return { contextTokens: contextTokens ?? before.contextTokens, usage: usage ?? before.usage }
+      })(),
     }
-    return { context: context ?? DEFAULTS.context, usage: usage ?? DEFAULTS.usage }
-  })()
-  return mem.shares
+  }
+  return mem.limits.value
 }
 
 async function save($: EngineInterface, mem: Mem) {
@@ -104,7 +138,9 @@ async function save($: EngineInterface, mem: Mem) {
 /** Loads what the session's own file holds. /clear and /resume change the id without a session.start, so every hook calls this first. */
 async function load($: EngineInterface, mem: Mem, id: string) {
   const earlier = SESSION_ID.test(id) ? await readJson<Session>($, `${await dir($)}/sessions/${id}.json`) : undefined
-  mem.asked = new Set(earlier?.asked ?? [])
+  // `context` is 0.1.1's key for a share of the window, which this version no longer measures.
+  mem.asked = new Set((earlier?.asked ?? []).filter(key => key !== 'context'))
+  mem.usage = new Map()
   mem.status = earlier?.status ?? 'asked'
   mem.line = earlier?.line
 }
@@ -119,29 +155,33 @@ async function sync($: EngineInterface, mem: Mem) {
   await mem.loading
 }
 
-/** Records each new crossing; tells the session to hand off when it has not been told yet or its last handoff is done. */
+/**
+ * Records each new crossing; tells the session to hand off when it has not been told yet, its last handoff is done,
+ * or it reached its context limit, which it is told about even after a usage prompt.
+ * Memory is updated before the write, so a failed write still holds the key and the prompt still goes.
+ */
 async function ask($: EngineInterface, mem: Mem, found: readonly Crossing[]) {
   const fresh = found.filter(c => !mem.asked.has(c.key))
   if (fresh.length === 0) return
-  const prompt = mem.asked.size === 0 || mem.status === 'handed-off'
+  const told = mem.asked.size === 0 || mem.status === 'handed-off' ? fresh[0] : fresh.find(c => c.key === CONTEXT)
   for (const c of fresh) mem.asked.add(c.key)
-  if (prompt) mem.status = 'asked'
+  if (told !== undefined) mem.status = 'asked'
   await save($, mem)
-  if (prompt) void $.prompt.submit({ text: message(fresh[0]!.why) })
+  if (told !== undefined) void $.prompt.submit({ text: message(told.why) })
 }
 
 /** The time after which a trigger tells no session. */
 const expiry = (trigger: Trigger) => (trigger.resetsAt === undefined ? Date.parse(trigger.at) + NO_RESET_MS : Date.parse(trigger.resetsAt))
 /** The window kind a usage key names: `seven_day` in `seven_day@<resetsAt>`. */
-const kindOf = (key: string) => key.split('@')[0]
+const kindOf = (key: string): string => key.split('@')[0] ?? key
 
 /**
  * For each usage window the reading puts CLEAR_MARGIN points under its share, expires a live trigger of that kind and re-arms the session.
  * A usage reset lowers percentUsed but keeps resetsAt, so the trigger would otherwise tell sessions until the old reset.
  * It matches on the kind alone, so a reset that also moves resetsAt clears the trigger too.
  */
-async function rearm($: EngineInterface, mem: Mem, reading: Reading, shares: Shares) {
-  const under = new Map(reading.rateLimits.filter(w => w.percentUsed < shares.usage - CLEAR_MARGIN).map(w => [w.kind, w.percentUsed]))
+async function rearm($: EngineInterface, mem: Mem, reading: Reading, limits: Limits) {
+  const under = new Map(reading.rateLimits.filter(w => w.percentUsed < limits.usage - CLEAR_MARGIN).map(w => [w.kind, w.percentUsed]))
   if (under.size === 0) return
   const path = `${await dir($)}/trigger.json`
   const trigger = await readJson<Trigger>($, path)
@@ -161,7 +201,18 @@ async function rearm($: EngineInterface, mem: Mem, reading: Reading, shares: Sha
 }
 
 export const register: Register = (on) => {
-  const mem: Mem = { id: undefined, loading: undefined, polling: false, shares: undefined, cwd: '', asked: new Set(), status: 'asked', line: undefined }
+  const mem: Mem = {
+    id: undefined,
+    loading: undefined,
+    polling: false,
+    limits: undefined,
+    paramsLogged: false,
+    usage: new Map(),
+    cwd: '',
+    asked: new Set(),
+    status: 'asked',
+    line: undefined,
+  }
   on('session.start', async ($, e, next) => {
     mem.cwd = e.cwd
     await sync($, mem)
@@ -177,6 +228,11 @@ export const register: Register = (on) => {
         if (mem.asked.delete(trigger.key)) await save($, mem)
         return
       }
+      // A session whose own reading of the window is newer than the trigger and under the share is not told: the trigger
+      // is stale for it. Its next reading at or over the share tells it and writes a fresh trigger. A reading older than
+      // the trigger, as an idle session's is, does not hold the trigger back.
+      const own = mem.usage.get(kindOf(trigger.key))
+      if (own !== undefined && own.at > Date.parse(trigger.at) && own.percent < (await loadLimits($, mem)).usage) return
       await ask($, mem, [{ key: trigger.key, why: trigger.why }])
     })
     return next(e)
@@ -184,11 +240,17 @@ export const register: Register = (on) => {
 
   on('session.measure', async ($, e, next) => {
     await sync($, mem)
-    const shares = await loadShares($, mem)
-    // A context share the session fell back under (after /compact) can be crossed and asked about again.
-    if (mem.asked.has('context') && e.context.percent !== undefined && e.context.percent < shares.context) mem.asked.delete('context')
-    await rearm($, mem, e, shares)
-    const fresh = crossings(e, shares).filter(c => !mem.asked.has(c.key))
+    const limits = await loadLimits($, mem)
+    const now = await $.clock.now()
+    for (const w of e.rateLimits) mem.usage.set(w.kind, { percent: w.percentUsed, at: now })
+    // Claude Code leaves `context.tokens` out only before the session has used any input tokens, such as just after
+    // /clear; such a payload is no reading, so it makes no context check and re-arms nothing.
+    const tokens = e.context.tokens
+    const reading: Reading = { context: tokens === undefined ? {} : { tokens }, rateLimits: e.rateLimits }
+    // A count back under the limit (after /compact) re-arms the context prompt.
+    if (mem.asked.has(CONTEXT) && tokens !== undefined && tokens < limits.contextTokens) mem.asked.delete(CONTEXT)
+    await rearm($, mem, reading, limits)
+    const fresh = crossings(reading, limits).filter(c => !mem.asked.has(c.key))
     for (const c of fresh) {
       if (c.window === undefined) continue
       const trigger: Trigger = { key: c.key, why: c.why, at: iso(await $.clock.now()), ...(c.window.resetsAt === undefined ? {} : { resetsAt: c.window.resetsAt }) }
