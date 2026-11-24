@@ -333,9 +333,9 @@ move to their own records. A run that finds nothing returns
 `.board/types/` still holds them, `board check` reports each as
 `board::ref::wrong_type` once the task is v3. `board plugin enable plans`
 and `board plugin enable artifacts` replace those copies with the current
-schemas, which accept a v3 task. A repo whose rewrite is refused has its code and message in
-`refused`, and the other repos' rewrites still land. A run killed part way
-leaves each repo's commit whole or absent; run it again.
+schemas, which accept a v3 task. A repo whose rewrite is refused has its
+code and message in `refused`, and the other repos' rewrites still land. A
+run killed part way leaves each repo's commit whole or absent; run it again.
 
 ## The sweep skill
 

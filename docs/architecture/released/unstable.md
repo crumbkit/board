@@ -19,6 +19,10 @@ the list. An external plugin written against 0.1.0 may need changes in
 plugins and to CLI users too. Built-in plugins' types, capabilities and
 codes are frozen from 0.1.0.
 
+Until a later release, the `changes/*` types change in place while the
+changes plugin is ported, and Board's own `board/*` types, which the
+released test skips, are not listed. The index may change freely.
+
 After 0.1.1, `runs/suite/v1` gained an optional `kind` in place, because
 the release had few users. `runs.migrate` adds it to existing suites.
 
