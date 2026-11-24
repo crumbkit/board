@@ -1154,12 +1154,13 @@ fn a_question_blocking_a_change_with_no_phase_has_no_work_and_its_twin_with_a_ph
     );
 }
 
-/// `put` writes a question whose `blocks` names a task whole. Its twin,
+/// `put` writes a question whose `blocks` names a task of either version whole. Its twin,
 /// whose `blocks` names a record that is neither a change nor a task, is
 /// written too, as Board writes every broken reference, but marked degraded
 /// with `board::ref::wrong_type` at `/blocks`.
 #[test]
-fn put_writes_a_question_blocking_a_task_whole_and_marks_its_twin_blocking_another_type() {
+fn put_writes_a_question_blocking_a_task_of_either_version_whole_and_marks_its_twin_blocking_another_type()
+ {
     let (scenario, _) = plans_board(&[(
         "projects/a/questions/other",
         body("2026-10-01T09:00:00Z", &json!({})),
@@ -1167,6 +1168,10 @@ fn put_writes_a_question_blocking_a_task_whole_and_marks_its_twin_blocking_anoth
     scenario.write(
         "tasks/w.md",
         Item::File("---\n$type: tasks/task/v2\ntitle: Work\nstatus: open\n---\nBody.\n"),
+    );
+    scenario.write(
+        "tasks/v3.md",
+        Item::File("---\n$type: tasks/task/v3\ntitle: Work\nstatus: open\n---\nBody.\n"),
     );
     let mut board = Board::open(scenario.workdir(), None).unwrap();
     board.build_in(&[&Plans]);
@@ -1183,4 +1188,5 @@ fn put_writes_a_question_blocking_a_task_whole_and_marks_its_twin_blocking_anoth
         Some(("board::ref::wrong_type", Some("/blocks".to_owned())))
     );
     assert_eq!(degraded("/tasks/w.md"), None);
+    assert_eq!(degraded("/tasks/v3.md"), None);
 }

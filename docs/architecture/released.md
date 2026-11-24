@@ -7,6 +7,9 @@ must read the records and reports of a later one, so:
 
 - a changed type is a new version, `<namespace>/<kind>/v<n+1>`, and the old
   version's schema stays readable;
+- a reference's `x-board-type` list may gain a type in place, since every
+  stored record still validates; an older binary or installed type copy
+  refuses the new reference until it is upgraded or its plugin re-enabled;
 - an `enum` that `if`, `not` or `oneOf` cannot reach may gain a value, never
   lose one; a plugin reads a record holding a value it does not know, and
   decides conservatively;
@@ -14,10 +17,6 @@ must read the records and reports of a later one, so:
   no input becomes required; a field may be added;
 - a code is never renamed or removed; a code may be added;
 - `plugin enable` reports each schema it replaced, in `replaced`.
-
-Until a later release, the `changes/*` types change in place while the
-changes plugin is ported, and Board's own `board/*` types, which the
-released test skips, are not listed. The index may change freely.
 
 ## released.json
 
