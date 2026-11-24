@@ -66,12 +66,16 @@ together, so update a board in this order:
 
 It reads only the board's own tree, so each mounted board and each mounted
 notes repository is migrated on its own, with
-`cargo xtask migrate-shapes <its checkout>`. Until it is, a task there whose
-`owner` is still a string is unreadable and drops out of `tasks.available`,
-`tasks.claim` there refuses with `tasks::repo::schema_stale` while the
-repository stores the old tasks/task/v2 schema, and a question there whose `session` is still a string drops out of
-`plans.open`. A crossing with a bare hash is degraded until its board is
-migrated.
+`cargo xtask migrate-shapes <its checkout>`, run from a checkout of the
+Board source, and the steps above in that checkout, then a commit, a push
+and `board mount update <mount>`. Until it is, a task there whose `owner`
+is still a string is unreadable and drops out of `tasks.available`, and a
+question there whose `session` is still a string drops out of
+`plans.open`. `tasks.claim` there syncs the clone first, so a repository
+migrated and pushed from another clone is claimed. While the synced clone
+still stores the old tasks/task/v2 schema, the claim refuses with
+`tasks::repo::schema_stale` and writes nothing. A crossing with a bare
+hash is degraded until its board is migrated.
 
 The migration leaves seen records and Board.app alone. A seen record keeps
 naming its effect by `/effects/answered/<id>`, which Board.app reads. A

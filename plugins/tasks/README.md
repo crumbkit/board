@@ -238,19 +238,28 @@ refusing `tasks::claim::no_owner` when they name nobody. `--owner`, the
 one flag a released Board took, names the owner in a single text, read as
 the shapes migration read old owners: a `local_` id in it is the session,
 Codex or Claude the program, the owner's own name the person, and the
-whole text the agent's name unless it is only one of those, so `lead-1` is the agent
-`lead-1`. `--owner` beside any of
-the other four is refused with `tasks::owner::twice`. It claims an open
-task that nobody or the same owner holds, where two owners that both name a
-session are the same when their sessions match, and refuses one another owner holds with `tasks::task::held`, whose `owner` field names
-the holder. In a mounted notes repo whose clone stores a tasks/task/v2 or v3
-schema whose `owner` differs from the plugin's, or no v2 schema, `claim`
-refuses with `tasks::repo::schema_stale` before it syncs or writes, since
-`put` would refuse the owner it writes. The refusal names the task, the clone,
-the mount and the schema. To fix it, run `cargo xtask migrate-shapes <clone>`,
-then the same with `--write`, then `board -C <clone> plugin enable tasks` and
-commit, then `board mount update <mount>`. `done`, `defer`, `drop` and `reviewed` leave `owner` as it is, so
-a finished task still says who held it. No call clears `owner`; edit the task
+whole text the agent's name unless it is only one of those, so `lead-1` is
+the agent `lead-1`. `--owner` beside any of the other four is refused with
+`tasks::owner::twice`. It claims an open task that nobody or the same owner
+holds, where two owners that both name a session are the same when their
+sessions match, and refuses one another owner holds with
+`tasks::task::held`, whose `owner` field names the holder.
+
+In a mounted notes repo, `claim` syncs the clone and updates the mount
+before it reads the task schemas the clone stores, so a repo migrated and
+pushed from another clone is claimed. When the synced clone stores a
+tasks/task/v2 or v3 schema whose `owner` differs from the plugin's, or no
+v2 schema, `claim` refuses with `tasks::repo::schema_stale` before it
+writes, since `put` would refuse the owner it writes. The refusal names the
+task, the clone, the mount and the schema, and its hint gives the shapes
+migration in docs/plugins/lifecycle/updating.md: from a checkout of the
+Board source, `cargo xtask migrate-shapes <clone>`, a `--map` for what it
+could not map, the same with `--write`, `board plugin enable` for each
+enabled plugin and `board check` in the clone, a commit and a push, then
+`board mount update <mount>`.
+
+`done`, `defer`, `drop` and `reviewed` leave `owner` as it is, so a
+finished task still says who held it. No call clears `owner`; edit the task
 to hand it on.
 
 `move --path <task> --parent <task>` sets the task's `parent`, written as its

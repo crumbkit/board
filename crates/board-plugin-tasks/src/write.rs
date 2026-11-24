@@ -293,8 +293,19 @@ pub(crate) fn stamped(
     change: &Change<'_>,
     landing: Landing,
 ) -> Result<Value, PluginError> {
-    let found = listed(host, PLUGIN)?;
-    let repo = held(&found, logical);
+    let repo = held(&listed(host, PLUGIN)?, logical);
+    stamped_in(host, &repo, logical, change, landing)
+}
+
+/// [`stamped`] on the task at `logical` in `repo`, which the caller has
+/// already found.
+pub(crate) fn stamped_in(
+    host: &dyn Host,
+    repo: &Repo,
+    logical: &str,
+    change: &Change<'_>,
+    landing: Landing,
+) -> Result<Value, PluginError> {
     let stamp = |record: &Map<String, Value>, day: Date| {
         let mut values = change(record, day)?;
         values.push(("reviewed", Some(day.to_string().into())));
@@ -302,11 +313,11 @@ pub(crate) fn stamped(
     };
     let clones = Through::new(host);
     let writer = writer(host, &clones);
-    let edited = edit(writer, &repo, logical, &stamp, landing)?;
-    let (commit, unpushed) = landed_with(writer, &repo, edited.commit, landing.push)?;
-    let conflicts = writer.conflicts_at(&repo, &[&edited.path]);
+    let edited = edit(writer, repo, logical, &stamp, landing)?;
+    let (commit, unpushed) = landed_with(writer, repo, edited.commit, landing.push)?;
+    let conflicts = writer.conflicts_at(repo, &[&edited.path]);
     Ok(json!(written(
-        &repo,
+        repo,
         &edited.path,
         &edited.record,
         (commit, edited.synced, unpushed),
