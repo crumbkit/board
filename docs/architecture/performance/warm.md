@@ -102,7 +102,8 @@ alter, and the states of each.
 - The run keeps the rows when nothing failed to read, no two entries share a
   path, no entry is `board::repo::unreadable`, and every mount its
   resolutions crossed is one the key's probes hold. Otherwise it decides
-  every entry and keeps none, and the slot is emptied.
+  every entry and keeps none. The slot keeps the rows, inputs and key of
+  the earlier tree it holds, and the next run compares the walk with them.
 - A run that does not keep its rows records no reads.
 - The `decided` work count ([timing.md](timing.md)) is the entries a run
   decided. A warm `query` or `check` of an unchanged board decides none.
@@ -164,7 +165,7 @@ alter, and the states of each.
 | holds key K | a run computes K | rows read; nothing written | board-ops snapshot |
 | holds key K | a run computes K2, and at most one entry in 20 is decided | changed rows and inputs replaced; holds K2; a prune counted | board-ops snapshot |
 | holds key K | a run computes K2, and the frame differs or more is decided | every row and input replaced; holds K2; a prune counted | board-ops snapshot |
-| holds key K | the new rows may not be kept | slot, rows and inputs deleted; a prune counted | board-ops snapshot |
+| holds key K | the new rows may not be kept | the slot keeps key K, its rows and its inputs; no prune counted | board-ops snapshot |
 | holds key K | `refs`, or a scoped run | not read and not written | board-ops snapshot |
 | any | a prune in a run that did not reach the slot | slot, rows and inputs deleted | board-index prune |
 
