@@ -326,6 +326,30 @@ fn a_warm_check_and_a_warm_query_of_an_unchanged_board_read_no_validation() {
 }
 
 #[test]
+fn after_one_record_changes_a_warm_query_reads_only_its_validation_and_a_cold_one_reads_each() {
+    let (scenario, _vendor) = crowded(60);
+    let cache = tempfile::tempdir().unwrap();
+    decided(&scenario, cache.path());
+    let changed = task(r#", "note": "changed""#);
+    scenario.write("topics/t0.json", Item::File(&changed));
+    let board = open(&scenario);
+    for (cache, most) in [(Some(cache.path()), 1), (None, usize::MAX)] {
+        let index = Index::open(cache, board.repository().path()).unwrap();
+        let (read, _, _) = crate::index::transact(index, |writer| {
+            let (_, entries) = board.decide(writer, None, Need::View)?;
+            Ok((writer.validations_read(), entries))
+        })
+        .unwrap();
+        let expected = if cache.is_some() {
+            read == most
+        } else {
+            read > 60
+        };
+        assert!(expected, "{cache:?} read {read}");
+    }
+}
+
+#[test]
 fn a_warm_check_and_a_warm_query_of_an_unchanged_board_write_nothing_and_a_cold_one_writes() {
     let (scenario, _vendor) = mounting();
     let cache = tempfile::tempdir().unwrap();

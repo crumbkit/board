@@ -473,9 +473,56 @@ pub(crate) fn validated(
     work: &mut Refreshed,
 ) -> Result<(), RefreshError> {
     let reader = &mut repository.reader();
-    validate_all(writer, reader, source, facts, &mut kept, work)?;
+    validate_all(
+        writer,
+        reader,
+        source,
+        facts,
+        (&mut kept, &|_| true),
+        &mut work.validated,
+    )?;
     work.compiled += kept.compiled;
     Ok(())
+}
+
+/// The working tree's records, checked against their schemas only at the
+/// paths a run decides.
+pub(crate) struct Validating<'r> {
+    repository: &'r Repository,
+    kept: Kept,
+}
+
+impl<'r> Validating<'r> {
+    pub(crate) fn new(repository: &'r Repository, kept: Kept) -> Self {
+        Self { repository, kept }
+    }
+
+    /// Adds to `facts` what checking each record at a path `which` admits
+    /// against its schema found, as [`validated`] does, counting each pair
+    /// validated now in `validated`.
+    pub(crate) fn validate(
+        &mut self,
+        writer: &Writer,
+        facts: &mut HashMap<String, Indexed>,
+        which: &dyn Fn(&str) -> bool,
+        validated: &mut usize,
+    ) -> Result<(), RefreshError> {
+        let reader = &mut self.repository.reader();
+        let source = &Source::WorkingTree;
+        validate_all(
+            writer,
+            reader,
+            source,
+            facts,
+            (&mut self.kept, which),
+            validated,
+        )
+    }
+
+    /// Counts the schemas it compiled.
+    pub(crate) fn finish(self, work: &mut Refreshed) {
+        work.compiled += self.kept.compiled;
+    }
 }
 
 /// Counts the schemas `kept` compiled, for a run that validates nothing.
@@ -483,16 +530,17 @@ pub(crate) fn unvalidated(kept: &Kept, work: &mut Refreshed) {
     work.compiled += kept.compiled;
 }
 
-/// Sets what checking each record against its schema found: from the index
-/// when it holds that pair, or validated now and stored. A schema this
-/// refresh did not compile is read and compiled once.
+/// Sets what checking each record at a path `which` admits against its
+/// schema found: from the index when it holds that pair, or validated now
+/// and stored, counted in `validated`. A schema this refresh did not
+/// compile is read and compiled once.
 fn validate_all(
     writer: &Writer,
     reader: &mut Reader<'_>,
     source: &Source,
     facts: &mut HashMap<String, Indexed>,
-    kept: &mut Kept,
-    work: &mut Refreshed,
+    (kept, which): (&mut Kept, &dyn Fn(&str) -> bool),
+    validated: &mut usize,
 ) -> Result<(), RefreshError> {
     let mut schemas: HashMap<RecordType, Option<(String, ObjectId)>> = HashMap::new();
     for record_type in facts.values().filter_map(schema_type) {
@@ -502,7 +550,8 @@ fn validate_all(
             schemas.insert(record_type.clone(), schema);
         }
     }
-    let mut records: Vec<(&String, &mut Indexed)> = facts.iter_mut().collect();
+    let mut records: Vec<(&String, &mut Indexed)> =
+        (facts.iter_mut()).filter(|(path, _)| which(path)).collect();
     records.sort_unstable_by_key(|(_, record)| record.blob);
     for (path, record) in records {
         let Some((schema_path, schema)) = schema_type(record)
@@ -536,7 +585,7 @@ fn validate_all(
         };
         let validation = validate(compiled, &value);
         writer.put_validation(record.blob, schema, &validation)?;
-        work.validated += 1;
+        *validated += 1;
         record.validation = Some(validation);
     }
     Ok(())

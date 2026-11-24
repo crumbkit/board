@@ -95,14 +95,15 @@ alter, and the states of each.
   the slot holds that key and the command reads kept rows (`query`, `call`,
   `enable` and `check`), the run reads the rows in place of deciding, and
   checks no record against its schema.
-- Otherwise the run reads `HEAD`'s tree, checks the records that need it,
-  and decides again only the entries below. It decides every entry when the
+- Otherwise the run reads `HEAD`'s tree and decides again only the entries
+  below. It checks against its schema only each record it decides. It decides every entry when the
   slot holds nothing or another frame, two entries share a path, or more
   than one entry in 20 would be decided.
 - The run keeps the rows when nothing failed to read, no two entries share a
   path, no entry is `board::repo::unreadable`, and every mount its
   resolutions crossed is one the key's probes hold. Otherwise it decides
   every entry and keeps none, and the slot is emptied.
+- A run that does not keep its rows records no reads.
 - The `decided` work count ([timing.md](timing.md)) is the entries a run
   decided. A warm `query` or `check` of an unchanged board decides none.
 
