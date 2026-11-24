@@ -142,14 +142,25 @@ fn micros(duration: Duration) -> u64 {
 
 /// What a signal handler needs to write the line of a run that a signal
 /// ends: when it started, how deep it is, the cache its line goes to, and
-/// what it runs once that is known.
+/// what it runs once that is known. A run that is `ready_line` prints
+/// [`READY_LINE`] once its handler is installed.
 struct Pending {
     started: Instant,
     depth: u32,
     cache: PathBuf,
     command: Option<String>,
     capability: Option<String>,
+    ready_line: bool,
 }
+
+/// The variable that, set to `1`, has a run print [`READY_LINE`] to stderr
+/// once its signal handler is installed, so a test can signal the run
+/// without guessing when it is ready.
+const READY_VARIABLE: &str = "BOARD_TIMING_READY";
+
+/// What a run prints when [`READY_VARIABLE`] is `1` and its handler is
+/// installed.
+const READY_LINE: &[u8] = b"board: timing handler ready\n";
 
 /// The run in progress, which only the binary's main sets.
 static PENDING: Mutex<Option<Pending>> = Mutex::new(None);
@@ -177,6 +188,7 @@ pub(crate) fn watch(started: Instant, context: &Context) {
             cache: cache.clone(),
             command: None,
             capability: None,
+            ready_line: environment.inherited.get(READY_VARIABLE) == Some(&"1".into()),
         });
     }
 }
@@ -184,7 +196,8 @@ pub(crate) fn watch(started: Instant, context: &Context) {
 /// Names the command the binary's run parsed, and the capability it calls
 /// when the command line names one, and has SIGINT, SIGTERM or SIGHUP write
 /// its line with `killed: true` before the run ends as the signal would
-/// have. Nothing happens outside the binary's run.
+/// have, then prints [`READY_LINE`] when the run asked for it. Nothing
+/// happens outside the binary's run.
 pub(crate) fn naming(command: &str, capability: Option<String>) {
     let mut pending = pending();
     let Some(running) = pending.as_mut() else {
@@ -192,10 +205,16 @@ pub(crate) fn naming(command: &str, capability: Option<String>) {
     };
     running.command = Some(command.to_owned());
     running.capability = capability;
+    let ready_line = running.ready_line;
     drop(pending);
     // A run that cannot watch for signals still runs; it only loses the
-    // line a signal would have written.
-    let _ = board_plugin::clean_up_on_signals(killed);
+    // line a signal would have written, and says nothing is ready.
+    if board_plugin::clean_up_on_signals(killed).is_ok() && ready_line {
+        crate::report::emit(&Output {
+            stderr: READY_LINE.to_vec(),
+            ..Output::default()
+        });
+    }
 }
 
 /// Writes the line of the run a signal is ending, once.
