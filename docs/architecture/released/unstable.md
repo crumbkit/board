@@ -32,3 +32,21 @@ After 0.1.1, the `blocks` of `plans/question/v1` and the `subject` of
 users. A board whose `.board/types/` holds the 0.1.1 copies reports a
 reference to a v3 task as `board::ref::wrong_type` until
 `board plugin enable` replaces them.
+
+The map plugin's `map/layout/v1` changes in place until map increment 4
+lands, because increments 3 and 4 add optional fields to it. The unstable
+list cannot hold it, because the list accepts only the external plugin
+protocol's types, so the released test skips
+`crates/board-plugin-map/types/` through `UNFROZEN` in
+crates/board-cli/src/tests/released.rs, as it skips the changes plugin's
+types. The change that lands increment 4 removes that entry and lists the
+type. `map.check` and the `map::` codes are listed as released, because the
+increments only add capabilities and codes beside them.
+
+The `--json` report of `board timing check`, `board/timing-check-report/v2`,
+changes in place while the command timing budgets run silently in their first
+week, because what that week shows may change the report's fields. The
+released test leaves it out through the same `UNFROZEN` list, whose entries
+match a report's `schema` as well as a schema file's path, and released.json
+does not list its fields. The change that ends the silent week removes that
+entry and lists the report.
