@@ -28,7 +28,8 @@ pub use uri::uri_of;
 pub type Prefix = Result<LogicalPath, PathError>;
 
 /// The file's shape: `{"boards": ["/Users/me/Code/board"], "personal":
-/// "/Users/me/Code/board", "day_start": "07:00", "agent": ["claude", "-p"]}`,
+/// "/Users/me/Code/board", "day_start": "07:00", "agent": ["claude", "-p"],
+/// "owner": "ana"}`,
 /// every key optional. A relative path is read against the file's directory.
 /// `board init --personal` writes it back in this order, leaving out what is unset.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -50,6 +51,10 @@ struct RawKnown {
     /// "-p"]`, which the `BOARD_AGENT` variable overrides.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     agent: Option<Vec<String>>,
+    /// The name of the person who owns the boards, such as `ana`, which
+    /// `board search` reads as `from:me`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner: Option<String>,
 }
 
 /// What a known boards file names, and the file.
@@ -110,6 +115,14 @@ impl KnownBoards {
     /// When the person's day starts, if the file says.
     pub fn day_start(&self) -> Option<&str> {
         self.known.day_start.as_deref()
+    }
+
+    /// The name of the person who owns the boards, if the file names one
+    /// that is not blank, without spaces around it.
+    pub fn owner(&self) -> Option<&str> {
+        (self.known.owner.as_deref())
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
     }
 
     /// The argv of the agent a plugin starts, if the file names one.

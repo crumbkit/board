@@ -69,6 +69,7 @@ pub(crate) const LEAVES: &[Leaf] = &[
     Leaf::new(&["type", "add"]).document(PUT).effects(ADDS),
     plugins::CALL.effects(CHANGES.open_world()),
     Leaf::new(&["query"]).document(QUERY).effects(READS),
+    (Leaf::new(&["search"]).document(crate::run::SEARCH)).effects(READS),
     Leaf::new(&["decide"])
         .document(effects::DECIDE)
         .effects(ADDS.idempotent()),
@@ -128,7 +129,7 @@ pub(crate) const GOALS: Group = Group::new(
         Goal::new("These commands make and check a board", &["init", "check"]),
         Goal::new(
             "These commands read files and records",
-            &["get", "ls", "log", "refs", "query", "uri"],
+            &["get", "ls", "log", "refs", "search", "query", "uri"],
         ),
         Goal::new(
             "These commands write files, records and types",
@@ -468,7 +469,7 @@ fn notes(memory: Option<Fallback>, notes: Vec<String>) -> Vec<Note> {
 }
 
 /// The note that the index was in memory for this run, and why.
-fn memory_note(fallback: Fallback) -> String {
+pub(crate) fn memory_note(fallback: Fallback) -> String {
     let why = match fallback {
         Fallback::NoCache => "there is no cache directory",
         Fallback::Busy => "another process held it past the wait",

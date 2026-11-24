@@ -41,6 +41,7 @@ board-model.workspace = true
 board-ops.workspace = true
 board-plugin.workspace = true
 board-plugins.workspace = true
+board-search.workspace = true
 board-serve.workspace = true
 board-tree.workspace = true
 board-types.workspace = true

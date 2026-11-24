@@ -17,6 +17,7 @@ mod lookup;
 mod mount;
 mod remove;
 mod repo;
+mod search;
 mod syncing;
 mod uri;
 
@@ -102,6 +103,7 @@ impl Cli {
 pub(crate) type Page = crumbkit::Page<DEFAULT_LIMIT, MAX_LIMIT>;
 
 pub(crate) use board_ops::Prefix;
+pub(crate) use search::SEARCH;
 
 /// A path argument as typed: absolute, or relative to the run's prefix.
 #[derive(Clone, Debug)]
@@ -358,6 +360,9 @@ Examples:
         #[command(flatten)]
         page: Page,
     },
+    /// Find the records that match a query, such as 'budget type:question'.
+    #[command(after_help = search::SEARCH_HELP)]
+    Search(search::Searching),
     /// Serve this board's pages on 127.0.0.1 until it is idle.
     #[command(after_help = crate::ui::SERVE_HELP)]
     Serve {
@@ -518,8 +523,9 @@ fn run_command(
     output
 }
 
-/// Runs completion and skills, which need no board, and `plugin list` and
-/// `find` once opening the board was `refused`, which any other command prints.
+/// Runs completion and skills, which need no board, and `plugin list`,
+/// `find` and `search` once opening the board was `refused`, which any other
+/// command prints.
 fn unopened(cli: &Cli, context: &Context, printer: Printer, refused: Option<Refusal>) -> Output {
     match (&cli.command, refused) {
         (Command::Completion(command), _) => crate::completion::completion(command, printer),
@@ -528,6 +534,9 @@ fn unopened(cli: &Cli, context: &Context, printer: Printer, refused: Option<Refu
         }
         (Command::Plugin(command), Some(refused)) => {
             crate::plugin::unopened(command, context, printer, refused)
+        }
+        (Command::Search(asked), Some(refused)) => {
+            search::unopened(asked, context, printer, refused)
         }
         (_, Some(refused)) => render::refused(printer, refused),
         (_, None) => unreachable!("only completion and skills run without a board"),
@@ -684,6 +693,7 @@ fn command(
                 Err(error) => render::refused(printer, error.refusal()),
             }
         }
+        Command::Search(asked) => search::search(board, context, printer, &asked),
         Command::Type(command) => crate::stdin::type_add(command, board, printer, stdin),
         Command::Plugin(command) => crate::plugin::plugin(command, board, context, printer),
         Command::Call { target, capability } => {

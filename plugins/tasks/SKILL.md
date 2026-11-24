@@ -18,6 +18,9 @@ may be on a phone, so keep each message short.
    `board -C <board> tasks tree --root true`, which lists every task in
    every status at the synced pins. Run them in that order, because
    `tasks.tree` does not sync. Look for an open task that covers the work.
+   To find tasks by their words, run
+   `board -C <board> search 'type:task <words>'`, which lists the matching
+   tasks of every status with their paths and titles.
 2. When one does, claim it with
    `tasks.claim --path <path> --session <your session's local_ id>` and
    finish it with `tasks.done --path <path>`. On `tasks::task::held`,
