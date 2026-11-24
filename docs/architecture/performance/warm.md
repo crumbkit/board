@@ -11,8 +11,9 @@ directories nor decides the working tree again, and the states of each.
   inode, mode) read just before the listing, when that walk began, and the
   items `read_dir` gave, each a name and a type.
 - `decided` rows of the working tree, under a key of the entries and the
-  directories the walk saw, with the other inputs below. Each row keeps its `change`, `committed` or `uncommitted`. A
-  mounted source's rows keep no `change`, and read as `committed`
+  directories the walk saw, with the other inputs below. Each row keeps
+  its `change`, `committed` or `uncommitted`. A mounted source's rows keep
+  no `change`, and read as `committed`
   ([decisions.md](decisions.md)).
 
 ## The directory listings

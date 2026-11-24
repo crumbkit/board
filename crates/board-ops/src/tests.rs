@@ -1314,6 +1314,9 @@ fn ls_reads_the_tree_once_and_hashes_each_file_once_cold_none_warm_and_only_a_ch
         scenario.write(&format!("tasks/a/t{at}.json"), Item::File(&task("")));
         scenario.write(&format!("tasks/b/t{at}.json"), Item::File(&task("")));
     }
+    // Every directory is dated an hour ago, so a walk trusts what an
+    // earlier one listed whatever second the test runs in.
+    scenario.settle_directories();
     let cache = tempfile::tempdir().unwrap();
     let board = open(&scenario);
     // Files hashed, directories listed and files opened.
@@ -1330,12 +1333,16 @@ fn ls_reads_the_tree_once_and_hashes_each_file_once_cold_none_warm_and_only_a_ch
     // The whole tree has 10 directories. Listing /tasks/a also lists the
     // root and tasks/ twice more, to resolve the path and the check's scope.
     assert_eq!(work("/tasks/a"), (204, 14, 204), "every file, once");
-    assert_eq!(work("/tasks/a"), (0, 14, 0));
-    assert_eq!(work("/"), (0, 10, 0));
-    // A new blob is validated, so the task schema is read to compile it.
+    // A warm walk reads what the cold one listed; resolving still lists.
+    assert_eq!(work("/tasks/a"), (0, 4, 0));
+    assert_eq!(work("/"), (0, 0, 0));
+    // Settling dates every directory anew, so each is listed again. A new
+    // blob is validated, so the task schema is read to compile it.
     scenario.write("tasks/b/t7.json", Item::File(&task(r#", "x": 1"#)));
+    scenario.settle_directories();
     assert_eq!(work("/tasks/a"), (1, 14, 2));
     scenario.write("tasks/a/t7.json", Item::File(&task(r#", "x": 1"#)));
+    scenario.settle_directories();
     assert_eq!(work("/tasks/a"), (1, 14, 1));
 }
 

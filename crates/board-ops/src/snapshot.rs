@@ -440,8 +440,6 @@ fn known<'e>(
     }
 }
 
-/// Each entry as deciding it reads it, without its metadata, each field
-/// preceded by its length so that no two lists give the same bytes.
 /// Whether a source's decided `rows` may be kept, given that it was
 /// decided whole and nothing failed to read (`whole`). Names that are not
 /// UTF-8 can share a path, which the index keeps only once, and a file that
@@ -468,6 +466,8 @@ fn seen_directories(listings: &Listings) -> Vec<u8> {
     bytes
 }
 
+/// Each entry as deciding it reads it, without its metadata, each field
+/// preceded by its length so that no two lists give the same bytes.
 fn listed(entries: &[Entry]) -> Vec<u8> {
     let mut bytes = Vec::new();
     let mut field = |text: &str| {
