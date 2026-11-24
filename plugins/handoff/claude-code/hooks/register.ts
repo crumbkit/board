@@ -127,6 +127,36 @@ async function ask($: EngineInterface, mem: Mem, found: readonly Crossing[]) {
   if (prompt) void $.prompt.submit({ text: message(fresh[0]!.why) })
 }
 
+/** The time after which a trigger tells no session. */
+const expiry = (trigger: Trigger) => (trigger.resetsAt === undefined ? Date.parse(trigger.at) + NO_RESET_MS : Date.parse(trigger.resetsAt))
+/** The window kind a usage key names: `seven_day` in `seven_day@<resetsAt>`. */
+const kindOf = (key: string) => key.split('@')[0]
+
+/**
+ * For each usage window the reading puts under its share, expires a live trigger of that kind and re-arms the session.
+ * A usage reset lowers percentUsed but keeps resetsAt, so the trigger would otherwise tell sessions until the old reset.
+ * It matches on the kind alone, so a reset that also moves resetsAt clears the trigger too.
+ */
+async function rearm($: EngineInterface, mem: Mem, reading: Reading, shares: Shares) {
+  const under = new Map(reading.rateLimits.filter(w => w.percentUsed < shares.usage).map(w => [w.kind, w.percentUsed]))
+  if (under.size === 0) return
+  const path = `${await dir($)}/trigger.json`
+  const trigger = await readJson<Trigger>($, path)
+  const now = await $.clock.now()
+  if (typeof trigger?.key === 'string' && under.has(kindOf(trigger.key)) && expiry(trigger) > now) {
+    const cleared: Trigger = { key: trigger.key, why: `the ${kindOf(trigger.key)} usage limit fell to ${under.get(kindOf(trigger.key))}% used`, resetsAt: iso(now), at: iso(now) }
+    try {
+      await $.fs.write(path, JSON.stringify(cleared))
+    } catch (error) {
+      $.ui.log(`handoff: could not clear the trigger: ${String(error)}`)
+    }
+  }
+  const stale = [...mem.asked].filter(key => under.has(kindOf(key)))
+  if (stale.length === 0) return
+  for (const key of stale) mem.asked.delete(key)
+  await save($, mem)
+}
+
 export const register: Register = (on) => {
   const mem: Mem = { id: undefined, loading: undefined, polling: false, shares: undefined, cwd: '', asked: new Set(), status: 'asked', line: undefined }
   on('session.start', async ($, e, next) => {
@@ -139,9 +169,7 @@ export const register: Register = (on) => {
       await sync($, mem)
       const trigger = await readJson<Trigger>($, `${await dir($)}/trigger.json`)
       if (trigger === undefined) return
-      const now = await $.clock.now()
-      const expires = trigger.resetsAt === undefined ? Date.parse(trigger.at) + NO_RESET_MS : Date.parse(trigger.resetsAt)
-      if (!(expires > now)) return
+      if (!(expiry(trigger) > (await $.clock.now()))) return
       await ask($, mem, [{ key: trigger.key, why: trigger.why }])
     })
     return next(e)
@@ -152,6 +180,7 @@ export const register: Register = (on) => {
     const shares = await loadShares($, mem)
     // A context share the session fell back under (after /compact) can be crossed and asked about again.
     if (mem.asked.has('context') && e.context.percent !== undefined && e.context.percent < shares.context) mem.asked.delete('context')
+    await rearm($, mem, e, shares)
     const fresh = crossings(e, shares).filter(c => !mem.asked.has(c.key))
     for (const c of fresh) {
       if (c.window === undefined) continue
