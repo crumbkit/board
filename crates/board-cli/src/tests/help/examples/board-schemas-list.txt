@@ -1,26 +1,26 @@
-ID                              KIND    FORM      DESCRIPTION
-board/failure/v1                output  document  The document that a command prints on standard output when it fails with --json.
-board/init-report/v2            output  document  Where the board is, and whether init made it.
-board/check-report/v2           output  document  The degraded entries, or with --healthy every entry, and how many were checked.
-board/get-report/v2             output  document  Each file asked for, or why not.
-board/ls-report/v2              output  document  The entries of one directory.
-board/log-report/v2             output  document  The commits that changed a path, newest first. `truncated` is true when the walk stopped before the end of the history, at its limit, its bound or a shallow commit, so older changes may exist.
-board/refs-report/v2            output  document  The references of each path asked for.
-board/uri-report/v2             output  document  A record's board:// URI and its path.
-board/put-report/v2             output  document  What each write wrote or removed, and its commit.
-board/sync-report/v3            output  document  What a sync fetched, merged and pushed, and where HEAD moved.
-board/mount-update-report/v2    output  document  Where a mount moved from and to.
-board/repo-add-report/v2        output  document  The repository record's path and remote, whether it was written, and its commit.
-board/plugin-list-report/v2     output  document  The installed and enabled plugins.
-board/plugin-find-report/v2     output  document  The installed capabilities, or those that match every filter given.
-board/plugin-enable-report/v2   output  document  What enabling a plugin wrote.
-board/call-report/v2            output  document  What a plugin's capability returned.
-board/query-report/v2           output  document  The rows a query returned.
-board/decide-report/v2          output  document  The capability admitted at a path, and the pending effect whose approval admitted it.
-board/answer-report/v2          output  document  The answer written in the personal board, and its commit.
-board/serve-report/v2           output  document  Where the server listened and what it served before it went idle.
-board/ui-kinds-report/v2        output  document  The component kinds a view's slot can name.
-board/ui-template-report/v2     output  document  A slot's fill for a component kind.
-board/ui-open-report/v2         output  document  The page opened, and whether its server was started.
-board/timing-check-report/v2    output  document  Each hot command's p50 and p90 against its budget, and the speed run recorded, if any.
-board/skills-install-report/v2  output  document  What install wrote, updated, left unchanged, removed, kept or backed up in a skills directory.
+ID                             KIND    FORM      DESCRIPTION
+board/failure/v1               output  document  The document that a command prints on standard output when it fails with --json.
+board/init-report/v2           output  document  Where the board is, and whether init made it.
+board/check-report/v2          output  document  The degraded entries, or with --healthy every entry, and how many were checked.
+board/get-report/v2            output  document  Each file asked for, or why not.
+board/ls-report/v2             output  document  The entries of one directory.
+board/log-report/v2            output  document  The commits that changed a path, newest first. `truncated` is true when the walk stopped before the end of the history, at its limit, its bound or a shallow commit, so older changes may exist.
+board/refs-report/v2           output  document  The references of each path asked for.
+board/uri-report/v2            output  document  A record's board:// URI and its path.
+board/put-report/v2            output  document  What each write wrote or removed, and its commit.
+board/sync-report/v3           output  document  What a sync fetched, merged and pushed, and where HEAD moved.
+board/mount-update-report/v2   output  document  Where a mount moved from and to.
+board/repo-add-report/v2       output  document  The repository record's path and remote, whether it was written, and its commit.
+board/plugin-list-report/v2    output  document  The installed and enabled plugins.
+board/plugin-find-report/v2    output  document  The installed capabilities, or those that match every filter given.
+board/plugin-enable-report/v2  output  document  What enabling a plugin wrote.
+board/call-report/v2           output  document  What a plugin's capability returned.
+board/query-report/v2          output  document  The rows a query returned.
+board/search-report/v1         output  document  The records a search matched, or with --filters the filters a search can use.
+board/decide-report/v2         output  document  The capability admitted at a path, and the pending effect whose approval admitted it.
+board/answer-report/v2         output  document  The answer written in the personal board, and its commit.
+board/serve-report/v2          output  document  Where the server listened and what it served before it went idle.
+board/ui-kinds-report/v2       output  document  The component kinds a view's slot can name.
+board/ui-template-report/v2    output  document  A slot's fill for a component kind.
+board/ui-open-report/v2        output  document  The page opened, and whether its server was started.
+board/timing-check-report/v2   output  document  Each hot command's p50 and p90 against its budget, and the speed run recorded, if any.

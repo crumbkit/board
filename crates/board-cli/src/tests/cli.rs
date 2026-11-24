@@ -271,6 +271,7 @@ fn every_listing_command_takes_limit_and_all() {
         "plugin list",
         "plugin find",
         "query",
+        "search",
         "ui kinds",
         "commands list",
         "schemas list",

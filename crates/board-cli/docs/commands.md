@@ -26,6 +26,7 @@ Board: a fast, validated view of a git tree.
 - [`board decide`](#board-decide): Ask the owner to admit a plugin's capability
 - [`board answer`](#board-answer): Answer a pending effect
 - [`board query`](#board-query): Run one read-only SQL statement over the index
+- [`board search`](#board-search): Find the records a query matches
 - [`board serve`](#board-serve): Serve this board's pages on 127.0.0.1 until it is idle
 - [`board ui`](#board-ui): List kinds, print a slot, or open a page
 - [`board skills`](#board-skills): Install or list the skills Board ships
@@ -418,6 +419,20 @@ Run one read-only SQL statement over the index
 Effects: read-only, closed-world.
 
 Text: one line per row, `<ENTRY>`.
+
+## `board search`
+
+Find the records a query matches
+
+### Arguments
+
+- `<QUERY>`: The query, quoted as one argument, such as 'budget type:question -from:me'
+- `--filters`: List the filters and the short type names a query can use, and run no search
+- `--after <CURSOR>`: Start after the result this cursor names, which the last page printed as `next`
+- `--limit <N>`: Print at most this many rows, up to 1000. Default: `50`.
+- `--all`: Print every row
+
+Effects: read-only, closed-world.
 
 ## `board serve`
 

@@ -1016,6 +1016,8 @@ fn samples() -> Vec<(String, Value)> {
         (&["get", "/projects/p", "/tasks/a"], b""),
         (&["ls", "/"], b""),
         (&["refs", "/tasks/a", "/tasks/b"], b""),
+        (&["search", "a", "--limit", "1"], b""),
+        (&["search", "--filters"], b""),
         (
             &[
                 "decide",

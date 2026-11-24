@@ -1,6 +1,6 @@
 //! The working tree's decision kept in a slot, one per build and board
 //! root, with what a later run needs to decide again only what a change
-//! could alter (docs/architecture/performance/warm.md). board-ops makes the
+//! could alter (docs/architecture/performance/warm/index.md). board-ops makes the
 //! keys and the reads; this crate stores them and never reads into them.
 
 use board_model::{Change, Digest, ObjectId};

@@ -11,6 +11,7 @@ rust-version.workspace = true
 board-index.workspace = true
 board-model.workspace = true
 board-plugin.workspace = true
+board-search.workspace = true
 board-tree.workspace = true
 board-types.workspace = true
 board-validate.workspace = true

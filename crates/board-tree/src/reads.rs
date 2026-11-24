@@ -1,6 +1,6 @@
 //! What deciding an entry read of the working tree, named so that a later
 //! run can tell whether a change could alter that decision
-//! (docs/architecture/performance/warm.md).
+//! (docs/architecture/performance/warm/index.md).
 //!
 //! A read is named `<directory>/<key>`, the directory's `/`-separated path
 //! (empty at the root) and the key of a name looked up in it: the name in

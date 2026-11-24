@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `board search '<query>'` lists the records of the board and its mounts
+  that match a query in the first slice of Flare's search syntax: words,
+  `"phrases"`, `type:` and `from:` filters, commas for any-of and a leading
+  `-` to exclude. `--json` prints the canonical query, its parsed parts,
+  the results and a cursor for the next page, and `--filters` lists the
+  filters and short type names. docs/commands/search.md describes it.
+
 - `board changes plan` refuses a plan whose first heading is the title of
   another change that is not dropped, with `changes::plan::other_change`,
   and warns with `changes::plan::title_differs` when the first heading

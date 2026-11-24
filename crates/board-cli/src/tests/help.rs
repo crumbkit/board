@@ -259,6 +259,11 @@ pub(super) const BUDGETS: Budgets = Budgets::new()
             "refs has five options and two output formats, and a reader needs the from/to line format and the --field encoding on one page to parse its text output. Its page also ends with the Effects: line and a global flags line that names --no-input.",
         ),
         Budget::new(
+            "search",
+            1_700,
+            "search shows on one page each part of the query syntax with an example, the ten short type names, what from:me reads, that words match by substring and the order results come in, so a reader can write a query without opening docs/commands/search.md.",
+        ),
+        Budget::new(
             "decide",
             1_260,
             "decide says on one page what the owner's approval, refusal and silence each do, its Effects: line says that it adds, and its global flags line names --no-input, which a program adds to every run.",

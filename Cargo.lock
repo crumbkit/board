@@ -124,6 +124,7 @@ dependencies = [
  "board-plugin",
  "board-plugins",
  "board-scenario",
+ "board-search",
  "board-serve",
  "board-tree",
  "board-types",
@@ -183,6 +184,7 @@ dependencies = [
  "board-model",
  "board-plugin",
  "board-scenario",
+ "board-search",
  "board-tree",
  "board-types",
  "board-validate",
@@ -583,6 +585,17 @@ dependencies = [
  "gix",
  "proptest",
  "tempfile",
+]
+
+[[package]]
+name = "board-search"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
 ]
 
 [[package]]

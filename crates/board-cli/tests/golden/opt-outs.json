@@ -295,6 +295,20 @@
     },
     {
       "rule": "help-budget/command",
+      "applies_to": "board search",
+      "reason": "search shows on one page each part of the query syntax with an example, the ten short type names, what from:me reads, that words match by substring and the order results come in, so a reader can write a query without opening docs/commands/search.md.",
+      "costs": [
+        "Each read of the page can cost 500 bytes more than the default, about 125 tokens."
+      ],
+      "budget": {
+        "bytes": 1700,
+        "default": 1200,
+        "extra_bytes": 500,
+        "extra_tokens": 125
+      }
+    },
+    {
+      "rule": "help-budget/command",
       "applies_to": "board decide",
       "reason": "decide says on one page what the owner's approval, refusal and silence each do, its Effects: line says that it adds, and its global flags line names --no-input, which a program adds to every run.",
       "costs": [
@@ -383,7 +397,7 @@
     },
     {
       "declaration": "root-verbs",
-      "applies_to": "board init, board check, board get, board ls, board log, board refs, board uri, board put, board rm, board sync, board call, board decide, board answer, board query, board serve",
+      "applies_to": "board init, board check, board get, board ls, board log, board refs, board uri, board put, board rm, board sync, board call, board decide, board answer, board query, board search, board serve",
       "declares": "Each command sits directly under the root as a verb.",
       "reason": "board's root commands are the verbs an agent types most, each acting on the board or a record, and a resource word before them would lengthen every call"
     },
@@ -511,6 +525,11 @@
       "declaration": "text-line",
       "applies_to": "board query",
       "declares": "The text prints each row as the line <ENTRY> in place of a table row."
+    },
+    {
+      "declaration": "document-name",
+      "applies_to": "board search",
+      "declares": "The command prints board/search-report/v1, where its path gives the name search."
     },
     {
       "declaration": "document-name",

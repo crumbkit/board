@@ -53,7 +53,7 @@ changes.
 | `snapshot` | refreshing the index and deciding every entry, for `check`, `ls`, `query` and `refs` |
 | `index.refresh` | the refresh, within `snapshot` |
 | `index.refresh.load` | loading the working-tree rows the last refresh stored |
-| `index.refresh.walk` | walking the working tree, listing only the directories that changed ([warm.md](warm.md)) |
+| `index.refresh.walk` | walking the working tree, listing only the directories that changed ([warm/index.md](warm/index.md)) |
 | `index.refresh.sync` | storing what the walk found that differs from those rows |
 | `index.refresh.facts` | loading or adding each entry's facts |
 | `snapshot.mounts` | walking each mounted commit, within `snapshot` |
@@ -75,7 +75,7 @@ unread because they changed after the check (it does not name them),
 capabilities `commands` or `schemas` listed, `repositories`, the
 repositories a snapshot opened from disk besides the board's own, `kept`,
 the mounted sources a query or check read from kept decisions without
-walking them (architecture/performance/decisions.md), `decided`, the entries
+walking them (architecture/performance/warm/decisions.md), `decided`, the entries
 a snapshot decided in place of reading kept rows, `walked`, the mounted
 sources a snapshot walked from the index to find their mounts or decide
 them, and `pointers_read`, the files `snapshot.decide` read to learn whether
