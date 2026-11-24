@@ -1,0 +1,25 @@
+[package]
+name = "board-search"
+version = "0.0.0"
+description = "Parses and prints board search's syntax: words, quoted phrases, type: and from: filters, comma lists and a leading minus"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# The parser shares its syntax and its case file with Flare's flare-query,
+# and depends on no other Board crate, so the index never reaches it.
+[dependencies]
+# The parsed parts and errors read and write the JSON of the shared case
+# file and of `board search --json`'s `parsed` field.
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[lints]
+workspace = true

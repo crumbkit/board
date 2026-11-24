@@ -271,6 +271,7 @@ fn every_listing_command_takes_limit_and_all() {
         "plugin list",
         "plugin find",
         "query",
+        "search",
         "ui kinds",
         "commands list",
         "schemas list",
@@ -299,6 +300,7 @@ fn every_listing_command_takes_limit_and_all() {
         "completion check",
         "completion print",
         "completion install",
+        "timing check",
     ];
     for (name, command) in leaves() {
         let takes = |flag: &str| {

@@ -69,6 +69,7 @@ pub(crate) const LEAVES: &[Leaf] = &[
     Leaf::new(&["type", "add"]).document(PUT).effects(ADDS),
     plugins::CALL.effects(CHANGES.open_world()),
     Leaf::new(&["query"]).document(QUERY).effects(READS),
+    (Leaf::new(&["search"]).document(crate::run::SEARCH)).effects(READS),
     Leaf::new(&["decide"])
         .document(effects::DECIDE)
         .effects(ADDS.idempotent()),
@@ -79,6 +80,7 @@ pub(crate) const LEAVES: &[Leaf] = &[
     ui::LEAVES[1].effects(READS),
     ui::LEAVES[2].effects(READS),
     ui::LEAVES[3].effects(READS.open_world()),
+    (Leaf::new(&["timing", "check"]).document(TIMING_CHECK)).effects(ADDS),
     crate::skills::INSTALL.effects(CHANGES.idempotent()),
     crate::skills::LIST.effects(READS),
     crate::completion::INSTALL,
@@ -125,10 +127,13 @@ const CHANGES: Effects = Effects::destructive();
 pub(crate) const GOALS: Group = Group::new(
     &[],
     &[
-        Goal::new("These commands make and check a board", &["init", "check"]),
+        Goal::new(
+            "These commands make and check a board",
+            &["init", "check", "timing"],
+        ),
         Goal::new(
             "These commands read files and records",
-            &["get", "ls", "log", "refs", "query", "uri"],
+            &["get", "ls", "log", "refs", "search", "query", "uri"],
         ),
         Goal::new(
             "These commands write files, records and types",
@@ -182,6 +187,10 @@ const REPO_ADD: Document<Answer> = prose(
     "The repository record's path and remote, whether it was written, and its commit.",
 );
 const URI: Document<Answer> = prose("uri-report", "A record's board:// URI and its path.");
+pub(crate) const TIMING_CHECK: Document<Answer> = prose(
+    "timing-check-report",
+    "Each hot command's p50 and p90 against its budget, and the speed run recorded, if any.",
+);
 /// The sync report is at version 3: `replayed` gave way to `merged`,
 /// `conflicts`, `pins` and `failing`. Nothing reads version 2.
 const SYNC: Document<Answer> = Document::new(
@@ -468,7 +477,7 @@ fn notes(memory: Option<Fallback>, notes: Vec<String>) -> Vec<Note> {
 }
 
 /// The note that the index was in memory for this run, and why.
-fn memory_note(fallback: Fallback) -> String {
+pub(crate) fn memory_note(fallback: Fallback) -> String {
     let why = match fallback {
         Fallback::NoCache => "there is no cache directory",
         Fallback::Busy => "another process held it past the wait",

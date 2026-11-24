@@ -1,5 +1,5 @@
 //! The keys a cache keeps mounted sources' decisions and pointer lists
-//! under (docs/architecture/performance/decisions.md).
+//! under (docs/architecture/performance/warm/decisions.md).
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;

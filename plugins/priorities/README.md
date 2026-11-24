@@ -75,12 +75,17 @@ and the call can run again. A refused call writes nothing.
 
 ## Staleness
 
-An entry is stale when the board's branch has more commits since the start
-of its `confirmed` day, in UTC, than the params value
-`priorities-reconfirm` allows, leaving out commits with a `Board-Bulk:`
-trailer. The params plugin ships its heuristic with a default of 300. A
-quiet board never marks an entry stale. When git cannot count the commits,
-no entry is stale.
+A confirmed entry is stale when either of these holds:
+
+- 7 or more whole UTC days have passed since its `confirmed` day.
+- The board's branch has more commits since the start of its `confirmed`
+  day, in UTC, than the params value `priorities-reconfirm` allows,
+  leaving out commits with a `Board-Bulk:` trailer. The params plugin
+  ships its heuristic with a default of 300.
+
+An unconfirmed entry is never stale. When git cannot count the commits,
+only the days decide. When `confirmed` is not a date, only the commits
+decide.
 
 ## Codes
 

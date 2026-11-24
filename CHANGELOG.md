@@ -2,12 +2,22 @@
 
 ## Unreleased
 
+- `board search '<query>'` lists the records of the board and its mounts
+  that match a query in the first slice of Flare's search syntax: words,
+  `"phrases"`, `type:` and `from:` filters, commas for any-of and a leading
+  `-` to exclude. `--json` prints the canonical query, its parsed parts,
+  the results and a cursor for the next page, and `--filters` lists the
+  filters and short type names. docs/commands/search.md describes it.
+
 - `board changes plan` refuses a plan whose first heading is the title of
   another change that is not dropped, with `changes::plan::other_change`,
   and warns with `changes::plan::title_differs` when the first heading
   differs from the change's title in any other way. With
   `"correct": true` it writes a new plan for a done or dropped change, which
   keeps its phase.
+
+- A confirmed priority in `board priorities list` also turns stale 7 days
+  after its confirmation, even on a board with few commits.
 
 - `board changes advance` moves a change that records a pull request into
   `done` only once GitHub reports the pull request merged, and records its

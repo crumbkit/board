@@ -411,6 +411,25 @@ fn a_day_start_that_is_not_hh_mm_is_refused_and_one_that_is_or_is_null_is_admitt
     }
 }
 
+#[test]
+fn an_owner_names_the_person_from_me_means_and_one_that_is_blank_or_absent_names_none() {
+    for (owner, wanted) in [
+        (json!("olive"), Some("olive")),
+        (json!(" Olive "), Some("Olive")),
+        (json!(" "), None),
+        (Value::Null, None),
+    ] {
+        let xdg = config(Some(&json!({"owner": owner}).to_string()));
+        assert_eq!(known(&xdg).unwrap().owner(), wanted, "{owner}");
+    }
+    assert_eq!(config_owner(None), None);
+}
+
+/// The owner of a known boards file holding `text`, or of none.
+fn config_owner(text: Option<&str>) -> Option<String> {
+    known(&config(text)).unwrap().owner().map(str::to_owned)
+}
+
 /// A clone with `url` as its `origin` and a `docs` directory.
 fn clone_of(url: &str) -> Scenario {
     let clone = library();

@@ -1,4 +1,4 @@
-board has 27 opt-outs from the conventions and sets 9 budgets.
+board has 27 opt-outs from the conventions and sets 10 budgets.
 
 effects/yes: board put
   Reason: the command asks no question, so it has no confirmation to skip, and git keeps each commit it makes, which a revert undoes
@@ -107,9 +107,9 @@ suite/skip: Check::Twins
   Cost: No test checks this check's rules anywhere in the tool, so a change that breaks one of them passes unnoticed and an agent meets the broken convention.
 
 help-budget/root: board
-  Budget: 3100 bytes, where the default is 1500 bytes.
-  Reason: The root page lists all twenty-two commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.
-  Cost: Each read of the page can cost 1600 bytes more than the default, about 400 tokens.
+  Budget: 3200 bytes, where the default is 1500 bytes.
+  Reason: The root page lists all twenty-three commands under the goal each serves, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses, and one line naming at most six of the plugins the board enables, which run as `board <plugin> <capability>`.
+  Cost: Each read of the page can cost 1700 bytes more than the default, about 425 tokens.
 
 help-budget/command: board get
   Budget: 1500 bytes, where the default is 1200 bytes.
@@ -125,6 +125,11 @@ help-budget/command: board refs
   Budget: 2000 bytes, where the default is 1200 bytes.
   Reason: refs has five options and two output formats, and a reader needs the from/to line format and the --field encoding on one page to parse its text output. Its page also ends with the Effects: line and a global flags line that names --no-input.
   Cost: Each read of the page can cost 800 bytes more than the default, about 200 tokens.
+
+help-budget/command: board search
+  Budget: 1700 bytes, where the default is 1200 bytes.
+  Reason: search shows on one page each part of the query syntax with an example, the ten short type names, what from:me reads, that words match by substring and the order results come in, so a reader can write a query without opening docs/commands/search.md.
+  Cost: Each read of the page can cost 500 bytes more than the default, about 125 tokens.
 
 help-budget/command: board decide
   Budget: 1260 bytes, where the default is 1200 bytes.
@@ -157,12 +162,12 @@ terminal-detection/off: every run of board
   Cost: Progress never prints, help prints without clap's colours at a terminal, and a table's cells print without their styles.
   Cost: A text table never fits the terminal's width, so the terminal wraps each line of a table that is wider than the terminal.
 
-board has 35 declarations.
+board has 37 declarations.
 
 refusal-alternatives: every run of board
   Declares: A refused command line for a command without its own function also offers the tool's own alternatives.
 
-root-verbs: board init, board check, board get, board ls, board log, board refs, board uri, board put, board rm, board sync, board call, board decide, board answer, board query, board serve
+root-verbs: board init, board check, board get, board ls, board log, board refs, board uri, board put, board rm, board sync, board call, board decide, board answer, board query, board search, board serve
   Declares: Each command sits directly under the root as a verb.
   Reason: board's root commands are the verbs an agent types most, each acting on the board or a record, and a resource word before them would lengthen every call
 
@@ -241,6 +246,9 @@ document-name: board query
 text-line: board query
   Declares: The text prints each row as the line <ENTRY> in place of a table row.
 
+document-name: board search
+  Declares: The command prints board/search-report/v1, where its path gives the name search.
+
 document-name: board decide
   Declares: The command prints board/decide-report/v2, where its path gives the name decide.
 
@@ -258,6 +266,9 @@ document-name: board ui template
 
 document-name: board ui open
   Declares: The command prints board/ui-open-report/v2, where its path gives the name ui-open.
+
+document-name: board timing check
+  Declares: The command prints board/timing-check-report/v2, where its path gives the name timing-check.
 
 document-name: board skills install
   Declares: The command prints board/skills-install-report/v2, where its path gives the name skills-install.

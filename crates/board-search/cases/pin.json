@@ -1,0 +1,8 @@
+{
+  "about": "search-cases.json is a byte-for-byte copy of Flare's shared case file at this commit. The test in tests/pin.rs fails when the copy's SHA-256 differs from the one here. To update the copy, fetch the file at a new Flare commit, then change commit, blob and sha256 together. `gh api repos/crumbkit/flare/contents/crates/flare-query/cases/search-cases.json?ref=<commit> --jq .sha` prints the blob.",
+  "repository": "crumbkit/flare",
+  "commit": "21190a4e70e909346ca8ab01f5ff6f6ee231a79c",
+  "path": "crates/flare-query/cases/search-cases.json",
+  "blob": "f9c9fdfed39a7db4e93bbef45358448a1083ca98",
+  "sha256": "71c735ab9d135c20aa7553fc140c39f193e162a31913bd6034a3ca8d036581af"
+}
