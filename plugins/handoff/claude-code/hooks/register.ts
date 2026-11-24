@@ -18,6 +18,9 @@ const POLL_MS = 30_000
 // A trigger whose window gave no reset time stops telling sessions after the longest window.
 const NO_RESET_MS = 5 * 3_600_000
 const MAX_LINES = 20
+// A window clears its trigger only this many points under its share. Each session's reading comes from its own last
+// response, so one that lags by a point or two must not clear a real crossing; a usage reset falls far below the share.
+const CLEAR_MARGIN = 10
 const SESSION_ID = /^[A-Za-z0-9_-]+$/
 
 /** Everything a measurement crosses: the context share, then each usage window at or over its share. */
@@ -133,12 +136,12 @@ const expiry = (trigger: Trigger) => (trigger.resetsAt === undefined ? Date.pars
 const kindOf = (key: string) => key.split('@')[0]
 
 /**
- * For each usage window the reading puts under its share, expires a live trigger of that kind and re-arms the session.
+ * For each usage window the reading puts CLEAR_MARGIN points under its share, expires a live trigger of that kind and re-arms the session.
  * A usage reset lowers percentUsed but keeps resetsAt, so the trigger would otherwise tell sessions until the old reset.
  * It matches on the kind alone, so a reset that also moves resetsAt clears the trigger too.
  */
 async function rearm($: EngineInterface, mem: Mem, reading: Reading, shares: Shares) {
-  const under = new Map(reading.rateLimits.filter(w => w.percentUsed < shares.usage).map(w => [w.kind, w.percentUsed]))
+  const under = new Map(reading.rateLimits.filter(w => w.percentUsed < shares.usage - CLEAR_MARGIN).map(w => [w.kind, w.percentUsed]))
   if (under.size === 0) return
   const path = `${await dir($)}/trigger.json`
   const trigger = await readJson<Trigger>($, path)
@@ -169,7 +172,11 @@ export const register: Register = (on) => {
       await sync($, mem)
       const trigger = await readJson<Trigger>($, `${await dir($)}/trigger.json`)
       if (trigger === undefined) return
-      if (!(expiry(trigger) > (await $.clock.now()))) return
+      if (!(expiry(trigger) > (await $.clock.now()))) {
+        // An expired trigger re-arms its key, so an idle session is told again if the window crosses again.
+        if (mem.asked.delete(trigger.key)) await save($, mem)
+        return
+      }
       await ask($, mem, [{ key: trigger.key, why: trigger.why }])
     })
     return next(e)

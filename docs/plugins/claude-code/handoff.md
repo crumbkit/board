@@ -17,8 +17,10 @@ also writes `trigger.json` in `board-handoff/` under the account's Claude
 config directory. Every session on that account checks the file every 30
 seconds and gets the same prompt, once, until the window resets. A usage
 reset lowers a window's share but keeps its reset time. So when a session
-measures that window under its share again, the mod marks the trigger
-expired, and the session can be told again if the window crosses later.
+measures that window 10 points or more under its share, the mod marks the
+trigger expired. The margin keeps a session whose reading lags from clearing
+a real crossing. Each session that sees the expired trigger can then be told
+again if the window crosses later.
 
 When the told turn ends, the session shows `handoff: cd <dir> && claude
 --resume <id>  # <its handoff line>` and keeps it in `sessions/<id>.json`.
