@@ -8,11 +8,15 @@
 )]
 
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use board_scenario::{Item, Scenario};
 use serde_json::Value;
+
+/// SIGTERM's number on macOS and Linux.
+const SIGTERM: i32 = 15;
 
 fn board() -> Scenario {
     let scenario = Scenario::board();
@@ -339,13 +343,16 @@ fn a_record_names_the_machines_load_and_cores_and_that_the_run_was_not_killed() 
 fn a_run_sent_sigterm_writes_one_line_that_says_it_was_killed() {
     let scenario = board();
     let home = tempfile::tempdir().unwrap();
-    // A put waits for its record on stdin, which the test never closes.
+    // A put waits for its record on stdin. The test holds stdin open until
+    // the put has exited, because `Child::wait` would otherwise close it and
+    // let the put end on its own before the signal is handled.
     let mut child = command(&scenario, home.path(), &["put", "/notes/c"])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
+    let stdin = child.stdin.take().unwrap();
     // Long enough for the put to parse its command line and wait on stdin.
     std::thread::sleep(std::time::Duration::from_millis(1500));
     let sent = Command::new("kill")
@@ -354,7 +361,8 @@ fn a_run_sent_sigterm_writes_one_line_that_says_it_was_killed() {
         .unwrap();
     assert!(sent.success());
     let status = child.wait().unwrap();
-    assert!(!status.success(), "{status}");
+    drop(stdin);
+    assert_eq!(status.signal(), Some(SIGTERM), "{status}");
     let records = records(home.path());
     assert_eq!(records.len(), 1, "{records:?}");
     let killed = &records[0];
