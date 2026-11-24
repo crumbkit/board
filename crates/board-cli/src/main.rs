@@ -31,6 +31,7 @@ fn main() -> ExitCode {
     complete::declare();
     let started = Instant::now();
     let context = config::Context::read();
+    timing::watch(started, &context);
     let mut ran = timing::Ran::default();
     let output = run::run(
         std::env::args_os(),

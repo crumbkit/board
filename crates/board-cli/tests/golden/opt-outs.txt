@@ -162,7 +162,7 @@ terminal-detection/off: every run of board
   Cost: Progress never prints, help prints without clap's colours at a terminal, and a table's cells print without their styles.
   Cost: A text table never fits the terminal's width, so the terminal wraps each line of a table that is wider than the terminal.
 
-board has 36 declarations.
+board has 37 declarations.
 
 refusal-alternatives: every run of board
   Declares: A refused command line for a command without its own function also offers the tool's own alternatives.
@@ -266,6 +266,9 @@ document-name: board ui template
 
 document-name: board ui open
   Declares: The command prints board/ui-open-report/v2, where its path gives the name ui-open.
+
+document-name: board timing check
+  Declares: The command prints board/timing-check-report/v2, where its path gives the name timing-check.
 
 document-name: board skills install
   Declares: The command prints board/skills-install-report/v2, where its path gives the name skills-install.

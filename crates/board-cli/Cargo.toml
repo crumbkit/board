@@ -54,6 +54,9 @@ schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+sysctl.workspace = true
+
 [dev-dependencies]
 board-scenario.workspace = true
 board-validate.workspace = true

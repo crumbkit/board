@@ -323,3 +323,193 @@ fn a_call_records_the_capability_it_ran_and_none_of_its_argument_values() {
     let text = std::fs::read_to_string(log(home.path())).unwrap();
     assert!(!text.contains("secret"), "{text}");
 }
+
+#[test]
+fn a_record_names_the_machines_load_and_cores_and_that_the_run_was_not_killed() {
+    let scenario = board();
+    let home = tempfile::tempdir().unwrap();
+    run(&scenario, home.path(), None, &["get", "/notes/a"]);
+    let record = &records(home.path())[0];
+    assert_eq!(record["killed"], false);
+    assert!(record["cpus"].as_u64().unwrap() >= 1, "{record}");
+    assert!(record["load1"].as_f64().unwrap() >= 0.0, "{record}");
+}
+
+#[test]
+fn a_run_sent_sigterm_writes_one_line_that_says_it_was_killed() {
+    let scenario = board();
+    let home = tempfile::tempdir().unwrap();
+    // A put waits for its record on stdin, which the test never closes.
+    let mut child = command(&scenario, home.path(), &["put", "/notes/c"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    // Long enough for the put to parse its command line and wait on stdin.
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    let sent = Command::new("kill")
+        .args(["-s", "TERM", &child.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(sent.success());
+    let status = child.wait().unwrap();
+    assert!(!status.success(), "{status}");
+    let records = records(home.path());
+    assert_eq!(records.len(), 1, "{records:?}");
+    let killed = &records[0];
+    assert_eq!(
+        (&killed["command"], &killed["killed"], &killed["exit"]),
+        (&"put".into(), &true.into(), &Value::Null)
+    );
+    assert!(
+        killed["total_us"].as_u64().unwrap() >= 1_000_000,
+        "{killed}"
+    );
+}
+
+/// A personal board that holds the schemas of the runs the check writes,
+/// and a config directory under `home` that names it.
+fn personal(home: &Path) -> Scenario {
+    let scenario = Scenario::board();
+    for (path, schema) in [
+        (
+            "runs/run/v1",
+            include_str!("../../board-plugin-runs/types/runs/run/v1.schema.json"),
+        ),
+        (
+            "runs/suite/v1",
+            include_str!("../../board-plugin-runs/types/runs/suite/v1.schema.json"),
+        ),
+    ] {
+        scenario.write(
+            &format!(".board/types/{path}.schema.json"),
+            Item::File(schema),
+        );
+    }
+    scenario.identified();
+    let known = serde_json::json!({"personal": scenario.path()}).to_string();
+    std::fs::create_dir_all(home.join("config/board")).unwrap();
+    std::fs::write(home.join("config/board/config.json"), known).unwrap();
+    scenario
+}
+
+fn check(scenario: &Scenario, home: &Path, arguments: &[&str]) -> Value {
+    let ran = command(scenario, home, arguments)
+        .env("XDG_CONFIG_HOME", home.join("config"))
+        .output()
+        .unwrap();
+    assert!(ran.status.success(), "{ran:?}");
+    serde_json::from_slice::<Value>(&ran.stdout).unwrap()["data"].clone()
+}
+
+#[test]
+fn a_recorded_check_writes_the_suite_and_a_run_once_an_hour_and_a_check_without_record_writes_none()
+{
+    let home = tempfile::tempdir().unwrap();
+    let scenario = personal(home.path());
+    for _ in 0..5 {
+        run(&scenario, home.path(), None, &["get", "/missing"]);
+    }
+    let printed = check(&scenario, home.path(), &["--json", "timing", "check"]);
+    assert_eq!(printed["recorded"], Value::Null);
+    assert_eq!(printed["mode"], "silent");
+    let get = &printed["commands"][0];
+    assert_eq!(
+        (&get["command"], &get["budget_ms"]),
+        (&"get".into(), &25.into())
+    );
+    assert!(!scenario.workdir().join("suites").exists());
+
+    let recorded = check(
+        &scenario,
+        home.path(),
+        &["--json", "timing", "check", "--record"],
+    );
+    let run = recorded["recorded"].as_str().unwrap();
+    assert!(run.starts_with("/suites/board-speed-local/runs/"), "{run}");
+    let suite: Value = serde_json::from_slice(
+        &std::fs::read(scenario.workdir().join("suites/board-speed-local.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(suite["kind"], "benchmark");
+    let written: Value = serde_json::from_slice(
+        &std::fs::read(scenario.workdir().join(format!("{}.json", &run[1..]))).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(written["results"].as_array().unwrap().len(), 11);
+    assert!(written["measures"]["over_budget"].is_u64(), "{written}");
+    let setup = written["setup"].as_str().unwrap();
+    assert!(
+        setup.starts_with("board timing check --record on the machine "),
+        "{setup}"
+    );
+
+    let again = check(
+        &scenario,
+        home.path(),
+        &["--json", "timing", "check", "--record"],
+    );
+    assert_eq!(again["recorded"], Value::Null);
+    let runs = std::fs::read_dir(scenario.workdir().join("suites/board-speed-local/runs"));
+    assert_eq!(runs.unwrap().count(), 1);
+}
+
+/// The line the rules mod runs under /bin/sh at a session's start, from
+/// `SPEED_CHECK` in plugins/rules/claude-code/hooks/rules.ts.
+fn speed_check_line() -> String {
+    let source = include_str!("../../../plugins/rules/claude-code/hooks/rules.ts");
+    let declared = source.find("SPEED_CHECK =").unwrap();
+    let start = declared + source[declared..].find('\'').unwrap() + 1;
+    let length = source[start..].find('\'').unwrap();
+    source[start..start + length].to_owned()
+}
+
+#[test]
+fn the_speed_check_the_rules_mod_starts_outlives_its_shell_and_the_hooks_process_group() {
+    let home = tempfile::tempdir().unwrap();
+    let scenario = personal(home.path());
+    for _ in 0..5 {
+        run(&scenario, home.path(), None, &["get", "/missing"]);
+    }
+    // A `board` on PATH that waits until the hook's group is signalled,
+    // then runs the real check.
+    let bin = tempfile::tempdir().unwrap();
+    let script = format!(
+        "#!/bin/sh\nsleep 2\nexec '{}' \"$@\"\n",
+        env!("CARGO_BIN_EXE_board")
+    );
+    std::fs::write(bin.path().join("board"), script).unwrap();
+    std::fs::set_permissions(
+        bin.path().join("board"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    let path = format!("{}:/usr/bin:/bin", bin.path().display());
+    let mut shell = Command::new("/bin/sh");
+    shell
+        .args(["-c", &speed_check_line()])
+        .current_dir(scenario.workdir())
+        .env_clear()
+        .env("HOME", home.path())
+        .env("XDG_CACHE_HOME", home.path().join("cache"))
+        .env("XDG_CONFIG_HOME", home.path().join("config"))
+        .env("PATH", path);
+    std::os::unix::process::CommandExt::process_group(&mut shell, 0);
+    let mut child = shell.spawn().unwrap();
+    let group = child.id();
+    assert!(child.wait().unwrap().success());
+    // The hook's process group ends as a host may end it.
+    for signal in ["HUP", "TERM"] {
+        Command::new("kill")
+            .args(["-s", signal, "--", &format!("-{group}")])
+            .status()
+            .unwrap();
+    }
+    let runs = scenario.workdir().join("suites/board-speed-local/runs");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while !runs.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert_eq!(std::fs::read_dir(runs).map_or(0, Iterator::count), 1);
+}

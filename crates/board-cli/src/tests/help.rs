@@ -115,6 +115,16 @@ const ALLOW: &[Allow] = &[
         &["/tasks/fix-login"],
         "the fixture's origin is a temporary directory, so no golden output can pin its URI",
     ),
+    Allow::example(
+        "timing check",
+        &[],
+        "the check reads the personal board and this machine's timing log, which the fixture does not hold",
+    ),
+    Allow::example(
+        "timing check",
+        &["--record"],
+        "the check reads the personal board and this machine's timing log, which the fixture does not hold",
+    ),
     Allow::example("serve", &[], SERVES),
     Allow::example("serve", &["--idle", "2m"], SERVES),
     Allow::example("ui open", &["/bindings/review"], SERVES),

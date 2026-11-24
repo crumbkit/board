@@ -563,6 +563,11 @@
     },
     {
       "declaration": "document-name",
+      "applies_to": "board timing check",
+      "declares": "The command prints board/timing-check-report/v2, where its path gives the name timing-check."
+    },
+    {
+      "declaration": "document-name",
       "applies_to": "board skills install",
       "declares": "The command prints board/skills-install-report/v2, where its path gives the name skills-install."
     },
