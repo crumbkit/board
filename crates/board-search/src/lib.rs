@@ -1,4 +1,4 @@
-//! Board's search syntax: [`parse`] turns the text a person types into a
+//! Board's search syntax: [`parse()`] turns the text a person types into a
 //! [`Query`] of [`Part`]s, and a query's `Display` prints its canonical
 //! text.
 //!

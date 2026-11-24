@@ -1,4 +1,4 @@
-//! [`parse`]: the text a person types, as a [`Query`] or every error in
+//! [`parse()`]: the text a person types, as a [`Query`] or every error in
 //! it.
 //!
 //! The parser reads the text as Unicode scalar values, so each span counts
