@@ -219,7 +219,8 @@ impl Board {
     }
 
     /// What to decide again after a change: each entry that changed, was
-    /// added, or read a name a change touched. `None` when every entry is
+    /// added, is a pointer whose probe changed, or read a name a change
+    /// touched. `None` when every entry is
     /// decided: the slot holds nothing or another frame, two entries share
     /// a path, or more than one entry in [`SHARE`] would be decided.
     pub(super) fn again(
@@ -277,8 +278,13 @@ impl Board {
         }
         let [before, after] =
             [&kept.probes, &slotted.now.probes].map(|probes| probes.iter().collect::<HashSet<_>>());
+        // A pointer whose probe changed is decided again itself, because a
+        // decision that stops at a cycle reads no name.
         for (path, _) in before.symmetric_difference(&after) {
             touched.extend(changed(path));
+            if paths.contains(path.as_str()) {
+                only.insert(path.clone());
+            }
         }
         if !touched.is_empty() {
             for input in &inputs {

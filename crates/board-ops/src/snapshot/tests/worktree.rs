@@ -368,3 +368,137 @@ fn a_warm_check_and_a_warm_query_of_an_unchanged_board_write_nothing_and_a_cold_
         assert!(!wrote(need), "{need:?}");
     }
 }
+
+/// The origin of the board `twinned` makes.
+const ORIGIN: &str = "https://github.com/example-org/r.git";
+
+/// The origin of the library `twinned` mounts when it is no cycle.
+const TWIN: &str = "https://github.com/example-org/twin.git";
+
+/// An origin no repository of the test is cloned from.
+const OTHER: &str = "https://github.com/example-org/other.git";
+
+/// Sets `scenario`'s `origin` to `url`, as `git remote set-url` does.
+fn originating(scenario: &Scenario, url: &str) {
+    let config = scenario.workdir().join(".git/config");
+    let text = std::fs::read_to_string(&config).unwrap();
+    let kept: String = (text.split_inclusive('\n'))
+        .take_while(|line| !line.starts_with("[remote \"origin\"]"))
+        .collect();
+    let remote = format!("[remote \"origin\"]\n\turl = {url}\n");
+    scenario.write(".git/config", Item::File(&format!("{kept}{remote}")));
+}
+
+/// `crowded(80)` with `/twin` mounting a library board whose origin is
+/// `origin`, and a task that refers into it. The board's own origin is
+/// [`ORIGIN`], so a library with that origin is a cycle.
+fn twinned(origin: &str) -> (Scenario, Library, Scenario) {
+    let (scenario, vendor) = crowded(80);
+    originating(&scenario, ORIGIN);
+    let twin = Scenario::new();
+    originating(&twin, origin);
+    let commit = twin.commit(&[
+        (
+            ".board/types/lr/project/v1.schema.json",
+            crate::tests::PROJECT_SCHEMA,
+        ),
+        ("projects/p.json", r#"{"$type": "lr/project/v1"}"#),
+    ]);
+    let pointer = format!(
+        r#"{{"$type": "board/mount/v1", "repo": "{}", "follow": "main", "commit": "{commit}"}}"#,
+        twin.path()
+    );
+    scenario.write("twin.json", Item::File(&pointer)).write(
+        "tasks/twin.json",
+        Item::File(&task(r#", "project": "/twin/projects/p""#)),
+    );
+    (scenario, vendor, twin)
+}
+
+/// Replaces the repository of `into` with a copy of `from`'s, at the same
+/// path.
+fn replaced(into: &Scenario, from: &Scenario) {
+    into.write(".git", Item::Deleted);
+    let mut pending = vec![from.workdir().join(".git")];
+    while let Some(directory) = pending.pop() {
+        for entry in std::fs::read_dir(&directory).unwrap().map(Result::unwrap) {
+            let path = entry.path();
+            if entry.file_type().unwrap().is_dir() {
+                pending.push(path);
+                continue;
+            }
+            let at = path.strip_prefix(from.workdir()).unwrap();
+            let bytes = std::fs::read(&path).unwrap();
+            into.write(at.to_str().unwrap(), Item::Bytes(&bytes));
+        }
+    }
+}
+
+/// A change to the mounted library alone: what it is, the library's origin
+/// before it, how to make it, and how many entries the next warm query
+/// decides.
+type Alone = (&'static str, &'static str, fn(&Scenario), usize);
+
+/// A clone of `twin` whose origin is `url`.
+fn cloned(twin: &Scenario, url: &str) -> Scenario {
+    let clone = Scenario::clone_of(twin);
+    originating(&clone, url);
+    clone
+}
+
+#[test]
+fn after_each_change_to_a_mounted_repository_alone_a_warm_query_decides_its_pointer_and_what_reaches_it()
+ {
+    // Each change leaves every pointer file as it was. The pointer
+    // `twin.json` and the task that refers through it are decided when the
+    // mount's answer changes, and a mount that resolves adds the two
+    // entries of the library it walks. A repository of another origin that
+    // holds the same commit answers as the one it replaced.
+    let changes: [Alone; 4] = [
+        (
+            "the mounted repository removed",
+            TWIN,
+            |twin| {
+                twin.write("", Item::Deleted);
+            },
+            2,
+        ),
+        (
+            "the mounted repository replaced at the same path by one with another origin",
+            TWIN,
+            |twin| replaced(twin, &cloned(twin, OTHER)),
+            0,
+        ),
+        (
+            "the mounted repository replaced at the same path by one with the board's origin",
+            TWIN,
+            |twin| replaced(twin, &cloned(twin, ORIGIN)),
+            2,
+        ),
+        (
+            "a cycle that becomes a resolved mount",
+            ORIGIN,
+            |twin| {
+                originating(twin, OTHER);
+            },
+            4,
+        ),
+    ];
+    for (change, origin, make, expected) in changes {
+        let (scenario, _vendor, twin) = twinned(origin);
+        let cache = tempfile::tempdir().unwrap();
+        decided(&scenario, cache.path());
+        assert_eq!(
+            decided(&scenario, cache.path()),
+            0,
+            "{change}: nothing changed"
+        );
+        make(&twin);
+        assert_eq!(decided(&scenario, cache.path()), expected, "{change}");
+        assert_eq!(
+            decided(&scenario, cache.path()),
+            0,
+            "{change}, then nothing"
+        );
+    }
+}
