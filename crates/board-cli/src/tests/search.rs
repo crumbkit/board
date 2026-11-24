@@ -3,11 +3,13 @@
 
 use std::path::Path;
 
+use board_model::{Code, Fields, Refusal};
 use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
 use super::{Context, Ran, context_in, run, text};
 use crate::report::Output;
+use crate::run::{TIMEOUT_HINT, unanswered};
 
 /// A schema that admits any object.
 const ANY: &str = r#"{"type": "object"}"#;
@@ -156,8 +158,45 @@ fn a_page_cut_at_its_limit_names_the_next_cursor_and_after_it_the_rest_follow() 
         &["search", "budget", "--limit", "2"],
     );
     let shown = text(&text_page.stdout);
-    let wanted = format!("next page: board search 'budget' --after {next}\n");
+    let wanted = format!("next page: board search 'budget' --after {next} --limit 2\n");
     assert!(shown.ends_with(&wanted), "{shown}");
+}
+
+#[test]
+fn the_next_page_command_leaves_out_the_default_limit() {
+    let scenario = fixture();
+    for index in 0..60 {
+        scenario.write(
+            &format!("tasks/budget-{index:02}.json"),
+            Item::File(r#"{"$type": "tasks/task/v2", "title": "Budget line", "status": "open"}"#),
+        );
+    }
+    let output = board(scenario.workdir(), None, &["search", "budget"]);
+    let shown = text(&output.stdout);
+    let last = shown.lines().last().unwrap();
+    assert!(
+        last.starts_with("next page: board search 'budget' --after "),
+        "{shown}"
+    );
+    assert!(!last.contains("--limit"), "{last}");
+}
+
+#[test]
+fn a_search_past_the_time_limit_says_to_narrow_the_search_and_not_its_sql() {
+    let timed_out = Refusal::new(
+        Code::QueryTimeout,
+        "the query ran longer than 1s",
+        &Fields::default(),
+    );
+    assert!(timed_out.hint.as_deref().unwrap().contains("WHERE"));
+    let refusal = unanswered(timed_out);
+    let hint = refusal.hint.as_deref().unwrap();
+    assert_eq!(hint, TIMEOUT_HINT);
+    assert!(hint.contains("type:task"), "{hint}");
+    assert!(!hint.contains("WHERE"), "{hint}");
+    assert_eq!(refusal.message, "the query ran longer than 1s");
+    let other = Refusal::new(Code::QueryInvalid, "near x", &Fields::default());
+    assert_eq!(unanswered(other.clone()), other);
 }
 
 #[test]

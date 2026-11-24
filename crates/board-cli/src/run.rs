@@ -105,6 +105,8 @@ pub(crate) type Page = crumbkit::Page<DEFAULT_LIMIT, MAX_LIMIT>;
 
 pub(crate) use board_ops::Prefix;
 pub(crate) use search::SEARCH;
+#[cfg(test)]
+pub(crate) use search::{TIMEOUT_HINT, unanswered};
 
 /// A path argument as typed: absolute, or relative to the run's prefix.
 #[derive(Clone, Debug)]

@@ -3,7 +3,7 @@
 
 use std::fmt::Write as _;
 
-use board_model::{Code, Refusal};
+use board_model::{Code, Refusal, RefusalCode};
 use board_ops::{Board, Cursor, Hit, SEARCH_LIMIT, SEARCH_MAX, SearchReport, Statement, compile};
 use board_search::fields::{FIELDS, TYPES};
 use board_search::{Query, QueryError, parse};
@@ -187,8 +187,22 @@ pub(crate) fn search(
     };
     let limit = asked.page.limit().unwrap_or(SEARCH_MAX);
     match board.search(&statement, limit, after.as_ref(), context.cache.as_deref()) {
-        Ok(report) => printed(printer, &query, &report),
-        Err(error) => render::refused(printer, error.refusal()),
+        Ok(report) => printed(printer, &query, limit, &report),
+        Err(error) => render::refused(printer, unanswered(error.refusal())),
+    }
+}
+
+/// What to try when a search reads for longer than the index allows.
+pub(crate) const TIMEOUT_HINT: &str = "add a filter such as type:task or from:erin, or use a longer or less common word, so fewer records match; `board search --filters` lists the filters";
+
+/// `refusal` with a search's recovery in place of `board query`'s when the
+/// search ran longer than the index allows, which a person fixes by
+/// narrowing the search rather than its SQL.
+pub(crate) fn unanswered(refusal: Refusal) -> Refusal {
+    if refusal.code == RefusalCode::Board(Code::QueryTimeout) {
+        refusal.with_hint(TIMEOUT_HINT)
+    } else {
+        refusal
     }
 }
 
@@ -207,8 +221,8 @@ fn hit(hit: &Hit) -> Value {
 
 /// The report of `query`: as text, one line per result with its path,
 /// short type and title, then the command for the next page when there is
-/// one.
-fn printed(printer: Printer, query: &Query, report: &SearchReport) -> Output {
+/// one, which keeps `limit` when it is not the default.
+fn printed(printer: Printer, query: &Query, limit: usize, report: &SearchReport) -> Output {
     let canonical = query.to_string();
     let next = report.next.as_ref().map(Cursor::text);
     let value = json!({
@@ -232,7 +246,11 @@ fn printed(printer: Printer, query: &Query, report: &SearchReport) -> Output {
     }
     if let Some(next) = &next {
         let quoted = canonical.replace('\'', r"'\''");
-        let _ = writeln!(text, "next page: board search '{quoted}' --after {next}");
+        let _ = write!(text, "next page: board search '{quoted}' --after {next}");
+        if limit != SEARCH_LIMIT {
+            let _ = write!(text, " --limit {limit}");
+        }
+        text.push('\n');
     }
     let memory = report.memory;
     let notes = memory.map(render::memory_note).into_iter();
