@@ -60,12 +60,16 @@ pub(crate) enum Reason {
     /// Board's lines for its key name other principals or other options.
     Differs,
     /// It or Board's line for its key names principals or namespaces with
-    /// `!`, `*` or `?`, which are not compared.
+    /// `!`, `*` or `?`, or with an element of 1023 bytes or more, which are
+    /// not compared.
     Pattern,
-    /// It cannot be read, or its `namespaces=` is not one quoted value.
+    /// It cannot be read as ssh-keygen reads it, or its `namespaces=` is not
+    /// one quoted value.
     Unreadable,
     /// An earlier line of the attention file already gave its key.
     Duplicate,
+    /// Board's lines for its key already admit `owner` in orders.
+    AlreadyAdmitted,
 }
 
 /// A line of the attention file, numbered from 1, that gave the printed
@@ -131,6 +135,7 @@ pub(crate) fn output(merged: Signers) -> Output {
                     LeftOutReason::Pattern => Reason::Pattern,
                     LeftOutReason::Unreadable => Reason::Unreadable,
                     LeftOutReason::Duplicate => Reason::Duplicate,
+                    LeftOutReason::AlreadyAdmitted => Reason::AlreadyAdmitted,
                 },
             })
             .collect(),

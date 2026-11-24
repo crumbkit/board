@@ -337,13 +337,19 @@ pub enum LeftOutReason {
     /// so adding the order namespace would admit more than it does.
     Differs,
     /// It or Board's line for its key names principals or namespaces with
-    /// `!`, `*` or `?`, which ssh-keygen reads as patterns, so the lists are
-    /// not compared.
+    /// `!`, `*` or `?`, which ssh-keygen reads as patterns, or with an
+    /// element of 1023 bytes or more, which ssh-keygen matches nothing
+    /// against, so the lists are not compared.
     Pattern,
-    /// It cannot be read, or its `namespaces=` is not one quoted value.
+    /// It cannot be read as ssh-keygen reads it: it holds whitespace other
+    /// than spaces and tabs or a control character, its principals hold a
+    /// double quote, its options hold an empty piece or a backslash, or its
+    /// `namespaces=` is not one quoted value.
     Unreadable,
     /// An earlier line of the attention file already gave its key.
     Duplicate,
+    /// Board's lines for its key already admit `owner` in orders.
+    AlreadyAdmitted,
 }
 
 /// Board's allowed signers file `board` with each key of the attention file
@@ -391,7 +397,15 @@ impl Entry {
     /// The line's key, its principals, options and comment around it, or
     /// none for a comment, a blank line or a line it cannot read.
     fn parse(line: &str) -> Option<Self> {
-        let words = split_outside_quotes(line.trim(), char::is_whitespace);
+        let line = trim_blanks(line);
+        if line
+            .chars()
+            .any(|c| !is_blank(c) && (c.is_whitespace() || c.is_control()))
+        {
+            return None;
+        }
+        let mut words = split_outside_quotes(line, is_blank);
+        words.retain(|word| !word.is_empty());
         let is_type = |word: &str| {
             ["ssh-", "ecdsa-", "sk-"]
                 .iter()
@@ -400,11 +414,18 @@ impl Entry {
         let (options, at) = match words.as_slice() {
             [first, ..] if first.starts_with('#') => return None,
             [_, kind, _, ..] if is_type(kind) => (Vec::new(), 1),
-            [_, options, kind, _, ..] if is_type(kind) => {
-                (split_outside_quotes(options, |c| c == ','), 2)
+            [_, options, kind, _, ..] if is_type(kind) && !options.contains('\\') => {
+                let options = split_outside_quotes(options, |c| c == ',');
+                if options.iter().any(String::is_empty) {
+                    return None;
+                }
+                (options, 2)
             }
             _ => return None,
         };
+        if words[0].contains('"') {
+            return None;
+        }
         let namespaces = match options
             .iter()
             .filter(|option| is_namespaces(option))
@@ -442,11 +463,15 @@ impl Entry {
     }
 
     /// Whether its principals or namespaces hold a `!`, `*` or `?`, which
-    /// ssh-keygen matches as a pattern.
+    /// ssh-keygen matches as a pattern, or an element of
+    /// [`LONGEST_ELEMENT`] bytes or more, which makes ssh-keygen match
+    /// nothing against the whole list.
     fn has_pattern(&self) -> bool {
         (self.principals.iter())
             .chain(self.namespaces.iter().flatten())
-            .any(|name| name.starts_with('!') || name.contains(['*', '?']))
+            .any(|name| {
+                name.starts_with('!') || name.contains(['*', '?']) || name.len() >= LONGEST_ELEMENT
+            })
     }
 
     fn line(&self) -> String {
@@ -463,8 +488,23 @@ impl Entry {
     }
 }
 
+/// The length in bytes from which ssh-keygen's pattern matching refuses a
+/// list element, and so matches nothing against the whole list.
+const LONGEST_ELEMENT: usize = 1023;
+
+/// Whether ssh-keygen splits an allowed signers line at `c`: a space or a
+/// tab.
+fn is_blank(c: char) -> bool {
+    c == ' ' || c == '\t'
+}
+
+/// `line` without the spaces, tabs and line ends ssh-keygen skips around it.
+fn trim_blanks(line: &str) -> &str {
+    line.trim_matches([' ', '\t', '\r', '\n'])
+}
+
 /// `text` split at each character `at` admits outside double quotes,
-/// without empty pieces.
+/// with the empty pieces between two such characters.
 fn split_outside_quotes(text: &str, at: impl Fn(char) -> bool) -> Vec<String> {
     let (mut pieces, mut piece, mut quoted) = (Vec::new(), String::new(), false);
     for c in text.chars() {
@@ -478,7 +518,6 @@ fn split_outside_quotes(text: &str, at: impl Fn(char) -> bool) -> Vec<String> {
         }
     }
     pieces.push(piece);
-    pieces.retain(|piece| !piece.is_empty());
     pieces
 }
 
@@ -509,7 +548,8 @@ struct Merge {
 ///   either names none; other pairs print unchanged; both are reported;
 /// - an attention line that cannot be read, that names patterns, that does
 ///   not admit `owner` in orders, or whose key an earlier line gave is left
-///   out, as is one whose key Board lists on a line that names patterns;
+///   out, as is one whose key Board lists on a line that names patterns or
+///   on a line that already admits `owner` in orders;
 /// - Board's line for a key such a line lists gains the order namespace
 ///   when it names `owner`, the attention line admits all its principals and
 ///   the other options are the same; otherwise it is left as it was and the
@@ -581,7 +621,7 @@ impl Merge {
     }
 
     fn attention_line(&mut self, number: usize, line: &str) {
-        let text = line.trim();
+        let text = trim_blanks(line);
         if text.is_empty() || text.starts_with('#') {
             return;
         }
@@ -642,7 +682,7 @@ impl Merge {
             .iter()
             .any(|(_, kept)| kept.admits(PRINCIPAL, namespace))
         {
-            return None;
+            return Some(LeftOutReason::AlreadyAdmitted);
         }
         let fits = lines.iter().find(|(_, kept)| {
             kept.others == entry.others

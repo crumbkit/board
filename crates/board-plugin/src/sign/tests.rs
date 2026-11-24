@@ -712,3 +712,126 @@ fn the_merged_lines_admit_an_order_and_reading_the_files_writes_neither() {
         "{refused:?}"
     );
 }
+
+/// ssh-keygen ends a principals word at a closing double quote and reads
+/// what follows as options, so a principals word holding a quote can hide
+/// options such as `namespaces=`: the line is unreadable and gives nothing.
+#[test]
+fn a_principals_word_holding_a_quote_is_unreadable_and_gives_nothing() {
+    let board = "owner namespaces=\"board/approve/v1\" ssh-ed25519 KKKK\n";
+    for attention in [
+        "owner,\"x\"namespaces=\"git\" ssh-ed25519 KKKK\n",
+        "owner,\"x\"cert-authority ssh-ed25519 KKKK\n",
+        "\"owner\" ssh-ed25519 KKKK\n",
+    ] {
+        let signers = merged_signers(board, attention);
+        assert_eq!(signers.text, board, "{attention}");
+        assert_eq!(changes(&signers), []);
+        assert_eq!(left_out(&signers), [(1, LeftOutReason::Unreadable)]);
+    }
+    let board = "owner,\"x\"namespaces=\"board/approve/v1\" ssh-ed25519 KKKK\nowner namespaces=\"git\" ssh-ed25519 KKKK\n";
+    let signers = merged_signers(board, "");
+    assert_eq!(signers.text, board);
+    assert_eq!(changes(&signers), []);
+}
+
+/// ssh-keygen splits a line only at spaces and tabs, so a line holding any
+/// other whitespace or a control character is unreadable on both sides,
+/// while a tab still separates words.
+#[test]
+fn a_line_with_whitespace_other_than_space_or_tab_is_unreadable() {
+    let attention = "owner ssh-ed25519 BBBB\u{a0}laptop\n\u{a0}owner ssh-ed25519 CCCC\nowner\u{b}ssh-ed25519 DDDD\nowner ssh-ed25519\u{c}EEEE\n\u{2003}\nowner\tssh-ed25519\tFFFF\n";
+    let signers = merged_signers("", attention);
+    assert_eq!(
+        signers.text,
+        "owner namespaces=\"attention/order/v1\" ssh-ed25519 FFFF\n"
+    );
+    assert_eq!(
+        left_out(&signers),
+        [
+            (1, LeftOutReason::Unreadable),
+            (2, LeftOutReason::Unreadable),
+            (3, LeftOutReason::Unreadable),
+            (4, LeftOutReason::Unreadable),
+            (5, LeftOutReason::Unreadable),
+        ]
+    );
+
+    let board = "owner namespaces=\"board/approve/v1\" ssh-ed25519 BBBB\u{a0}laptop\nowner namespaces=\"git\" ssh-ed25519 BBBB\n";
+    let signers = merged_signers(board, "");
+    assert_eq!(signers.text, board);
+    assert_eq!(changes(&signers), []);
+}
+
+/// ssh-keygen refuses options with an empty piece, such as a trailing
+/// comma, and reads a backslash before a quote as an escape that leaves the
+/// quote open, so either makes a line unreadable on both sides.
+#[test]
+fn an_empty_option_or_a_backslash_in_the_options_is_unreadable() {
+    let attention = "owner namespaces=\"attention/order/v1\", ssh-ed25519 BBBB\nowner ,namespaces=\"attention/order/v1\" ssh-ed25519 CCCC\nowner cert-authority,,namespaces=\"attention/order/v1\" ssh-ed25519 DDDD\nowner namespaces=\"attention/order/v1,git\\\" ssh-ed25519 EEEE\n";
+    let signers = merged_signers("", attention);
+    assert_eq!(signers.text, "");
+    assert_eq!(
+        left_out(&signers),
+        [
+            (1, LeftOutReason::Unreadable),
+            (2, LeftOutReason::Unreadable),
+            (3, LeftOutReason::Unreadable),
+            (4, LeftOutReason::Unreadable),
+        ]
+    );
+
+    for board in [
+        "owner namespaces=\"git\\\" ecdsa-sha2-nistp256 AAAA\n",
+        "owner namespaces=\"git\", ecdsa-sha2-nistp256 AAAA\n",
+    ] {
+        let signers = merged_signers(board, "owner ecdsa-sha2-nistp256 AAAA\n");
+        assert!(signers.text.starts_with(board), "{}", signers.text);
+        assert_eq!(changes(&signers), [(2, LineChange::Added)]);
+    }
+}
+
+/// ssh-keygen matches no name against a list holding an element of 1023
+/// bytes or more, so such an element counts as a pattern; one of 1022
+/// bytes does not.
+#[test]
+fn a_list_element_of_1023_bytes_or_more_is_a_pattern() {
+    let long = "b".repeat(1023);
+    let attention = format!(
+        "owner,{long} ssh-ed25519 BBBB\nowner namespaces=\"attention/order/v1,{long}\" ssh-ed25519 CCCC\nowner,{} ssh-ed25519 DDDD\n",
+        &long[1..]
+    );
+    let signers = merged_signers("", &attention);
+    assert_eq!(
+        left_out(&signers),
+        [(1, LeftOutReason::Pattern), (2, LeftOutReason::Pattern)]
+    );
+    assert_eq!(changes(&signers), [(1, LineChange::Added)]);
+
+    let board = format!("owner namespaces=\"board/approve/v1,{long}\" ssh-ed25519 BBBB\n");
+    let signers = merged_signers(&board, "owner ssh-ed25519 BBBB\n");
+    assert_eq!(signers.text, board);
+    assert_eq!(left_out(&signers), [(1, LeftOutReason::Pattern)]);
+}
+
+/// An attention line for a key Board's lines already admit in orders gives
+/// nothing, and it is reported as already admitted.
+#[test]
+fn an_attention_line_for_a_key_board_already_admits_in_orders_is_reported() {
+    let board = "owner namespaces=\"attention/order/v1\" ecdsa-sha2-nistp256 AAAA\nowner ssh-ed25519 BBBB\n";
+    let attention = "owner ecdsa-sha2-nistp256 AAAA\nowner ssh-ed25519 BBBB\n";
+    let signers = merged_signers(board, attention);
+    assert_eq!(signers.text, board);
+    assert_eq!(changes(&signers), []);
+    assert_eq!(
+        left_out(&signers),
+        [
+            (1, LeftOutReason::AlreadyAdmitted),
+            (2, LeftOutReason::AlreadyAdmitted)
+        ]
+    );
+    assert_eq!(
+        signers.left_out[0].key.as_deref(),
+        Some("ecdsa-sha2-nistp256 AAAA")
+    );
+}
