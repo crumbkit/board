@@ -1,4 +1,4 @@
-//! The attention plugin through the binary, in a personal board with the
+//! The orders plugin, named attention before, through the binary, in a personal board with the
 //! test signer's key: `sign` writes the owner's signature, `verify` checks
 //! it, and `pinned` lists the board's own pinned orders. Every order is
 //! synthetic. Each refusal sits beside an otherwise identical order that is
@@ -16,7 +16,7 @@ use super::*;
 const CONTEXT: &str = "A synthetic order for a test.\n";
 
 fn personal() -> Personal {
-    Personal::enabling(&["attention"])
+    Personal::enabling(&["orders"])
 }
 
 /// Writes the order `/orders/<name>`, with `fields` over a draft's, and its
@@ -32,9 +32,9 @@ fn draft(personal: &Personal, name: &str, fields: &Value, context: &str) {
     personal.write(&format!("orders/{name}.md"), context);
 }
 
-/// `board --json call attention.<capability> --path <path>`.
+/// `board --json call orders.<capability> --path <path>`.
 fn call(personal: &Personal, capability: &str, path: &str) -> Output {
-    let target = format!("attention.{capability}");
+    let target = format!("orders.{capability}");
     personal.run(&["--json", "call", &target, "--path", path])
 }
 
@@ -60,7 +60,7 @@ fn signed(personal: &Personal, name: &str) {
 }
 
 fn pinned(personal: &Personal) -> Value {
-    admitted(&personal.run(&["--json", "call", "attention.pinned"]))
+    admitted(&personal.run(&["--json", "call", "orders.pinned"]))
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn an_unsigned_order_is_refused_and_its_signed_twin_verifies() {
     draft(&personal, "push", &json!({}), CONTEXT);
     assert_eq!(
         refused(&call(&personal, "verify", "/orders/push")),
-        "attention::order::unsigned"
+        "orders::order::unsigned"
     );
     signed(&personal, "push");
     admitted(&call(&personal, "verify", "/orders/push"));
@@ -111,7 +111,7 @@ fn an_order_whose_context_changed_after_signing_is_a_bad_signature_and_the_uncha
     personal.write("orders/push.md", "a synthetic order for a test.\n");
     assert_eq!(
         refused(&call(&personal, "verify", "/orders/push")),
-        "attention::order::bad_signature"
+        "orders::order::bad_signature"
     );
 }
 
@@ -153,7 +153,7 @@ fn an_order_whose_day_has_passed_is_refused_as_expired_by_sign_and_verify_and_on
         CONTEXT,
     );
     let ran = call(&personal, "sign", "/orders/late");
-    assert_eq!(refused(&ran), "attention::order::expired");
+    assert_eq!(refused(&ran), "orders::order::expired");
     assert_eq!(
         personal.record("/orders/late").unwrap().get("signature"),
         None
@@ -164,7 +164,7 @@ fn an_order_whose_day_has_passed_is_refused_as_expired_by_sign_and_verify_and_on
     signed_expired(&personal, "old");
     assert_eq!(
         refused(&call(&personal, "verify", "/orders/old")),
-        "attention::order::expired"
+        "orders::order::expired"
     );
     admitted(&call(&personal, "verify", "/orders/new"));
 }
@@ -179,7 +179,7 @@ fn a_record_of_another_type_is_not_an_order_and_an_order_beside_it_is() {
     draft(&personal, "push", &json!({}), CONTEXT);
     assert_eq!(
         refused(&call(&personal, "sign", "/orders/other")),
-        "attention::order::not_an_order"
+        "orders::order::not_an_order"
     );
     signed(&personal, "push");
 }
@@ -188,12 +188,12 @@ fn a_record_of_another_type_is_not_an_order_and_an_order_beside_it_is() {
 fn nothing_at_the_path_is_boards_refusal_and_an_order_there_is_read() {
     let personal = personal();
     let ran = call(&personal, "verify", "/orders/push");
-    assert_eq!(refused(&ran), "attention::board::refused");
+    assert_eq!(refused(&ran), "orders::board::refused");
     assert_eq!(json(&ran)["fields"]["code"], "board::path::not_found");
     draft(&personal, "push", &json!({}), CONTEXT);
     assert_eq!(
         refused(&call(&personal, "verify", "/orders/push")),
-        "attention::order::unsigned"
+        "orders::order::unsigned"
     );
 }
 
@@ -224,7 +224,7 @@ fn an_order_text_that_starts_the_context_a_context_path_with_a_line_break_or_no_
         for capability in ["sign", "verify"] {
             assert_eq!(
                 refused(&call(&personal, capability, "/orders/push")),
-                "attention::order::invalid",
+                "orders::order::invalid",
                 "{capability} {bad}"
             );
         }
@@ -241,7 +241,7 @@ fn a_context_over_64_kib_is_too_large_and_one_of_64_kib_is_signed() {
     draft(&personal, "full", &json!({}), &"x".repeat(64 * 1024));
     assert_eq!(
         refused(&call(&personal, "sign", "/orders/long")),
-        "attention::order::context_too_large"
+        "orders::order::context_too_large"
     );
     signed(&personal, "full");
 }
@@ -274,7 +274,7 @@ fn an_order_edited_while_the_owner_signs_is_refused_as_stale_and_one_left_alone_
     );
     signer(&personal, &script);
     let ran = call(&personal, "sign", "/orders/push");
-    assert_eq!(refused(&ran), "attention::board::refused");
+    assert_eq!(refused(&ran), "orders::board::refused");
     assert_eq!(json(&ran)["fields"]["code"], "board::put::stale");
     let stored = personal.record("/orders/push").unwrap();
     assert_eq!(
@@ -296,7 +296,7 @@ fn an_owner_who_asks_for_changes_declines_with_their_words_and_one_who_signs_sig
         "#!/bin/sh\nprintf 'Say which branches.\\n'\nexit 3\n",
     );
     let ran = call(&personal, "sign", "/orders/push");
-    assert_eq!(refused(&ran), "attention::sign::declined");
+    assert_eq!(refused(&ran), "orders::sign::declined");
     assert_eq!(json(&ran)["fields"]["feedback"], "Say which branches.");
     assert_eq!(
         personal.record("/orders/push").unwrap().get("signature"),
@@ -308,11 +308,11 @@ fn an_owner_who_asks_for_changes_declines_with_their_words_and_one_who_signs_sig
 }
 
 /// Runs `board` in the personal board as [`Personal::run_in`] does, with
-/// `allowed` as the attention allowed signers file and `plugins` as the
-/// directory of installed plugins.
+/// `board` as Board's own allowed signers file, `attention` as the
+/// attention file and `plugins` as the directory of installed plugins.
 fn run_with(
     personal: &Personal,
-    allowed: PathBuf,
+    (board, attention): (PathBuf, PathBuf),
     plugins: Option<PathBuf>,
     arguments: &[&str],
 ) -> Output {
@@ -323,8 +323,8 @@ fn run_with(
         plugins,
         boards: Some(personal.xdg.workdir().join("board/config.json")),
         signer: Some(personal.signer.program().into_os_string()),
-        allowed_signers: Some(personal.signer.allowed()),
-        attention_allowed_signers: Some(allowed),
+        allowed_signers: Some(board),
+        attention_allowed_signers: Some(attention),
         environment: board_plugin::Environment {
             path: Some("/usr/bin:/bin".into()),
             ..board_plugin::Environment::default()
@@ -342,16 +342,13 @@ fn run_with(
     run(arguments, &context, &mut &b""[..], &mut Ran::default())
 }
 
-const VERIFY: [&str; 5] = [
-    "--json",
-    "call",
-    "attention.verify",
-    "--path",
-    "/orders/push",
-];
+const VERIFY: [&str; 5] = ["--json", "call", "orders.verify", "--path", "/orders/push"];
 
+/// No allowed signers file is missing; a Board file others may write is
+/// untrusted, even while the attention file admits the key; the owner's
+/// own Board file verifies.
 #[test]
-fn no_allowed_signers_file_is_missing_and_one_others_may_write_is_untrusted_and_the_owners_own_verifies()
+fn no_allowed_signers_file_is_missing_and_a_board_file_others_may_write_is_untrusted_and_the_owners_own_verifies()
  {
     use std::os::unix::fs::PermissionsExt as _;
 
@@ -361,29 +358,125 @@ fn no_allowed_signers_file_is_missing_and_one_others_may_write_is_untrusted_and_
     let allowed = personal.signer.allowed();
     let absent = personal.signer.directory().join("absent");
     assert_eq!(
-        refused(&run_with(&personal, absent, None, &VERIFY)),
-        "attention::signers::missing"
+        refused(&run_with(
+            &personal,
+            (absent.clone(), absent.clone()),
+            None,
+            &VERIFY
+        )),
+        "orders::signers::missing"
     );
     let open = personal.signer.directory().join("open_signers");
     std::fs::copy(&allowed, &open).unwrap();
     std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o666)).unwrap();
     assert_eq!(
-        refused(&run_with(&personal, open, None, &VERIFY)),
-        "attention::signers::untrusted"
+        refused(&run_with(&personal, (open, allowed.clone()), None, &VERIFY)),
+        "orders::signers::untrusted"
     );
-    admitted(&run_with(&personal, allowed, None, &VERIFY));
+    admitted(&run_with(&personal, (allowed, absent), None, &VERIFY));
 }
 
-/// While the link to the Python plugin is still installed, Board refuses
-/// the call and names the link, so the owner knows what to remove. Without
-/// it the built-in plugin answers.
+/// The lines of `output`'s stderr that warn with `code`.
+fn warned(output: &Output, code: &str) -> Vec<String> {
+    let prefix = format!("warning: {code}: ");
+    (text(&output.stderr).lines())
+        .filter_map(|line| line.strip_prefix(prefix.as_str()).map(str::to_owned))
+        .collect()
+}
+
+/// An order whose key only the attention file admits verifies, and the
+/// call warns once that Board stops reading that file in its next release;
+/// one Board's own file admits warns of nothing.
+#[test]
+fn an_order_only_the_attention_file_admits_verifies_with_a_legacy_warning() {
+    let personal = personal();
+    draft(&personal, "push", &json!({"pinned": true}), CONTEXT);
+    draft(&personal, "main", &json!({"pinned": true}), CONTEXT);
+    signed(&personal, "push");
+    signed(&personal, "main");
+    let allowed = personal.signer.allowed();
+    let stranger = board_scenario::signer::Signer::new();
+    let ran = run_with(
+        &personal,
+        (stranger.allowed(), allowed.clone()),
+        None,
+        &VERIFY,
+    );
+    assert_eq!(admitted(&ran)["signer"], "owner");
+    let legacy = warned(&ran, "orders::signers::legacy");
+    assert_eq!(legacy.len(), 1, "{}", text(&ran.stderr));
+    assert!(
+        legacy[0].contains(&allowed.display().to_string()),
+        "{}",
+        legacy[0]
+    );
+    assert!(legacy[0].contains("orders signers"), "{}", legacy[0]);
+    let pinned = ["--json", "call", "orders.pinned"];
+    let ran = run_with(
+        &personal,
+        (stranger.allowed(), allowed.clone()),
+        None,
+        &pinned,
+    );
+    assert_eq!(admitted(&ran)["orders"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        warned(&ran, "orders::signers::legacy").len(),
+        1,
+        "{}",
+        text(&ran.stderr)
+    );
+    let ran = run_with(&personal, (allowed.clone(), allowed), None, &VERIFY);
+    admitted(&ran);
+    assert_eq!(
+        warned(&ran, "orders::signers::legacy"),
+        Vec::<String>::new()
+    );
+}
+
+/// The `board::plugin::former_name` warnings `output` printed.
+fn former(output: &Output) -> Vec<String> {
+    (text(&output.stderr).lines())
+        .filter_map(|line| line.strip_prefix("warning: board::plugin::former_name: "))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// `attention.*` calls and `attention` in a board's plugin list reach the
+/// orders plugin for this release, each with a warning naming `orders`;
+/// `orders` itself warns of nothing.
+#[test]
+fn an_attention_call_or_plugin_list_entry_answers_as_orders_with_a_warning_naming_orders() {
+    let personal = personal();
+    draft(&personal, "push", &json!({"pinned": true}), CONTEXT);
+    signed(&personal, "push");
+    let called =
+        "attention is the former name of the orders plugin; call it as `board call orders.pinned`";
+    let ran = personal.run(&["--json", "call", "attention.pinned"]);
+    assert_eq!(admitted(&ran)["orders"][0]["path"], "/orders/push");
+    assert_eq!(former(&ran), [called]);
+    let ran = personal.run(&["--json", "call", "orders.pinned"]);
+    assert_eq!(admitted(&ran)["orders"][0]["path"], "/orders/push");
+    assert_eq!(former(&ran), Vec::<String>::new());
+
+    let old = Personal::enabling(&["attention"]);
+    draft(&old, "push", &json!({"pinned": true}), CONTEXT);
+    signed(&old, "push");
+    let enabled = "the board's .board/board.json enables attention, the former name of the orders plugin; `board plugin enable orders` adds its name";
+    let ran = old.run(&["--json", "call", "orders.pinned"]);
+    assert_eq!(admitted(&ran)["orders"][0]["path"], "/orders/push");
+    assert_eq!(former(&ran), [enabled]);
+}
+
+/// While the link to the Python plugin, named attention, is still
+/// installed, `attention.verify` names both it and the orders plugin, so
+/// the owner knows what to remove, and `orders.verify` answers. Without the
+/// link `attention.verify` reaches the orders plugin.
 #[test]
 #[expect(
     clippy::disallowed_methods,
     reason = "an installed plugin is a link in Board's data directory, which no board tree owns"
 )]
-fn an_installed_link_to_the_old_plugin_is_a_duplicate_that_names_the_link_and_without_it_the_call_runs()
- {
+fn an_installed_link_to_the_old_plugin_makes_attention_ambiguous_and_without_it_the_call_runs() {
     let personal = personal();
     draft(&personal, "push", &json!({}), CONTEXT);
     signed(&personal, "push");
@@ -401,27 +494,30 @@ fn an_installed_link_to_the_old_plugin_is_a_duplicate_that_names_the_link_and_wi
     std::fs::create_dir_all(&plugins).unwrap();
     let link = plugins.join("attention");
     std::os::unix::fs::symlink(old.workdir(), &link).unwrap();
+    let files = || (personal.signer.allowed(), personal.signer.allowed());
+    let attention = [
+        "--json",
+        "call",
+        "attention.verify",
+        "--path",
+        "/orders/push",
+    ];
 
-    let ran = run_with(
-        &personal,
-        personal.signer.allowed(),
-        Some(plugins.clone()),
-        &VERIFY,
+    let ran = run_with(&personal, files(), Some(plugins.clone()), &attention);
+    assert_eq!(refused(&ran), "board::plugin::ambiguous");
+    assert_eq!(
+        json(&ran)["fields"]["plugins"],
+        json!(["orders", "attention"])
     );
-    assert_eq!(refused(&ran), "board::plugin::duplicate");
-    let message = json(&ran)["message"].as_str().unwrap().to_owned();
-    assert!(
-        message.ends_with(&format!("installed at {}", link.display())),
-        "{message}"
-    );
-
-    std::fs::remove_file(&link).unwrap();
     admitted(&run_with(
         &personal,
-        personal.signer.allowed(),
-        Some(plugins),
+        files(),
+        Some(plugins.clone()),
         &VERIFY,
     ));
+
+    std::fs::remove_file(&link).unwrap();
+    admitted(&run_with(&personal, files(), Some(plugins), &attention));
 }
 
 #[test]
@@ -437,10 +533,7 @@ fn pinned_leaves_out_an_order_it_cannot_verify_with_its_code_and_ignores_unpinne
             &listed["left_out"][0]["path"],
             &listed["left_out"][0]["code"]
         ),
-        (
-            &json!("/orders/draft"),
-            &json!("attention::order::unsigned")
-        )
+        (&json!("/orders/draft"), &json!("orders::order::unsigned"))
     );
     assert_eq!(listed["left_out"].as_array().unwrap().len(), 1);
     signed(&personal, "draft");
@@ -468,7 +561,7 @@ fn pinned_lists_no_order_of_a_mounted_board_and_lists_the_same_order_in_its_own_
     })
     .to_string();
     let (repository, commit) = repository(
-        &["attention"],
+        &["orders"],
         &[
             ("orders/push.json", order.clone()),
             ("orders/push.md", CONTEXT.to_owned()),
@@ -517,10 +610,7 @@ fn pinned_leaves_out_an_order_past_32_kib_of_pinned_text_and_lists_both_orders_t
                     &listed["left_out"][0]["path"],
                     &listed["left_out"][0]["code"]
                 ),
-                (
-                    &json!("/orders/b"),
-                    &json!("attention::pinned::over_budget")
-                )
+                (&json!("/orders/b"), &json!("orders::pinned::over_budget"))
             );
         }
     }

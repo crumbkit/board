@@ -3,9 +3,6 @@ artifacts.import disabled Write an artifact record, without a version, for each 
 artifacts.record disabled Write the artifact record a session published or read when it is missing, with the session's subject, and name the shown or agreed artifacts it may replace.
 artifacts.set disabled Add a subject or area to an artifact, set what it shows or whether it was shown, and mark the artifact it replaces superseded.
 artifacts.agree disabled Move an artifact to agreed once the owner approves it with Touch ID, naming the decision that accepts it.
-attention.verify disabled An order and its context, when the owner's key signed it and it has not expired; otherwise the reason it cannot be trusted.
-attention.pinned disabled Every pinned order in the board's own tree that verifies, for an agent session to start with, and the code of each one left out.
-attention.sign disabled Show the owner an order in the signing window and, once they sign it with Touch ID, write their signature into it. Refuses with the owner's requested changes when they ask for some.
 autosync.add disabled Write the record of a board to keep in step, at /autosync/boards/<name>, after the owner signs it with Touch ID. The record names the board's directory, its branch and every URL it may push to.
 autosync.run disabled Sync every board with a signed record, one at a time: check its origins, fetch, merge without a conflict, scan exactly the commits to push with gitleaks, and push only a clean scan. With --dry-run it checks each board and changes nothing.
 autosync.status disabled Print each board's last result from this Mac's status file. It writes nothing.
@@ -58,6 +55,9 @@ jira.ref disabled Write the issue at /jira/<site>/<key> with its title, read onc
 map.check disabled What a reader would see as broken in a map: labels over labels, marks or region titles, labels off the sheet or outside their region, lines through labels or marks, lines leaving an item at nearly one angle, overlapping marks, and labels or notes nearer another mark or line than their own. Each finding gives the box estimated for each text it names; findings the map accepts are counted apart.
 notes.add disabled Sync the notes repo, append text under a `## HH:MM` heading to today's daily note or a topic's note, commit it and push it.
 notes.daily disabled Sync the notes repo and print a day's daily note, unless the note is private.
+orders.verify disabled An order and its context, when the owner's key signed it and it has not expired; otherwise the reason it cannot be trusted.
+orders.pinned disabled Every pinned order in the board's own tree that verifies, for an agent session to start with, and the code of each one left out.
+orders.sign disabled Show the owner an order in the signing window and, once they sign it with Touch ID, write their signature into it. Refuses with the owner's requested changes when they ask for some.
 params.get disabled A calibrated value for a scope, or its heuristic's default and why the default applies.
 params.due disabled The values an agent should derive again, oldest first: those on the default, those readers cannot use, those whose latest check failed, and those older than their recheck_after in calendar days.
 places.attach disabled Write the join of an mxv workspace on this machine to a change, at /places/<machine>/<workspace>/changes/<change-name>, with the workspace's id from mxv. The workspace is the one --workspace names, or the one that holds the caller's directory.

@@ -321,22 +321,29 @@ fn an_approval_has_twenty_seconds_and_an_order_ten_minutes() {
     assert_eq!(Verb::Sign.time(), Duration::from_secs(600));
 }
 
-/// attention-sign exits 1 for every failure, and says on stderr when the
-/// owner cancelled.
+/// board-sign, and attention-sign before it, exit 1 for every failure and
+/// say on stderr when the owner cancelled, each naming itself.
 #[test]
 fn an_owner_who_cancels_is_told_apart_from_a_signer_that_fails() {
     let signer = Signer::new();
     let file = statement_file(&signer, ORDER);
-    let cancelling = program(
-        &signer,
-        "cancel",
-        "echo 'attention-sign: the owner cancelled, so nothing was signed' >&2\nexit 1",
-    );
-    let refused = sign(&cancelling, &file, &[], Verb::Sign);
-    assert!(
-        matches!(refused, Err(SignError::Cancelled { .. })),
-        "{refused:?}"
-    );
+    for (name, line) in [
+        (
+            "board-sign",
+            "board-sign: the owner cancelled, so nothing was signed",
+        ),
+        (
+            "attention-sign",
+            "attention-sign: the owner cancelled, so nothing was signed",
+        ),
+    ] {
+        let cancelling = program(&signer, name, &format!("echo '{line}' >&2\nexit 1"));
+        let refused = sign(&cancelling, &file, &[], Verb::Sign);
+        assert!(
+            matches!(refused, Err(SignError::Cancelled { .. })),
+            "{name}: {refused:?}"
+        );
+    }
     let failing = program(
         &signer,
         "fail",

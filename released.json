@@ -19,9 +19,6 @@
         ]
       }
     },
-    "crates/board-plugin-attention/types/attention/order/v1.schema.json": {
-      "shape": "e248b8f20cd20b242e8de485ed94346e95e8cb21"
-    },
     "crates/board-plugin-autosync/types/autosync/board/v1.schema.json": {
       "shape": "d65a3f79b8360e0399f96d2da4da97f3f466ed4f"
     },
@@ -72,6 +69,9 @@
     },
     "crates/board-plugin-notes/types/notes/repo/v1.schema.json": {
       "shape": "e7ae7df03994121c9377b408ed2a59da941c7bb3"
+    },
+    "crates/board-plugin-orders/types/attention/order/v1.schema.json": {
+      "shape": "e248b8f20cd20b242e8de485ed94346e95e8cb21"
     },
     "crates/board-plugin-params/types/params/heuristic/v1.schema.json": {
       "shape": "b02036bc31b5ef1a8ed95b58a9509870465deb82"
@@ -2724,200 +2724,6 @@
       "output.superseded": {
         "type": [
           "null",
-          "string"
-        ]
-      }
-    },
-    "attention.pinned": {
-      "input": {
-        "type": [
-          "object"
-        ]
-      },
-      "output": {
-        "type": [
-          "object"
-        ],
-        "requires": [
-          [
-            "left_out",
-            "orders"
-          ]
-        ]
-      },
-      "output.left_out": {
-        "type": [
-          "array"
-        ]
-      },
-      "output.left_out[]": {
-        "type": [
-          "object"
-        ],
-        "requires": [
-          [
-            "code",
-            "message",
-            "path"
-          ]
-        ]
-      },
-      "output.left_out[].code": {
-        "type": [
-          "string"
-        ]
-      },
-      "output.left_out[].message": {
-        "type": [
-          "string"
-        ]
-      },
-      "output.left_out[].path": {
-        "type": [
-          "string"
-        ]
-      },
-      "output.orders": {
-        "type": [
-          "array"
-        ]
-      },
-      "output.orders[]": {
-        "type": [
-          "object"
-        ],
-        "requires": [
-          [
-            "context",
-            "context_text",
-            "expires",
-            "order",
-            "path",
-            "signer"
-          ]
-        ]
-      },
-      "output.orders[].context": {
-        "type": [
-          "string"
-        ]
-      },
-      "output.orders[].context_text": {
-        "type": [
-          "string"
-        ]
-      },
-      "output.orders[].expires": {
-        "type": [
-          "string"
-        ]
-      },
-      "output.orders[].order": {
-        "type": [
-          "string"
-        ]
-      },
-      "output.orders[].path": {
-        "type": [
-          "string"
-        ]
-      },
-      "output.orders[].signer": {
-        "type": [
-          "string"
-        ]
-      }
-    },
-    "attention.sign": {
-      "input": {
-        "type": [
-          "object"
-        ],
-        "requires": [
-          [
-            "path"
-          ]
-        ]
-      },
-      "input.path": {
-        "type": [
-          "string"
-        ]
-      },
-      "output": {
-        "type": [
-          "object"
-        ],
-        "requires": [
-          [
-            "path"
-          ]
-        ]
-      },
-      "output.path": {
-        "type": [
-          "string"
-        ]
-      }
-    },
-    "attention.verify": {
-      "input": {
-        "type": [
-          "object"
-        ],
-        "requires": [
-          [
-            "path"
-          ]
-        ]
-      },
-      "input.path": {
-        "type": [
-          "string"
-        ]
-      },
-      "output": {
-        "type": [
-          "object"
-        ],
-        "requires": [
-          [
-            "context",
-            "context_text",
-            "expires",
-            "order",
-            "path",
-            "signer"
-          ]
-        ]
-      },
-      "output.context": {
-        "type": [
-          "string"
-        ]
-      },
-      "output.context_text": {
-        "type": [
-          "string"
-        ]
-      },
-      "output.expires": {
-        "type": [
-          "string"
-        ]
-      },
-      "output.order": {
-        "type": [
-          "string"
-        ]
-      },
-      "output.path": {
-        "type": [
-          "string"
-        ]
-      },
-      "output.signer": {
-        "type": [
           "string"
         ]
       }
@@ -9410,6 +9216,200 @@
       "output.unsynced": {
         "type": [
           "null",
+          "string"
+        ]
+      }
+    },
+    "orders.pinned": {
+      "input": {
+        "type": [
+          "object"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "left_out",
+            "orders"
+          ]
+        ]
+      },
+      "output.left_out": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.left_out[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "code",
+            "message",
+            "path"
+          ]
+        ]
+      },
+      "output.left_out[].code": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.left_out[].message": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.left_out[].path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.orders": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.orders[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "context",
+            "context_text",
+            "expires",
+            "order",
+            "path",
+            "signer"
+          ]
+        ]
+      },
+      "output.orders[].context": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.orders[].context_text": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.orders[].expires": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.orders[].order": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.orders[].path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.orders[].signer": {
+        "type": [
+          "string"
+        ]
+      }
+    },
+    "orders.sign": {
+      "input": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "path"
+          ]
+        ]
+      },
+      "input.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "path"
+          ]
+        ]
+      },
+      "output.path": {
+        "type": [
+          "string"
+        ]
+      }
+    },
+    "orders.verify": {
+      "input": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "path"
+          ]
+        ]
+      },
+      "input.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "context",
+            "context_text",
+            "expires",
+            "order",
+            "path",
+            "signer"
+          ]
+        ]
+      },
+      "output.context": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.context_text": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.expires": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.order": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.signer": {
+        "type": [
           "string"
         ]
       }
@@ -16005,25 +16005,6 @@
     "artifacts::set::nothing",
     "artifacts::set::supersedes_itself",
     "artifacts::state::settled",
-    "attention::board::refused",
-    "attention::call::bad_input",
-    "attention::call::unknown_capability",
-    "attention::order::bad_signature",
-    "attention::order::context_too_large",
-    "attention::order::expired",
-    "attention::order::invalid",
-    "attention::order::not_an_order",
-    "attention::order::unsigned",
-    "attention::pinned::over_budget",
-    "attention::repo::invalid_record",
-    "attention::repo::not_found",
-    "attention::sign::cancelled",
-    "attention::sign::declined",
-    "attention::sign::failed",
-    "attention::sign::no_signer",
-    "attention::signers::missing",
-    "attention::signers::untrusted",
-    "attention::verify::failed",
     "autosync::agent::failed",
     "autosync::agent::interval",
     "autosync::board::missing",
@@ -16336,6 +16317,25 @@
     "notes::repo::no_personal",
     "notes::repo::not_found",
     "notes::repo::not_synced",
+    "orders::board::refused",
+    "orders::call::bad_input",
+    "orders::call::unknown_capability",
+    "orders::order::bad_signature",
+    "orders::order::context_too_large",
+    "orders::order::expired",
+    "orders::order::invalid",
+    "orders::order::not_an_order",
+    "orders::order::unsigned",
+    "orders::pinned::over_budget",
+    "orders::repo::invalid_record",
+    "orders::repo::not_found",
+    "orders::sign::cancelled",
+    "orders::sign::declined",
+    "orders::sign::failed",
+    "orders::sign::no_signer",
+    "orders::signers::missing",
+    "orders::signers::untrusted",
+    "orders::verify::failed",
     "params::board::refused",
     "params::call::bad_input",
     "params::call::unknown_capability",

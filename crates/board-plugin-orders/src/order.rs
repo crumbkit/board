@@ -31,10 +31,10 @@ pub(crate) struct Held {
     pub(crate) order: Order,
 }
 
-/// `attention::order::invalid` for the order at `path`.
+/// `orders::order::invalid` for the order at `path`.
 fn invalid(path: &str, why: &str) -> PluginError {
     refusal(
-        "attention::order::invalid",
+        "orders::order::invalid",
         format!("{path} is not a readable order: {why}"),
         [("path", json!(path))],
     )
@@ -52,7 +52,7 @@ fn get(host: &dyn Host, path: &str) -> Result<(Vec<u8>, Option<String>), PluginE
     let Some(answer) = answers.into_iter().next() else {
         let why = format!("board get gave no answer for {path}");
         return Err(refusal(
-            "attention::board::refused",
+            "orders::board::refused",
             why,
             [("path", json!(path))],
         ));
@@ -71,7 +71,7 @@ pub(crate) fn read(host: &dyn Host, path: &str) -> Result<Held, PluginError> {
     let (bytes, blob) = get(host, path)?;
     let not_an_order = || {
         refusal(
-            "attention::order::not_an_order",
+            "orders::order::not_an_order",
             format!(
                 "{path} is not a {ORDER_TYPE} record; give the path of an order, such as /orders/<name>"
             ),
@@ -153,7 +153,7 @@ fn context(host: &dyn Host, path: &str) -> Result<String, PluginError> {
     let (bytes, _) = get(host, path)?;
     if bytes.len() > CONTEXT_LIMIT {
         return Err(refusal(
-            "attention::order::context_too_large",
+            "orders::order::context_too_large",
             format!(
                 "{path} holds {} bytes, over the {CONTEXT_LIMIT} the owner can read before signing; \
                  shorten it",
@@ -168,7 +168,7 @@ fn context(host: &dyn Host, path: &str) -> Result<String, PluginError> {
     }
     String::from_utf8(bytes).map_err(|_| {
         refusal(
-            "attention::order::invalid",
+            "orders::order::invalid",
             format!("{path} is not UTF-8 text"),
             [("path", json!(path))],
         )

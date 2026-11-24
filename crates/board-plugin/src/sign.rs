@@ -29,10 +29,14 @@ const VERIFY_TIME: Duration = Duration::from_secs(3);
 /// changes instead of signing.
 const DECLINED: i32 = 3;
 
-/// The line attention-sign prints last on stderr, before it exits 1, when
-/// the owner cancels in its window. Every other failure also exits 1, and
+/// The line board-sign prints last on stderr, before it exits 1, when the
+/// owner cancels in its window. Every other failure also exits 1, and
 /// `AppKit` may write its own lines to stderr before this one.
-pub const CANCELLED: &str = "attention-sign: the owner cancelled, so nothing was signed";
+pub const CANCELLED: &str = "board-sign: the owner cancelled, so nothing was signed";
+
+/// The same line from attention-sign, the signer before board-sign, which
+/// Board still runs when board-sign is not installed.
+const ATTENTION_CANCELLED: &str = "attention-sign: the owner cancelled, so nothing was signed";
 
 /// The principal a statement is signed as, in the allowed signers file.
 pub const PRINCIPAL: &str = "owner";
@@ -146,9 +150,14 @@ pub fn sign(
         Some(DECLINED) => Err(SignError::Declined {
             feedback: stdout.trim().to_owned(),
         }),
-        Some(1) if last_line(&stderr) == Some(CANCELLED) => Err(SignError::Cancelled {
-            program: program.clone(),
-        }),
+        Some(1)
+            if last_line(&stderr)
+                .is_some_and(|line| [CANCELLED, ATTENTION_CANCELLED].contains(&line)) =>
+        {
+            Err(SignError::Cancelled {
+                program: program.clone(),
+            })
+        }
         _ => Err(failed(program, &finished)),
     }
 }

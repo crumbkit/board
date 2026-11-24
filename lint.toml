@@ -63,6 +63,7 @@ literals = [
     "attention/order/v1",
     "ssh-keygen",
     "attention-sign",
+    "board-sign",
     ".config/board/allowed_signers",
     ".config/attention/allowed_signers",
     "BEGIN SSH SIGNATURE",
