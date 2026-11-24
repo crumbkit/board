@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `board changes plan` refuses a plan whose first heading is the title of
+  another change that is not dropped, with `changes::plan::other_change`,
+  and warns with `changes::plan::title_differs` when the first heading
+  differs from the change's title in any other way. With
+  `"correct": true` it writes a new plan for a done or dropped change, which
+  keeps its phase.
+
 - `board changes advance` moves a change that records a pull request into
   `done` only once GitHub reports the pull request merged, and records its
   merge commit. Before the merge it refuses with
