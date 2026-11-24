@@ -10,8 +10,8 @@ directories nor decides the working tree again, and the states of each.
   path in the working tree. It holds the directory's stat (size, times,
   inode, mode) read just before the listing, when that walk began, and the
   items `read_dir` gave, each a name and a type.
-- `decided` rows of the working tree, under a key of everything its decision
-  reads. Each row keeps its `change`, `committed` or `uncommitted`. A
+- `decided` rows of the working tree, under a key of the entries and the
+  directories the walk saw, with the other inputs below. Each row keeps its `change`, `committed` or `uncommitted`. A
   mounted source's rows keep no `change`, and read as `committed`
   ([decisions.md](decisions.md)).
 
@@ -49,6 +49,8 @@ directories nor decides the working tree again, and the states of each.
   - the moved prefixes a resolution tries;
   - for each entry the walk listed: its path, logical path, blob, status,
     size, and a symlink's blob and target;
+  - each directory and submodule the walk saw, with which it is. A link
+    can name a directory that holds no entry, such as an empty one;
   - the working tree's mount probes, as a mounted source's key holds them.
 - Each entry's blob names its record, schema or file, so a changed record or
   schema changes the key.
@@ -109,11 +111,20 @@ directories nor decides the working tree again, and the states of each.
 
 - A warm run's output is byte-identical to a cold run's for the same tree,
   `HEAD`, mounts and build. Tests check this after each change of an entry,
-  `HEAD`, an ignore rule, git's index, a schema, a mount, a prune and a
-  file dated ahead of the clock.
+  `HEAD`, an ignore rule, git's index, a schema, a mount, a prune, a
+  file dated ahead of the clock, and an empty directory made, removed or
+  hidden by `.git/info/exclude`.
 - A run on an unchanged board writes nothing and takes no write lock.
 - Each walk reads the stat of every directory and every file.
 - A listing whose directory changed in or after the second its walk began
   is never used.
 - Kept working-tree rows are read only under a key that holds every entry
-  the walk listed.
+  and every directory the walk saw.
+
+## Limits
+
+- A listing is trusted when the directory's stat is unchanged. On a file
+  system that keeps mtimes to 2 seconds, such as FAT32, or a network file
+  system whose server clock lags the walk's by more than a second, an item
+  added after a listing can leave the stat unchanged, and the walk uses
+  the stale listing. The racy-clean rule for files has the same limit.

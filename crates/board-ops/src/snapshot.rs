@@ -14,7 +14,7 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use board_index::{Decided, Index, IndexError, Storage, View, Writer};
+use board_index::{Decided, Index, IndexError, Resolved, Storage, View, Writer};
 use board_model::{
     Change, Code, Digest, Kind, LogicalPath, ObjectId, REPO_TYPE, RecordType, Role, Source, Stat,
 };
@@ -201,10 +201,13 @@ impl Board {
         // A scoped run decides the working tree only in part.
         let keyed = scope
             .is_none()
-            .then(|| self.worktree_key(&mounts, &entries, head))
+            .then(|| self.worktree_key(&mounts, (&entries, &listings), head))
             .flatten();
         let key = keyed.as_ref().map(|(key, _)| key);
-        let held = key.is_some_and(|key| writer.has_decision(key).unwrap_or(false));
+        let held = match key {
+            Some(key) => writer.has_decision(key)?,
+            None => false,
+        };
         let mut decided = Decisions::default();
         let root = Source::WorkingTree;
         if let Some(key) = key.filter(|_| held && need.reads_kept()) {
@@ -279,19 +282,21 @@ impl Board {
 
     /// The key of the working tree's decision and the mounts it may cross
     /// ([`board_tree::Reached::worktree_key`]): it holds every entry the
-    /// walk listed as a decision reads it, the tree `HEAD` names, which
-    /// says whether each is committed, and the moved prefixes a resolution
-    /// tries.
+    /// walk listed as a decision reads it, each directory and submodule the
+    /// walk saw, which a resolution can reach though it holds no entry, the
+    /// tree `HEAD` names, which says whether each entry is committed, and
+    /// the moved prefixes a resolution tries.
     fn worktree_key(
         &self,
         mounts: &Mounts,
-        entries: &[Entry],
+        (entries, listings): (&[Entry], &Listings),
         head: Option<ObjectId>,
     ) -> Option<(Digest, HashSet<board_tree::Crossing>)> {
         let head = head.map(|tree| tree.to_string()).unwrap_or_default();
         let moved = format!("{:?}", self.repositories().moved());
         let listed = listed(entries);
-        let fields: [&[u8]; 3] = [head.as_bytes(), moved.as_bytes(), &listed];
+        let directories = seen_directories(listings);
+        let fields: [&[u8]; 4] = [head.as_bytes(), moved.as_bytes(), &listed, &directories];
         mounts.worktree_key(self.build, self.repository(), &fields)
     }
 
@@ -349,11 +354,7 @@ impl Board {
         drop(root);
         work.pointers_read += resolver.pointers_read();
         let crossed = resolver.crossed();
-        let mut paths = HashSet::new();
-        let storable = whole
-            && !failed
-            && (decided.resolved.iter()).all(|row| paths.insert(row.path.as_str()))
-            && !(decided.resolved.iter()).any(|row| row.code == Some(Code::RepoUnreadable));
+        let storable = keepable(whole && !failed, &decided.resolved);
         Ok(Rows { storable, crossed })
     }
 
@@ -403,17 +404,7 @@ impl Board {
         let probed =
             (in_commit.crossed().iter()).all(|crossed| mounted.crossings.contains(crossed));
         let rows = &decided.resolved[start..];
-        // Names that are not UTF-8 can share a path, which the index keeps
-        // only once.
-        let mut paths = std::collections::HashSet::new();
-        // A file that could not be read may be read next run.
-        let storable = mounted.whole
-            && probed
-            && !failed
-            && rows.iter().all(|row| paths.insert(row.path.as_str()))
-            && !rows
-                .iter()
-                .any(|row| row.code == Some(Code::RepoUnreadable));
+        let storable = keepable(mounted.whole && probed && !failed, rows);
         let kept = match &mounted.key {
             Some(_) if mounted.kept => true,
             Some(key) if storable => {
@@ -451,6 +442,32 @@ fn known<'e>(
 
 /// Each entry as deciding it reads it, without its metadata, each field
 /// preceded by its length so that no two lists give the same bytes.
+/// Whether a source's decided `rows` may be kept, given that it was
+/// decided whole and nothing failed to read (`whole`). Names that are not
+/// UTF-8 can share a path, which the index keeps only once, and a file that
+/// could not be read may be read next run.
+fn keepable(whole: bool, rows: &[Resolved]) -> bool {
+    let mut paths = HashSet::new();
+    whole
+        && rows.iter().all(|row| paths.insert(row.path.as_str()))
+        && !rows
+            .iter()
+            .any(|row| row.code == Some(Code::RepoUnreadable))
+}
+
+/// Each directory and submodule `listings` saw, as the bytes of its path,
+/// whether it is a submodule, and a separator.
+fn seen_directories(listings: &Listings) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for (path, submodule) in listings.seen_directories() {
+        let path = path.as_os_str().as_encoded_bytes();
+        bytes.extend(path.len().to_le_bytes());
+        bytes.extend_from_slice(path);
+        bytes.push(u8::from(submodule));
+    }
+    bytes
+}
+
 fn listed(entries: &[Entry]) -> Vec<u8> {
     let mut bytes = Vec::new();
     let mut field = |text: &str| {

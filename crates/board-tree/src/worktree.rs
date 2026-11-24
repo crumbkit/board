@@ -103,6 +103,33 @@ impl Listings {
     pub fn directories(&self) -> &Directories {
         &self.directories
     }
+
+    /// Each directory and submodule git sees in the directories the walk
+    /// listed, as its path from the root and whether it is a submodule,
+    /// sorted by path. A resolution can reach a directory that holds no
+    /// entry, so these name what the entries alone do not.
+    pub fn seen_directories(&self) -> Vec<(PathBuf, bool)> {
+        let mut seen = Vec::new();
+        for (directory, listing) in &self.listed {
+            for (item, cell) in listing.items.iter().zip(&listing.seen) {
+                let submodule = match cell.get() {
+                    Some(Some(RawEntry {
+                        kind: Kind::Directory(_),
+                        ..
+                    })) => false,
+                    Some(Some(RawEntry {
+                        kind: Kind::Submodule,
+                        ..
+                    })) => true,
+                    _ => continue,
+                };
+                let name = gix::path::from_bstr(item.name.as_bstr());
+                seen.push((directory.join(name), submodule));
+            }
+        }
+        seen.sort();
+        seen
+    }
 }
 
 /// One directory's items, each classified the first time a lookup returns

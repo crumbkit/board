@@ -56,6 +56,44 @@ fn a_build_that_names_no_build_decides_every_entry_each_time_and_its_named_twin_
     }
 }
 
+/// A note that links to three directories, then those directories made
+/// empty, removed and hidden by a rule in `.git/info/exclude`, which no
+/// entry holds: a resolution reaches a directory that holds no entry. Each
+/// step leaves a set of directories no earlier step left, as a set seen
+/// before keeps its decision.
+fn directories(scenario: &Scenario) -> Vec<Change<'_>> {
+    let made = |name: &str| {
+        let file = format!("topics/{name}/x.json");
+        scenario
+            .write(&file, Item::File(&task("")))
+            .write(&file, Item::Deleted);
+    };
+    vec![
+        (
+            "a note that links to directories not made yet",
+            Box::new(|| {
+                let note = "[a](/topics/a) [b](/topics/b) [c](/topics/c)\n";
+                scenario.write("notes/n.md", Item::File(note));
+            }),
+        ),
+        ("an empty directory made", Box::new(move || made("a"))),
+        ("a second empty directory made", Box::new(move || made("b"))),
+        (
+            "an empty directory removed",
+            Box::new(|| {
+                scenario.write("topics/a", Item::Deleted);
+            }),
+        ),
+        (
+            "an empty directory made and another hidden by an exclude rule outside the tree",
+            Box::new(move || {
+                made("c");
+                scenario.write(".git/info/exclude", Item::File("topics/b/\n"));
+            }),
+        ),
+    ]
+}
+
 #[test]
 fn after_each_change_a_warm_query_decides_again_and_answers_as_a_cold_one() {
     let (scenario, vendor) = mounting();
@@ -64,7 +102,7 @@ fn after_each_change_a_warm_query_decides_again_and_answers_as_a_cold_one() {
         let board = open(&scenario);
         prune(Index::open(Some(cache.path()), board.repository().path()).unwrap());
     };
-    let changes: Vec<Change<'_>> = vec![
+    let mut changes: Vec<Change<'_>> = vec![
         (
             "an edit in place of the same size",
             Box::new(|| {
@@ -132,6 +170,7 @@ fn after_each_change_a_warm_query_decides_again_and_answers_as_a_cold_one() {
             }),
         ),
     ];
+    changes.extend(directories(&scenario));
     assert!(decided(&scenario, cache.path()) > 0);
     assert_eq!(decided(&scenario, cache.path()), 0, "nothing changed");
     for (change, make) in changes {
@@ -172,5 +211,25 @@ fn a_warm_check_and_a_warm_query_of_an_unchanged_board_read_no_validation() {
         })
         .unwrap();
         assert_eq!(read, 0, "{need:?}");
+    }
+}
+
+#[test]
+fn a_warm_check_and_a_warm_query_of_an_unchanged_board_write_nothing_and_a_cold_one_writes() {
+    let (scenario, _vendor) = mounting();
+    let cache = tempfile::tempdir().unwrap();
+    let board = open(&scenario);
+    let wrote = |need| {
+        let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
+        let (wrote, _, _) = crate::index::transact(index, |writer| {
+            let (_, entries) = board.decide(writer, None, need)?;
+            Ok((writer.wrote()?, entries))
+        })
+        .unwrap();
+        wrote
+    };
+    assert!(wrote(Need::View), "a cold query writes");
+    for need in [Need::View, Need::Check] {
+        assert!(!wrote(need), "{need:?}");
     }
 }
