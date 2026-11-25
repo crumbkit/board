@@ -164,8 +164,17 @@ export function parseForPath(exitCode: number, stdout: string): Rule[] | null {
   }))
 }
 
+/** A remembered check's time, such as `2026-11-25 01:56 UTC`. */
+export const checkedAt = (at: number) => `${new Date(at).toISOString().slice(0, 16).replace('T', ' ')} UTC`
+
 /** The context block's text, or `null` when there is nothing to say. */
 export function contextText(checked: Checked): string | null {
+  if (checked.kind === 'pending') {
+    return (
+      `\`board call rules.check\` is still running for ${checked.root}. The rules on its files will follow in a message when it answers. ` +
+      'Until then, run `board call rules.for-path --path <file>` in its directory before you edit a file.'
+    )
+  }
   if (checked.kind === 'failed') {
     return (
       `\`board call rules.check\` failed for ${checked.root}, so the rules on its files are unknown:\n\n` +
@@ -175,10 +184,89 @@ export function contextText(checked: Checked): string | null {
   }
   if (checked.rules.length === 0) return null
   const lines = checked.rules.map(line)
+  const from =
+    checked.at === undefined
+      ? ''
+      : ` These are from the check at ${checkedAt(checked.at)}. A fresh check runs now, and this session is told if it finds other rules.`
   return (
     `The board's rules state requirements on files in ${checked.root}. Follow each one that applies to a ` +
-    `file you change. \`board get <rule>\` shows which files a rule names.\n\n${lines.join('\n')}`
+    `file you change. \`board get <rule>\` shows which files a rule names.${from}\n\n${lines.join('\n')}`
   )
+}
+
+/** Whether two answers tell a session the same rules, whenever each was checked. */
+export function sameRules(a: Checked | null, b: Checked | null): boolean {
+  const text = (c: Checked | null) => (c === null ? null : contextText(c.kind === 'read' ? { kind: 'read', root: c.root, rules: c.rules } : c))
+  return text(a) === text(b)
+}
+
+/** The hidden row that gives a check's answer once it arrives after the session's first message. */
+export function freshText(checked: Checked | null, root: string): string {
+  if (checked === null) return `The rules check for ${root} has answered: no board holds it, so it has no rules.`
+  if (checked.kind === 'pending') return contextText(checked) ?? ''
+  if (checked.kind === 'failed') {
+    return (
+      `The rules check for ${root} failed after this session started, so the rules on its files are unknown:\n\n` +
+      `${checked.code}: ${checked.message}\n\n` +
+      'Before you edit a file, run `board call rules.for-path --path <file>` in its directory.'
+    )
+  }
+  if (checked.rules.length === 0) return `The rules check for ${root} has answered since this session started: no rules apply to its files.`
+  return (
+    `The rules check for ${root} has answered since this session started, and these rules replace any listed before. ` +
+    `Follow each one that applies to a file you change. \`board get <rule>\` shows which files a rule names.\n\n` +
+    checked.rules.map(line).join('\n')
+  )
+}
+
+/** The `$.store` key under which the mod remembers each root's last good check. */
+export const REMEMBERED = 'answers'
+
+/** How many repository roots the mod remembers; the least recently checked go first. */
+export const REMEMBER_ROOTS = 16
+
+/** A root's last good check: when it ran, the rules it named and the Board badge's name. */
+export type Remembered = { at: number; rules: Rule[]; board: string | null }
+
+const KINDS: readonly string[] = ['standing', 'obligation', 'budget']
+
+function isRule(value: unknown): value is Rule {
+  const r = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
+  const optional = (k: string, t: string) => r[k] === undefined || typeof r[k] === t
+  return (
+    typeof r.rule === 'string' &&
+    typeof r.requirement === 'string' &&
+    KINDS.includes(String(r.kind)) &&
+    optional('usage', 'string') &&
+    optional('close', 'string') &&
+    optional('described', 'boolean')
+  )
+}
+
+function entries(stored: unknown): Record<string, unknown> {
+  return typeof stored === 'object' && stored !== null && !Array.isArray(stored) ? (stored as Record<string, unknown>) : {}
+}
+
+/** The root's remembered check from the store's value, or null when there is none or it has another shape. */
+export function recalled(stored: unknown, root: string): Remembered | null {
+  const entry = entries(stored)[root] as Record<string, unknown> | undefined
+  if (typeof entry !== 'object' || entry === null) return null
+  const { at, rules, board } = entry
+  if (typeof at !== 'number' || !Array.isArray(rules) || !rules.every(isRule)) return null
+  if (board !== null && typeof board !== 'string') return null
+  return { at, rules, board }
+}
+
+/** The store's value with the root's entry set, or removed for null, keeping the REMEMBER_ROOTS newest. */
+export function remembering(stored: unknown, root: string, entry: Remembered | null): Record<string, Remembered> {
+  const kept: [string, Remembered][] = []
+  for (const key of Object.keys(entries(stored))) {
+    const other = key === root ? null : recalled(stored, key)
+    if (other !== null) kept.push([key, other])
+  }
+  if (entry !== null) kept.push([root, entry])
+  kept.sort((a, b) => b[1].at - a[1].at)
+  return Object.fromEntries(kept.slice(0, REMEMBER_ROOTS))
 }
 
 /** The last segment of a path, such as `crumbkit` for `/work/crumbkit`. */
@@ -186,6 +274,7 @@ const lastSegment = (path: string) => path.split('/').filter(Boolean).at(-1) ?? 
 
 /** The Rules button's label, and whether it is drawn in red; null when there are no rules. */
 export function rulesBadge(checked: Checked): { label: string; problem: boolean } | null {
+  if (checked.kind === 'pending') return { label: 'Rules …', problem: false }
   if (checked.kind === 'failed') return { label: `Rules: ${checked.code}`, problem: true }
   return checked.rules.length === 0 ? null : { label: `Rules ${checked.rules.length}`, problem: false }
 }

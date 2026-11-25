@@ -14,10 +14,16 @@ export type Rule = {
   close?: string
 }
 
-/** What `board call rules.check` answered for the repository a session starts in. */
+/**
+ * What `board call rules.check` answered for the repository a session starts
+ * in. A read answer with `at` is one the mod remembered from an earlier
+ * check, at that time in milliseconds; `pending` is a first check still
+ * running.
+ */
 export type Checked =
-  | { kind: 'read'; root: string; rules: Rule[] }
+  | { kind: 'read'; root: string; rules: Rule[]; at?: number }
   | { kind: 'failed'; root: string; code: string; message: string }
+  | { kind: 'pending'; root: string }
 
 /**
  * A read-only badge of the session's state, such as `Board personal`, or a
@@ -34,6 +40,8 @@ declare module 'claude-code' {
       told: Record<string, string[]>
       /** The state badges read at session start. */
       state: StateBadge[]
+      /** Whether the main conversation's first message has carried the block. */
+      sent: boolean
     }
   }
 }

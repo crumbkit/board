@@ -7,7 +7,7 @@ does. `plugins/rules/README.md` says how to install it.
 A session that edits a file a rule governs should know the rule before
 the edit. The rules skill asks the agent to run `rules.check` itself,
 and agents forget. The mod runs the check for them and reads nothing else from
-Board, so it needs no state of its own beyond the session.
+Board.
 
 ## At session start
 
@@ -21,6 +21,8 @@ and the mod then adds nothing. Any other failure is said in the block, with
 the command to run by hand. A budget over its max, a pin behind, a nonzero measure or an
 unreadable file is data in a passing answer, and the block says so beside
 the rule, such as "now 300 of 200 words, over budget".
+
+A later start uses the last good answer ([claude-code/rules.md](claude-code/rules.md)).
 
 The mod's badges in the band above the prompt are described in
 [claude-code/band.md](claude-code/band.md).
@@ -38,7 +40,7 @@ goes back to the rules in the block.
 
 The answer is cached per file for the session. A cache per directory was
 rejected because a pattern such as `*.rs` can match one file in a directory
-and not another. Each board run stops after 5 seconds. A lookup that fails or
+and not another. Each lookup stops after 5 seconds. A lookup that fails or
 stops lets the edit run as it would without the mod.
 
 ## Testing

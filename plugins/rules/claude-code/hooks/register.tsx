@@ -2,15 +2,21 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { Checked, Rule, StateBadge } from '../types'
-import type { Configured } from './rules'
+import type { Configured, Remembered } from './rules'
 import { SLOT, drawsInto, joinBand, keepOneBand } from './band'
 import {
   BLOCK,
+  REMEMBERED,
   REMINDER_NOTE,
   badgeValue,
   boardName,
+  checkedAt,
   contextText,
+  freshText,
+  recalled,
+  remembering,
   rulesBadge,
+  sameRules,
   paneTitle,
   parseCheck,
   badgesProblem,
@@ -25,13 +31,15 @@ import {
 
 // The mod reads the rules plugin. The one write it starts is the speed
 // check's run record, which `board timing check --record` writes on its own
-// after the hook returns. It shares nothing with other mods but the band,
-// which each mod draws a part of: the session's state badges and the Rules
-// button.
+// after the hook returns. It keeps each root's last good check in its own
+// `$.store`, so a later session starts with those rules at once while a
+// fresh check runs. It shares nothing with other mods but the band, which
+// each mod draws a part of: the session's state badges and the Rules button.
 
 const checked = atom({ plugin: 'board-rules', key: 'checked' } as const, null as Checked | null)
 const told = atom({ plugin: 'board-rules', key: 'told' } as const, {} as Record<string, string[]>)
 const state = atom({ plugin: 'board-rules', key: 'state' } as const, [] as StateBadge[])
+const sent = atom({ plugin: 'board-rules', key: 'sent' } as const, false as boolean)
 
 const PATH = '"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
 const CHECK = `PATH=${PATH} exec board --json call rules.check --path .`
@@ -44,8 +52,11 @@ const BADGE = `PATH=${PATH} exec "$@" < /dev/null`
 const SPEED = `PATH=${PATH} ${SPEED_CHECK}`
 const PANE = 'board-rules'
 
-// A slow or hung board holds the session start or the edit no longer than this.
+// A slow or hung board holds an edit no longer than this, and a session start
+// with nothing remembered waits this long for the first check.
 const TIMEOUT_MS = 5000
+// The session-start check runs on past the start, and is stopped after this.
+const CHECK_MS = 120_000
 // A configured badge's command gets this long, once, as the session starts.
 const BADGE_MS = 2000
 
@@ -102,8 +113,8 @@ async function value($: EngineInterface, label: string, argv: string[], cwd: str
   return null
 }
 
-/** Reads the state badges once: each configured command in the session's directory, then the board's name. */
-async function readState($: EngineInterface, cwd: string, root: string) {
+/** Reads the state badges once: each configured command in the session's directory, then the board's name, which it answers. */
+async function readState($: EngineInterface, cwd: string, root: string): Promise<string | null> {
   const dir = await configDir($)
   const [listed, personal] = await Promise.all([configured($, dir), personalBoard($, dir)])
   const badges = Array.isArray(listed) ? listed : []
@@ -116,6 +127,7 @@ async function readState($: EngineInterface, cwd: string, root: string) {
     : [listed]
   const board = where === null ? null : boardName(where.exitCode, where.stdout, personal)
   await update($, state, () => stateBadges(shown, board))
+  return board
 }
 
 /** Starts the speed check detached; a check that cannot start is logged and changes nothing else. */
@@ -130,18 +142,66 @@ async function speed($: EngineInterface, root: string) {
 /** The rules the context block names. */
 const toldBy = (answer: Checked | null) => (answer?.kind === 'read' ? answer.rules.map(c => c.rule) : [])
 
-/** Runs rules.check at the repository root and keeps the answer for the session. */
+/** Runs rules.check at the repository root. */
 async function check($: EngineInterface, root: string): Promise<Checked | null> {
-  let answer: Checked | null
   try {
-    const ran = await $.process.run(['/bin/sh', '-c', CHECK], { cwd: root, timeoutMs: TIMEOUT_MS })
-    answer = parseCheck(root, ran.exitCode, ran.stdout, ran.stderr)
+    const ran = await $.process.run(['/bin/sh', '-c', CHECK], { cwd: root, timeoutMs: CHECK_MS })
+    return parseCheck(root, ran.exitCode, ran.stdout, ran.stderr)
   } catch (error) {
-    answer = { kind: 'failed', root, code: 'not run', message: String(error) }
+    return { kind: 'failed', root, code: 'not run', message: String(error) }
+  }
+}
+
+/** The store's value of remembered checks; undefined, logged, when the store cannot be read. */
+async function stored($: EngineInterface): Promise<unknown> {
+  try {
+    return await $.store.get(REMEMBERED)
+  } catch (error) {
+    $.ui.log(`board: the remembered rules could not be read: ${String(error)}`, { to: 'debug' })
+    return undefined
+  }
+}
+
+/** Sets or removes the root's remembered check; a store that refuses is logged. */
+async function remember($: EngineInterface, root: string, entry: Remembered | null) {
+  try {
+    await $.store.set(REMEMBERED, remembering(await stored($), root, entry))
+  } catch (error) {
+    $.ui.log(`board: the rules for ${root} could not be remembered: ${String(error)}`, { to: 'debug' })
+  }
+}
+
+/**
+ * Keeps a check's answer for the session. A failure leaves remembered rules
+ * in place. Once the first message has carried the block, an answer that
+ * tells other rules than it did is appended as one hidden row.
+ */
+async function settle($: EngineInterface, root: string, answer: Checked | null) {
+  const before = await read($, checked)
+  if (answer?.kind === 'failed' && before?.kind === 'read' && before.at !== undefined) {
+    $.ui.log(`board: the rules check for ${root} failed, so the session keeps the rules from the check at ${checkedAt(before.at)}: ${answer.code}: ${answer.message}`, { to: 'debug' })
+    return
   }
   await update($, checked, () => answer)
+  if (!(await read($, sent)) || sameRules(before, answer)) {
+    await update($, told, all => ({ ...all, '': toldBy(answer) }))
+    return
+  }
+  await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: freshText(answer, root) }] } })
   await update($, told, all => ({ ...all, '': toldBy(answer) }))
-  return answer
+}
+
+/** Checks the root and reads the badges, keeps both for the session, and remembers a good check. */
+async function refresh($: EngineInterface, cwd: string, root: string) {
+  const [answer, board] = await Promise.all([
+    check($, root).then(async answer => {
+      await settle($, root, answer)
+      return answer
+    }),
+    readState($, cwd, root),
+  ])
+  if (answer === null) await remember($, root, null)
+  else if (answer.kind === 'read') await remember($, root, { at: await $.clock.now(), rules: answer.rules, board })
 }
 
 // A file's rules depend on its own path, since a pattern such as *.rs
@@ -173,12 +233,35 @@ async function beforeEdit($: EngineInterface, file: string, agentId: string | un
 }
 
 export const register: Register = on => {
-  // The check and the state badges run side by side, so a badge command adds
-  // no wait beyond the check's own.
+  // A root checked before starts with its remembered rules and badge, and
+  // waits on no board command. A root with nothing remembered waits up to
+  // TIMEOUT_MS for its first check. Either way the check and the state badges
+  // run side by side on a timer, so they outlive the start.
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     const root = await repositoryRoot($, e.cwd)
-    await Promise.all([check($, root), readState($, e.cwd, root), speed($, root)])
+    const remembered = recalled(await stored($), root)
+    const shown: Checked = remembered === null ? { kind: 'pending', root } : { kind: 'read', root, rules: remembered.rules, at: remembered.at }
+    await update($, checked, () => shown)
+    if (remembered !== null) {
+      await update($, state, () => stateBadges([], remembered.board))
+    }
+    const ran = new Promise<void>(resolve => {
+      $.clock.after(0, () => {
+        refresh($, e.cwd, root)
+          .catch((error: unknown) => $.ui.log(`board: the rules check for ${root} stopped: ${String(error)}`, { to: 'debug' }))
+          .finally(resolve)
+      })
+    })
+    await speed($, root)
+    if (remembered === null) {
+      let timer: { cancel: () => void } | undefined
+      const waited = new Promise<void>(resolve => {
+        timer = $.clock.after(TIMEOUT_MS, resolve)
+      })
+      await Promise.race([ran, waited])
+      timer?.cancel()
+    }
     return started
   })
 
@@ -189,6 +272,7 @@ export const register: Register = on => {
     const context = await next(e)
     const answer = await read($, checked)
     await update($, told, all => ({ ...all, '': toldBy(answer) }))
+    await update($, sent, () => true)
     const text = answer === null ? null : contextText(answer)
     if (text === null) return context
     return { ...context, blocks: [...context.blocks.filter(b => b.name !== BLOCK), { name: BLOCK, text }] }
@@ -250,6 +334,7 @@ export const register: Register = on => {
     const { Box, Text } = $.ui.resolve(e)
     const answer = await read($, checked)
     if (answer === null) return <Text dimColor>No board holds this session's repository, so it has no rules.</Text>
+    if (answer.kind === 'pending') return <Text dimColor>board call rules.check is still running for {answer.root}.</Text>
     if (answer.kind === 'failed') {
       return (
         <Box flexDirection="column">
