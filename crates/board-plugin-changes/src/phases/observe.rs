@@ -91,10 +91,7 @@ pub(crate) fn observe_in(
         found.pull_read = pull_of(host, newest)?.is_some();
     }
     if wanted.contains(&Read::Obligations) {
-        let rules = (answered(host, change, &mut on_planned)?.as_ref()).map_err(Clone::clone)?;
-        found.obligations = (obligations_in(host, rules)?.into_iter())
-            .map(|each| each.rule)
-            .collect();
+        found.obligations = obligations(host, &found, &mut on_planned)?;
     }
     if wanted.contains(&Read::Controlled) {
         let filled = values(&found);
@@ -355,6 +352,50 @@ fn answered<'a>(
     Ok(answer.insert(asked))
 }
 
+/// The obligations on the plan's paths and on each file the diff edits
+/// outside them, which the change adds to its paths, so an added file's
+/// obligation counts as a planned path's does. The diff is read first.
+fn obligations(
+    host: &dyn Host,
+    found: &Observed,
+    answer: &mut Option<Result<Vec<Found>, PluginError>>,
+) -> Result<Vec<String>, PluginError> {
+    let widened;
+    let rules = if found.outside.is_empty() {
+        (answered(host, &found.change, answer)?.as_ref()).map_err(Clone::clone)?
+    } else {
+        let added = found.outside.iter().map(|file| glob_literal(file));
+        widened = on_plan(
+            host,
+            &(found.planned.iter().cloned())
+                .chain(added)
+                .collect::<Vec<_>>(),
+        )?;
+        &widened
+    };
+    Ok((obligations_in(host, rules)?.into_iter())
+        .map(|each| each.rule)
+        .collect())
+}
+
+/// `file` as a SQLite GLOB pattern that matches only itself, since
+/// `rules.for-paths` reads `*`, `?` and `[` as pattern characters and an
+/// added file is a real name, such as `app/[id]/page.tsx`.
+pub(crate) fn glob_literal(file: &str) -> String {
+    let mut pattern = String::with_capacity(file.len());
+    for character in file.chars() {
+        match character {
+            '[' | '*' | '?' => {
+                pattern.push('[');
+                pattern.push(character);
+                pattern.push(']');
+            }
+            other => pattern.push(other),
+        }
+    }
+    pattern
+}
+
 /// What `planned-rule-paths` checks read: which rules they name the board
 /// holds, and the rules on the plan's paths, or why those cannot be read.
 fn planned_rules(
@@ -380,8 +421,9 @@ fn planned_rules(
 }
 
 /// Adds the paths of the plan the change names and the files the change's diff edits
-/// outside them to `found`.
-fn reviewed(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
+/// outside them to `found`, or why the diff cannot be read. The gate's `paths`
+/// check and the pull request body both read them from here.
+pub(crate) fn reviewed(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
     let (_, _, planned) = current(host, &found.change)?;
     found.planned = planned;
     let Some(head) = found.change.head.clone() else {

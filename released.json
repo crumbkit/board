@@ -16807,6 +16807,7 @@
     "autosync::state::unwritable",
     "board::attachment::mismatch",
     "board::attachment::missing",
+    "board::cache::unmarked",
     "board::cli::usage",
     "board::commit::not_found",
     "board::config::ambiguous",

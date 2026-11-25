@@ -16,17 +16,95 @@
 - Two shared record shapes join `board_plugin::shape`: `CodeName`, a code
   such as `board::ref::dangling`, and `DottedVersion`, such as `1.99.1`,
   which a version rule's `at_least` now uses with the same pattern.
+
+## 0.1.2 (2026-11-25)
+
+- The review gate's `paths` check passes when the change's diff edits files
+  that no path of its plan matches. Its detail says that these files are
+  outside the plan's paths and that the change adds them to its paths
+  without a new plan, and names them. `changes pr` lists them in the pull
+  request body under "Files added to the plan's paths", or says there that
+  the diff could not be listed and why. An agent no longer writes its plan
+  again to add a file it needs. The check still refuses with
+  `changes::paths::outside_plan` when the plan has no paths or git cannot
+  list the diff. The `ui-paths` and `data-paths` checks still read every
+  edited file. An `obligations` check in any phase counts the obligations on
+  the added files as well as on the planned paths, and says so in its
+  detail. The detail names at most ten added files and the body at most 50,
+  each with a count of the rest. A change in flight keeps
+  the review instruction of the flow version it stored, which still says
+  the gate refuses such a file; run `board changes reflow --path <change>
+  --flow development` to take up the new instruction.
+
 - Board marks its cache directory, `~/.cache/board` or
   `$XDG_CACHE_HOME/board`, as a cache. It writes `CACHEDIR.TAG` there, which
   backup tools that honour the tag skip, and on macOS it first excludes the
   directory from Time Machine, as `tmutil addexclusion` does. A directory
   Board cannot mark usually gives the warning `board::cache::unmarked`, and
   the run goes on; the next run tries again.
+- `board call rules.check --path /` answers within Board's 1-second query
+  limit on a board that mounts many repositories. Before, it failed there
+  with `board::query::timeout` on every run, and the rules mod's session
+  start fell back to asking `rules.for-path` before each edit.
+- A warm `board ls` reads the decision Board kept for each mounted source
+  wholly in its scope instead of deciding every source again. Its output is
+  the same as a cold run's.
+- The Claude Code rules mod starts a session with the rules from its last
+  good check of the repository, says when that check ran, and runs
+  `rules.check` again in the background with a 120-second limit. A
+  repository it has not checked before waits up to 5 seconds, as before.
+- A mounted source read from a partial clone, whose repository lacks some
+  blobs, is kept between warm runs until its repository's objects change.
+- A warm run opens a mounted repository only when its stamp changed, and
+  after a working-tree change decides again only the entries the change
+  could alter. A warm query, call or check of an unchanged board reuses the
+  working tree's kept decision and lists no directory.
+- `board changes next` and `board changes advance` read through one board
+  snapshot, so each takes about half the time.
+- Board records how long each hot command takes, and
+  `board timing check` judges each one's p90 against the owner's budgets.
+  The check is silent: it opens no task and files no question yet.
+- The built-in `orders` plugin checks signed orders against
+  `~/.config/board/allowed_signers`, falling back to the attention file
+  with the warning `orders::signers::legacy`. `board orders pinned`,
+  `verify`, `sign` and `signers` replace the `attention.*` calls, which
+  keep working in this release and print their replacement.
+- The handoff mod prompts a session once when it reaches the
+  `handoff-context-tokens` limit, and stops telling sessions to hand off
+  once the usage window is back under its share.
+- `board github push` and `pr-create` no longer refuse a diff because the
+  bytes of a binary file match a text rule; the result lists each binary
+  file that was not scanned.
+- `tasks.claim` in a notes repository whose clone still stores the
+  `tasks/task/v2` schema from before the shapes migration refuses with the
+  new code `tasks::repo::schema_stale`, whose hint names the commands that
+  migrate the clone. Before, the claim failed with `board::record::invalid`.
+  The claim syncs the clone before it checks, so a repository another clone
+  migrated and pushed is claimed without a refusal.
+- A review with no high finding still counts after one fix round when a
+  `changes/fix/v1` record names the report and the commits that answer its
+  findings.
+- The development flow asks the owner's data rechecks at land without
+  blocking the merge, and `board changes owed` lists each change done in
+  the last 14 days that still owes one. A plan that answers `ux` none and
+  `data` none needs no owner approval. `board changes ask` files one
+  question whose approving option passes the owner approval, data and
+  mockup checks together. A review still counts after later commits that
+  edit only record paths or cleanly merge main.
+- A `runs/suite/v1` record has an optional `kind`: a compliance check, a
+  benchmark, an eval or a test. `runs.migrate` adds it to existing suites,
+  and classifies a suite whose name ends in `-tests` as a test suite. Run
+  `board plugin enable runs` first: while the board holds 0.1.1's
+  `runs/suite/v1` schema, `runs.migrate` refuses with
+  `board::plugin::schema_differs` and writes nothing.
+- The Claude Code questions badge reads Board only for a session whose band
+  is drawn.
 
 - In the plan phase, `board changes next` and `board changes advance` ask
   the rules plugin for the rules on the plan's paths once, where they asked
   twice, and read both the obligations and the rules on the planned paths
   from that answer. The gate's checks and their details are unchanged.
+
 - `board call tasks.add` reads each `--after` and `--refs` value as a board
   path. A value without a leading `/` is read from the current directory, and
   a value that joins paths with a comma, such as
@@ -96,6 +174,11 @@
   `board map check --path /maps/<name>` lists what a reader would see as
   broken, with the box it estimated for each text, and counts the findings
   the map accepts apart.
+
+## 0.1.1 (2026-11-23)
+
+- `board github push`, `board github pr-create` and the pre-push hook work
+  with git 2.39, the git that Xcode 16 ships. Board needs git 2.39 or later.
 
 - The new `priorities` plugin keeps the owner's priorities in one
   `priorities/list/v1` record at `/priorities`, ranked in a short and a
