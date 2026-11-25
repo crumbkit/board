@@ -232,3 +232,65 @@ fn ref_refuses_a_101st_ref_and_add_refuses_101_refs_writing_nothing() {
 
 /// The most refs a task holds.
 const MOST: usize = 100;
+
+#[test]
+fn add_reads_relative_after_and_refs_flags_from_the_current_directory() {
+    let tasks = committing(&["tasks/notes/a.md"]);
+    tasks.call("add", &["--title", "First"]).unwrap();
+    // Started inside the board's tasks directory, with no -C, so the run's
+    // prefix is /tasks.
+    let caller = tasks.board.workdir().join("tasks");
+    let every = [
+        BINARY_NAME,
+        "call",
+        "tasks.add",
+        "--title",
+        "Second",
+        "--after",
+        "first.md",
+        "--refs",
+        "notes/a.md",
+    ];
+    let output = tasks.run_typed(&every, 0, caller, "");
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    let written = tasks.read("tasks/second.md");
+    assert!(
+        written.contains("after: [\"/tasks/first.md\"]\n"),
+        "{written}"
+    );
+    assert!(
+        written.contains("refs: [\"/tasks/notes/a.md\"]\n"),
+        "{written}"
+    );
+}
+
+#[test]
+fn add_refuses_an_after_or_refs_flag_that_joins_paths_with_a_comma() {
+    let tasks = committing(&["exchange/sent/a.md", "exchange/sent/b.md"]);
+    let before = head(&tasks);
+    for (flag, joined) in [
+        ("--after", "/tasks/a.md,/tasks/b.md"),
+        ("--refs", "/exchange/sent/a.md,/exchange/sent/b.md"),
+    ] {
+        let arguments = ["call", "tasks.add", "--title", "Joined", flag, joined];
+        let refused = tasks.run(&arguments, 0, Some(tasks.outside.path()), "");
+        assert_eq!(refused.code, 2, "{flag}: {}", text(&refused.stdout));
+        let stderr = text(&refused.stderr);
+        let hint = format!("repeat {flag} for each path");
+        assert!(stderr.contains(&hint), "{flag}: {stderr}");
+    }
+    assert!(!tasks.board.workdir().join("tasks/joined.md").exists());
+    assert_eq!(head(&tasks), before);
+    let repeated = [
+        "--title",
+        "Joined",
+        "--refs",
+        "/exchange/sent/a.md",
+        "--refs",
+        "/exchange/sent/b.md",
+    ];
+    tasks.call("add", &repeated).unwrap();
+    let written = tasks.read("tasks/joined.md");
+    let refs = "refs: [\"/exchange/sent/a.md\", \"/exchange/sent/b.md\"]\n";
+    assert!(written.contains(refs), "{written}");
+}

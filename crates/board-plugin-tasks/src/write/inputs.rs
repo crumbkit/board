@@ -130,6 +130,7 @@ pub(crate) struct AddInput {
     #[schemars(regex(pattern = UNTIL), description = UNTIL_HELP)]
     pub(crate) defer: Option<String>,
     #[schemars(
+        with = "Option<Vec<BoardPath>>",
         description = "The paths, in the task's own repo, of the tasks it waits on, such as \
                        /tasks/agree-scope.md."
     )]
@@ -161,6 +162,7 @@ pub(crate) struct AddInput {
     )]
     pub(crate) kind: Option<String>,
     #[schemars(
+        with = "Option<Vec<BoardPath>>",
         length(max = 100),
         description = "The board paths, in the task's own repo, of the records and files the \
                        task names, such as /exchange/sent/20261122T0329Z-lead-scope.md. A \
@@ -199,6 +201,25 @@ pub(crate) struct AddInput {
                        of the directory board was started in."
     )]
     pub(crate) remote: Option<String>,
+}
+
+/// A logical path, which `board call` takes as a flag read from the current
+/// directory and refuses with a comma in it.
+#[derive(Debug)]
+enum BoardPath {}
+
+impl JsonSchema for BoardPath {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "BoardPath".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "pattern": "^/", "format": "board-path"})
+    }
 }
 
 fn kind(_: &mut SchemaGenerator) -> Schema {

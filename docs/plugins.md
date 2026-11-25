@@ -117,8 +117,10 @@ offers, or the nearest offered name, and so do its `fields`
 number or boolean property of the capability's `inputSchema` as a flag of the
 same name, such as `--path /docs`, `--open false` or `--offset -1`, and
 `board call <plugin>.<capability> -h` lists them. A bare boolean flag means
-`true`. Board reads JSON on stdin only when no flag is given and the schema
-admits a property that is not a flag, such as an array. A schema also admits
+`true`. A list of strings is a flag given once for each item, and a path flag
+may be relative ([plugins/calling/commands.md](plugins/calling/commands.md)).
+Board reads JSON on stdin only when no flag is given and the schema admits a
+property that is not a flag, such as a list of objects. A schema also admits
 properties it does not name, which no flag can give, unless it sets
 `additionalProperties` to `false` and has no `patternProperties`. A
 capability whose schema admits only flag properties never reads stdin, so an
@@ -134,9 +136,6 @@ with `destructiveHint: false` and destructive without it, idempotent with
 Only these commands read the manifests for it. They skip a plugin they
 cannot read, and a board that does not open, with a note on stderr naming
 the code.
-A flag whose property has `"format": "board-path"` may be given relative to
-the run's prefix, such as `--path docs` from inside a mounted repository;
-Board sends the absolute logical path (architecture.md, Typed references).
 No flags and no stdin, a terminal on stdin, or stdin left unread, is
 the input `{}`. An
 input property named like one of `board call`'s own flags (`--json`, `--fields`,

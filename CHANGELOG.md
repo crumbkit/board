@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `board call tasks.add` reads each `--after` and `--refs` value as a board
+  path. A value without a leading `/` is read from the current directory, and
+  a value that joins paths with a comma, such as
+  `--after /tasks/a.md,/tasks/b.md`, is refused with a hint to repeat the flag.
+  Before, such a value was written as one prerequisite that names no task.
+  The `changes.plan` descriptions now say that `uses` and `paths` can be
+  given as repeated flags.
+
 - `tasks add` says where the task went. Its output gains `about`, one
   sentence naming the repo that took the task and whether it left this Mac,
   `remote`, the remote that repo pushes to, and `leaves_this_mac`, true when
