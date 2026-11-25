@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- In the plan phase, `board changes next` and `board changes advance` ask
+  the rules plugin for the rules on the plan's paths once, where they asked
+  twice, and read both the obligations and the rules on the planned paths
+  from that answer. The gate's checks and their details are unchanged.
+
 - A `plans/question/v1` whose `blocks` names a `tasks/task/v3`, and an
   `artifacts/artifact/v1` whose `subject` names one, are no longer degraded
   with `board::ref::wrong_type`. Run `board plugin enable plans` and

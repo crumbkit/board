@@ -20,7 +20,7 @@ use crate::gates::{Observed, Read, objects, reads, reviewed_head, same_commit};
 use crate::lifecycle::LifecycleRecord;
 use crate::records::{ChangeRecord, FixRecord};
 use crate::repo::check_suite;
-use crate::rules::{current as current_rule, listed_by, obligations, on_paths};
+use crate::rules::{Found, current as current_rule, listed_by, names, obligations_in, on_plan};
 
 use super::plan_file;
 
@@ -53,6 +53,7 @@ pub(crate) fn observe_in(
         Vec::new()
     };
     let records = referenced(host, &cited)?;
+    let mut on_planned = None;
     let mut found = Observed::new(path, change.clone(), kind_of(host, path)?, records);
     found.flow = flow;
     found.cited = cited;
@@ -90,7 +91,10 @@ pub(crate) fn observe_in(
         found.pull_read = pull_of(host, newest)?.is_some();
     }
     if wanted.contains(&Read::Obligations) {
-        found.obligations = obligations(host, &current(host, change)?.2)?;
+        let rules = (answered(host, change, &mut on_planned)?.as_ref()).map_err(Clone::clone)?;
+        found.obligations = (obligations_in(host, rules)?.into_iter())
+            .map(|each| each.rule)
+            .collect();
     }
     if wanted.contains(&Read::Controlled) {
         let filled = values(&found);
@@ -125,7 +129,7 @@ pub(crate) fn observe_in(
         records_held(host, &mut found)?;
     }
     if wanted.contains(&Read::PlannedRules) {
-        planned_rules(host, &mut found)?;
+        planned_rules(host, &mut found, &mut on_planned)?;
     }
     if wanted.contains(&Read::Approval) {
         found.approval = approval(host, &found)?;
@@ -337,9 +341,27 @@ fn records_held(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError
     Ok(())
 }
 
+/// The answer of the one `rules.for-paths` call on the paths of the change's
+/// plan, which `answer` holds once a read has asked for it.
+fn answered<'a>(
+    host: &dyn Host,
+    change: &ChangeRecord,
+    answer: &'a mut Option<Result<Vec<Found>, PluginError>>,
+) -> Result<&'a Result<Vec<Found>, PluginError>, PluginError> {
+    let asked = match answer.take() {
+        Some(asked) => asked,
+        None => on_plan(host, &current(host, change)?.2),
+    };
+    Ok(answer.insert(asked))
+}
+
 /// What `planned-rule-paths` checks read: which rules they name the board
 /// holds, and the rules on the plan's paths, or why those cannot be read.
-fn planned_rules(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
+fn planned_rules(
+    host: &dyn Host,
+    found: &mut Observed,
+    answer: &mut Option<Result<Vec<Found>, PluginError>>,
+) -> Result<(), PluginError> {
     let filled = values(found);
     let named: Vec<String> = (found.checks().iter())
         .filter(|each| each.kind.known() == Some(&CheckKind::PlannedRulePaths))
@@ -350,9 +372,9 @@ fn planned_rules(host: &dyn Host, found: &mut Observed) -> Result<(), PluginErro
             found.held.insert(rule);
         }
     }
-    match on_paths(host, &current(host, &found.change)?.2) {
-        Ok(rules) => found.on_planned = rules,
-        Err(error) => found.on_planned_unread = Some(error.message),
+    match answered(host, &found.change, answer)? {
+        Ok(rules) => found.on_planned = names(rules),
+        Err(error) => found.on_planned_unread = Some(error.message.clone()),
     }
     Ok(())
 }
@@ -380,3 +402,6 @@ fn reviewed(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
