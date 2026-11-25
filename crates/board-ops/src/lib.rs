@@ -33,8 +33,8 @@ mod verdict;
 mod version;
 
 pub use board_index::{
-    Budget, Fallback, Timings, append_timing, read_timings, source_name, stamp_timing,
-    timing_stamped,
+    Budget, Fallback, Timings, Unmarked, append_timing, read_timings, source_name, stamp_timing,
+    take_unmarked, timing_stamped,
 };
 
 pub use crate::attachment::{FetchError, MAX_INLINE_BYTES};

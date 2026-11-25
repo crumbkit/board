@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's recovery and twin checks cannot provoke through the
 /// `board` command line, why, and where each is tested instead. The checks
 /// provoke every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 27] = [
+pub const NOT_REPRODUCED: [(Code, &str); 28] = [
     (
         Code::AttachmentMissing,
         "the store must lose an object between the put and the fetch; \
@@ -114,6 +114,11 @@ pub const NOT_REPRODUCED: [(Code, &str); 27] = [
         "a call prints it as a warning beside its output and refuses nothing; \
          board-cli/src/tests/aliases.rs runs a former name and the plugin's own name",
     ),
+    (
+        Code::CacheUnmarked,
+        "a run prints it as a warning and refuses nothing; board-cli/src/tests.rs \
+         runs ls under an unwritable cache root and a writable one",
+    ),
 ];
 
 /// Why the guarded sync's refusals are not provoked through `board sync`.
@@ -135,7 +140,7 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 94] = [
+pub const NOT_CHECKED: [(Code, &str); 95] = [
     (
         Code::RepoLocalRemote,
         "only repo add gives it, to a remote that names a local path; a record's remote is checked as board::repo::invalid",
@@ -203,6 +208,10 @@ pub const NOT_CHECKED: [(Code, &str); 94] = [
     (
         Code::IndexFailed,
         "it fails the whole command, never one entry",
+    ),
+    (
+        Code::CacheUnmarked,
+        "a run warns with it beside its report; it is never an entry's",
     ),
     (Code::QueryInvalid, QUERY),
     (Code::QueryTimeout, QUERY),
