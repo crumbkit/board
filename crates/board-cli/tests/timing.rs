@@ -313,16 +313,21 @@ fn appending_the_timing_line_under_an_unwritable_cache_root_warns_that_it_is_unm
     let (code, stderr) = skills_under_cache_root(home.path(), true);
     assert_eq!(code, Some(0));
     let root = home.path().join("cache/board");
-    assert_eq!(
-        stderr,
-        format!(
+    // The error's text differs by platform: Linux names the temporary file.
+    let (message, hint) = stderr.split_once("; ").unwrap();
+    assert!(
+        message.starts_with(&format!(
             "warning: board::cache::unmarked: the cache directory {} is not marked as a \
-             cache, so backups may copy it: Permission denied (os error 13); Board marks \
-             the directory with a CACHEDIR.TAG file and, on macOS, a Time Machine \
-             exclusion; fix what stopped it, such as the directory's permissions, and \
-             the next run marks it\n",
+             cache, so backups may copy it: Permission denied (os error 13)",
             root.display()
-        )
+        )),
+        "{stderr}"
+    );
+    assert_eq!(
+        hint,
+        "Board marks the directory with a CACHEDIR.TAG file and, on macOS, a Time Machine \
+         exclusion; fix what stopped it, such as the directory's permissions, and the next \
+         run marks it\n"
     );
 }
 
