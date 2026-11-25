@@ -2,7 +2,7 @@
 
 `board <plugin> <capability> [flags]` runs what
 `board call <plugin>.<capability> [flags]` runs. This page says how Board
-reads the first word.
+reads the first word, and how it reads list and path flags.
 
 A first word is a built-in command first, then an enabled plugin's name, then
 an alias, then a built-in plugin's name, which runs as `board call` so the
@@ -17,6 +17,23 @@ enabled plugin's alias; that plugin's name then wins. Running an alias two
 enabled plugins share is refused with the same code; the hint names the
 `board call` line. The capability comes right after the plugin's word; a flag
 in its place is a usage error.
+
+## List and path flags
+
+An input property that is a list of strings is a flag given once for each
+item, in order: `board call tasks.add --title t --after /tasks/a.md --after
+/tasks/b.md` sends `"after": ["/tasks/a.md", "/tasks/b.md"]`, and `--after
+none` alone sends an empty list. A list of objects, such as `considered` on
+`changes.plan`, has no flag. A call with a flag reads nothing on stdin, so
+input that needs a list of objects goes on stdin whole, lists of strings
+included.
+
+A flag whose property has `"format": "board-path"` may be given relative to
+the run's prefix, such as `--path docs` from inside a mounted repository;
+Board sends the absolute logical path (architecture.md, Typed references).
+So may each item of a list flag whose `items` have that format, and Board
+refuses such an item that holds a comma, with a hint to repeat the flag, so
+`--after /tasks/a.md,/tasks/b.md` is refused instead of sent as one path.
 
 ## Renamed plugins
 

@@ -223,7 +223,12 @@ pub(crate) fn task(host: &dyn Host, entry: &Entry, before: Option<&Entry>) -> Op
     match (entry.outcome.failed(), open) {
         (true, None) => called(
             "add",
-            json!({"title": title(&entry.name), "text": body(entry), "repo": "/"}),
+            json!({
+                "title": title(&entry.name),
+                "text": body(entry),
+                "repo": "/",
+                "reason": "a failing sync of a board on this Mac belongs with that Mac's board",
+            }),
         ),
         (true, Some(path)) => {
             let changed = before.is_none_or(|before| {

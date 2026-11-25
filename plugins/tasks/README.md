@@ -199,23 +199,48 @@ task has an `after` or a `parent`.
 `board tasks add --title <title>` writes a new open task to
 `tasks/<slug>.md`, its slug derived from the title as notes derives a note's,
 with `-2` and on added when the name is taken. It takes `--text` for the body,
-and `--due`, `--defer`, `--repeat`, `--ephemeral` and `--from_hour`; `after`
-and `contexts`, which are lists, come as JSON on stdin. `--repo` names the
+and `--due`, `--defer`, `--repeat`, `--ephemeral` and `--from_hour`. `after`,
+`contexts` and `refs` are lists, and each item is its own flag, such as
+`--after /tasks/agree-scope.md --after /tasks/build-it.md`, in the order
+given; `--after none` alone writes an empty list. They may also come as JSON
+on stdin, when no flag is given. `--repo` names the
 repo. Otherwise it is the one repo whose record covers the remote, from
 `--remote` or the caller's `origin`, else the personal repo, else `/`.
 `--parent <path>`, `--kind project` and `--brief <path>` write those fields.
-`--parent` and `--brief` take paths in the board, as `tree` lists them, and
-are written as paths in the task's own repo. A path in another repo is refused
+`--parent`, `--brief` and each `--after` take paths in the board, as `tree`
+lists them, and are written as paths in the task's own repo. A path in another repo is refused
 with `tasks::add::cross_repo`, and a parent that holds no task with
 `tasks::add::parent_not_found`, so `add` never writes a parent that reaches
 nothing. Two
 repos that could each hold it are refused with `tasks::repo::ambiguous`. A
 caller inside a git repository whose origin git does not give is refused with
 `tasks::repo::origin_unread`, since the task may belong to a work repo; pass
-`--remote` or `--repo`, such as `--repo /` for the board itself. The board's
+`--remote` or `--repo`. The board's
 own repository is the exception: a caller in a board with no origin is routed
 as one outside any repository, so the board takes the task when it lists no
 personal repo. A repository nested inside the board is not the board's own.
+The hints of `origin_unread`, `ambiguous` and `reason_needed` give a full
+command for each repo that could take the task, the personal notes repo
+first. Each names the board with `-C` and gives the title as `--title=`, and
+the call's other flags are added to it.
+
+A task a person should see off this Mac goes to the personal notes repo,
+which `add` pushes. `add` never pushes the board's own tree, so a task in
+`/tasks/` stays on this Mac unless something else pushes the board. `--repo /`
+is for tasks that belong with the board, such as queue items, and needs
+`--reason <text>`. Without one it is refused with
+`tasks::repo::reason_needed`, which names the personal notes repo and its
+remote when the board has one. A reason that is only spaces is missing. The
+reason is printed in `about` and stored nowhere, and a reason given for any
+other repo is ignored. A task routed to `/` because no notes repo covers the
+remote and the board lists no personal repo needs no reason.
+
+`add` returns the task as the other writes do, with three more fields.
+`about` is one sentence that says which repo took the task and whether it
+left this Mac, or why the push failed. `remote` is the remote the task's repo
+pushes to, `owner/name` for GitHub, or null for the board's own tree.
+`leaves_this_mac` is true when the call pushed the task to that remote. It
+cannot see a later push by anything else.
 
 `claim`, `done`, `defer --until`, `drop` and `reviewed` take the task's
 `--path` in the board, such as `/repos/personal/tasks/call-the-bank.md`. The path is not

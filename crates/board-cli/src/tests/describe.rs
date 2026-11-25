@@ -680,3 +680,30 @@ fn a_boolean_flag_is_described_with_an_optional_true_or_false_value() {
     assert_eq!(urgent["value_names"], json!(["true|false"]));
     assert_eq!(urgent["possible_values"], json!(["true", "false"]));
 }
+
+#[test]
+fn a_string_array_input_of_a_built_in_capability_is_a_flag_that_takes_many_values() {
+    let (board, data) = enabling(r#""tasks", "changes""#);
+    let (rows, ..) = capability_rows(&board, &data);
+    let flag = |path: &str, name: &str| -> Option<Value> {
+        let arguments = row(&rows, path)["arguments"].as_array().unwrap();
+        (arguments.iter().find(|argument| argument["name"] == name)).cloned()
+    };
+    for (path, name) in [
+        ("board call tasks.add", "--after"),
+        ("board call tasks.add", "--contexts"),
+        ("board call tasks.add", "--refs"),
+        ("board call changes.plan", "--paths"),
+        ("board call changes.plan", "--uses"),
+    ] {
+        let found = flag(path, name).unwrap_or_else(|| panic!("no {name} on {path}"));
+        assert_eq!(found["many"], true, "{path} {name}");
+    }
+    assert_eq!(
+        flag("board call tasks.add", "--title").unwrap()["many"],
+        false
+    );
+    for name in ["--considered", "--owed"] {
+        assert!(flag("board call changes.plan", name).is_none(), "{name}");
+    }
+}

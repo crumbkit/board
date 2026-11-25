@@ -407,8 +407,11 @@ impl Board {
         };
         let crossed = resolver.crossed();
         let held = |crossed: &board_tree::Crossing| crossings.is_some_and(|c| c.contains(crossed));
-        let mut storable =
-            keepable(whole && !failed, &decided.resolved[start..]) && crossed.iter().all(held);
+        // The working tree's key holds no object store, so a file in it
+        // that cannot be read keeps nothing.
+        let mut storable = keepable(whole && !failed, &decided.resolved[start..])
+            == Keepable::Whole
+            && crossed.iter().all(held);
         if let Some(only) = only.filter(|_| !storable) {
             let rest = |path: &str| !only.contains(path);
             validating.validate(writer, facts, &rest, &mut work.validated)?;
@@ -538,20 +541,25 @@ impl Board {
         let probed =
             (in_commit.crossed().iter()).all(|crossed| mounted.crossings.contains(crossed));
         let rows = &decided.resolved[start..];
-        let storable = keepable(mounted.whole && probed && !failed, rows);
-        let kept = match &mounted.key {
-            Some(_) if mounted.kept => true,
-            Some(key) if storable => {
+        // Rows that hold a file that cannot be read are kept under the key
+        // that also holds each object store they read.
+        let storable = match keepable(mounted.whole && probed && !failed, rows) {
+            Keepable::Whole => mounted.key.as_ref(),
+            Keepable::Lacking => mounted.lacking.as_ref(),
+            Keepable::Never => None,
+        };
+        let key = match (mounted.key.as_ref(), storable) {
+            (Some(key), _) if mounted.kept => Some(key),
+            (Some(_), Some(key)) => {
                 let details = decided.checked[checked..].iter().map(crate::check::to_kept);
                 writer.put_decision(key, rows.iter().zip(details))?;
-                true
+                Some(key)
             }
-            _ => false,
+            _ => None,
         };
-        if kept {
+        if key.is_some() {
             decided.resolved.truncate(start);
         }
-        let key = mounted.key.as_ref().filter(|_| kept);
         writer.reach(&source, key, Some(&mounted.scan))?;
         Ok(in_commit.pointers_read())
     }
@@ -574,17 +582,32 @@ fn known<'e>(
     }
 }
 
+/// Whether a source's decided `rows` may be kept.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Keepable {
+    /// Under the source's key.
+    Whole,
+    /// Only under a key that also holds each object store the rows read,
+    /// as one holds a file that could not be read, which may be read once
+    /// a store changes.
+    Lacking,
+    Never,
+}
+
 /// Whether a source's decided `rows` may be kept, given that it was
 /// decided whole and nothing failed to read (`whole`). Names that are not
-/// UTF-8 can share a path, which the index keeps only once, and a file that
-/// could not be read may be read next run.
-fn keepable(whole: bool, rows: &[Resolved]) -> bool {
+/// UTF-8 can share a path, which the index keeps only once.
+fn keepable(whole: bool, rows: &[Resolved]) -> Keepable {
     let mut paths = HashSet::new();
-    whole
-        && rows.iter().all(|row| paths.insert(row.path.as_str()))
-        && !rows
-            .iter()
-            .any(|row| row.code == Some(Code::RepoUnreadable))
+    if !whole || !rows.iter().all(|row| paths.insert(row.path.as_str())) {
+        return Keepable::Never;
+    }
+    let lacks = |row: &Resolved| row.code == Some(Code::RepoUnreadable);
+    if rows.iter().any(lacks) {
+        Keepable::Lacking
+    } else {
+        Keepable::Whole
+    }
 }
 
 /// Each directory and submodule `listings` saw, as the bytes of its path,

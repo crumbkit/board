@@ -15,6 +15,38 @@
   refused; run the search again. The index format is 29, so the first run
   of this build builds a new index.
 
+- `board call tasks.add` reads each `--after` and `--refs` value as a board
+  path. A value without a leading `/` is read from the current directory, and
+  a value that joins paths with a comma, such as
+  `--after /tasks/a.md,/tasks/b.md`, is refused with a hint to repeat the flag.
+  Before, such a value was written as one prerequisite that names no task.
+  Each `after` path is now written as a path in the task's own repo, as
+  `parent` and `brief` are, so `/repos/work/tasks/a.md` on a task in
+  `/repos/work` is written as `/tasks/a.md`, and an `after` in another repo
+  is refused with `tasks::add::cross_repo`.
+  The `changes.plan` descriptions now say that `uses` and `paths` can be
+  given as repeated flags.
+
+- `tasks add` says where the task went. Its output gains `about`, one
+  sentence naming the repo that took the task and whether it left this Mac,
+  `remote`, the remote that repo pushes to, and `leaves_this_mac`, true when
+  the call pushed it. `--repo /` now needs `--reason`, and is refused without
+  one with `tasks::repo::reason_needed`, which names the personal notes repo.
+  The hints of `tasks::repo::origin_unread` and `tasks::repo::ambiguous` give
+  a full command for each repo that could take the task. A script that
+  passes `--repo /` must add `--reason`.
+
+- `board call` takes a capability's input property that is a list of
+  strings as a flag given once for each item, in the order given, such as
+  `board call tasks.add --title t --after /tasks/a.md --after /tasks/b.md`.
+  `--after none` alone sends an empty list. An item whose schema marks it
+  as a board path is read from the current directory, as a single path flag
+  is, and one that holds a comma is refused with a hint to repeat the flag.
+  A list of objects, such as `considered` on `changes.plan`, still goes on
+  stdin, and a call with no flag still reads its whole input, lists
+  included, as JSON on stdin. `board commands list --json` marks each of these flags
+  `many: true`.
+
 - A `plans/question/v1` whose `blocks` names a `tasks/task/v3`, and an
   `artifacts/artifact/v1` whose `subject` names one, are no longer degraded
   with `board::ref::wrong_type`. Run `board plugin enable plans` and
