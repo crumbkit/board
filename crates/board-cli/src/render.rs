@@ -233,7 +233,7 @@ pub(crate) fn check(
             }));
         }
         let path = named(&entry.path, entry.logical.as_ref(), entry.status);
-        let why = entry.detail.as_ref().map(detail_text).unwrap_or_default();
+        let why = entry.detail.as_ref().map_or_default(detail_text);
         let line = format!("{} {path}{why}", Health(entry.status));
         let mut value = json!({
             "source": source_name(&entry.source),

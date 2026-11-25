@@ -69,8 +69,7 @@ impl Scanner {
     fn text(&self, start: usize, end: usize) -> String {
         self.chars
             .get(start..end)
-            .map(|chars| chars.iter().collect())
-            .unwrap_or_default()
+            .map_or_default(|chars| chars.iter().collect())
     }
 
     /// Moves past whitespace, and says whether a part follows.

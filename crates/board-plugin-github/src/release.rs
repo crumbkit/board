@@ -109,7 +109,7 @@ pub(crate) fn release_create(host: &dyn Host, input: &Value) -> Result<Value, Pl
     let draft = viewed(host, &place, &tag)?;
     let title = title.unwrap_or_else(|| tag.clone());
     let resumed = draft.is_some();
-    let uploaded = draft.map(|draft| draft.assets).unwrap_or_default();
+    let uploaded = draft.map_or_default(|draft| draft.assets);
     if let Some(stray) = (uploaded.iter()).find(|there| !names.contains(&there.name)) {
         return Err(stray_asset(&tag, &stray.name));
     }

@@ -334,9 +334,8 @@ impl Repository<'_> {
     /// Whether `path` in `commit` is a brief or a report at `/reviews/<id>/`
     /// of the type its name gives.
     fn record(&self, commit: &str, path: &str) -> bool {
-        let parts: Vec<&str> = (path.strip_prefix(REVIEW_PATH))
-            .map(|rest| rest.split('/').collect())
-            .unwrap_or_default();
+        let parts: Vec<&str> =
+            (path.strip_prefix(REVIEW_PATH)).map_or_default(|rest| rest.split('/').collect());
         let record_type = match parts[..] {
             [id, "brief.json"] if !id.is_empty() => BriefRecord::TYPE,
             [id, "report.json"] if !id.is_empty() => ReportRecord::TYPE,
