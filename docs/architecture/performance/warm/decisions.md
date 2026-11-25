@@ -29,6 +29,15 @@ A source's key hashes:
   repository it opened, or the code that says why it did not;
 - for each mount it reaches, the same of that source, without its route.
 
+A source with a file whose blob its repository lacks, such as one read
+from a partial clone, is kept under a second key. That key hashes the
+first and a stamp of the repository's objects: the stat of its pack
+directory and of each directory of loose objects, taken before the walk
+reads the source. A fetch or a loose write that brings a blob changes the
+stamp, so the source is decided again. A run
+stamps a source's objects only when the index does not hold its decision
+under the first key.
+
 A run opens a mounted repository and looks up its pinned commit only when
 the repository's stamp changed ([index.md](index.md)), so a deleted repository
 or a lost commit still changes the key. The repositories one source's mounts
@@ -45,8 +54,11 @@ order.
   row that cannot be read fails the run with `board::index::failed`.
 - `refs` decides every source, and keeps what it decided.
 - A scoped run decides the working tree only in part, and keeps none of it.
-- A scoped `ls` walks and decides only the sources its scope reaches, and
-  keeps nothing for a source it decided only in part.
+- `ls` reads kept rows as `check` does: the kept rows of each mounted
+  source wholly in its scope, walking only the directory it lists there.
+  It walks and decides the other sources its scope reaches, and keeps
+  nothing for a source it decided only in part. An `ls` of the root is
+  unscoped, so it also reads the working tree's kept decision.
 - A scope reaches a source when one of the source's routes lies inside the
   scope, or the scope lies inside one of its routes. A scoped `check` or
   `ls` walks any other source only when the index lists no
@@ -60,8 +72,12 @@ order.
 
 These sources are decided on every run:
 
-- one with a file that could not be read, or a read or resolution that
-  failed with a git error, which may pass;
+- one whose read or resolution failed with a git error, which may pass,
+  such as a reference to a blob another repository lacks;
+- one with a file whose blob its repository holds but could not read, as
+  after an I/O error;
+- one with a file whose blob its repository lacks, when that repository
+  borrows objects through alternates, which the stamp does not cover;
 - one holding a mount whose route is too long to name;
 - one that reaches a commit through another repository than the one that
   commit was walked in;

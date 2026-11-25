@@ -59,7 +59,8 @@ const CAPABILITIES: [(&str, &str); 11] = [
     ),
     (
         "add",
-        "Write a new open task to tasks/<slug>.md in the repo the caller's remote routes to.",
+        "Write a new open task to tasks/<slug>.md in the repo the caller's remote routes to, and \
+         say in `about` which repo took it and whether it left this Mac; --repo / needs --reason.",
     ),
     (
         "claim",
@@ -229,7 +230,10 @@ fn manifest() -> Value {
             schema_of::<trees::Input>(input()),
             schema_of::<trees::Output>(output()),
         ),
-        (schema_of::<write::AddInput>(input()), written()),
+        (
+            schema_of::<write::AddInput>(input()),
+            schema_of::<write::Added>(output()),
+        ),
         (schema_of::<claim::ClaimInput>(input()), written()),
         (schema_of::<write::DoneInput>(input()), written()),
         (schema_of::<write::DeferInput>(input()), written()),

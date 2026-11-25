@@ -21,6 +21,11 @@ fn add_writes_an_open_task_named_by_its_title_reviewed_today_and_a_second_one_be
     ];
     let output = tasks.call("add", &flags).unwrap();
     let expected = json!({
+        "about": "Wrote /tasks/call-the-bank.md to this board's own tree, because the call gave \
+                  no git remote and the board lists no personal notes repo. tasks add does not \
+                  push it, so it stays on this Mac unless something else pushes this board.",
+        "remote": null,
+        "leaves_this_mac": false,
         "repo": "/",
         "path": "/tasks/call-the-bank.md",
         "status": "open",
@@ -608,7 +613,7 @@ fn a_push_that_fails_after_the_write_is_reported_and_the_write_stays_committed()
     clippy::disallowed_methods,
     reason = "the remote's hook is git's, which the fixture writes as its owner would"
 )]
-fn write_hook(hook: &Path) {
+pub(super) fn write_hook(hook: &Path) {
     use std::os::unix::fs::PermissionsExt;
     std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
     std::fs::write(hook, "#!/bin/sh\nexit 1\n").unwrap();
@@ -677,7 +682,14 @@ fn add_in_a_clone_without_origin_nested_in_the_board_is_refused_and_admitted_wit
             .contains("--repo /")
     );
     assert!(!tasks.board.workdir().join("tasks/ship-it.md").exists());
-    let flags = ["--title", "Ship it", "--repo", "/"];
+    let flags = [
+        "--title",
+        "Ship it",
+        "--repo",
+        "/",
+        "--reason",
+        "it belongs here",
+    ];
     let output = tasks.call_with("add", &flags, 0, &nested, "").unwrap();
     assert_eq!(output["path"], "/tasks/ship-it.md");
 }
