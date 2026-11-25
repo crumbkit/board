@@ -597,6 +597,8 @@ fn note_and_team() -> (Racing, board_scenario::Scenario) {
     let first = team.commit(&[(".board/board.json", config)]);
     team.track(first).identified();
     let board = Scenario::board();
+    // A put through the mount moves its pin, which commits in this board too.
+    board.identified();
     let mount = format!(
         r#"{{"$type": "board/mount/v1", "repo": "{}", "follow": "main", "commit": "{first}"}}"#,
         team.path()
