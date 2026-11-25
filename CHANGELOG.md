@@ -2,9 +2,11 @@
 
 ## Unreleased
 
-- A built-in plugin call keeps the board snapshots it took while other
-  sessions commit, so a plan-phase `changes next` no longer takes a new
-  snapshot after each foreign commit. It still takes new ones after its own
+- A built-in plugin call keeps the board snapshots it took across other
+  sessions' commits, until a refresh of the shared index or its own effects
+  move them, so a plan-phase `changes next` no longer takes a new snapshot
+  after each foreign commit. Its two snapshots always show one board. It
+  still takes new ones after its own
   put, sync, mount update or decide, a nested call that may write, a process
   in the board's tree, and a process or read-only installed plugin during
   which HEAD moved, and before it takes its second snapshot when HEAD

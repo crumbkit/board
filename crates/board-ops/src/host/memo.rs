@@ -2,11 +2,16 @@
 //! (docs/architecture/index.md). A call keeps at most one View snapshot,
 //! for queries, and one Report snapshot, for `refs`, and a read-only
 //! capability it calls in the same board, or a host it opens on the same
-//! board, keeps the same ones. Another session's commit does not drop
-//! them: each record a plugin call writes after reading it carries the
-//! blob it read as its expect, so Board refuses a write over a newer
-//! record as stale. A schema line takes no expect; Board writes a schema
-//! only where the board lacks it.
+//! board, keeps the same ones. A call keeps them across another session's
+//! commits until a refresh of the shared index or its own effects move
+//! them, and the two always show one board. They are not isolated from
+//! the index: any process that refreshes it at a newer tree rewrites the
+//! slot the View reads, and the View is then retaken at the newest HEAD,
+//! with the held Report dropped beside it. A write is safe because each
+//! record a plugin call writes after reading it carries the blob it read
+//! as its expect, so Board refuses a write over a newer record as stale.
+//! A schema line takes no expect; Board writes a schema only where the
+//! board lacks it.
 //! Both are dropped before anything the call does that may change what
 //! they show: a write, a nested call to a capability that does not say it
 //! is read-only, and a process that runs in the board's own tree. After a

@@ -590,38 +590,64 @@ fn refs_after_a_foreign_commit_and_the_query_after_it_read_the_same_board() {
     assert_eq!(output["resolved"], true, "refs reads the newer board");
     assert_eq!(
         output["second"], 1,
-        "the query after refs reads the same board"
+        "the Report's refresh rewrites the index slot the View reads, so the \
+         View is retaken at the newer HEAD, with or without the drop"
     );
-    assert_eq!(taken, 3, "refs drops the View taken before the commit");
+    assert_eq!(taken, 3, "a View taken before the commit is not used again");
 }
+
+/// A type whose `see` field is a typed reference.
+const LINK_SCHEMA: &str =
+    r#"{"type": "object", "properties": {"see": {"type": "string", "format": "board-ref"}}}"#;
 
 #[test]
 fn a_query_after_a_foreign_commit_and_the_refs_after_it_read_the_same_board() {
     let (scenario, cache) = twin_board();
+    scenario
+        .write(
+            ".board/types/lr/link/v1.schema.json",
+            Item::File(LINK_SCHEMA),
+        )
+        .write(
+            "notes/target.json",
+            Item::File(r#"{"$type": "fixture/item/v1"}"#),
+        );
     let root = scenario.workdir().to_path_buf();
     let reading = answering(
         "fixture",
         Box::new(move |host| {
-            let resolves = |path: &str| {
+            let answer = |path: &str| {
                 let path: LogicalPath = path.parse().unwrap();
                 (host.refs(std::slice::from_ref(&path), Absent::Refuse, &[]))
                     .unwrap()
                     .into_iter()
-                    .all(|answer| answer.is_ok())
+                    .next()
+                    .unwrap()
+                    .unwrap()
             };
             // The root resolves, so this takes the Report snapshot.
-            let first = resolves("/");
-            commit_elsewhere(&root);
+            answer("/");
+            let mut other = Board::open(&root, None).unwrap();
+            other.ask_as(crate::Asker::default());
+            let line =
+                json!({"path": NOTE, "record": {"$type": "lr/link/v1", "see": "/notes/target"}});
+            other.put_batch(&mut line.to_string().as_bytes()).unwrap();
             let queried = notes(host);
-            Ok(json!({"count": 0, "first": first, "queried": queried, "second": resolves(NOTE)}))
+            let from: Vec<String> = (answer(NOTE).from.iter())
+                .map(|outgoing| outgoing.target.to_string())
+                .collect();
+            let to: Vec<String> = (answer("/notes/target").to.iter())
+                .filter_map(|incoming| incoming.logical.as_ref().map(ToString::to_string))
+                .collect();
+            Ok(json!({"count": 0, "queried": queried, "from": from, "to": to}))
         }),
     );
     let (output, taken) = called(&scenario, cache.path(), vec![reading]);
-    assert_eq!(output["first"], true);
     assert_eq!(output["queried"], 1, "the query reads the newer board");
     assert_eq!(
-        output["second"], true,
-        "the refs after the query reads the same board"
+        (&output["from"], &output["to"]),
+        (&json!(["/notes/target"]), &json!([NOTE])),
+        "the refs after the query read the board the query read"
     );
     assert_eq!(
         taken, 3,

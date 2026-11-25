@@ -36,10 +36,15 @@ decides every mount and so never answers a query. A capability the call
 calls in the same board whose `readOnlyHint` is true keeps both and reads
 through them, and the snapshots it takes count in the call's trace. A host
 the call opens on the same board, through `--personal` or `-C`, shares
-both; a call into another board keeps its own. Another session's commit
-does not drop them, because every record a plugin call writes after
-reading it carries the blob it read as its `expect`, so Board refuses a
-write over a newer record as `board::put::stale`. A schema line takes no
+both; a call into another board keeps its own. A call keeps them across
+another session's commits until a refresh of the shared index or its own
+effects move them, and the two always show one board. They are not
+isolated from the index: any process that refreshes it at a newer tree
+rewrites the slot the View reads, so the View is retaken at the newest
+`HEAD` and the held Report is dropped with it. Keeping them is safe because
+every record a plugin call writes after reading it carries the blob it
+read as its `expect`, so Board refuses a write over a newer record as
+`board::put::stale`. A schema line takes no
 `expect`, because a batch writes a schema only where the board lacks it.
 The call drops both before it puts, syncs, updates a mount, decides, calls
 a capability without `readOnlyHint: true`, or runs a process in the
@@ -57,7 +62,7 @@ mount into this board does not drop them. In a board whose
 process, and every installed plugin's capability, drops both, and every
 read compares `HEAD`. A kept View that another
 process prunes under (index.md) is dropped, and the query runs on a fresh
-one within the same three tries. A call does not see another session's
+one within the same three tries. A call may not see another session's
 commit or uncommitted edit made after its first read; the next call does.
 With one commit every 2 s on a copy of a real board, a plan-phase `changes
 next` took 92 to 127 s and 47 to 54 snapshots when every commit dropped
