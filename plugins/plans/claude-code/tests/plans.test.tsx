@@ -908,6 +908,21 @@ test('with the failing option shown the button and the pane draw the failing cha
     'To see why:',
     'board changes next --path /changes/u',
   ])
+  // The header holds the title at the left and Ask these now at the right end, as the mockup draws it.
+  type Node = { type?: string; props?: Record<string, unknown>; children?: unknown[] }
+  const holding = (n: unknown): Node | undefined => {
+    if (typeof n !== 'object' || n === null) return undefined
+    const node = n as Node
+    if (node.children?.some(c => (c as Node)?.type === 'Button' && (c as Node).props?.key === 'ask-all')) return node
+    for (const c of node.children ?? []) {
+      const found = holding(c)
+      if (found !== undefined) return found
+    }
+    return undefined
+  }
+  const header = holding(await shown.drawn())
+  expect(header?.props?.justifyContent).toBe('space-between')
+  expect(header?.children?.map(c => (c as Node).type)).toEqual(['Box', 'Button'])
   // The kind is a tag and the failing reason a red one.
   expect((await shown.find({ type: 'Text', text: ' Data sign-off ' }))?.props?.inverse).toBe(true)
   const red = (await shown.find({ type: 'Text', text: ' CI failed ' }))?.props

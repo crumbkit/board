@@ -383,9 +383,11 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column">
         {problem}
-        <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginBottom={1}>
-          <Text weight="semibold">Ready to land · {found.total - failing.length}</Text>
-          {red === null ? null : <Text color="red">{red}</Text>}
+        <Box flexDirection="row" flexWrap="wrap" justifyContent="space-between" columnGap={1} marginBottom={1}>
+          <Box flexDirection="row" columnGap={1}>
+            <Text weight="semibold">Ready to land · {found.total - failing.length}</Text>
+            {red === null ? null : <Text color="red">{red}</Text>}
+          </Box>
           <Button key="ask-all" label="Ask these now (/ask)" variant="primary" onPress={ask} />
         </Box>
         {found.changes.map(c => {
