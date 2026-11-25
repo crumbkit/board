@@ -383,9 +383,7 @@ fn observe_owed(
     change: &ChangeRecord,
     flow: flow::Flow,
 ) -> Result<Observed, PluginError> {
-    let wanted = reads(
-        (flow.phase(&change.phase)).map_or(&[], |phase| phase.checks.as_slice()),
-    );
+    let wanted = reads((flow.phase(&change.phase)).map_or(&[], |phase| phase.checks.as_slice()));
     if !(wanted.iter()).all(|read| matches!(read, ReadKind::References | ReadKind::Plan)) {
         return observe_in(host, path, change, Some(flow));
     }
@@ -464,6 +462,65 @@ impl Read {
     }
 }
 
+/// What one change's row reads beside the change and its flow: its plan's
+/// answers, the open questions that block it, and the read's merge budget
+/// when it reads why changes are failing.
+struct Given<'a> {
+    answers: Answers,
+    questions: &'a [Asked],
+    budget: Option<&'a MergeBudget>,
+}
+
+/// The row of the change at `path`, which follows `flow`, when it waits
+/// only on the owner, and a warning when its merge check could not be
+/// read. A change no check of the owner's can apply to, and no question
+/// blocks, is passed over before its gate is read.
+fn row_of(
+    host: &dyn Host,
+    path: &str,
+    mut change: ChangeRecord,
+    mut flow: flow::Flow,
+    given: &Given<'_>,
+) -> Result<(Option<Ready>, Option<Warning>), PluginError> {
+    let applies = |each: &flow::Check| owners(each) && may_apply(each, given.answers, change.route);
+    let done = change.phase == DONE;
+    let Some(last) = flow.phases.last_mut() else {
+        return Ok((None, None));
+    };
+    if done {
+        // Only the owner's checks that do not block are read, so a done
+        // change's diff and pull request are not.
+        last.checks
+            .retain(|each| each.blocks == Some(false) && applies(each));
+        if last.checks.is_empty() {
+            return Ok((None, None));
+        }
+        change.phase.clone_from(&last.name);
+        let observed = observe_owed(host, path, &change, flow)?;
+        let row = owed_of(&observed).and_then(|owed| recheck(host, owed, given.questions));
+        return Ok((row, None));
+    }
+    if last.name != change.phase || (given.questions.is_empty() && !last.checks.iter().any(applies))
+    {
+        return Ok((None, None));
+    }
+    // The gate takes the flow; its copy names the kinds of the checks.
+    let Some(copy) = copied(&flow) else {
+        return Ok((None, None));
+    };
+    let Some(last) = copy.phases.last() else {
+        return Ok((None, None));
+    };
+    ready_in_land(
+        host,
+        path,
+        &change,
+        (flow, last),
+        given.questions,
+        given.budget,
+    )
+}
+
 pub(crate) fn ready(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input {
         limit,
@@ -505,7 +562,7 @@ pub(crate) fn ready(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     flows.load(host, &named)?;
     for row in listed {
         let change = (readable(row.get(1))).then(|| parsed(row.get(2))).flatten();
-        let (Some(path), Some(mut change)) = (text(row.first()), change) else {
+        let (Some(path), Some(change)) = (text(row.first()), change) else {
             unreadable += 1;
             continue;
         };
@@ -515,48 +572,15 @@ pub(crate) fn ready(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         let answers: Answers = (text(row.get(3)))
             .and_then(|answers| serde_json::from_str(answers).ok())
             .unwrap_or_default();
-        let questions = asked_of(path);
-        let Some(mut flow) = flows.of(host, path, &change) else {
+        let Some(flow) = flows.of(host, path, &change) else {
             continue;
         };
-        let applies = |each: &flow::Check| owners(each) && may_apply(each, answers, change.route);
-        let done = change.phase == DONE;
-        let Some(last) = flow.phases.last_mut() else {
-            continue;
+        let given = Given {
+            answers,
+            questions: asked_of(path),
+            budget: budget.as_ref(),
         };
-        if done {
-            // Only the owner's checks that do not block are read, so a done
-            // change's diff and pull request are not.
-            last.checks
-                .retain(|each| each.blocks == Some(false) && applies(each));
-            if last.checks.is_empty() {
-                continue;
-            }
-            change.phase.clone_from(&last.name);
-            let observed = observe_owed(host, path, &change, flow)?;
-            found.extend(owed_of(&observed).and_then(|owed| recheck(host, owed, questions)));
-            continue;
-        }
-        if last.name != change.phase
-            || (questions.is_empty() && !last.checks.iter().any(applies))
-        {
-            continue;
-        }
-        // The gate takes the flow; its copy names the kinds of the checks.
-        let Some(copy) = copied(&flow) else {
-            continue;
-        };
-        let Some(last) = copy.phases.last() else {
-            continue;
-        };
-        let (row, warning) = ready_in_land(
-            host,
-            path,
-            &change,
-            (flow, last),
-            questions,
-            budget.as_ref(),
-        )?;
+        let (row, warning) = row_of(host, path, change, flow, &given)?;
         found.extend(row);
         warnings.extend(warning);
     }

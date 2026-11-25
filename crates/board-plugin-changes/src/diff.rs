@@ -392,9 +392,20 @@ pub(crate) fn conflicts(
         &at.follow,
         head,
     ];
-    let (code, _) =
+    let (code, out) =
         exited(host, &at.repository, &merged, deadline, &[0, 1]).map_err(|failed| failed.why)?;
-    Ok(code == 1)
+    // git also exits 1 when it cannot merge a commit at all; only a conflict
+    // writes the merged tree's id first.
+    let tree = out.lines().next().map(str::trim).unwrap_or_default();
+    let written = !tree.is_empty() && tree.bytes().all(|byte| byte.is_ascii_hexdigit());
+    match (code, written) {
+        (1, true) => Ok(true),
+        (1, false) => Err(format!(
+            "git merge-tree could not merge {head} into {}",
+            at.follow
+        )),
+        _ => Ok(false),
+    }
 }
 
 /// The commits of `steps`, when each edits only files in `allowed`, is a

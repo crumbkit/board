@@ -274,5 +274,8 @@ fn a_ready_change_whose_merge_check_git_cannot_answer_is_not_failing_and_warns()
     asking(&board, "q", "/changes/t");
     let output = board.call_stdin("ready", &json!({}));
     assert_eq!(output["changes"][0]["failing"], Value::Null, "{output}");
-    assert_eq!(output["warnings"][0]["code"], "changes::ready::merge_unread");
+    assert_eq!(
+        output["warnings"][0]["code"],
+        "changes::ready::merge_unread"
+    );
 }

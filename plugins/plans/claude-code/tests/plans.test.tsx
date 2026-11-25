@@ -84,6 +84,7 @@ function engine(on: On, answers: Answers = {}) {
   mock.env(on, { HOME: '/home/me', ...(answers.host === null ? {} : { CLAUDE_CODE_HOST_SESSION_ID: answers.host ?? 'local_cd34' }) })
   const waited: string[][] = []
   const readied: string[][] = []
+  const readyLimits: (number | undefined)[] = []
   const submitted: string[] = []
   const disk = new Map<string, string>()
   const limits: (number | undefined)[] = []
@@ -95,6 +96,7 @@ function engine(on: On, answers: Answers = {}) {
     }
     if (args[1] === 'changes.ready') {
       readied.push(e.argv.slice(4))
+      readyLimits.push(e.init?.timeoutMs)
       return { value: { ...(answers.ready?.() ?? { exitCode: 1, stdout: NO_CHANGES }), ...whole } }
     }
     ran.push([...e.argv.slice(4, e.argv.indexOf('--json')), ...args])
@@ -138,7 +140,7 @@ function engine(on: On, answers: Answers = {}) {
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  return { ran, waited, readied, limits, panes, sent, toasts, submitted, disk }
+  return { ran, waited, readied, readyLimits, limits, panes, sent, toasts, submitted, disk }
 }
 
 const start = ($: Engine) => $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
@@ -839,7 +841,7 @@ const partKeys = async (band: { drawn: () => Promise<unknown> }) => {
 
 test('the band draws Ready to land N just before Waiting, green, and its button opens the Ready to land pane', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const { panes, readied } = engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(11, 8) }), ready: readyOf([landing('t'), landing('u'), landing('v')]) })
+  const { panes, readied, readyLimits } = engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(11, 8) }), ready: readyOf([landing('t'), landing('u'), landing('v')]) })
   await start($)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect((await band.find({ key: 'ready' }))?.text).toBe('Ready to land 3')
@@ -848,6 +850,8 @@ test('the band draws Ready to land N just before Waiting, green, and its button 
   await band.press({ key: 'ready' })
   expect(panes).toEqual(['ready'])
   expect(readied).toEqual([['--personal', '--json', 'call', 'changes.ready']])
+  // changes.ready gets its own 20 second limit, apart from the 5 seconds of the other reads.
+  expect(readyLimits).toEqual([20_000])
 })
 
 test('with nothing ready, or no changes plugin, the band draws no Ready to land button, and a board without the plugin is not asked again', async ($, on) => {
@@ -950,6 +954,8 @@ test('each read records a change that starts or stops failing in the state file,
   let rows = [landing('t'), landing('u', { failing: 'conflict' })]
   const { disk } = engine(on, { ready: () => readyOf(rows)() })
   await start($)
+  // changes.ready runs beside the session start, which does not wait for it.
+  await clock.advance(0)
   const lines = () => (disk.get(STATE) ?? '').split('\n').filter(l => l !== '').map(l => JSON.parse(l) as Record<string, unknown>)
   expect(lines()).toEqual([
     { at: new Date(NOW).toISOString(), change: '/changes/u', pull: '/gh/crumbkit/board/pulls/288', head: landing('u').head, reason: 'conflict', session: 'local_cd34' },

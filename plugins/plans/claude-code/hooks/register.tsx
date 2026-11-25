@@ -32,6 +32,9 @@ const READY = 'ready'
 const RUN = 'PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH" exec board "$@"'
 // A slow or hung board holds a refresh or an answer no longer than this.
 const TIMEOUT_MS = 5000
+// changes.ready reads gates and runs merge checks, so its read gets longer. It
+// runs beside the refresh, never awaited, so the band keeps the last count while it runs.
+const READY_TIMEOUT_MS = 20_000
 // plans.answer takes board's lock twice, for the answer and for the attach,
 // and each take may wait up to 5 seconds.
 const ANSWER_MS = 15_000
@@ -100,7 +103,7 @@ async function refreshReady($: EngineInterface, options: PluginOptions, local: {
   if (local.readyAbsent) return
   let why: string | null
   try {
-    const ran = await board($, options, ['call', 'changes.ready'])
+    const ran = await board($, options, ['call', 'changes.ready'], READY_TIMEOUT_MS)
     const read = parseReady(ran.exitCode, ran.stdout, ran.stderr)
     if (read.kind === 'absent') {
       local.readyAbsent = true
@@ -135,8 +138,21 @@ async function refreshOpen($: EngineInterface, options: PluginOptions): Promise<
   return found !== null
 }
 
-/** What the mod keeps between reads: whether plans.waiting or changes.ready is absent, and its schedule. */
-type Local = { absent: boolean; readyAbsent: boolean; schedule: Schedule }
+/** What the mod keeps between reads: whether plans.waiting or changes.ready is absent, whether a changes.ready read runs, and its schedule. */
+type Local = { absent: boolean; readyAbsent: boolean; readying: boolean; schedule: Schedule }
+
+/**
+ * Starts a read of the changes ready to land without waiting for it, so no
+ * refresh, session start or answer waits on it. While one runs, another is
+ * not started.
+ */
+function startReady($: EngineInterface, options: PluginOptions, local: Local) {
+  if (local.readying || local.readyAbsent) return
+  local.readying = true
+  void guarded($, 'changes.ready', () => refreshReady($, options, local), () => {
+    local.readying = false
+  })
+}
 
 /** Runs `work`, logs what it throws, so a read launched without a wait rejects nothing, and runs `done` however it ends. */
 async function guarded($: EngineInterface, what: string, work: () => Promise<void>, done: () => void) {
@@ -168,7 +184,8 @@ async function refreshBoth($: EngineInterface, options: PluginOptions, local: Lo
   let worked = false
   let counted: Counted = { kind: 'failed' }
   await guarded($, 'a refresh', async () => {
-    ;[worked, counted] = await Promise.all([refreshOpen($, options), refreshWaiting($, options, local), refreshReady($, options, local)])
+    startReady($, options, local)
+    ;[worked, counted] = await Promise.all([refreshOpen($, options), refreshWaiting($, options, local)])
   }, () => {
     end(s, 'count')
     end(s, 'list', { worked, total: totalOf(counted) })
@@ -179,7 +196,8 @@ async function refreshBoth($: EngineInterface, options: PluginOptions, local: Lo
 async function refreshCount($: EngineInterface, options: PluginOptions, local: Local) {
   const s = local.schedule
   await guarded($, 'plans.waiting', async () => {
-    const [counted] = await Promise.all([refreshWaiting($, options, local), refreshReady($, options, local)])
+    startReady($, options, local)
+    const counted = await refreshWaiting($, options, local)
     const now = await $.clock.now()
     if (!countCallsForList(s, counted, now)) return
     begin(s, 'list', now)
@@ -274,7 +292,7 @@ const age = (asked: string, now: number) => {
 }
 
 export const register: Register = (on, options) => {
-  const local: Local = { absent: false, readyAbsent: false, schedule: schedule() }
+  const local: Local = { absent: false, readyAbsent: false, readying: false, schedule: schedule() }
   const mode = failingMode(options.failing)
 
   // The minute's refresh starts with the first band drawn, which a `-p` run
