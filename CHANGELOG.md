@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Board marks its cache directory, `~/.cache/board` or
+  `$XDG_CACHE_HOME/board`, as a cache. It writes `CACHEDIR.TAG` there, which
+  backup tools that honour the tag skip, and on macOS it first excludes the
+  directory from Time Machine, as `tmutil addexclusion` does. A directory
+  Board cannot mark gives the warning `board::cache::unmarked` and the run
+  goes on; the next run tries again.
+
 - In the plan phase, `board changes next` and `board changes advance` ask
   the rules plugin for the rules on the plan's paths once, where they asked
   twice, and read both the obligations and the rules on the planned paths

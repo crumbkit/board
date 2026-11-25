@@ -481,6 +481,9 @@ fn generic(code: Code) -> &'static str {
         Code::IndexFailed => {
             "delete the board's directory under `$XDG_CACHE_HOME/board/` or `~/.cache/board/` and run the command again; the index is rebuilt from the tree"
         }
+        Code::CacheUnmarked => {
+            "make the directory the warning names writable by you; the next run marks it, and until then backups may copy the cache"
+        }
         Code::QueryInvalid => {
             "fix the statement as the message describes; Board runs one read-only SQL statement, and `board query --help` lists the tables"
         }

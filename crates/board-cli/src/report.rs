@@ -17,11 +17,18 @@ impl Output {
     /// This output, with a warning on stderr for each board the run wrote,
     /// the root, one through a mount, the personal board or one a hosted
     /// plugin opened, whose `min_board` names a build date that this build,
-    /// having none, could not check.
+    /// having none, could not check, and for each cache root it could not
+    /// mark as a cache.
     pub(crate) fn warned(mut self) -> Self {
         for note in board_ops::take_undated_gate_notes() {
             self.stderr
                 .extend(format!("warning: {note}\n").into_bytes());
+        }
+        for unmarked in board_ops::take_unmarked() {
+            let code = unmarked.code();
+            let hint = code.hint(&board_model::Fields::default());
+            self.stderr
+                .extend(format!("warning: {code}: {unmarked}; {hint}\n").into_bytes());
         }
         self
     }
