@@ -61,7 +61,10 @@
   edit only record paths or cleanly merge main.
 - A `runs/suite/v1` record has an optional `kind`: a compliance check, a
   benchmark, an eval or a test. `runs.migrate` adds it to existing suites,
-  and classifies a suite whose name ends in `-tests` as a test suite.
+  and classifies a suite whose name ends in `-tests` as a test suite. Run
+  `board plugin enable runs` first: while the board holds 0.1.1's
+  `runs/suite/v1` schema, `runs.migrate` refuses with
+  `board::plugin::schema_differs` and writes nothing.
 - The Claude Code questions badge reads Board only for a session whose band
   is drawn.
 
