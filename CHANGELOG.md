@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- In the plan phase, `board changes next` and `board changes advance` ask
+  the rules plugin for the rules on the plan's paths once, where they asked
+  twice, and read both the obligations and the rules on the planned paths
+  from that answer. The gate's checks and their details are unchanged.
 - `board call tasks.add` reads each `--after` and `--refs` value as a board
   path. A value without a leading `/` is read from the current directory, and
   a value that joins paths with a comma, such as
