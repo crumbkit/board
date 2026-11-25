@@ -8,7 +8,7 @@ use crate::flow::Flow;
 use crate::records::ChangeRecord;
 use crate::rules::tests::{PLAN, Ruled};
 
-use super::{glob_literal, observe_in};
+use super::{glob_literal, obligations, observe_in};
 
 const CHANGE: &str = "/changes/c";
 const FOR_PATHS: &str = "rules.for-paths";
@@ -134,4 +134,23 @@ fn an_added_file_is_sent_as_a_pattern_that_matches_only_itself() {
     );
     assert_eq!(glob_literal("/repos/x/a*b?.md"), "/repos/x/a[*]b[?].md");
     assert_eq!(glob_literal("/repos/x/src/a.rs"), "/repos/x/src/a.rs");
+    // GLOB has no escape character, and `]` outside a class is literal.
+    assert_eq!(glob_literal("/repos/x/a\\b.md"), "/repos/x/a\\b.md");
+    assert_eq!(glob_literal("/repos/x/a]b.md"), "/repos/x/a]b.md");
+}
+
+#[test]
+fn added_files_are_asked_for_a_hundred_to_a_call_and_each_obligation_is_named_once() {
+    let checks = json!([obligations_check()]);
+    let reading = Ruled::new(Ok(answer()), &["/controls/owed"]);
+    let mut found = observe_in(&reading, CHANGE, &change(), Some(flow(&checks))).unwrap();
+    for (added, calls) in [(100, 2), (101, 3)] {
+        found.outside = (0..added)
+            .map(|at| format!("/repos/board/f{at}.rs"))
+            .collect();
+        let host = Ruled::new(Ok(answer()), &["/controls/owed"]);
+        let owed = obligations(&host, &found, &mut None).unwrap();
+        assert_eq!(owed, vec!["/controls/owed".to_owned()]);
+        assert_eq!(host.calls_to(FOR_PATHS), calls, "{added} added files");
+    }
 }

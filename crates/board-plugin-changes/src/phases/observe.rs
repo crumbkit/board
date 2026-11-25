@@ -355,28 +355,28 @@ fn answered<'a>(
 /// The obligations on the plan's paths and on each file the diff edits
 /// outside them, which the change adds to its paths, so an added file's
 /// obligation counts as a planned path's does. The diff is read first.
+/// After the call on the plan's paths, the added files go [`BATCH`] to a
+/// call, and each obligation is named once.
 fn obligations(
     host: &dyn Host,
     found: &Observed,
     answer: &mut Option<Result<Vec<Found>, PluginError>>,
 ) -> Result<Vec<String>, PluginError> {
-    let widened;
-    let rules = if found.outside.is_empty() {
-        (answered(host, &found.change, answer)?.as_ref()).map_err(Clone::clone)?
-    } else {
-        let added = found.outside.iter().map(|file| glob_literal(file));
-        widened = on_plan(
-            host,
-            &(found.planned.iter().cloned())
-                .chain(added)
-                .collect::<Vec<_>>(),
-        )?;
-        &widened
-    };
-    Ok((obligations_in(host, rules)?.into_iter())
+    let mut rules = (answered(host, &found.change, answer)?.as_ref())
+        .map_err(Clone::clone)?
+        .clone();
+    for batch in found.outside.chunks(BATCH) {
+        let added: Vec<String> = batch.iter().map(|file| glob_literal(file)).collect();
+        rules.extend(on_plan(host, &added)?);
+    }
+    let owed: BTreeSet<String> = (obligations_in(host, &rules)?.into_iter())
         .map(|each| each.rule)
-        .collect())
+        .collect();
+    Ok(owed.into_iter().collect())
 }
+
+/// The most added files one `rules.for-paths` call names.
+const BATCH: usize = 100;
 
 /// `file` as a SQLite GLOB pattern that matches only itself, since
 /// `rules.for-paths` reads `*`, `?` and `[` as pattern characters and an

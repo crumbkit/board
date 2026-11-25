@@ -154,7 +154,13 @@ impl Host for Ruled {
         let named = format!("{}.{}", plugin.as_str(), capability.as_str());
         *self.calls.borrow_mut().entry(named.clone()).or_default() += 1;
         assert_eq!(named, "rules.for-paths", "a gate reading calls only rules");
-        assert_eq!(input, &json!({"paths": PATHS}));
+        // The plan's paths, or a batch of at most 100 files the change adds.
+        let asked = input["paths"].as_array().unwrap();
+        let added = asked.len() <= 100
+            && !asked
+                .iter()
+                .any(|path| PATHS.contains(&path.as_str().unwrap()));
+        assert!(input == &json!({"paths": PATHS}) || added, "{input}");
         match &self.answer {
             Ok(output) => Ok(CallReport {
                 plugin: plugin.clone(),
