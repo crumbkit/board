@@ -80,6 +80,7 @@ priorities.confirm disabled Record that the owner confirmed an entry, or every e
 prompts.get disabled Read one prompt at its pin and render its body and runs_in with the input values given on stdin.
 prompts.list disabled List the prompts in the board's own tree and the marked repos the caller's remote chooses, at their pins, by repo then title.
 requests.thread disabled Every version of the effect's request, oldest first, with its answer, and the owner's replies to them, oldest first.
+requests.threads disabled The thread of every request with a pending version, as `thread` returns it, ordered by board, plugin, op and path.
 review.run disabled Review the range or pinned record a brief names with the agent the BOARD_REVIEW_AGENT variable names, and write the report beside the brief.
 review.post disabled Comment a report on a GitHub pull request with gh, once the owner approves the whole comment through `board decide`, and set the report's source to the comment's URL. A report whose source is set is skipped.
 review.covered disabled The reports in the board's own tree that cover every commit from the merge base of a base and a head to the head, each by a report's range or patch ids, after skipping commits that only add review records. With --change, the reports the change attaches, and the commits of the clone its mount reads. A report asking for changes never covers. Fails when a commit is uncovered.
@@ -97,4 +98,3 @@ tasks.available disabled Sync the repos the caller's remote chooses, then list t
 tasks.tree disabled List a task and its descendants in every status, nested by title, or with --root every top-level tree in the repos the caller's remote chooses, read at their pins.
 tasks.add disabled Write a new open task to tasks/<slug>.md in the repo the caller's remote routes to. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.claim disabled Claim an open task for an owner, refused when another owner holds it. It syncs the task's repo first and pushes after, and sets reviewed.
-tasks.done disabled Mark a task done, or defer a repeating one to its next occurrence. It syncs the task's repo first and pushes after, unless --push false makes it commit in the clone alone, and sets reviewed.

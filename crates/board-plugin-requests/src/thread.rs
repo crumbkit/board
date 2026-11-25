@@ -39,7 +39,16 @@ pub(crate) struct Output {
     op: String,
     path: String,
     versions: Vec<Version>,
-    replies: Vec<Reply>,
+    pub(crate) replies: Vec<Reply>,
+}
+
+impl Output {
+    /// Whether `reply` answers one of the thread's versions.
+    pub(crate) fn answers(&self, reply: &Reply) -> bool {
+        self.versions
+            .iter()
+            .any(|version| version.id == reply.effect)
+    }
 }
 
 /// One version of the request. `asked` is null for an effect written before
@@ -48,7 +57,7 @@ pub(crate) struct Output {
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "ThreadVersion")]
-struct Version {
+pub(crate) struct Version {
     id: String,
     asked: Option<String>,
     record: Option<Value>,
@@ -76,7 +85,7 @@ fn answer_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "ThreadReply")]
-struct Reply {
+pub(crate) struct Reply {
     path: String,
     effect: String,
     text: String,
@@ -94,6 +103,14 @@ pub(crate) fn thread(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
             "names no effect under /effects/pending/ or /effects/answered/",
         ));
     };
+    let mut output = assemble(&effects, &answers, given);
+    output.replies = replies(host, &[&output])?;
+    Ok(serde_json::to_value(output).expect("Output holds only JSON values"))
+}
+
+/// The thread of `given`: every effect that shares its board, plugin, op
+/// and path, oldest first, with its answer, and no replies yet.
+pub(crate) fn assemble(effects: &Effects, answers: &Answers, given: &Effect) -> Output {
     let same = |effect: &Effect| {
         (&effect.board, &effect.plugin, &effect.op, &effect.path)
             == (&given.board, &given.plugin, &given.op, &given.path)
@@ -123,16 +140,19 @@ pub(crate) fn thread(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
             }),
         })
         .collect();
-    let replies = replies(host, &versions)?;
-    let output = Output {
+    Output {
         board: given.board.clone(),
         plugin: given.plugin.to_string(),
         op: given.op.clone(),
         path: given.path.clone(),
         versions,
-        replies,
-    };
-    Ok(serde_json::to_value(output).expect("Output holds only JSON values"))
+        replies: Vec::new(),
+    }
+}
+
+/// Whether the effect `id` is under `/effects/pending/` with no answer.
+pub(crate) fn waits(effects: &Effects, answers: &Answers, id: &str) -> bool {
+    effects.get(id).is_some_and(|(_, pending)| *pending) && !answers.contains_key(id)
 }
 
 fn not_found(id: &str, why: &str) -> PluginError {
@@ -168,9 +188,12 @@ fn rows(host: &dyn Host, sql: &str) -> Result<Vec<(String, Value)>, PluginError>
 /// content's id is left out, as `board answer` refuses it. A pending effect
 /// wins over an answered copy of the same id, which an effect asked again
 /// leaves.
-type Effects = BTreeMap<String, (Effect, bool)>;
+pub(crate) type Effects = BTreeMap<String, (Effect, bool)>;
 
-fn effects(host: &dyn Host) -> Result<(Effects, BTreeMap<String, Seen>), PluginError> {
+/// Every answer, by the id of its effect.
+pub(crate) type Answers = BTreeMap<String, Seen>;
+
+pub(crate) fn effects(host: &dyn Host) -> Result<(Effects, Answers), PluginError> {
     let (mut effects, mut answers) = (Effects::new(), BTreeMap::new());
     for (logical, body) in rows(host, EFFECTS)? {
         let Some((directory, name)) = logical.rsplit_once('/') else {
@@ -194,12 +217,14 @@ fn effects(host: &dyn Host) -> Result<(Effects, BTreeMap<String, Seen>), PluginE
     Ok((effects, answers))
 }
 
-/// The replies to `versions`, ordered by file name, then by path. A reply
-/// counts only under `/requests/replies/<its effect>/` in this board.
-fn replies(host: &dyn Host, versions: &[Version]) -> Result<Vec<Reply>, PluginError> {
+/// The replies to every version of `threads`, in one query, ordered by file
+/// name, then by path. A reply counts only under
+/// `/requests/replies/<its effect>/` in this board.
+pub(crate) fn replies(host: &dyn Host, threads: &[&Output]) -> Result<Vec<Reply>, PluginError> {
     // Each id was computed as 64 hex digits, so it is safe in SQL. A reply
     // names its effect as `sha256:<id>`, and its folder by the id alone.
-    let ids: Vec<String> = (versions.iter())
+    let ids: Vec<String> = (threads.iter())
+        .flat_map(|thread| &thread.versions)
         .map(|version| format!("'sha256:{}'", version.id))
         .collect();
     let sql = format!(
