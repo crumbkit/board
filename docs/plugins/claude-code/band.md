@@ -29,7 +29,9 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   name of the directory of the board that holds it. The mod reads that
   board from `board --json ls / --limit 1` at the repository root, because
   `rules.check` does not report its board. With no such board, it is
-  left out.
+  left out. A session in a repository the mod has checked before shows the
+  name it remembered, and the configured badges and the Board badge are read
+  again in the background.
 - **Orders button**, from `board-orders`, or `board-attention` until it is
   uninstalled: `Orders <n>`, the number of
   pinned orders that verified. It opens the pinned-orders pane, which lists
@@ -45,7 +47,8 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   requirement. A rule with no checker is marked described. The pane ends by saying that editing a file adds a reminder
   for each rule on that file the session was not told about. A failed
   check shows the button in red with its code, such as `Rules:
-  rules::rule::degraded`.
+  rules::rule::degraded`. While a first check is still running, the button
+  shows `Rules …`.
 - **Waiting button**, from `board-plans`: `Waiting <total> · <blocking>
   blocking` from `board --json call plans.waiting`, or `Waiting <total>`
   when nothing blocks. On a Board whose plans plugin has no `waiting`
