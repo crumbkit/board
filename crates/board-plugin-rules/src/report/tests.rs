@@ -611,6 +611,61 @@ fn a_group_board_marks_invalid_is_a_refusal_and_no_group_row() {
     shipped("rules/report/v1").validate(&report).unwrap();
 }
 
+/// A board laid over a history whose one compliance suite names
+/// `owner/app`, with `files` beside it.
+fn compliance_beside(files: &[(&str, &str)]) -> (Scenario, Recording) {
+    let (scenario, commits) = history();
+    let versions = json!({"commit": commits.run.to_string()});
+    let [suite, run] = compliance("compliance", "owner/app", &versions);
+    let mut all = vec![(suite.0, suite.1.as_str()), (run.0, run.1.as_str())];
+    all.extend_from_slice(files);
+    let host = with_git(enabling_in(&scenario, &["rules", "runs"], &all), &[]);
+    (scenario, host)
+}
+
+/// Each suite row's id.
+fn suite_ids(report: &Value) -> Vec<&Value> {
+    (report["suites"].as_array().unwrap().iter())
+        .map(|suite| &suite["id"])
+        .collect()
+}
+
+/// Each refusal's code and what it concerns.
+fn refusals(report: &Value) -> Vec<(&Value, &Value)> {
+    (report["refused"].as_array().unwrap().iter())
+        .map(|refusal| (&refusal["code"], &refusal["rules"]))
+        .collect()
+}
+
+#[test]
+fn a_suite_file_that_is_not_json_is_no_record_so_the_report_neither_lists_nor_refuses_it() {
+    let (_scenario, host) =
+        compliance_beside(&[("suites/broken.json", "{\"$type\": \"runs/suite/v1\", ")]);
+    let report = report_of(&host);
+    assert_eq!(suite_ids(&report), [&json!("/suites/app")], "{report}");
+    assert_eq!(refusals(&report), [], "{report}");
+    shipped("rules/report/v1").validate(&report).unwrap();
+}
+
+#[test]
+fn a_suite_whose_body_does_not_parse_is_a_refusal_and_no_suite_row_beside_a_readable_suite() {
+    let (_scenario, mut host) = compliance_beside(&[]);
+    host.added.push((
+        suites::SUITES,
+        vec![json!("/suites/broken"), json!("{\"$type\": ")],
+    ));
+    let report = report_of(&host);
+    assert_eq!(suite_ids(&report), [&json!("/suites/app")], "{report}");
+    assert_eq!(
+        refusals(&report),
+        [(
+            &json!("rules::report::suite_unreadable"),
+            &json!(["/suites/broken"])
+        )]
+    );
+    shipped("rules/report/v1").validate(&report).unwrap();
+}
+
 #[test]
 fn a_zero_rule_keeps_a_measure_recorded_as_a_label_apart_from_one_not_recorded() {
     let zero = json!({

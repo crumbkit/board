@@ -13,12 +13,13 @@ use super::{FailedCase, Refused, RepositoryRead, SuiteRow, SuiteRun, Verdict};
 use crate::{check, index};
 
 /// Each suite, wherever it is.
-const SUITES: &str = "SELECT logical, body FROM records WHERE type = 'runs/suite/v1' \
+pub(super) const SUITES: &str = "SELECT logical, body FROM records WHERE type = 'runs/suite/v1' \
     AND logical IS NOT NULL ORDER BY logical";
 
 /// Each compliance suite whose `subjects` name the repository, by its name
 /// or its mount, and its newest qualifying run. A suite whose body does not
-/// parse is a `rules::report::suite_unreadable` refusal.
+/// parse is a `rules::report::suite_unreadable` refusal; Board indexes only
+/// a record that parses, so the index should never give one.
 pub(crate) fn suites(
     host: &dyn Host,
     place: &Place,

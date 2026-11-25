@@ -392,18 +392,36 @@ of the rename deletes them.
     names, its failed cases with their notes, and `commits_since`, the
     commits from the run's commit to `repository.commit`. When git cannot
     count them, `commits_since_code` says why:
-    `rules::report::run_commit_unnamed` when the run names no commit,
+    `rules::report::run_commit_unnamed` when the run's
+    `versions.commit` is missing or is not 7 to 40 lowercase hex digits,
+    or when Board cannot read the run,
     `rules::report::run_commit_missing` when the clone lacks the run's
     commit, as a shallow CI checkout does (set `fetch-depth: 0`),
     `rules::report::run_commit_not_ancestor`, or `rules::report::no_git`.
   - `drift`: the repository's own rules with no imposed rule of the same
     path below the imposed root in `extra`, those whose fields differ in
     `differs`, and the imposed rules that reach no file in `not_reached`.
-  - `refused`: each refusal and warning met, such as a degraded rule, a
-    group member pattern that matches no rule
-    (`rules::report::member_unmatched`), a group that Board marks invalid
-    or that does not read (`rules::report::group_unreadable`), or a suite
-    whose body does not parse (`rules::report::suite_unreadable`).
+  - `refused`: each refusal and warning met, with the rules, groups or
+    suites it concerns in `rules`. A warning leaves every row as it is:
+    - `rules::report::member_unmatched`: a group member pattern matches no
+      rule.
+    - `rules::report::ci_env_invalid`: `GITHUB_RUN_ID` is set and another
+      CI variable is missing or malformed, so `source_run` is null.
+
+    A refusal marks a row `unreadable` or leaves a group or suite without
+    a row:
+    - The code of a rule's `unreadable` row, such as Board's code for a
+      degraded rule, `rules::capture::invalid`, a file's code, or
+      `rules::report::file_unreadable`: the refusal names the rule, and its
+      row carries the same code.
+    - `rules::report::group_unreadable`: Board marks a group invalid, and
+      the group has no `groups` row.
+    - `rules::report::suite_unreadable`: a suite's body does not parse, and
+      the suite has no `suites` row. The report reads every suite in the
+      board, in every mount, so such a suite shows in the report of every
+      repository, including one the suite does not name. Board indexes
+      only a file that parses as a record, so a suite file that is not
+      JSON is no record and shows in neither `suites` nor `refused`.
 
   A zero rule's row gives in `zero.measures` each measure as the run
   recorded it, a number, a label or a flag, or null when the run recorded

@@ -554,27 +554,23 @@ const INVALID_GROUPS: &str = "SELECT logical, COALESCE(code, '') FROM records \
     AND logical IS NOT NULL ORDER BY logical";
 
 /// The refusal for the group at `logical` that Board marks invalid with
-/// `code`, or whose body does not read as a group when `code` is empty.
+/// `code`.
 fn group_unreadable(logical: String, code: &str) -> Refused {
-    let message = if code.is_empty() {
-        format!("the group {logical}'s body does not read as a rules/group/v1")
-    } else {
-        format!(
-            "Board marks the group {logical} invalid with {code}; run `board check {logical}` for why"
-        )
-    };
     Refused {
         code: "rules::report::group_unreadable".to_owned(),
+        message: format!(
+            "Board marks the group {logical} invalid with {code}; run `board check {logical}` for why"
+        ),
         rules: vec![logical],
-        message,
     }
 }
 
 /// Each group's rolled-up state, with each row given the groups it is in.
 /// A member pattern that matches no rule the report knows, reaching or
 /// not, is a `rules::report::member_unmatched` warning, and a group that
-/// Board marks invalid or that does not read is a
-/// `rules::report::group_unreadable` refusal.
+/// Board marks invalid is a `rules::report::group_unreadable` refusal.
+/// Board marks a group ok only once its body passes the group schema,
+/// which [`GroupRecord`] derives, so every group `GROUPS` gives reads.
 fn groups(
     host: &dyn Host,
     rows: &mut [Row],
@@ -589,13 +585,12 @@ fn groups(
     for (logical, code) in index::string_pairs::<Vec<(String, String)>>(host, INVALID_GROUPS)? {
         refused.push(group_unreadable(logical, &code));
     }
-    for (logical, body) in index::string_pairs::<Vec<(String, String)>>(host, GROUPS)? {
-        let Some(group) = (parse_json(body.as_bytes()).ok())
-            .and_then(|record| GroupRecord::deserialize(&record).ok())
-        else {
-            refused.push(group_unreadable(logical, ""));
-            continue;
-        };
+    let read = (index::string_pairs::<Vec<(String, String)>>(host, GROUPS)?.into_iter())
+        .filter_map(|(logical, body)| {
+            let record = parse_json(body.as_bytes()).ok()?;
+            Some((logical, GroupRecord::deserialize(&record).ok()?))
+        });
+    for (logical, group) in read {
         for pattern in &group.members {
             if !known.iter().any(|id| glob(pattern, id)) {
                 refused.push(Refused {
