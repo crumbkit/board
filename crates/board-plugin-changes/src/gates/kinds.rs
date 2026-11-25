@@ -38,7 +38,7 @@ pub(super) fn answers_count(each: &flow::Check) -> bool {
 }
 
 /// At most [`SHOWN`] of `paths`, joined, and how many more there are.
-fn bounded(paths: &[&str]) -> String {
+pub(super) fn bounded(paths: &[&str]) -> String {
     let shown = paths
         .iter()
         .take(SHOWN)
@@ -111,12 +111,12 @@ pub(super) fn obligations_missing(observed: &Observed) -> Option<String> {
     let left: Vec<&str> = (observed.obligations.iter().map(String::as_str))
         .filter(|rule| !observed.owed.iter().any(|owed| *owed == current(rule)))
         .collect();
-    (!left.is_empty()).then(|| {
-        format!(
-            "these obligations apply to the plan's paths: {}",
-            bounded(&left)
-        )
-    })
+    let reached = if observed.outside.is_empty() {
+        "the plan's paths"
+    } else {
+        "the plan's paths or to the files the change adds to them"
+    };
+    (!left.is_empty()).then(|| format!("these obligations apply to {reached}: {}", bounded(&left)))
 }
 
 /// The change's diff touches no path the named rules list. A rule the

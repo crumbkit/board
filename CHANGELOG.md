@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- The review gate's `paths` check passes when the change's diff edits files
+  that no path of its plan matches. Its detail says that these files are
+  outside the plan's paths and that the change adds them to its paths
+  without a new plan, and names them. `changes pr` lists them in the pull
+  request body under "Files added to the plan's paths", or says there that
+  the diff could not be listed and why. An agent no longer writes its plan
+  again to add a file it needs. The check still refuses with
+  `changes::paths::outside_plan` when the plan has no paths or git cannot
+  list the diff. The `ui-paths` and `data-paths` checks still read every
+  edited file. An `obligations` check in any phase counts the obligations on
+  the added files as well as on the planned paths, and says so in its
+  detail. The detail names at most ten added files and the body at most 50,
+  each with a count of the rest. A change in flight keeps
+  the review instruction of the flow version it stored, which still says
+  the gate refuses such a file; run `board changes reflow --path <change>
+  --flow development` to take up the new instruction.
+
 - Board marks its cache directory, `~/.cache/board` or
   `$XDG_CACHE_HOME/board`, as a cache. It writes `CACHEDIR.TAG` there, which
   backup tools that honour the tag skip, and on macOS it first excludes the
@@ -13,6 +30,7 @@
   the rules plugin for the rules on the plan's paths once, where they asked
   twice, and read both the obligations and the rules on the planned paths
   from that answer. The gate's checks and their details are unchanged.
+
 - `board call tasks.add` reads each `--after` and `--refs` value as a board
   path. A value without a leading `/` is read from the current directory, and
   a value that joins paths with a comma, such as

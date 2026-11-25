@@ -8,7 +8,7 @@ use crate::flow::Flow;
 use crate::records::ChangeRecord;
 use crate::rules::tests::{PLAN, Ruled};
 
-use super::observe_in;
+use super::{glob_literal, observe_in};
 
 const CHANGE: &str = "/changes/c";
 const FOR_PATHS: &str = "rules.for-paths";
@@ -124,4 +124,14 @@ fn a_failing_obligations_query_fails_a_reading_that_wants_obligations() {
     assert_eq!(failing.calls_to(FOR_PATHS), 1);
     let answering = Ruled::new(Ok(answer()), &["/controls/owed"]);
     assert!(observe_in(&answering, CHANGE, &change(), Some(flow(&checks))).is_ok());
+}
+
+#[test]
+fn an_added_file_is_sent_as_a_pattern_that_matches_only_itself() {
+    assert_eq!(
+        glob_literal("/repos/x/app/[id]/page.tsx"),
+        "/repos/x/app/[[]id]/page.tsx"
+    );
+    assert_eq!(glob_literal("/repos/x/a*b?.md"), "/repos/x/a[*]b[?].md");
+    assert_eq!(glob_literal("/repos/x/src/a.rs"), "/repos/x/src/a.rs");
 }
