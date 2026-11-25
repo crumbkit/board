@@ -5,3 +5,6 @@ __fuzz__/
 mutants.out*/
 # Python bytecode.
 __pycache__/
+# Scratch caches board-index's Time Machine test makes in the crate, which
+# an aborted run leaves behind.
+.mark-*/

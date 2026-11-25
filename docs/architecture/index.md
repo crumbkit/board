@@ -6,12 +6,13 @@ This file holds the index detail for docs/architecture.md.
 
 The index is SQLite under `$XDG_CACHE_HOME/board/<root-hash>/` (by default
 `~/.cache/board/<root-hash>/`), where `<root-hash>` is the SHA-256 of the board
-root's canonical path. The file is `index-<format>.sqlite`, so builds of
-different index formats keep separate files. A file whose contents report
-another format than its name, or that is corrupt, is deleted and rebuilt. A
-build that creates an index file records the board root beside it in `root`. It
-deletes the index files there more than one format older, and the cache
-directory of each other board whose recorded root it can see is gone.
+root's canonical path. Opening it marks `board/` as a cache
+(performance/timing.md). The file is `index-<format>.sqlite`, so each format
+keeps its own file. A corrupt file, or one whose contents report another
+format, is deleted and rebuilt. A build creating an index file records the
+board root beside it in `root`. It deletes index files there more than one
+format older, and the cache directory of each other board whose recorded root
+it can see is gone.
 
 | Table | Holds | Keyed by |
 | --- | --- | --- |

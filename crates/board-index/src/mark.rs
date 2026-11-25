@@ -1,5 +1,6 @@
-//! Marks the cache root, `<cache>/board`, as a cache, so backups leave it
-//! out (docs/architecture/performance/timing.md). The tag's presence means
+//! Marks the cache root, `<cache>/board`, as a cache when an index is
+//! opened or a timing line is appended, so backups leave it out
+//! (docs/architecture/performance/timing.md). The tag's presence means
 //! marked, so a marked root costs one stat.
 
 use std::cell::RefCell;
@@ -61,19 +62,24 @@ pub(crate) fn mark(root: &Path) {
     });
 }
 
-/// The Time Machine exclusion goes first: the tag stops later tries.
+/// The Time Machine exclusion goes first: the tag stops later tries. A
+/// volume without extended attributes still gets the tag, or every run
+/// would warn.
 fn marked(root: &Path) -> io::Result<()> {
     let tag = root.join("CACHEDIR.TAG");
     if tag.try_exists()? {
         return Ok(());
     }
     #[cfg(target_os = "macos")]
-    rustix::fs::setxattr(
+    match rustix::fs::setxattr(
         root,
         "com.apple.metadata:com_apple_backup_excludeItem",
         EXCLUDED,
         rustix::fs::XattrFlags::empty(),
-    )?;
+    ) {
+        Ok(()) | Err(rustix::io::Errno::NOTSUP) => {}
+        Err(error) => return Err(error.into()),
+    }
     crate::state::replace_file(&tag, TAG, 0o644)
 }
 

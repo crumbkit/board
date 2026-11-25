@@ -482,7 +482,7 @@ fn generic(code: Code) -> &'static str {
             "delete the board's directory under `$XDG_CACHE_HOME/board/` or `~/.cache/board/` and run the command again; the index is rebuilt from the tree"
         }
         Code::CacheUnmarked => {
-            "make the directory the warning names writable by you; the next run marks it, and until then backups may copy the cache"
+            "Board marks the directory with a CACHEDIR.TAG file and, on macOS, a Time Machine exclusion; fix what stopped it, such as the directory's permissions, and the next run marks it"
         }
         Code::QueryInvalid => {
             "fix the statement as the message describes; Board runs one read-only SQL statement, and `board query --help` lists the tables"
