@@ -13,7 +13,7 @@ use super::{FailedCase, Refused, RepositoryRead, SuiteRow, SuiteRun, Verdict};
 use crate::{check, index};
 
 /// Each suite, wherever it is.
-pub(super) const SUITES: &str = "SELECT logical, body FROM records WHERE type = 'runs/suite/v1' \
+const SUITES: &str = "SELECT logical, body FROM records WHERE type = 'runs/suite/v1' \
     AND logical IS NOT NULL ORDER BY logical";
 
 /// Each compliance suite whose `subjects` name the repository, by its name

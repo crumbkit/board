@@ -570,7 +570,8 @@ fn group_unreadable(logical: String, code: &str) -> Refused {
 /// not, is a `rules::report::member_unmatched` warning, and a group that
 /// Board marks invalid is a `rules::report::group_unreadable` refusal.
 /// Board marks a group ok only once its body passes the group schema,
-/// which [`GroupRecord`] derives, so every group `GROUPS` gives reads.
+/// which [`GroupRecord`] derives, so every group `GROUPS` gives reads
+/// while the board holds the group schema this plugin ships.
 fn groups(
     host: &dyn Host,
     rows: &mut [Row],

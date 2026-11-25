@@ -405,15 +405,17 @@ of the rename deletes them.
     suites it concerns in `rules`. A warning leaves every row as it is:
     - `rules::report::member_unmatched`: a group member pattern matches no
       rule.
-    - `rules::report::ci_env_invalid`: `GITHUB_RUN_ID` is set and another
-      CI variable is missing or malformed, so `source_run` is null.
+    - `rules::report::ci_env_invalid`: `GITHUB_RUN_ID` is set but is not
+      a whole number, or another CI variable is missing or malformed, so
+      `source_run` is null.
 
     A refusal marks a row `unreadable` or leaves a group or suite without
     a row:
-    - The code of a rule's `unreadable` row, such as Board's code for a
-      degraded rule, `rules::capture::invalid`, a file's code, or
-      `rules::report::file_unreadable`: the refusal names the rule, and its
-      row carries the same code.
+    - The code of a rule's `unreadable` row: Board's code for a degraded
+      rule, `rules::capture::invalid`, a file's code,
+      `rules::report::file_unreadable`, or, for a zero rule,
+      `rules::zero::run_unreadable` or the code `runs.latest` refused
+      with. The refusal names the rule, and its row carries the same code.
     - `rules::report::group_unreadable`: Board marks a group invalid, and
       the group has no `groups` row.
     - `rules::report::suite_unreadable`: a suite's body does not parse, and

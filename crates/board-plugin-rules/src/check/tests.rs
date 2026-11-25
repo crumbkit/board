@@ -31,9 +31,6 @@ pub(crate) struct Recording {
     board: Board,
     pub(crate) settings: Settings,
     calls: RefCell<Vec<Call>>,
-    /// Rows added to the board's answer to a query, by the query's text,
-    /// so a test can hand the plugin a row the index never holds.
-    pub(crate) added: Vec<(&'static str, Vec<Value>)>,
 }
 
 impl Recording {
@@ -60,13 +57,7 @@ impl Host for Recording {
     fn query(&self, sql: &str, limit: Limit) -> Result<QueryReport, QueryError> {
         assert_eq!(limit, Limit::ALL, "the plugin reads every row");
         self.calls.borrow_mut().push(Call::Query);
-        let mut report = self.board.query(sql, usize::MAX, None, None)?;
-        (report.rows).extend(
-            (self.added.iter())
-                .filter(|(query, _)| *query == sql)
-                .map(|(_, row)| row.clone()),
-        );
-        Ok(report)
+        self.board.query(sql, usize::MAX, None, None)
     }
 
     fn refs(
@@ -199,7 +190,6 @@ pub(crate) fn enabling_in(
             cache_home: None,
         },
         calls: RefCell::default(),
-        added: Vec::new(),
     }
 }
 

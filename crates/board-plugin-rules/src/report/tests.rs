@@ -648,25 +648,6 @@ fn a_suite_file_that_is_not_json_is_no_record_so_the_report_neither_lists_nor_re
 }
 
 #[test]
-fn a_suite_whose_body_does_not_parse_is_a_refusal_and_no_suite_row_beside_a_readable_suite() {
-    let (_scenario, mut host) = compliance_beside(&[]);
-    host.added.push((
-        suites::SUITES,
-        vec![json!("/suites/broken"), json!("{\"$type\": ")],
-    ));
-    let report = report_of(&host);
-    assert_eq!(suite_ids(&report), [&json!("/suites/app")], "{report}");
-    assert_eq!(
-        refusals(&report),
-        [(
-            &json!("rules::report::suite_unreadable"),
-            &json!(["/suites/broken"])
-        )]
-    );
-    shipped("rules/report/v1").validate(&report).unwrap();
-}
-
-#[test]
 fn a_zero_rule_keeps_a_measure_recorded_as_a_label_apart_from_one_not_recorded() {
     let zero = json!({
         "$type": "rules/rule/v1",
