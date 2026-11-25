@@ -49,9 +49,9 @@ band draws nothing. While a survey holds the band, no mod draws in it.
 - **Ready to land button**, from `board-plans`: `Ready to land <n>`, in
   green, the changes `board --json call changes.ready` lists. Each is built
   and reviewed and waits only on a check from the owner, or is done and
-  still owes him a recheck. With none, no button is drawn. It reads in the
-  same refresh as Waiting, for up to 5 seconds. On a board with no changes
-  plugin, or one whose plugin has no `ready` capability, there is no button
+  still owes him a recheck. With none, no button is drawn. It reads beside
+  each refresh without holding it, one read at a time, for up to 20
+  seconds. On a board with no changes plugin, or one whose plugin has no `ready` capability, there is no button
   and no error, and the mod stops asking until it loads again. A failed read
   keeps the last count and turns the button red: `Ready to land <n>: the last
   read failed`, with `<n>` 0 when no read has worked.

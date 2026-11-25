@@ -3,7 +3,7 @@
 // the red failing part is silent. Pure functions, so the tests can pin every
 // word.
 
-import type { Failing, Ready, ReadyChange, ReadyKind, Waiting } from '../types'
+import type { Failing, Open, Ready, ReadyChange, ReadyKind, Waiting } from '../types'
 import { failure } from './plans'
 
 /** Whether the red failing part is drawn: `silent` until a later change sets the option to `shown`. */
@@ -75,13 +75,18 @@ export function readyBadge(ready: Ready | null, why: string | null, mode: Failin
 /**
  * What Waiting counts once the questions Ready to land counts are left out,
  * so a check is counted once: each question of a change the button counts
- * leaves `total`, and also `blocking` when its change is still going.
+ * leaves `total`, and also `blocking` when its change is still going. The
+ * ready read can be older than the count, so a question is left out only
+ * while `open`, the last plans.open answer, still lists it, or lists only
+ * some of the open questions; an answered question is not left out twice.
  */
-export function waitingLess(waiting: Waiting | null, ready: Ready | null, mode: FailingMode): Waiting | null {
+export function waitingLess(waiting: Waiting | null, ready: Ready | null, open: Open | null, mode: FailingMode): Waiting | null {
   if (waiting === null || ready === null) return waiting
+  const listed = open === null || open.questions.length < open.total ? null : new Set(open.questions.map(q => q.path))
+  const stillOpen = (path: string) => listed === null || listed.has(path)
   const counted = ready.changes.filter(c => mode === 'silent' || c.failing === null)
-  const all = new Set(counted.flatMap(c => c.questions))
-  const going = new Set(counted.filter(c => !c.done).flatMap(c => c.questions))
+  const all = new Set(counted.flatMap(c => c.questions).filter(stillOpen))
+  const going = new Set(counted.filter(c => !c.done).flatMap(c => c.questions).filter(stillOpen))
   return { total: Math.max(0, waiting.total - all.size), blocking: Math.max(0, waiting.blocking - going.size) }
 }
 

@@ -334,7 +334,8 @@ export const register: Register = (on, options) => {
     // plans.waiting counts the open questions; when it has not answered, the button counts plans.open's.
     // Waiting leaves out the questions Ready to land counts, so a check is counted once.
     const landed = await read($, ready)
-    const badge = countBadge(waitingLess(await read($, waiting), landed, mode), await read($, open), await read($, failed))
+    const listed = await read($, open)
+    const badge = countBadge(waitingLess(await read($, waiting), landed, listed, mode), listed, await read($, failed))
     const landing = readyBadge(landed, await read($, readyFailed), mode)
     const { Box, Button, Text } = $.ui.resolve(e)
     const parts: RenderElement[] = []

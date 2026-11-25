@@ -89,11 +89,27 @@ test('Waiting leaves out the questions of each change Ready to land counts, and 
     ],
     total: 3,
   }
-  expect(waitingLess(waiting, ready, 'silent')).toEqual({ total: 1, blocking: 0 })
+  expect(waitingLess(waiting, ready, null, 'silent')).toEqual({ total: 1, blocking: 0 })
   // Shown, the failing change is left out of Ready to land, so Waiting keeps its question.
-  expect(waitingLess(waiting, ready, 'shown')).toEqual({ total: 2, blocking: 1 })
-  expect(waitingLess(waiting, null, 'silent')).toBe(waiting)
-  expect(waitingLess(null, ready, 'silent')).toBeNull()
+  expect(waitingLess(waiting, ready, null, 'shown')).toEqual({ total: 2, blocking: 1 })
+  expect(waitingLess(waiting, null, null, 'silent')).toBe(waiting)
+  expect(waitingLess(null, ready, null, 'silent')).toBeNull()
+})
+
+/** plans.open's answer listing the questions at `paths`, of `total` open in all. */
+const openOf = (paths: string[], total = paths.length) => ({
+  questions: paths.map(path => ({ path, question: path, asked: '2026-11-25T09:00:00Z', options: [], recommendation: null, blocks: null, blocked_work: null })),
+  total,
+})
+
+test('Waiting leaves out only the ready questions plans.open still lists, so an answered one is not left out twice', () => {
+  const ready = { changes: [change('t', { questions: ['/q/a', '/q/b'] })], total: 1 }
+  // The owner answered /q/a: plans.waiting no longer counts it, and the last ready read still names it.
+  expect(waitingLess({ total: 4, blocking: 3 }, ready, openOf(['/q/b', '/q/x', '/q/y', '/q/z']), 'silent')).toEqual({ total: 3, blocking: 2 })
+  // Both answered: nothing is left out.
+  expect(waitingLess({ total: 3, blocking: 3 }, ready, openOf(['/q/x', '/q/y', '/q/z']), 'silent')).toEqual({ total: 3, blocking: 3 })
+  // When plans.open listed only some of the open questions, an unlisted one may still be open, so it is left out.
+  expect(waitingLess({ total: 5, blocking: 3 }, ready, openOf(['/q/b', '/q/x'], 5), 'silent')).toEqual({ total: 3, blocking: 1 })
 })
 
 test('only the option shown draws the red part', () => {
