@@ -284,8 +284,12 @@ fn an_edit_of_signing_needs_touch_id_while_signing_is_on_even_when_owners_writes
         read(&mine, ".board/board.json")["signing"],
         json!({"require": []})
     );
-    let unchanged =
-        json!({"$type": "board/config/v1", "commit_on_put": true, "signing": {"require": []}});
+    let unchanged = json!({
+        "$type": "board/config/v1",
+        "commit_on_put": false,
+        "plugins": [],
+        "signing": {"require": []},
+    });
     put(&unsigned, "/.board/board", &unchanged.to_string()).unwrap();
     let signed = owning(&mine, asker(None, Some(&mine)));
     put(
