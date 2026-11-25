@@ -39,10 +39,6 @@
     {
       "name": "board-handoff",
       "source": "./plugins/handoff/claude-code"
-    },
-    {
-      "name": "board-orders",
-      "source": "./plugins/orders/claude-code"
     }
   ],
   "description": "Claude Code mods of Board and its plugins."

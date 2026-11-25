@@ -28,7 +28,7 @@ pub(crate) const BUDGETS: [Budget; 11] = [
     budget("query", 100, false),
     budget("plans.open", 250, false),
     budget("plans.waiting", 100, true),
-    budget("orders.pinned", 100, true),
+    budget("attention.pinned", 100, true),
     budget("rules.check", 100, true),
     budget("rules.for-path", 500, false),
     budget("tasks.available", 1_500, false),

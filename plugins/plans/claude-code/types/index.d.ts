@@ -29,6 +29,34 @@ export type Unread = { open: string | null; waiting: string | null }
 /** What `plans.waiting` counts: the open questions, and how many of them block work. */
 export type Waiting = { total: number; blocking: number }
 
+/** The kind of check a ready change waits on, as `changes.ready` names it. */
+export type ReadyKind = 'recheck' | 'data-sign-off' | 'deviation' | 'land-choice'
+
+/** Why a ready change is failing, as `changes.ready` names it. */
+export type Failing = 'ci_failed' | 'conflict' | 'stale'
+
+/** A change ready to land that waits only on the owner, as `changes.ready` lists it. */
+export type ReadyChange = {
+  path: string
+  title: string
+  /** The change's newest pull request record, by its path. */
+  pull: string | null
+  head: string | null
+  kind: ReadyKind
+  /** The missing check it waits on; null when only a question holds it. */
+  check: string | null
+  /** What that check or question asks. */
+  waits_on: string
+  /** The open questions whose `blocks` names the change. */
+  questions: string[]
+  /** The days since the change was last touched. */
+  days: number | null
+  failing: Failing | null
+}
+
+/** What `changes.ready` answered: the changes it listed and how many there are in all. */
+export type Ready = { changes: ReadyChange[]; total: number }
+
 declare module 'claude-code' {
   interface PluginState {
     'board-plans': {
@@ -40,6 +68,10 @@ declare module 'claude-code' {
       failed: Unread
       /** The last morning report, as Markdown; null before /yesterday ran. */
       report: string | null
+      /** The changes ready to land; null until changes.ready answers. */
+      ready: Ready | null
+      /** Why the last read of changes.ready failed; null when it worked or has not run. */
+      readyFailed: string | null
     }
   }
 }

@@ -42,12 +42,11 @@ pub struct Signing {
     /// sign <statement-file>` for an order, which shows the statement and
     /// prints an SSH signature after Touch ID.
     pub signer: Option<OsString>,
-    /// The allowed signers file that lists the owner's key for approvals,
-    /// owner's writes and orders.
+    /// The allowed signers file that lists the owner's key for approvals
+    /// and owner's writes.
     pub allowed: Option<PathBuf>,
-    /// The attention allowed signers file, which an order is checked
-    /// against when Board's own file does not admit its key, for one more
-    /// release.
+    /// The attention allowed signers file, which lists the owner's key for
+    /// orders.
     pub attention_allowed: Option<PathBuf>,
     /// The cache, where the statement file is written.
     pub cache: Option<PathBuf>,
@@ -504,7 +503,7 @@ mod write;
 
 pub use decide::{AnswerReport, DecideReport, Shown, answer};
 pub use order::{SignOrderError, VerifyOrderError};
-pub(crate) use order::{legacy, order_signers, sign_order, verify_order};
+pub(crate) use order::{sign_order, verify_order};
 pub use write::OwnerWriteError;
 pub(crate) use write::{sign_owner_write, verify_owner_write};
 

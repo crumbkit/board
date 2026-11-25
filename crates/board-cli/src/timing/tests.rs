@@ -426,7 +426,7 @@ mod speed {
     #[test]
     fn the_budgets_hold_the_owners_figures_and_budgets_md_shows_the_same_table() {
         let of = |command: &str| BUDGETS.iter().find(|b| b.command == command).unwrap().ms;
-        for command in ["query", "plans.waiting", "orders.pinned", "rules.check"] {
+        for command in ["query", "plans.waiting", "attention.pinned", "rules.check"] {
             assert_eq!(of(command), 100, "{command}");
         }
         let halved = [

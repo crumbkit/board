@@ -654,7 +654,7 @@ fn generic(code: Code) -> &'static str {
             "the owner runs `board init --personal` in the personal board's directory, or names it in the known boards file, `~/.config/board/config.json`, as {\"personal\": \"<board directory>\"}; it holds the owner's pending effects and answers"
         }
         Code::SettingsUnsigned => {
-            "when an answer or an owner's put under `effects/` fails: install board-sign at ~/.local/bin/board-sign (Board runs ~/.local/bin/attention-sign while board-sign is missing), list the owner's key as `owner` in ~/.config/board/allowed_signers, both in the home your account's passwd entry names, and sign again; a refusal needs no signature. When a plugin's decide fails: delete the seen record from /effects/seen/ in the personal board, so the decide asks again"
+            "when an answer or an owner's put under `effects/` fails: install attention-sign at ~/.local/bin/attention-sign, list the owner's key as `owner` in ~/.config/board/allowed_signers, both in the home your account's passwd entry names, and sign again; a refusal needs no signature. When a plugin's decide fails: delete the seen record from /effects/seen/ in the personal board, so the decide asks again"
         }
         Code::UiUnknownKind => {
             "name a kind from the catalogue in each slot's `kind`; `board ui kinds` lists them"

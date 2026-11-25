@@ -42,7 +42,7 @@ pub(crate) struct Output {
 }
 
 pub(crate) fn verify(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let Input { path } = PluginError::read_input("orders", "verify", input)?;
+    let Input { path } = PluginError::read_input("attention", "verify", input)?;
     let output = verified(host, &path)?;
     Ok(serde_json::to_value(output).expect("the output is plain strings"))
 }
@@ -53,7 +53,7 @@ pub(crate) fn verified(host: &dyn Host, path: &str) -> Result<Output, PluginErro
     let held = order::read(host, path)?;
     let Some(signature) = &held.fields.signature else {
         return Err(refusal(
-            "orders::order::unsigned",
+            "attention::order::unsigned",
             format!(
                 "{path} has no signature, so the owner has not approved it; ask the owner to sign it"
             ),
@@ -79,7 +79,7 @@ pub(crate) fn verified(host: &dyn Host, path: &str) -> Result<Output, PluginErro
 }
 
 /// Refuses an order whose day has passed at `now` with
-/// `orders::order::expired`, whose message ends with `next`.
+/// `attention::order::expired`, whose message ends with `next`.
 pub(crate) fn in_force(
     path: &str,
     expires: Date,
@@ -91,7 +91,7 @@ pub(crate) fn in_force(
     }
     let expires = expires.to_string();
     Err(refusal(
-        "orders::order::expired",
+        "attention::order::expired",
         format!("{path} expired on {expires}; {next}"),
         [("path", json!(path)), ("expires", json!(expires))],
     ))
@@ -107,12 +107,12 @@ pub(crate) fn expired(expires: Date, now: SystemTime) -> bool {
 pub(crate) fn unverified(path: &str, error: &VerifyOrderError) -> PluginError {
     match error {
         VerifyOrderError::NoneNamed | VerifyOrderError::NoFile { .. } => refusal(
-            "orders::signers::missing",
+            "attention::signers::missing",
             format!("{error}; the owner adds their key to it, as the plugin's README says"),
             [("path", json!(path))],
         ),
         VerifyOrderError::Untrusted { file, .. } => refusal(
-            "orders::signers::untrusted",
+            "attention::signers::untrusted",
             format!(
                 "{error}; make the owner the file's owner and let no one else write it, then \
                  verify again"
@@ -120,7 +120,7 @@ pub(crate) fn unverified(path: &str, error: &VerifyOrderError) -> PluginError {
             [("path", json!(path)), ("file", json!(file))],
         ),
         VerifyOrderError::Bad { file, .. } => refusal(
-            "orders::order::bad_signature",
+            "attention::order::bad_signature",
             format!(
                 "{path}'s signature does not verify against {}: the order, its expiry or its \
                  context changed after signing, or another key signed it",
@@ -129,7 +129,7 @@ pub(crate) fn unverified(path: &str, error: &VerifyOrderError) -> PluginError {
             [("path", json!(path))],
         ),
         VerifyOrderError::Failed { .. } | VerifyOrderError::NotOffered => refusal(
-            "orders::verify::failed",
+            "attention::verify::failed",
             format!("{path}'s signature was not checked: {error}"),
             [("path", json!(path))],
         ),

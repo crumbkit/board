@@ -21,6 +21,7 @@ mod phases;
 mod plan;
 mod pr;
 mod prototype;
+mod ready;
 mod records;
 mod repo;
 mod rules;
@@ -112,7 +113,7 @@ fn output<T: JsonSchema>() -> Value {
 /// Every capability, in the order the manifest lists them. A capability
 /// that rewrites a field of a change, or ends it, is destructive; one that
 /// adds a task or reads GitHub reaches the open world.
-const CAPABILITIES: [Capability; 23] = [
+const CAPABILITIES: [Capability; 24] = [
     Capability {
         name: "start",
         description: "Create a change in the first phase of its flow, its plan to fill in and, \
@@ -187,6 +188,22 @@ const CAPABILITIES: [Capability; 23] = [
         run: owed::owed,
         input: input::<owed::Input>,
         output: output::<owed::Output>,
+        hints: [true, false, true, false],
+        env: &[],
+        timeout: None,
+    },
+    Capability {
+        name: "ready",
+        description: "The changes ready to land that wait only on the owner: each in its flow's \
+            last phase with no missing check that blocks but the owner's, and a missing check of \
+            the owner's or an open question whose blocks names it, and each done change that \
+            `owed` lists with a check of the owner's; each with its pull request, the kind of \
+            check it waits on, its open questions, the days since it was touched and why it is \
+            failing: its newest CI run at its head failed, its head conflicts with the branch its \
+            mount follows, or its newest review covers another commit.",
+        run: ready::ready,
+        input: input::<ready::Input>,
+        output: output::<ready::Output>,
         hints: [true, false, true, false],
         env: &[],
         timeout: None,

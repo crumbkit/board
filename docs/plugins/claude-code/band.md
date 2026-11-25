@@ -5,7 +5,7 @@ band above the Claude Code prompt shows and how four mods draw it together.
 
 The band is one row of badges, which wraps on a narrow terminal:
 
-`Home work Board personal | [Orders 4] [Rules 5] [Questions 3] [Effects 2]`
+`Home work Board personal | [Orders 4] [Rules 5] [Ready to land 3] [Waiting 8 · 5 blocking] [Effects 2]`
 
 A badge with nothing to show is left out. When every badge is left out, the
 band draws nothing. While a survey holds the band, no mod draws in it.
@@ -30,15 +30,14 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   board from `board --json ls / --limit 1` at the repository root, because
   `rules.check` does not report its board. With no such board, it is
   left out.
-- **Orders button**, from `board-orders`, or `board-attention` until it is
-  uninstalled: `Orders <n>`, the number of
+- **Orders button**, from `board-attention`: `Orders <n>`, the number of
   pinned orders that verified. It opens the pinned-orders pane, which lists
   every order; pressing one opens its text, path, expiry and signer, and a
   **Show context** button for its context. When orders are left out, the
   button shows in red as `Orders <n>: <m> left out`, and the pane gives each
   one's code and message. When the personal board cannot be read, the button
   shows in red with Board's code, such as `Orders:
-  orders::signers::missing`, and the pane gives the message.
+  attention::signers::missing`, and the pane gives the message.
 - **Rules button**, from `board-rules`: `Rules <n>`, the number of
   rules `rules.check` returned. It opens a pane that lists them as
   standing rules, obligations owed and budgets, each with its path and
@@ -46,6 +45,32 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   for each rule on that file the session was not told about. A failed
   check shows the button in red with its code, such as `Rules:
   rules::rule::degraded`.
+- **Ready to land button**, from `board-plans`: `Ready to land <n>`, in
+  green, the changes `board --json call changes.ready` lists. Each is built
+  and reviewed and waits only on a check from the owner, or is done and
+  still owes him a recheck. With none, no button is drawn. It reads in the
+  same refresh as Waiting, for up to 5 seconds. On a board with no changes
+  plugin, or one whose plugin has no `ready` capability, there is no button
+  and no error, and the mod stops asking until it loads again. A failed read
+  keeps the last count and turns the button red: `Ready to land <n>: the last
+  read failed`, or `Ready to land could not be read` when none has worked.
+  The button opens the Ready to land pane. The pane lists the changes oldest
+  first with the failing ones last. Each row gives the pull request, how long
+  it has been ready, the kind of check (Recheck, Data sign-off, Deviation or
+  Land choice), the title and what the check asks. An **Answer in /ask**
+  button follows, and **Ask these now (/ask)** heads the pane. Both run /ask.
+  The mod's `failing` option says whether a failing change is drawn in red:
+  `silent`, the default, or `shown`. With `shown`, the button adds `· <m>
+  failing` in red and leaves those changes out of `<n>`, and a failing row
+  is tagged in red and names `board changes next --path <change>` in place
+  of the /ask button. While the option is `silent`, failing changes count in
+  `<n>`, and the mod appends a line to
+  `$XDG_STATE_HOME/board/ready-failing.jsonl`, by default
+  `~/.local/state/board/ready-failing.jsonl`. It does so each time a listed
+  change starts failing, changes its reason or stops failing. Each line
+  holds `at`, `change`, `pull`, `head`, `reason` and `session`. Lines older
+  than 30 days are dropped on each write. A file that cannot be written
+  records nothing, and the debug log says why.
 - **Waiting button**, from `board-plans`: `Waiting <total> · <blocking>
   blocking` from `board --json call plans.waiting`, or `Waiting <total>`
   when nothing blocks. On a Board whose plans plugin has no `waiting`
@@ -56,6 +81,9 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   button turns red and reads `<count>: the last read failed`, or `Questions
   could not be read` when none has worked. The pane says why only for a
   failed `plans.open`; a failed `plans.waiting` is in the debug log.
+  `plans.waiting` leaves out the questions that block a change Ready to land
+  counts, so a check is counted once. The pane lists those questions first,
+  under a Ready to land heading.
 - **Effects button**, from `board-effects`: `Effects <n>`, with `+` when
   Board listed only the first. It opens the pending effects pane. A failed
   read shows it in red, as `Effects could not be read`, or `Effects <n>: the
@@ -84,9 +112,8 @@ row. A tree beneath that is not a band, such as another plugin's, is kept as
 a line after the row.
 
 The slots, in order, are `a1-state`, `b1-orders`, `b2-controls`,
-`b3-waiting` and `b4-effects`; the letter is the section. Each of the five
-mods, `board-attention`, `board-effects`, `board-orders`, `board-plans` and
-`board-rules`, keeps an identical copy of `hooks/band.ts`, which holds this logic,
+`b3-ready`, `b3-waiting` and `b4-effects`; the letter is the section. Each of the four
+mods keeps an identical copy of `hooks/band.ts`, which holds this logic,
 because a mod installs alone. The `mods` workflow fails when a copy differs
 from the attention mod's, and the attention mod's `tests/band.test.ts` tests
 the logic.

@@ -22,7 +22,7 @@ own effects.
 - An owner's write signs `Effect::owner_write`. It starts `board/write/v1`
   and shows the op, path and board, then the content as an approval shows
   it.
-- An order signs `Order::statement`, in
+- An attention order signs `Order::statement`, in
   `board_model::effect::order`. It starts `attention/order/v1`, then gives
   the expiry as `YYYY-MM-DD`, `pinned: yes` or `pinned: no` (`no` when the
   record does not say), the order under `Order (binding):` and the context
@@ -44,23 +44,23 @@ own effects.
   removes the file and verifies the signature before returning it. It says
   why there is none: the owner asked for changes, with their words, or
   cancelled; there is no signer; or the signer failed.
-- The signer is `.local/bin/board-sign`, else `.local/bin/attention-sign`,
-  in the home that the passwd entry of the running user names. `HOME`, `PATH` and the XDG variables do not
-  move it. A debug build, which the tests run, has no signer. It sees
+- The signer is `.local/bin/attention-sign` in the home that the passwd
+  entry of the running user names. `HOME`, `PATH` and the XDG variables do
+  not move it. A debug build, which the tests run, has no signer. It sees
   only `PATH` and `HOME`, and has 20 seconds for an approval or an owner's
   write. The check has 3 seconds, so an answer fits a 30-second caller such
   as the effects mod. It has 10 minutes for an order, whose context of up
   to 64 KiB the owner reads before touching the sensor.
-- The signer shows the statement in a native window and signs with the
-  owner's Secure Enclave key after Touch ID. Exit 3 means the owner asked
-  for changes, with their words on stdout. Every other failure exits 1.
-  When the owner presses Cancel or closes the window, the last line of its
-  stderr is `board-sign: the owner cancelled, so nothing was signed`, or
-  attention-sign's, which Board reports as a cancel; AppKit may write other
-  lines before it.
+- attention-sign shows the statement in a native window and signs with the
+  attention plugin's Secure Enclave key after Touch ID. Exit 3 means the
+  owner asked for changes, with their words on stdout. Every other failure
+  exits 1. When the owner presses Cancel or closes the window, the last line
+  of its stderr is
+  `attention-sign: the owner cancelled, so nothing was signed`, which Board
+  reports as a cancel; AppKit may write other lines before it.
 - A cancel at the Touch ID sheet exits 1 with no cancel line, so Board
   reports a failed signer.
-- Under `approve` the signer signs only a statement whose first
+- Under `approve` attention-sign signs only a statement whose first
   line is `board/approve/v1` or `board/write/v1`; under `sign` it refuses
   those and signs in `attention/order/v1`.
 
@@ -72,11 +72,10 @@ own effects.
   `owner`. It runs before an answer is written, whenever a decide reads an
   approval, and as an owner's write runs.
 - `Host::verify_order` checks an order's signature the same way, in
-  `attention/order/v1`. When no line of Board's file admits the key, it
-  falls back to `.config/attention/allowed_signers`, warning
-  `orders::signers::legacy`; an untrusted Board file refuses without
-  the fallback. It returns `owner`, or why not: no file, an untrusted file,
-  a bad signature, or a failed verifier.
+  `attention/order/v1`, against `.config/attention/allowed_signers` in the
+  same passwd home. It returns `owner`, or why not: no file is named or
+  there, the file is untrusted, the signature is bad, or the verifier
+  failed. board-app's pairing writes the file; Board never writes it.
 - The signer and both allowed signers files must be regular files that the
   user or root owns and that neither group nor others may write.
 - Board accepts any key that the file lists for a principal pattern matching
@@ -84,7 +83,7 @@ own effects.
   limited to the namespaces:
 
   ```sh
-  echo "owner namespaces=\"board/approve/v1,board/write/v1,attention/order/v1\" $(attention-sign key)" > ~/.config/board/allowed_signers
+  echo "owner namespaces=\"board/approve/v1,board/write/v1\" $(attention-sign key)" > ~/.config/board/allowed_signers
   ```
 
   A file copied from git's allowed signers, with an ordinary key in
@@ -111,7 +110,7 @@ records it.
   refuses any other caller of those four functions.
 - `cargo xtask lint` fails with `xtask::signing::outside_owner`, naming the
   file, line and literal, when source code outside `signing.owners` in
-  `lint.toml` names a namespace, `ssh-keygen`, `attention-sign`, `board-sign`, the allowed
+  `lint.toml` names a namespace, `ssh-keygen`, `attention-sign`, the allowed
   signers path or the signature armor. It reads `.rs`, `.py`, `.sh`, `.ts`
   and `.tsx` files, and scripts without an extension under `bin/` and
   `plugins/`.
@@ -122,11 +121,13 @@ records it.
 
 | Statement | Built by | Signed by | Verified by | Namespace |
 | --- | --- | --- | --- | --- |
-| Approval | board `Effect::approval` | board-app `board-sign approve` | board `board_plugin::verify` | `board/approve/v1` |
-| Owner's write | board `Effect::owner_write` | board-app `board-sign approve` | board `board_plugin::verify` | `board/write/v1` |
-| Order | board `Order::statement` | board-app `board-sign sign` | board `Host::verify_order` | `attention/order/v1` |
+| Approval | board `Effect::approval` | board-app `attention-sign approve` | board `board_plugin::verify` | `board/approve/v1` |
+| Owner's write | board `Effect::owner_write` | board-app `attention-sign approve` | board `board_plugin::verify` | `board/write/v1` |
+| Order | board `Order::statement` | board-app `attention-sign sign` | board `Host::verify_order` | `attention/order/v1` |
 
-- board-app's pairing writes both allowed signers files.
+- Board reads `~/.config/board/allowed_signers` for approvals and owner's
+  writes, and `~/.config/attention/allowed_signers` for orders. board-app's
+  pairing writes both.
 - Board verifies with `ssh-keygen`. board-app builds the SSHSIG armor
   itself.
 - The vectors' v1 manifest still names board-attention as the order
@@ -154,8 +155,7 @@ records it.
 - Add a caller of a signing function, an owner to `signing.owners`, or an
   `#[expect]` for either gate, without the owner's approval.
 - Write `~/.config/board/allowed_signers`,
-  `~/.config/attention/allowed_signers`, `~/.local/bin/board-sign` or
-  `~/.local/bin/attention-sign`.
+  `~/.config/attention/allowed_signers` or `~/.local/bin/attention-sign`.
 - Run `ssh-keygen -Y sign` with any key but a test key.
 - Change a statement's layout without a new first line and a new vectors
   version.

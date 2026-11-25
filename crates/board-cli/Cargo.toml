@@ -12,11 +12,9 @@ name = "board"
 path = "src/main.rs"
 
 [features]
-default = ["artifacts", "attention", "autosync", "boundary", "changes", "evals", "github", "jira", "map", "notes", "orders", "params", "places", "plans", "priorities", "prompts", "requests", "review", "rules", "runs", "share", "tasks", "topics"]
+default = ["artifacts", "attention", "autosync", "boundary", "changes", "evals", "github", "jira", "map", "notes", "params", "places", "plans", "priorities", "prompts", "requests", "review", "rules", "runs", "share", "tasks", "topics"]
 artifacts = ["board-plugins/artifacts"]
-# The orders plugin's skill ships from plugins/attention/ under its former
-# name, so this feature, which ships it, enables the plugin.
-attention = ["orders"]
+attention = ["board-plugins/attention"]
 autosync = ["board-plugins/autosync"]
 boundary = ["board-plugins/boundary"]
 changes = ["board-plugins/changes"]
@@ -25,7 +23,6 @@ github = ["board-plugins/github"]
 jira = ["board-plugins/jira"]
 map = ["board-plugins/map"]
 notes = ["board-plugins/notes"]
-orders = ["board-plugins/orders"]
 params = ["board-plugins/params"]
 places = ["board-plugins/places"]
 plans = ["board-plugins/plans"]

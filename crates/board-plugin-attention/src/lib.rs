@@ -1,6 +1,6 @@
-//! The orders plugin built into Board (plugins/attention/README.md), named
-//! attention before: orders the owner signs with Touch ID, which bind an
-//! agent until they expire. `verify` and `pinned` only read; `sign` asks the owner through
+//! The attention plugin built into Board (plugins/attention/README.md):
+//! orders the owner signs with Touch ID, which bind an agent until they
+//! expire. `verify` and `pinned` only read; `sign` asks the owner through
 //! `Host::sign_order` and writes the signature. The plugin never builds an
 //! order's statement or runs the signer itself
 //! (docs/architecture/writes/signing.md).
@@ -9,7 +9,6 @@ mod order;
 mod pinned;
 pub mod records;
 mod sign;
-mod signers;
 mod verify;
 
 use board_model::{CapabilityName, ORDER_TYPE, RecordType, Refusal};
@@ -20,13 +19,13 @@ use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
 #[derive(Clone, Copy, Debug)]
-pub struct Orders;
+pub struct Attention;
 
 /// How long `sign` may take: the signer's 10 minutes and 10 seconds more
 /// to read the order and write the signature.
 const SIGN_TIMEOUT: u64 = 610;
 
-impl Plugin for Orders {
+impl Plugin for Attention {
     fn manifest(&self) -> Manifest {
         Manifest::built_in(manifest()).expect(
             "the manifest is built from constants and its inputs' schemas; a test parses it",
@@ -48,11 +47,10 @@ impl Plugin for Orders {
             "verify" => verify::verify(host, &input),
             "pinned" => pinned::pinned(host, &input),
             "sign" => sign::sign(host, &input),
-            "signers" => signers::signers(host, &input),
             other => Err(PluginError {
-                code: "orders::call::unknown_capability".to_owned(),
+                code: "attention::call::unknown_capability".to_owned(),
                 message: format!(
-                    "orders offers no capability {other}; it offers verify, pinned, sign and signers"
+                    "attention offers no capability {other}; it offers verify, pinned and sign"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -77,9 +75,9 @@ pub(crate) fn refusal<const N: usize>(
     }
 }
 
-/// `orders::board::refused`, for Board's refusal of `board <command>`.
+/// `attention::board::refused`, for Board's refusal of `board <command>`.
 pub(crate) fn refused(command: &str, refusal: &Refusal) -> PluginError {
-    PluginError::board_refused("orders", command, refusal)
+    PluginError::board_refused("attention", command, refusal)
 }
 
 fn manifest() -> Value {
@@ -93,18 +91,14 @@ fn manifest() -> Value {
     });
     json!({
         "$type": "board/plugin-manifest/v1",
-        "name": "orders",
-        "version": "0.3.0",
-        // `attention.*` calls and `attention` in a board's plugin list reach
-        // this plugin, with a warning naming `orders`, until Board drops the
-        // name in its next release.
-        "former_names": ["attention"],
+        "name": "attention",
+        "version": "0.2.0",
         // SKILL.md's description, the callout an agent sees first.
         "description": "Orders the owner signed with Touch ID, which bind an agent until they \
             expire. Pinned orders normally arrive in your context when a session starts. Only \
             when that section is missing, read them with `board --personal \
-            orders pinned`. Use when you need to check one: `board --personal \
-            orders verify --path /orders/<name>`. Use also when you have drafted an order for \
+            attention pinned`. Use when you need to check one: `board --personal \
+            attention verify --path /orders/<name>`. Use also when you have drafted an order for \
             the owner to sign. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "authority"},
         "types": [ORDER_TYPE],
@@ -138,15 +132,6 @@ fn manifest() -> Value {
                 "openWorldHint": false,
             },
             "timeout": SIGN_TIMEOUT,
-            "_meta": {},
-        }, {
-            "name": "signers",
-            "description": "Board's allowed signers file with each key of the attention allowed \
-                signers file merged in for orders, which the owner reads and writes to Board's \
-                file themselves. It writes neither file.",
-            "inputSchema": schema_of::<signers::Input>(input()),
-            "outputSchema": schema_of::<signers::Output>(output()),
-            "annotations": reads,
             "_meta": {},
         }],
     })

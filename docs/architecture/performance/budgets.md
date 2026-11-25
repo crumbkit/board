@@ -129,7 +129,7 @@ syncing notes repositories; the bench row above times it with `--repo /`.
 | `query` | 100 ms | no |
 | `plans.open` | 250 ms | no |
 | `plans.waiting` | 100 ms | yes |
-| `orders.pinned` | 100 ms | yes |
+| `attention.pinned` | 100 ms | yes |
 | `rules.check` | 100 ms | yes |
 | `rules.for-path` | 500 ms | no |
 | `tasks.available` | 1,500 ms | no |

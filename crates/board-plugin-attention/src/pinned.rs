@@ -43,7 +43,7 @@ pub(crate) struct Output {
 /// this board's. Only an order whose signature verifies is shown, so an
 /// agent cannot pin an order by editing it.
 pub(crate) fn pinned(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let Input {} = PluginError::read_input("orders", "pinned", input)?;
+    let Input {} = PluginError::read_input("attention", "pinned", input)?;
     let sql = format!(
         "SELECT logical FROM records WHERE type = {} AND json_extract(body, '$.pinned') = 1 \
          AND logical IS NOT NULL AND source = 'worktree' ORDER BY logical",
@@ -72,10 +72,10 @@ pub(crate) fn pinned(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         if used > PINNED_LIMIT {
             output.left_out.push(LeftOut {
                 path: path.to_owned(),
-                code: "orders::pinned::over_budget".to_owned(),
+                code: "attention::pinned::over_budget".to_owned(),
                 message: format!(
                     "the pinned orders before it hold more than {PINNED_LIMIT} bytes; read it \
-                     with board orders verify, or unpin an order"
+                     with board attention verify, or unpin an order"
                 ),
             });
             continue;

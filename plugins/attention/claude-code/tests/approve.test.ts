@@ -76,7 +76,6 @@ test('a sign that runs past the limit tells the owner its outcome is unknown and
     sent.push(e.text)
     return { text: e.text }
   })
-  on('settings.read', () => ({ value: {} }))
   on('tool.register', (_, e) => ({ value: { tool: `mcp__board-attention__${e.name}` } }))
   on('ui.toast', (_, e) => {
     toasts.push(typeof e === 'string' ? e : JSON.stringify(e))
@@ -115,7 +114,6 @@ test('a request shows a band whose button runs attention.sign on the personal bo
     sent.push(e.text)
     return { text: e.text }
   })
-  on('settings.read', () => ({ value: {} }))
   on('tool.register', (_, e) => ({ value: { tool: `mcp__board-attention__${e.name}` } }))
   const toasts: string[] = []
   on('ui.toast', (_, e) => {
@@ -138,7 +136,6 @@ test('a request shows a band whose button runs attention.sign on the personal bo
 })
 
 test('a request whose path is not absolute is denied, and an absolute one is accepted', async ($, on) => {
-  on('settings.read', () => ({ value: {} }))
   on('tool.register', (_, e) => ({ value: { tool: `mcp__board-attention__${e.name}` } }))
   on('process.run', () => ({ value: { exitCode: 1, stdout: failureDocument('board::config::not_found'), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   on('session.start', (_, e) => e)

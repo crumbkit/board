@@ -39,7 +39,7 @@ fn waiting_says_none_one_or_many_questions_are_waiting() {
         let output = waiting(&host(rows), &json!({})).unwrap();
         assert_eq!(
             output,
-            json!({"total": count, "blocking": 0, "unreadable": 0, "line": line})
+            json!({"total": count, "blocking": 0, "unreadable": 0, "ready": 0, "line": line})
         );
     }
 }
@@ -65,6 +65,7 @@ fn waiting_counts_below_a_path_and_names_unreadable_questions_apart() {
             "total": 1,
             "blocking": 0,
             "unreadable": 1,
+            "ready": 0,
             "line": "1 question is waiting for you, and 1 more cannot be read. Run /ask to answer it."
         })
     );
@@ -171,5 +172,47 @@ fn one_blocking_question_and_one_unreadable_question_share_one_line() {
         json!(
             "1 question is waiting for you and blocks work, and 1 more cannot be read. Run /ask to answer it."
         )
+    );
+}
+
+/// A question that blocks a change is offered to `changes.ready` by its
+/// path, with no failing reads; when Board refuses the call, as in a board
+/// with no changes plugin, every question counts and `ready` is 0. Its twin
+/// whose call is answered leaves out the question a ready change names.
+#[test]
+fn waiting_asks_changes_ready_about_blocking_questions_and_counts_all_when_refused() {
+    let blocking = |path: &str| {
+        vec![
+            json!(path),
+            Value::Null,
+            body("2026-10-01T09:00:00Z", &json!({"blocks": "/changes/t"})),
+            json!("active"),
+        ]
+    };
+    let rows = vec![
+        blocking("/projects/a/questions/q"),
+        row("/projects/a/questions/r"),
+    ];
+    let mut refused = host(rows.clone());
+    refused.call_refusal = Some(board_model::Refusal::new(
+        board_model::Code::PluginNotInstalled,
+        "plugin changes is not installed",
+        &board_model::Fields::default(),
+    ));
+    let output = waiting(&refused, &json!({})).unwrap();
+    assert_eq!((&output["total"], &output["ready"]), (&json!(2), &json!(0)));
+    assert_eq!(
+        refused.calls.borrow().clone(),
+        vec![(
+            "changes.ready".to_owned(),
+            json!({"failing": false, "questions": ["/projects/a/questions/q"], "limit": 10_000})
+        )]
+    );
+    let mut answered = host(rows);
+    answered.ready = Some(json!({"changes": [{"questions": ["/projects/a/questions/q"]}]}));
+    let output = waiting(&answered, &json!({})).unwrap();
+    assert_eq!(
+        (&output["total"], &output["blocking"], &output["ready"]),
+        (&json!(1), &json!(0), &json!(1))
     );
 }

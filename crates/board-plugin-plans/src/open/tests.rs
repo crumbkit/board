@@ -27,9 +27,10 @@ pub(crate) struct Answering {
     pub(crate) before_read: RefCell<Option<Box<dyn FnOnce()>>>,
     pub(crate) puts: RefCell<Vec<Vec<Value>>>,
     /// Each call's target and input; a call answers with `call_refusal`
-    /// when it is set and with `{}` when not.
+    /// when it is set, else with `ready`, else with `{}`.
     pub(crate) calls: RefCell<Vec<(String, Value)>>,
     pub(crate) call_refusal: Option<board_model::Refusal>,
+    pub(crate) ready: Option<Value>,
     pub(crate) settings: Settings,
 }
 
@@ -113,7 +114,7 @@ impl Host for Answering {
         Ok(board_plugin::CallReport {
             plugin: plugin.clone(),
             capability: capability.clone(),
-            output: json!({}),
+            output: self.ready.clone().unwrap_or_else(|| json!({})),
             warnings: Vec::new(),
         })
     }
@@ -164,6 +165,7 @@ pub(crate) fn host(rows: Vec<Vec<Value>>) -> Answering {
         puts: RefCell::default(),
         calls: RefCell::default(),
         call_refusal: None,
+        ready: None,
         settings: Settings {
             now: std::time::SystemTime::UNIX_EPOCH,
             day_start: None,

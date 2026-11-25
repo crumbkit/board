@@ -5,14 +5,14 @@
 //! Signing and verifying an order, each refusal beside an admitted twin.
 
 use std::os::unix::fs::PermissionsExt as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use board_model::{APPROVAL_HEADER, Expiry, ORDER_TYPE, Order, Pinned};
 use board_plugin::{CANCELLED, SignError};
 use board_scenario::Item;
 use board_scenario::signer::Signer;
 
-use super::{OrderSigner, SignOrderError, VerifyOrderError, sign_order, verify_order};
+use super::{SignOrderError, VerifyOrderError, sign_order, verify_order};
 use crate::effects::Signing;
 
 fn order() -> Order {
@@ -54,9 +54,7 @@ fn an_order_the_owner_signs_verifies_as_the_owner() {
     let signature = sign_order(&signing, root(&signer), &order()).unwrap();
     assert!(signature.starts_with("-----BEGIN SSH"), "{signature}");
     assert_eq!(
-        verify_order(&signing, &order(), &signature)
-            .unwrap()
-            .principal,
+        verify_order(&signing, &order(), &signature).unwrap(),
         "owner"
     );
 }
@@ -96,9 +94,7 @@ fn a_signature_is_refused_for_an_order_with_a_changed_context_byte_expiry_or_pin
     let signing = signing(&signer);
     let signature = signer.sign(&order().statement());
     assert_eq!(
-        verify_order(&signing, &order(), &signature)
-            .unwrap()
-            .principal,
+        verify_order(&signing, &order(), &signature).unwrap(),
         "owner"
     );
     let mut context = order();
@@ -166,139 +162,31 @@ fn an_attention_signers_file_its_group_may_write_is_untrusted() {
     );
 }
 
-/// A copy of the key's line, with `options` before the key, in a new
-/// allowed signers file named `name` beside it.
-fn listing(signer: &Signer, name: &str, options: &str) -> PathBuf {
-    let public = std::fs::read_to_string(signer.directory().join("key.pub")).unwrap();
-    signer.write(name, Item::File(&format!("owner {options}{public}")));
-    signer.directory().join(name)
-}
-
-/// The signing with `board` as Board's own allowed signers file and
-/// `attention` as the attention file.
-fn both(signer: &Signer, board: Option<PathBuf>, attention: Option<PathBuf>) -> Signing {
-    Signing {
-        allowed: board,
-        attention_allowed: attention,
-        ..signing(signer)
-    }
-}
-
-/// Board's own file is read first: a key it admits in the order namespace,
-/// on one line or on two, verifies from it, whatever the attention file says.
+/// An order is checked against the attention file alone: Board's own
+/// allowed signers file, which lists the key, does not stand in for it.
 #[test]
-fn an_order_whose_key_boards_own_file_admits_verifies_from_boards_file() {
+fn an_order_is_verified_only_against_the_attention_allowed_signers_file() {
     let signer = Signer::new();
     let signature = signer.sign(&order().statement());
-    let twice = listing(&signer, "twice", "");
-    let line = std::fs::read_to_string(&twice).unwrap();
-    signer.write("twice", Item::File(&format!("{line}{line}")));
-    let absent = signer.directory().join("absent");
-    for board in [signer.allowed(), twice] {
-        let admitted = verify_order(
-            &both(&signer, Some(board.clone()), Some(absent.clone())),
-            &order(),
-            &signature,
-        );
-        assert!(
-            matches!(&admitted, Ok(OrderSigner { principal: "owner", file, legacy: false }) if *file == board),
-            "{}: {admitted:?}",
-            board.display()
-        );
-    }
-}
-
-/// A key Board's file does not admit in the order namespace, because the
-/// file is missing, lists it for approvals alone, or does not list it, is
-/// checked against the attention file and kept as legacy when it verifies.
-#[test]
-fn an_order_whose_key_only_the_attention_file_admits_verifies_as_legacy() {
-    let signer = Signer::new();
-    let stranger = Signer::new();
-    let signature = signer.sign(&order().statement());
-    let approvals = listing(
-        &signer,
-        "approvals",
-        &format!("namespaces=\"{APPROVAL_HEADER}\" "),
-    );
-    for board in [
-        None,
-        Some(signer.directory().join("absent")),
-        Some(approvals),
-        Some(stranger.allowed()),
-    ] {
-        let admitted = verify_order(
-            &both(&signer, board.clone(), Some(signer.allowed())),
-            &order(),
-            &signature,
-        );
-        assert!(
-            matches!(&admitted, Ok(OrderSigner { principal: "owner", file, legacy: true }) if *file == signer.allowed()),
-            "{board:?}: {admitted:?}"
-        );
-    }
-}
-
-/// A key neither file admits is refused against Board's file, and with no
-/// file at all against the attention file's absence.
-#[test]
-fn an_order_whose_key_neither_file_admits_is_refused_naming_boards_file() {
-    let signer = Signer::new();
-    let stranger = Signer::new();
-    let signature = signer.sign(&order().statement());
-    verify_order(
-        &both(&signer, Some(signer.allowed()), None),
-        &order(),
-        &signature,
-    )
-    .unwrap();
-    let refused = verify_order(
-        &both(&signer, Some(stranger.allowed()), Some(stranger.allowed())),
-        &order(),
-        &signature,
-    );
-    assert!(
-        matches!(&refused, Err(VerifyOrderError::Bad { file, .. }) if *file == stranger.allowed()),
-        "{refused:?}"
-    );
-    let refused = verify_order(&both(&signer, None, None), &order(), &signature);
+    verify_order(&signing(&signer), &order(), &signature).unwrap();
+    let board_only = Signing {
+        allowed: Some(signer.allowed()),
+        attention_allowed: None,
+        ..signing(&signer)
+    };
+    let refused = verify_order(&board_only, &order(), &signature);
     assert!(
         matches!(refused, Err(VerifyOrderError::NoneNamed)),
         "{refused:?}"
     );
     let absent = signer.directory().join("absent");
-    let refused = verify_order(
-        &both(&signer, Some(absent.clone()), None),
-        &order(),
-        &signature,
-    );
+    let missing = Signing {
+        attention_allowed: Some(absent.clone()),
+        ..signing(&signer)
+    };
+    let refused = verify_order(&missing, &order(), &signature);
     assert!(
         matches!(&refused, Err(VerifyOrderError::NoFile { file }) if *file == absent),
-        "{refused:?}"
-    );
-}
-
-/// A Board file its group may write stops an order, as it stops an
-/// approval, even when the attention file admits the key.
-#[test]
-fn an_untrusted_board_file_refuses_an_order_the_attention_file_admits() {
-    let signer = Signer::new();
-    let signature = signer.sign(&order().statement());
-    let board = listing(&signer, "board", "");
-    verify_order(
-        &both(&signer, Some(board.clone()), Some(signer.allowed())),
-        &order(),
-        &signature,
-    )
-    .unwrap();
-    std::fs::set_permissions(&board, std::fs::Permissions::from_mode(0o664)).unwrap();
-    let refused = verify_order(
-        &both(&signer, Some(board.clone()), Some(signer.allowed())),
-        &order(),
-        &signature,
-    );
-    assert!(
-        matches!(&refused, Err(VerifyOrderError::Untrusted { file, .. }) if *file == board),
         "{refused:?}"
     );
 }

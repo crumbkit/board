@@ -24,17 +24,15 @@ pub(crate) struct Context {
     /// `$XDG_CONFIG_HOME/board/config.json`, or `~/.config/board/config.json`.
     pub(crate) boards: Option<PathBuf>,
     /// The program that signs an approval or an order:
-    /// `.local/bin/board-sign` in the home the passwd entry names, which no
-    /// variable moves, or `.local/bin/attention-sign` there while board-sign
-    /// is not installed. A debug build, which every test runs, has none, so
+    /// `.local/bin/attention-sign` in the home the passwd entry names, which
+    /// no variable moves. A debug build, which every test runs, has none, so
     /// no test opens the owner's Touch ID window. `cargo install` makes a
     /// release build.
     pub(crate) signer: Option<OsString>,
-    /// The allowed signers file an approval's or an order's signature must
-    /// verify against: `.config/board/allowed_signers` in the same home.
+    /// The allowed signers file an approval's signature must verify against:
+    /// `.config/board/allowed_signers` in the same home.
     pub(crate) allowed_signers: Option<PathBuf>,
-    /// The allowed signers file an order's signature is checked against when
-    /// Board's own file does not admit its key, for one more release:
+    /// The allowed signers file an order's signature must verify against:
     /// `.config/attention/allowed_signers` in the same home.
     pub(crate) attention_allowed_signers: Option<PathBuf>,
     /// What a called plugin inherits.
@@ -171,12 +169,10 @@ fn owner_home() -> Option<PathBuf> {
     Some(user.dir).filter(|dir| dir.is_absolute())
 }
 
-/// The allowed signers file for approvals and orders, relative to the
-/// owner's home.
+/// The allowed signers file for approvals, relative to the owner's home.
 pub(crate) const ALLOWED_SIGNERS: &str = ".config/board/allowed_signers";
 
-/// The allowed signers file orders were checked against before Board's own,
-/// relative to the owner's home.
+/// The allowed signers file for orders, relative to the owner's home.
 const ATTENTION_ALLOWED_SIGNERS: &str = ".config/attention/allowed_signers";
 
 /// The signer and the two allowed signers files in the owner's home.
@@ -187,24 +183,10 @@ struct Trusted {
     attention_allowed: PathBuf,
 }
 
-/// The signer, relative to the owner's home.
-const SIGNER: &str = ".local/bin/board-sign";
-
-/// The signer before board-sign, which Board runs until board-sign is
-/// installed.
-const ATTENTION_SIGNER: &str = ".local/bin/attention-sign";
-
-/// The signer and the allowed signers files in the owner's `home`: board-sign
-/// when it is a file there, and else attention-sign.
+/// The signer and the allowed signers files in the owner's `home`.
 fn trust(home: &Path) -> Trusted {
-    let signer = home.join(SIGNER);
-    let signer = if signer.is_file() {
-        signer
-    } else {
-        home.join(ATTENTION_SIGNER)
-    };
     Trusted {
-        signer: signer.into_os_string(),
+        signer: home.join(".local/bin/attention-sign").into_os_string(),
         allowed: home.join(ALLOWED_SIGNERS),
         attention_allowed: home.join(ATTENTION_ALLOWED_SIGNERS),
     }

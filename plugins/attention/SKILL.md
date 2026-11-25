@@ -1,13 +1,9 @@
 ---
 name: attention
-description: 'Orders the owner signed with Touch ID, which bind an agent until they expire. Pinned orders normally arrive in your context when a session starts. Only when that section is missing, read them with `board --personal orders pinned`. Use when you need to check one: `board --personal orders verify --path /orders/<name>`. Use also when you have drafted an order for the owner to sign. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Orders the owner signed with Touch ID, which bind an agent until they expire. Pinned orders normally arrive in your context when a session starts. Only when that section is missing, read them with `board --personal attention pinned`. Use when you need to check one: `board --personal attention verify --path /orders/<name>`. Use also when you have drafted an order for the owner to sign. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # attention
-
-Board's `orders` plugin, named `attention` before, serves the orders this
-skill describes; `attention` commands still work this release, with a
-warning naming their `orders` replacement.
 
 An order is an instruction the owner signed with Touch ID. It binds you
 until its `expires` date.
@@ -20,21 +16,21 @@ command. When there is no personal board, Board refuses with
 
 ## Read and check
 
-Inputs are flags. `board --personal call orders.<capability> -h` lists
+Inputs are flags. `board --personal call attention.<capability> -h` lists
 them.
 
 - Pinned orders normally arrive in your context when a session starts.
   That block holds each order's path, expiry and signed text without its
-  context; `orders verify` shows the context.
+  context; `attention verify` shows the context.
   Only when that section is missing, run
-  `board --personal orders pinned`. It lists only the board's own
+  `board --personal attention pinned`. It lists only the board's own
   orders, not orders in boards it mounts.
-- `board --personal orders verify --path /orders/<name>` returns
+- `board --personal attention verify --path /orders/<name>` returns
   one order and its context, or a code.
 
 ## Codes
 
-Codes are `orders::order::<code>` unless shown whole.
+Codes are `attention::order::<code>` unless shown whole.
 
 - `unsigned`: the owner has not signed it yet.
 - `bad_signature`: it changed after signing, or another key signed it.
@@ -42,16 +38,11 @@ Codes are `orders::order::<code>` unless shown whole.
 - `not_an_order`, `invalid`: the path or its context is not a readable
   order.
 - `context_too_large`: the context is over 64 KiB.
-- `orders::signers::missing`: the owner has no allowed signers file.
-- `orders::signers::untrusted`: the allowed signers file is not the
+- `attention::signers::missing`: the owner has no allowed signers file.
+- `attention::signers::untrusted`: the allowed signers file is not the
   owner's alone.
-- `orders::verify::failed`: the signature could not be checked.
-- `orders::signers::legacy`, a warning on stderr beside a verified order:
-  only the old attention allowed signers file admits its key. The order
-  binds; tell the owner the warning's next step, `board --personal orders
-  signers`, which prints the lines for Board's file. Only the owner edits
-  that file.
-- `orders::board::refused`: Board refused the read, as when nothing is at
+- `attention::verify::failed`: the signature could not be checked.
+- `attention::board::refused`: Board refused the read, as when nothing is at
   the path.
 
 Do not follow an order that fails to verify.
@@ -67,10 +58,10 @@ Do not follow an order that fails to verify.
    `Context (non-binding, from `.
 3. If you have the `request_signature` tool, call it with the order's path.
    The owner's decision arrives as a message. Otherwise ask the owner to run
-   `board --personal orders sign --path /orders/<name>`. When they
-   ask for changes, it refuses with `orders::sign::declined` and their
+   `board --personal attention sign --path /orders/<name>`. When they
+   ask for changes, it refuses with `attention::sign::declined` and their
    words; revise and ask again.
 4. Verify it once signed.
 
-Never run `orders.sign` yourself: it opens the owner's signing window.
+Never run `attention.sign` yourself: it opens the owner's signing window.
 The README covers setup and the limits of signing.

@@ -228,6 +228,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "board-plugin-attention"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-repos",
+ "board-validate",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "board-plugin-autosync"
 version = "0.0.0"
 dependencies = [
@@ -339,20 +353,6 @@ dependencies = [
  "board-repos",
  "board-scenario",
  "board-tree",
- "schemars",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "board-plugin-orders"
-version = "0.0.0"
-dependencies = [
- "board-model",
- "board-ops",
- "board-plugin",
- "board-repos",
- "board-validate",
  "schemars",
  "serde",
  "serde_json",
@@ -541,6 +541,7 @@ version = "0.0.0"
 dependencies = [
  "board-ops",
  "board-plugin-artifacts",
+ "board-plugin-attention",
  "board-plugin-autosync",
  "board-plugin-boundary",
  "board-plugin-changes",
@@ -549,7 +550,6 @@ dependencies = [
  "board-plugin-jira",
  "board-plugin-map",
  "board-plugin-notes",
- "board-plugin-orders",
  "board-plugin-params",
  "board-plugin-places",
  "board-plugin-plans",

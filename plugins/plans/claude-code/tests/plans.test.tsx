@@ -64,12 +64,16 @@ type Answers = {
   answer?: () => { exitCode: number; stdout: string } | 'timeout'
   /** What changes.approve answers; by default it asks the owner. */
   approve?: () => { exitCode: number; stdout: string }
+  /** What changes.ready answers; by default the board has no changes plugin. */
+  ready?: () => { exitCode: number; stdout: string }
   delivered?: boolean
   report?: string
   host?: string | null
 }
 
-/** Stands in for `board` and the engine: what each command answers, and what the mod ran, opened, sent and toasted. */
+const NO_CHANGES = JSON.stringify({ schema: 'board/failure/v1', code: 'board::plugin::not_installed', message: 'plugin changes is not installed' })
+
+/** Stands in for `board` and the engine: what each command answers, and what the mod ran, opened, sent, submitted, wrote and toasted. */
 function engine(on: On, answers: Answers = {}) {
   const ran: string[][] = []
   const panes: string[] = []
@@ -77,14 +81,21 @@ function engine(on: On, answers: Answers = {}) {
   const toasts: string[] = []
   let questions = [MERGE, COUNT]
   const whole = { stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
-  mock.env(on, answers.host === null ? {} : { CLAUDE_CODE_HOST_SESSION_ID: answers.host ?? 'local_cd34' })
+  mock.env(on, { HOME: '/home/me', ...(answers.host === null ? {} : { CLAUDE_CODE_HOST_SESSION_ID: answers.host ?? 'local_cd34' }) })
   const waited: string[][] = []
+  const readied: string[][] = []
+  const submitted: string[] = []
+  const disk = new Map<string, string>()
   const limits: (number | undefined)[] = []
   on('process.run', (_, e) => {
     const args = e.argv.slice(e.argv.indexOf('--json') + 1)
     if (args[1] === 'plans.waiting') {
       waited.push(e.argv.slice(4))
       return { value: { ...(answers.waiting?.() ?? { exitCode: 1, stdout: ABSENT }), ...whole } }
+    }
+    if (args[1] === 'changes.ready') {
+      readied.push(e.argv.slice(4))
+      return { value: { ...(answers.ready?.() ?? { exitCode: 1, stdout: NO_CHANGES }), ...whole } }
     }
     ran.push([...e.argv.slice(4, e.argv.indexOf('--json')), ...args])
     if (args[1] === 'plans.answer') {
@@ -113,10 +124,21 @@ function engine(on: On, answers: Answers = {}) {
     return { value: undefined }
   })
   on('ui.log', () => ({ value: undefined }))
+  on('fs.read', (_, e) => {
+    const text = disk.get(e.path)
+    if (text === undefined) throw new Error('missing')
+    return { value: text }
+  })
+  on('fs.write', (_, e) => {
+    disk.set(e.path, e.text)
+    return { value: undefined }
+  })
+  on('command.run', (_, e) => (submitted.push(`/${e.command}`), { text: '' }))
+  on('session.id', () => ({ value: 'local_cd34' }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  return { ran, waited, limits, panes, sent, toasts }
+  return { ran, waited, readied, limits, panes, sent, toasts, submitted, disk }
 }
 
 const start = ($: Engine) => $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
@@ -787,4 +809,161 @@ test('a band that stays on screen is drawn again by each read, so it reads what 
   await band.unmount()
   for (let i = 0; i < 5; i++) await clock.advance(60_000)
   expect(reads(ran, waited)).toEqual({ waiting: 7, open: 1 })
+})
+
+/** A change ready to land at `/changes/<name>`, as changes.ready lists it, with `fields`. */
+const landing = (name: string, fields: Record<string, unknown> = {}) => ({
+  path: `/changes/${name}`,
+  title: `The ${name} change`,
+  pull: '/gh/crumbkit/board/pulls/288',
+  head: 'a3f9c0de1234567890abcdef1234567890abcdef',
+  kind: 'recheck',
+  check: 'rechecks',
+  waits_on: 'your recheck of two reworded statements',
+  questions: [MERGE.path],
+  days: 1,
+  failing: null,
+  ...fields,
+})
+const readyOf = (changes: object[]) => () => ({
+  exitCode: 0,
+  stdout: JSON.stringify({ schema: 'board/call-report/v2', data: { plugin: 'changes', capability: 'ready', output: { changes, total: changes.length, truncated: false, unreadable: 0 } } }),
+})
+const STATE = '/home/me/.local/state/board/ready-failing.jsonl'
+
+/** The keys of the band row's parts. */
+const partKeys = async (band: { drawn: () => Promise<unknown> }) => {
+  const row = bandRows((await band.drawn()) as Parameters<typeof bandRows>[0])[0]
+  return row?.children?.map(c => (typeof c === 'object' && c.type === 'Box' ? c.props?.key : c)) ?? []
+}
+
+test('the band draws Ready to land N just before Waiting, green, and its button opens the Ready to land pane', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { panes, readied } = engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(11, 8) }), ready: readyOf([landing('t'), landing('u'), landing('v')]) })
+  await start($)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await band.find({ key: 'ready' }))?.text).toBe('Ready to land 3')
+  expect((await band.find({ type: 'Text', text: 'Ready to land 3' }))?.props?.color).toBe('success')
+  expect(await partKeys(band)).toEqual(['band:b3-ready', 'band:b3-waiting'])
+  await band.press({ key: 'ready' })
+  expect(panes).toEqual(['ready'])
+  expect(readied).toEqual([['--personal', '--json', 'call', 'changes.ready']])
+})
+
+test('with nothing ready, or no changes plugin, the band draws no Ready to land button, and a board without the plugin is not asked again', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { readied } = engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(8, 5) }) })
+  await start($)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ key: 'ready' })).toBeUndefined()
+  expect((await band.find({ key: 'waiting' }))?.text).toBe('Waiting 8 · 5 blocking')
+  await clock.advance(60_000)
+  expect(readied).toHaveLength(1)
+})
+
+test('a ready list with no change draws no button', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on, { ready: readyOf([]) })
+  await start($)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ key: 'ready' })).toBeUndefined()
+})
+
+test('while the red part is silent a failing change counts in N and draws nothing red, and with the option shown it draws the red part', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on, { ready: readyOf([landing('t'), landing('u', { failing: 'ci_failed' })]) })
+  await start($)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await band.find({ key: 'ready' }))?.text).toBe('Ready to land 2')
+  const drawn = await $.ui.mount({ ...pane('ready'), surface: 'terminal' })
+  expect(await drawn.find({ type: 'Text', text: /failing|CI failed/ })).toBeUndefined()
+})
+
+test('with the failing option shown the button and the pane draw the failing change in red, last, with the step to see why', { options: { failing: 'shown' } }, async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on, { ready: readyOf([landing('t'), landing('u', { failing: 'ci_failed', kind: 'data-sign-off', days: 2 })]) })
+  await start($)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await band.find({ key: 'ready' }))?.text).toBe('Ready to land 1 · 1 failing')
+  const shown = await $.ui.mount({ ...pane('ready'), surface: 'terminal' })
+  expect((await shown.findAll({ type: 'Text' })).map(t => t.text)).toEqual([
+    'Ready to land · 1',
+    '· 1 failing',
+    'crumbkit/board#288 · ready 1d · Recheck',
+    'The t change',
+    'Waits on: your recheck of two reworded statements',
+    'Clears it:',
+    'crumbkit/board#288 · ready 2d · Data sign-off',
+    '· CI failed',
+    'The u change',
+    'Waits on: your recheck of two reworded statements',
+    'To see why: board changes next --path /changes/u',
+  ])
+})
+
+test('a failed read keeps the last count and says the last read failed', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  let fails = false
+  const down = { exitCode: 1, stdout: JSON.stringify({ schema: 'board/failure/v1', code: 'board::query::timeout', message: 'the query ran longer than 1s' }) }
+  const ok = readyOf([landing('t'), landing('u'), landing('v')])
+  engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(11, 8) }), ready: () => (fails ? down : ok()) })
+  await start($)
+  await (await $.ui.mount({ ...BAND, surface: 'terminal' })).unmount()
+  fails = true
+  await clock.advance(60_000)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await band.find({ key: 'ready' }))?.text).toBe('Ready to land 3: the last read failed')
+  expect((await band.find({ type: 'Text', text: 'Ready to land 3: the last read failed' }))?.props?.color).toBe('red')
+})
+
+test('the pane lists each change with its pull request, age, kind and check, and Ask these now and Answer in /ask send /ask', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { submitted } = engine(on, { ready: readyOf([landing('t', { kind: 'land-choice', check: null, waits_on: 'Land it now or after #297?', days: 0 })]) })
+  await start($)
+  const shown = await $.ui.mount({ ...pane('ready'), surface: 'desktop' })
+  expect((await shown.findAll({ type: 'Text' })).map(t => t.text)).toEqual([
+    'Ready to land · 1',
+    'crumbkit/board#288 · ready today · Land choice',
+    'The t change',
+    'Waits on: Land it now or after #297?',
+    'Clears it:',
+  ])
+  expect((await shown.find({ key: 'ask-all' }))?.text).toBe('Ask these now (/ask)')
+  await shown.press({ key: 'ask-all' })
+  await shown.press({ key: '/changes/t#ask' })
+  expect(submitted).toEqual(['/ask', '/ask'])
+})
+
+test('each read records a change that starts or stops failing in the state file, while the red part is silent', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  let rows = [landing('t'), landing('u', { failing: 'conflict' })]
+  const { disk } = engine(on, { ready: () => readyOf(rows)() })
+  await start($)
+  const lines = () => (disk.get(STATE) ?? '').split('\n').filter(l => l !== '').map(l => JSON.parse(l) as Record<string, unknown>)
+  expect(lines()).toEqual([
+    { at: new Date(NOW).toISOString(), change: '/changes/u', pull: '/gh/crumbkit/board/pulls/288', head: landing('u').head, reason: 'conflict', session: 'local_cd34' },
+  ])
+  // A second read with nothing changed appends nothing.
+  await (await $.ui.mount({ ...BAND, surface: 'terminal' })).unmount()
+  await clock.advance(60_000)
+  expect(lines()).toHaveLength(1)
+  rows = [landing('t'), landing('u')]
+  await (await $.ui.mount({ ...BAND, surface: 'terminal' })).unmount()
+  await clock.advance(60_000)
+  expect(lines().map(l => [l.change, l.reason])).toEqual([['/changes/u', 'conflict'], ['/changes/u', null]])
+})
+
+test('the questions pane puts the questions of a change ready to land first, under their own heading', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  engine(on, { ready: readyOf([landing('t', { questions: [COUNT.path] })]) })
+  await start($)
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  expect((await ui.findAll({ type: 'Text' })).map(t => t.text)).toEqual([
+    'Ready to land',
+    'core · 1h',
+    'How many users have a blank email?',
+    'Other questions',
+    'home · 15h · blocks home#201',
+    'Merge home#201?',
+  ])
 })

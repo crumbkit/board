@@ -1384,6 +1384,28 @@ remedy and the predict and edge questions of its understanding checks to ask
 again. `changes.open` warns `changes::owed::rechecks` with the count while
 that list is not empty.
 
+`changes.ready` lists the changes that wait only on the owner. A change is
+listed when it stands in its flow's last phase, every missing check there
+that blocks is the owner's, and the owner has something to do: a missing
+check of his, or an open question whose `blocks` names the change and that no
+answer names. A done change that `changes.owed` lists with a check of the
+owner's is listed too. Each row has the change's `path`, `title`, newest
+`pull`, `head`, its `kind`, the `check` it waits on (null when only a question
+holds it), `waits_on`, what that check or question asks, the `questions`
+that block it, the `days` since it was touched, and `failing`. `kind` is
+`recheck` for an understanding check that does not block, `data-sign-off`
+for one that does, `deviation` for a `mockups` check, and `land-choice` for
+any other check or a question alone. `failing` is `ci_failed` when the newest
+attached run at the head failed, `conflict` when `git merge-tree
+--write-tree` of the head against the branch the mount follows reports a
+conflict, `stale` when the newest attached review covers another commit,
+and null otherwise. A branch that is only behind is not failing. A merge
+check that git cannot answer within 5 seconds leaves `failing` null and adds
+a `changes::ready::merge_unread` warning naming the change. Rows come oldest
+first, with the failing ones last. `failing false` runs no merge check and
+leaves every `failing` null. `questions` takes question paths and lists only
+the changes those questions block; `plans.waiting` calls it that way.
+
 A change in flight keeps the flow version it stored; `changes reflow --path
 <change> --flow development` takes up these gates. A board that wants the
 former gates writes its own `/flows/development`, which wins over the shipped

@@ -5,7 +5,7 @@ import { ROW, SLOT, drawsInto, joinBand, oneBand } from '../hooks/band'
 
 // These prove how a mod's part joins the band the mods beneath it drew. Each
 // Board mod keeps an identical copy of band.ts, which the mods workflow
-// compares with this mod's, so this test covers all five.
+// compares with this mod's, so this test covers all four.
 
 const part = (key: string, text: string): RenderElement => ({ type: 'Box', props: { key }, children: [text] })
 const ENGINE: RenderElement = { type: 'engine', ref: 0 }
@@ -25,8 +25,8 @@ test('the parts sit in slot order whichever mod draws first, with a bar between 
   const effects = joinBand(ENGINE, [part(SLOT.effects, 'Effects 2')])
   const state = joinBand(effects, [part(SLOT.state, 'Board personal')])
   const orders = joinBand(state, [part(SLOT.orders, 'Orders 4')])
-  const all = joinBand(orders, [part(SLOT.controls, 'Controls 5'), part(SLOT.waiting, 'Questions 3')])
-  expect(row(all)).toEqual([SLOT.state, '|', SLOT.orders, SLOT.controls, SLOT.waiting, SLOT.effects])
+  const all = joinBand(orders, [part(SLOT.controls, 'Controls 5'), part(SLOT.waiting, 'Questions 3'), part(SLOT.ready, 'Ready to land 2')])
+  expect(row(all)).toEqual([SLOT.state, '|', SLOT.orders, SLOT.controls, SLOT.ready, SLOT.waiting, SLOT.effects])
 })
 
 test('a part replaces the part of the same slot, so a mod drawn twice shows once', () => {
@@ -57,6 +57,5 @@ test('the band rows keep one band, the one with the most parts, and pass other p
 
 test('a mod draws into a Board mod\'s row and not into another plugin\'s row', () => {
   expect(drawsInto('board-rules')).toBe(true)
-  expect(drawsInto('board-orders')).toBe(true)
   expect(drawsInto('turn-band')).toBe(false)
 })

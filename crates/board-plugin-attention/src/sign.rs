@@ -30,7 +30,7 @@ pub(crate) struct Output {
 /// was read from, so an order edited while the owner read it is refused
 /// with Board's `board::put::stale` and keeps its new text unsigned.
 pub(crate) fn sign(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let Input { path } = PluginError::read_input("orders", "sign", input)?;
+    let Input { path } = PluginError::read_input("attention", "sign", input)?;
     let mut held = order::read(host, &path)?;
     verify::in_force(
         &path,
@@ -49,7 +49,7 @@ pub(crate) fn sign(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
 pub(crate) fn unsigned(path: &str, error: &SignOrderError) -> PluginError {
     match error {
         SignOrderError::Changes { feedback } => refusal(
-            "orders::sign::declined",
+            "attention::sign::declined",
             format!(
                 "the owner did not sign {path} and asked for these changes:\n{feedback}\nrevise \
                  the draft, then ask the owner to sign it again"
@@ -57,12 +57,12 @@ pub(crate) fn unsigned(path: &str, error: &SignOrderError) -> PluginError {
             [("path", json!(path)), ("feedback", json!(feedback))],
         ),
         SignOrderError::Cancelled => refusal(
-            "orders::sign::cancelled",
+            "attention::sign::cancelled",
             format!("{error}; {path} is still waiting for the owner's signature"),
             [("path", json!(path))],
         ),
         SignOrderError::NoSigner | SignOrderError::NotOffered => refusal(
-            "orders::sign::no_signer",
+            "attention::sign::no_signer",
             format!("{path} was not signed: {error}; sign it with the release build of board"),
             [("path", json!(path))],
         ),
@@ -70,7 +70,7 @@ pub(crate) fn unsigned(path: &str, error: &SignOrderError) -> PluginError {
         | SignOrderError::Unwritten { .. }
         | SignOrderError::Failed { .. }
         | SignOrderError::Unverified { .. } => refusal(
-            "orders::sign::failed",
+            "attention::sign::failed",
             format!("{path} was not signed: {error}"),
             [("path", json!(path))],
         ),
