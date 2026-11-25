@@ -25,6 +25,7 @@ import {
   parseForPath,
   reminder,
   sections,
+  staleText,
   SPEED_CHECK,
   stateBadges,
 } from './rules'
@@ -173,13 +174,19 @@ async function remember($: EngineInterface, root: string, entry: Remembered | nu
 
 /**
  * Keeps a check's answer for the session. A failure leaves remembered rules
- * in place. Once the first message has carried the block, an answer that
- * tells other rules than it did is appended as one hidden row.
+ * in place and marks them as possibly out of date. Once the first message has
+ * carried the block, an answer that tells other rules than it did, or that
+ * failure, is appended as one hidden row.
  */
 async function settle($: EngineInterface, root: string, answer: Checked | null) {
   const before = await read($, checked)
   if (answer?.kind === 'failed' && before?.kind === 'read' && before.at !== undefined) {
     $.ui.log(`board: the rules check for ${root} failed, so the session keeps the rules from the check at ${checkedAt(before.at)}: ${answer.code}: ${answer.message}`, { to: 'debug' })
+    const stale = { code: answer.code, message: answer.message }
+    await update($, checked, () => ({ ...before, stale }))
+    if (await read($, sent)) {
+      await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: staleText(root, before.at, stale) }] } })
+    }
     return
   }
   await update($, checked, () => answer)
@@ -267,12 +274,14 @@ export const register: Register = on => {
 
   // One block, which the engine sends in the first request and again after a
   // compaction or /clear. The rows that named other rules are gone then, so
-  // the main conversation counts as told only what the block says.
+  // the main conversation counts as told only what the block says. `sent` is
+  // set before `checked` is read, so a check that settles in between appends
+  // its row rather than being lost.
   on('prompt.context', async ($, e, next) => {
     const context = await next(e)
+    await update($, sent, () => true)
     const answer = await read($, checked)
     await update($, told, all => ({ ...all, '': toldBy(answer) }))
-    await update($, sent, () => true)
     const text = answer === null ? null : contextText(answer)
     if (text === null) return context
     return { ...context, blocks: [...context.blocks.filter(b => b.name !== BLOCK), { name: BLOCK, text }] }

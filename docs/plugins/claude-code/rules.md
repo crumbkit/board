@@ -15,7 +15,9 @@ and it removes a root that no board holds.
   their check, and waits on no Board command. The check then runs in the
   background, for up to 120 seconds. When its answer tells other rules, the
   mod appends one hidden row that gives them. When it fails, the session
-  keeps the remembered rules and the debug log says why.
+  keeps the remembered rules, the debug log says why, and the session is
+  told, with Board's code, that the rules may be out of date: in the block
+  if the first message has not gone, otherwise in one hidden row.
 - A root with no entry waits up to 5 seconds for the check. If the check has
   not answered by then, the block says it is still running, and its answer
   follows as one hidden row.

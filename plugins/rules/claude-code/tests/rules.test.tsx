@@ -564,18 +564,45 @@ test('a fresh answer that names other rules appends one row with them; the same 
   expect(appended).toHaveLength(1)
 })
 
-test('a fresh check that fails keeps the remembered rules and logs why', async ($, on) => {
+const STALE =
+  `The fresh rules check for ${ROOT} failed, so the rules from the check at 2026-11-25 01:56 UTC may be out of date: ` +
+  'board::query::timeout: the query ran longer than 1s. Before you edit a file, run `board call rules.for-path --path <file>` in its directory.'
+
+test('a fresh check that fails after the first message keeps the remembered rules, logs why and says so in one row', async ($, on) => {
   const { clock, appended, logs, store } = engine(on, { now: AT, check: { exitCode: 1, stdout: FAILED }, stored: { [REMEMBERED]: { [ROOT]: KEPT } } })
   await begin($)
   await $.prompt.context({ blocks: [] })
   await clock.advance(0)
-  expect(appended).toEqual([])
+  expect(appended).toEqual([STALE])
   expect(logs).toContain(
     `board: the rules check for ${ROOT} failed, so the session keeps the rules from the check at 2026-11-25 01:56 UTC: board::query::timeout: the query ran longer than 1s`,
   )
   const context = await $.prompt.context({ blocks: [] })
   expect(context.blocks[0]?.text).toContain('/rules/example/readme')
+  expect(context.blocks[0]?.text).toContain(STALE)
+  expect(context.blocks[0]?.text).not.toContain('A fresh check runs now')
   expect(store[REMEMBERED]).toEqual({ [ROOT]: KEPT })
+})
+
+test('a fresh check that fails before the first message appends nothing, and the block says the rules may be out of date', async ($, on) => {
+  const { clock, appended } = engine(on, { now: AT, check: { exitCode: 1, stdout: FAILED }, stored: { [REMEMBERED]: { [ROOT]: KEPT } } })
+  await start($, clock)
+  const context = await $.prompt.context({ blocks: [] })
+  expect(context.blocks[0]?.text).toContain('/rules/example/readme')
+  expect(context.blocks[0]?.text).toContain(STALE)
+  await clock.advance(0)
+  expect(appended).toEqual([])
+})
+
+test('a fresh check that answers while the first block is built is not lost', async ($, on) => {
+  const { clock, appended, release } = engine(on, { now: AT, check: 'held', stored: { [REMEMBERED]: { [ROOT]: KEPT } } })
+  await start($, clock)
+  const building = $.prompt.context({ blocks: [] })
+  release({ exitCode: 0, stdout: CHECK })
+  const context = await building
+  await clock.advance(0)
+  const told = [context.blocks[0]?.text ?? '', ...appended].join('\n')
+  expect(told).toContain('- /rules/crumbkit/docs-1: AGENTS.md has at most 200 words.')
 })
 
 test('with nothing remembered a check slower than 5 seconds is said to be running, and its answer follows as one row', async ($, on) => {

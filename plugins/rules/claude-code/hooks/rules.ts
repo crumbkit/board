@@ -187,10 +187,20 @@ export function contextText(checked: Checked): string | null {
   const from =
     checked.at === undefined
       ? ''
-      : ` These are from the check at ${checkedAt(checked.at)}. A fresh check runs now, and this session is told if it finds other rules.`
+      : checked.stale !== undefined
+        ? ` ${staleText(checked.root, checked.at, checked.stale)}`
+        : ` These are from the check at ${checkedAt(checked.at)}. A fresh check runs now, and this session is told if it finds other rules.`
   return (
     `The board's rules state requirements on files in ${checked.root}. Follow each one that applies to a ` +
     `file you change. \`board get <rule>\` shows which files a rule names.${from}\n\n${lines.join('\n')}`
+  )
+}
+
+/** What the session is told when the fresh check after a remembered start fails. */
+export function staleText(root: string, at: number, failed: { code: string; message: string }): string {
+  return (
+    `The fresh rules check for ${root} failed, so the rules from the check at ${checkedAt(at)} may be out of date: ` +
+    `${failed.code}: ${failed.message}. Before you edit a file, run \`board call rules.for-path --path <file>\` in its directory.`
   )
 }
 

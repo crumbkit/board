@@ -21,7 +21,7 @@ export type Rule = {
  * running.
  */
 export type Checked =
-  | { kind: 'read'; root: string; rules: Rule[]; at?: number }
+  | { kind: 'read'; root: string; rules: Rule[]; at?: number; stale?: { code: string; message: string } }
   | { kind: 'failed'; root: string; code: string; message: string }
   | { kind: 'pending'; root: string }
 
