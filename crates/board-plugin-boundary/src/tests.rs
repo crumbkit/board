@@ -254,9 +254,10 @@ fn every_input_property_carries_a_sentence() {
 /// The blob another writer's crossing gets.
 const THEIRS: &str = "1111111111111111111111111111111111111111";
 
-/// A host whose board holds nothing a query finds, and which applies each
-/// put line's expect as Board does under its put lock: a line whose expect
-/// the held blob does not match refuses the whole batch as stale.
+/// A host whose board holds no valid crossing, which answers a query for
+/// the blob at a path from what it holds, and which applies each put
+/// line's expect as Board does under its put lock: a line whose expect the
+/// held blob does not match refuses the whole batch as stale.
 #[derive(Default)]
 struct Racing {
     /// The path another writer stores just before the next put.
@@ -269,12 +270,19 @@ struct Racing {
 impl Host for Racing {
     fn query(
         &self,
-        _sql: &str,
+        sql: &str,
         _limit: board_ops::Limit,
     ) -> Result<board_ops::QueryReport, board_ops::QueryError> {
+        let path = (sql.rsplit_once("logical = '"))
+            .and_then(|(_, rest)| rest.strip_suffix('\''))
+            .unwrap_or_default();
+        let rows = match self.held.borrow().get(path) {
+            Some(blob) if sql.starts_with("SELECT blob FROM entries") => vec![vec![json!(blob)]],
+            _ => Vec::new(),
+        };
         Ok(board_ops::QueryReport {
-            columns: vec!["body".into(), "blob".into()],
-            rows: Vec::new(),
+            columns: vec!["blob".into()],
+            rows,
             truncated: false,
             over_budget: false,
             memory: None,
@@ -414,4 +422,39 @@ fn a_crossing_another_check_writes_first_makes_the_write_stale_and_keeps_theirs(
         host.held.borrow().get(&at).map(String::as_str),
         Some(THEIRS)
     );
+}
+
+/// The blob of a degraded record at the crossing's path, which
+/// `crossing::find` does not find.
+const DEGRADED: &str = "3333333333333333333333333333333333333333";
+
+#[test]
+fn a_degraded_record_at_the_path_is_overwritten_and_refused_as_stale_when_another_check_writes_first()
+ {
+    for racing in [false, true] {
+        let host = Racing::default();
+        let crossing = new_crossing();
+        let at = crossing::path(&crossing.digest);
+        host.held
+            .borrow_mut()
+            .insert(at.clone(), DEGRADED.to_owned());
+        assert!(crossing::find(&host, &crossing.digest).unwrap().is_none());
+        if racing {
+            *host.first.borrow_mut() = Some(at.clone());
+        }
+        let written = crossing::write(&host, &crossing, None);
+        if racing {
+            let refused = written.unwrap_err();
+            assert_eq!(
+                refused.fields["code"], "board::put::stale",
+                "{}",
+                refused.message
+            );
+            assert!(host.landed.borrow().is_empty(), "nothing is written");
+        } else {
+            written.unwrap();
+            let landed = host.landed.borrow();
+            assert_eq!(landed[0][0]["expect"], DEGRADED, "{}", landed[0][0]);
+        }
+    }
 }

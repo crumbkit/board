@@ -268,7 +268,9 @@ fn rewrite(host: &dyn Host, path: &str, body: &str) -> Option<String> {
     let logical = path.parse().ok()?;
     let read = host.get_each(&[logical]).ok()?.into_iter().next()?.ok()?;
     let Object::Blob(blob) = read.location.object else {
-        return None;
+        return Some(format!(
+            "{path} is not a file, so its task text cannot be rewritten"
+        ));
     };
     let text = String::from_utf8(read.bytes).ok()?;
     let end = text.get(4..)?.find("\n---\n")? + 4 + 5;
@@ -360,7 +362,8 @@ mod tests {
             paths: &[board_model::LogicalPath],
         ) -> Result<Vec<Result<board_ops::GetReport, board_ops::ReadError>>, board_ops::ReadError>
         {
-            let blob = board_model::ObjectId::from_hex(&self.blob.borrow()).unwrap();
+            let object = board_model::ObjectId::from_hex(&self.blob.borrow())
+                .map_or(board_model::Object::Directory, board_model::Object::Blob);
             Ok(vec![Ok(board_ops::GetReport {
                 location: board_model::Location {
                     board: board_model::Board {
@@ -368,7 +371,7 @@ mod tests {
                         source: board_model::Source::WorkingTree,
                     },
                     path: "tasks/t.md".to_owned(),
-                    object: board_model::Object::Blob(blob),
+                    object,
                     pointers: Vec::new(),
                     follow: None,
                 },
@@ -457,6 +460,15 @@ mod tests {
         let host = Holding::new(true);
         let refused = rewrite(&host, "/tasks/t.md", "New.").expect("the rewrite is refused");
         assert!(refused.contains("is not what --expect says"), "{refused}");
+        assert!(host.landed.borrow().is_empty(), "nothing is written");
+    }
+
+    #[test]
+    fn a_task_path_that_is_no_file_is_refused_with_a_message_and_nothing_is_written() {
+        let host = Holding::new(false);
+        *host.blob.borrow_mut() = String::new();
+        let refused = rewrite(&host, "/tasks/t.md", "New.").expect("the rewrite is refused");
+        assert!(refused.contains("/tasks/t.md"), "{refused}");
         assert!(host.landed.borrow().is_empty(), "nothing is written");
     }
 

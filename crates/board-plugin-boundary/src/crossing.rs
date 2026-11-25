@@ -44,20 +44,36 @@ pub(crate) fn find(
 }
 
 /// Writes `crossing` at its path, replacing the crossing `prior` names only
-/// if it is still the one there, and with no prior only if nothing is.
+/// if it is still the one there. With no prior, it replaces what the path
+/// holds now, valid or not, only if that is still there.
 pub(crate) fn write(
     host: &dyn Host,
     crossing: &CrossingRecord,
     prior: Option<&str>,
 ) -> Result<(), PluginError> {
-    let line = json!({
-        "path": path(&crossing.digest),
-        "expect": prior.unwrap_or("none"),
-        "record": crossing,
-    });
+    let at = path(&crossing.digest);
+    let expect = match prior {
+        Some(blob) => blob.to_owned(),
+        None => held(host, &at)?,
+    };
+    let line = json!({"path": at, "expect": expect, "record": crossing});
     host.put(&[line])
         .map(|_| ())
         .map_err(|error| refused("put --batch", &error.refusal()))
+}
+
+/// The blob of the file at `path` in the personal board's working tree, or
+/// `none` when nothing is there.
+fn held(host: &dyn Host, path: &str) -> Result<String, PluginError> {
+    let sql = format!(
+        "SELECT blob FROM entries WHERE source = 'worktree' AND logical = {}",
+        literal(path)
+    );
+    let found = rows(host, &sql)?;
+    Ok((found.first().and_then(|row| row.first()))
+        .and_then(Value::as_str)
+        .unwrap_or("none")
+        .to_owned())
 }
 
 /// Find the crossing of a digest, or of the content that `action`, `to` and
