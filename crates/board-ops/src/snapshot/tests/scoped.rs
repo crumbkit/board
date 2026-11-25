@@ -183,6 +183,24 @@ fn a_warm_check_of_a_mount_reads_its_kept_rows_and_one_of_a_directory_inside_it_
 }
 
 #[test]
+fn a_warm_ls_of_the_root_reads_the_kept_working_tree_and_decides_nothing() {
+    let (scenario, _libraries) = mounting();
+    let cache = tempfile::tempdir().unwrap();
+    let decided = |path: &str| {
+        let report = open(&scenario).ls(&path.parse().unwrap(), Some(cache.path()));
+        report.unwrap().work.decided
+    };
+    assert_ne!(decided("/"), 0, "cold");
+    assert_eq!(decided("/"), 0, "warm");
+    scenario.write("tasks/new.json", Item::File(&task("")));
+    assert_ne!(decided("/"), 0, "after a change");
+    assert_eq!(
+        listed(&scenario, "/", Some(cache.path())),
+        listed(&scenario, "/", None)
+    );
+}
+
+#[test]
 fn a_warm_ls_reads_each_kept_source_wholly_in_its_scope_and_walks_only_the_others() {
     let (scenario, [_a, (_, b, _), _inner]) = mounting();
     let cache = tempfile::tempdir().unwrap();

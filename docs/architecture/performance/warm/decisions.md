@@ -48,7 +48,8 @@ order.
 - `ls` reads kept rows as `check` does: the kept rows of each mounted
   source wholly in its scope, walking only the directory it lists there.
   It walks and decides the other sources its scope reaches, and keeps
-  nothing for a source it decided only in part.
+  nothing for a source it decided only in part. An `ls` of the root is
+  unscoped, so it also reads the working tree's kept decision.
 - A scope reaches a source when one of the source's routes lies inside the
   scope, or the scope lies inside one of its routes. A scoped `check` or
   `ls` walks any other source only when the index lists no
