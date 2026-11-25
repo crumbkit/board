@@ -1,6 +1,6 @@
 {
   "name": "board-rules",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Tells each Claude Code session the board rules on its repository, and names a rule on a file before an edit of it lands.",
   "types": "./types/index.d.ts",
   "author": {

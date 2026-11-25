@@ -3,6 +3,8 @@
 //! missing, such as the rechecks of a data understanding check, which the
 //! owner is asked after the merge.
 
+use std::collections::BTreeSet;
+
 use board_ops::{Host, PluginError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -54,10 +56,16 @@ pub(crate) struct Asked {
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct Owed {
     pub(crate) path: String,
-    title: String,
-    touched: Option<String>,
-    checks: Vec<Check>,
+    pub(crate) title: String,
+    pub(crate) touched: Option<String>,
+    pub(crate) checks: Vec<Check>,
     questions: Vec<Asked>,
+    /// The change's newest pull request, which `changes.ready` names.
+    #[serde(skip)]
+    pub(crate) pull: Option<String>,
+    /// The change's head commit, which `changes.ready` names.
+    #[serde(skip)]
+    pub(crate) head: Option<String>,
 }
 
 /// The done changes that owe a check, newest touch first.
@@ -106,12 +114,19 @@ pub(crate) fn owed_of(observed: &Observed) -> Option<Owed> {
         touched: observed.change.touched.clone(),
         checks,
         questions,
+        pull: observed.change.pulls().last().cloned(),
+        head: observed.change.head.clone(),
     })
 }
 
 /// Each change done in the last [`OWED_DAYS`] days that owes a check,
-/// newest touch first, and how many done changes Board does not read.
-pub(crate) fn owing(host: &dyn Host) -> Result<(Vec<Owed>, usize), PluginError> {
+/// newest touch first, and how many done changes Board does not read. With
+/// `only`, a change at any other path is passed over before its gate is
+/// read.
+pub(crate) fn owing(
+    host: &dyn Host,
+    only: Option<&BTreeSet<String>>,
+) -> Result<(Vec<Owed>, usize), PluginError> {
     let since = today(host).plus(-OWED_DAYS).to_string();
     let sql = format!(
         "SELECT logical, code, body FROM records WHERE type IN ({}) AND \
@@ -127,6 +142,9 @@ pub(crate) fn owing(host: &dyn Host) -> Result<(Vec<Owed>, usize), PluginError> 
             unreadable += 1;
             continue;
         };
+        if only.is_some_and(|only| !only.contains(path)) {
+            continue;
+        }
         let Some(mut flow) = of_change(host, path, &change)? else {
             continue;
         };
@@ -148,7 +166,7 @@ pub(crate) fn owing(host: &dyn Host) -> Result<(Vec<Owed>, usize), PluginError> 
 
 pub(crate) fn owed(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input { limit } = PluginError::read_input(PLUGIN, "owed", input)?;
-    let (mut changes, unreadable) = owing(host)?;
+    let (mut changes, unreadable) = owing(host, None)?;
     let total = changes.len();
     changes.truncate(limit);
     Ok(to_value(Output {

@@ -1,0 +1,96 @@
+import { expect, test } from 'claude-code/testing'
+
+import type { ReadyChange } from '../types'
+import { failingLabel, failingMode, keptLines, KEPT_MS, kindLabel, parseReady, pullRef, readyBadge, readyFor, stateText, transitions } from '../hooks/ready'
+
+// These prove the words the Ready to land button and pane draw from what
+// changes.ready answers, and the lines the silent week records. Which
+// changes are ready, and why one is failing, the changes plugin's own tests
+// prove.
+
+const NOW = Date.UTC(2026, 10, 25, 9, 0, 0)
+
+/** A ready change at `/changes/<name>` with `fields`. */
+const change = (name: string, fields: Partial<ReadyChange> = {}): ReadyChange => ({
+  path: `/changes/${name}`,
+  title: `The ${name} change`,
+  pull: `/gh/crumbkit/board/pulls/${name.length}`,
+  head: 'a3f9c0de1234567890abcdef1234567890abcdef',
+  kind: 'land-choice',
+  check: null,
+  waits_on: `Land ${name} now?`,
+  questions: [`/projects/p/questions/${name}`],
+  days: 1,
+  failing: null,
+  ...fields,
+})
+
+/** What changes.ready prints for `changes`. */
+const readyReport = (changes: ReadyChange[]) =>
+  JSON.stringify({ schema: 'board/call-report/v2', data: { plugin: 'changes', capability: 'ready', output: { changes, total: changes.length, truncated: false, unreadable: 0 } } })
+
+test('changes.ready is read as its rows, and a board without the capability or the plugin is told apart from a failure', () => {
+  const rows = [change('t')]
+  expect(parseReady(0, readyReport(rows), '')).toEqual({ kind: 'read', ready: { changes: rows, total: 1 } })
+  const noCapability = JSON.stringify({ schema: 'board/failure/v1', code: 'board::plugin::no_capability', message: 'no ready', fields: { capability: 'ready', plugin: 'changes' } })
+  expect(parseReady(1, noCapability, '')).toEqual({ kind: 'absent' })
+  const noPlugin = JSON.stringify({ schema: 'board/failure/v1', code: 'board::plugin::not_installed', message: 'plugin changes is not installed' })
+  expect(parseReady(1, noPlugin, '')).toEqual({ kind: 'absent' })
+  const other = JSON.stringify({ schema: 'board/failure/v1', code: 'board::plugin::no_capability', message: 'no open', fields: { capability: 'open' } })
+  expect(parseReady(1, other, '').kind).toBe('failed')
+  const timeout = JSON.stringify({ schema: 'board/failure/v1', code: 'board::query::timeout', message: 'the query ran longer than 1s' })
+  expect(parseReady(1, timeout, '')).toEqual({ kind: 'failed', why: 'board::query::timeout the query ran longer than 1s' })
+})
+
+test('the button counts the ready changes, draws nothing for none, and counts failing ones in N while the red part is silent', () => {
+  const ready = { changes: [change('t'), change('u', { failing: 'conflict' })], total: 2 }
+  expect(readyBadge(ready, null, 'silent')).toEqual({ label: 'Ready to land 2', failing: null, problem: false })
+  expect(readyBadge(ready, null, 'shown')).toEqual({ label: 'Ready to land 1', failing: '· 1 failing', problem: false })
+  expect(readyBadge({ changes: [], total: 0 }, null, 'silent')).toBeNull()
+  expect(readyBadge(null, null, 'silent')).toBeNull()
+})
+
+test('a failed read keeps the last count with the Waiting wording, and a board with no personal board says nothing', () => {
+  const ready = { changes: [change('t'), change('u'), change('v')], total: 3 }
+  const why = 'board::query::timeout the query ran longer than 1s'
+  expect(readyBadge(ready, why, 'silent')).toEqual({ label: 'Ready to land 3: the last read failed', failing: null, problem: true })
+  expect(readyBadge(null, why, 'silent')).toEqual({ label: 'Ready to land could not be read', failing: null, problem: true })
+  expect(readyBadge(null, 'board::config::not_found no personal board', 'silent')).toBeNull()
+})
+
+test('only the option shown draws the red part', () => {
+  expect(failingMode('shown')).toBe('shown')
+  for (const option of ['silent', undefined, '', 'yes']) expect(failingMode(option)).toBe('silent')
+})
+
+test('a row names its pull request, how long it has been ready, its kind and why it fails', () => {
+  expect(pullRef('/gh/crumbkit/board/pulls/288')).toBe('crumbkit/board#288')
+  expect(pullRef('/repos/team/gh/o/r/pulls/7')).toBe('o/r#7')
+  expect(pullRef('/elsewhere/7')).toBe('/elsewhere/7')
+  expect(pullRef(null)).toBeNull()
+  expect([readyFor(0), readyFor(2), readyFor(null)]).toEqual(['ready today', 'ready 2d', null])
+  expect(['recheck', 'data-sign-off', 'deviation', 'land-choice'].map(k => kindLabel(k as ReadyChange['kind']))).toEqual(['Recheck', 'Data sign-off', 'Deviation', 'Land choice'])
+  expect(['ci_failed', 'conflict', 'stale'].map(f => failingLabel(f as 'stale'))).toEqual(['CI failed', 'Conflicts with main', 'Review is stale'])
+})
+
+test('a change that starts failing, changes its reason or stops failing gets one line, and an unchanged one gets none', () => {
+  const at = new Date(NOW).toISOString()
+  const started = transitions([], [change('t'), change('u', { failing: 'conflict' })], at, 'local_cd34')
+  expect(started).toEqual([
+    { at, change: '/changes/u', pull: '/gh/crumbkit/board/pulls/1', head: change('u').head, reason: 'conflict', session: 'local_cd34' },
+  ])
+  expect(transitions(started, [change('t'), change('u', { failing: 'conflict' })], at, 'local_cd34')).toEqual([])
+  const changed = transitions(started, [change('u', { failing: 'stale' })], at, 'local_ef56')
+  expect(changed.map(l => [l.change, l.reason, l.session])).toEqual([['/changes/u', 'stale', 'local_ef56']])
+  expect(transitions(started, [change('u')], at, 's').map(l => [l.change, l.reason])).toEqual([['/changes/u', null]])
+  // A change that leaves the list while failing stops failing too.
+  expect(transitions(started, [], at, 's').map(l => [l.change, l.reason, l.pull])).toEqual([['/changes/u', null, '/gh/crumbkit/board/pulls/1']])
+})
+
+test('the state file keeps lines newer than 30 days, one JSON object per line, and skips a line it cannot read', () => {
+  const line = (days: number) => ({ at: new Date(NOW - days * 24 * 3_600_000).toISOString(), change: `/changes/d${days}`, pull: null, head: null, reason: 'stale' as const, session: 's' })
+  const text = `${JSON.stringify(line(31))}\nnot json\n${JSON.stringify(line(29))}\n`
+  expect(keptLines(text, NOW)).toEqual([line(29)])
+  expect(KEPT_MS).toBe(30 * 24 * 3_600_000)
+  expect(stateText([line(29)], [line(0)])).toBe(`${JSON.stringify(line(29))}\n${JSON.stringify(line(0))}\n`)
+})

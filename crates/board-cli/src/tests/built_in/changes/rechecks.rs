@@ -10,7 +10,7 @@ const RECORD: &str = "/changes/t/understanding/data";
 /// A change in land with stored data whose plan attaches the understanding
 /// check at [`RECORD`], holding rechecks with the given `points`, and a
 /// decision that signs it off. The stub gh reports its pull request merged.
-fn built(points: &[Option<&str>]) -> Changes {
+pub(super) fn built(points: &[Option<&str>]) -> Changes {
     let board = gh();
     board.answers(7, &json!({"state": "closed", "merged": true}));
     board.write(
@@ -95,7 +95,7 @@ fn a_stored_recheck_with_no_point_is_degraded_and_the_gate_says_so_with_its_reme
 }
 
 /// The sections the land gate needs.
-const TESTED: &str =
+pub(super) const TESTED: &str =
     "\n## What the tests prove\n\nIt stops.\n\n## What the tests do not prove\n\nRetries.\n";
 
 /// Decision 1306Z: a land gate whose only missing check is the rechecks
