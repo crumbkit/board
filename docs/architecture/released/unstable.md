@@ -33,6 +33,11 @@ users. A board whose `.board/types/` holds the 0.1.1 copies reports a
 reference to a v3 task as `board::ref::wrong_type` until
 `board plugin enable` replaces them.
 
+After 0.1.1, `attention/order/v1` gained an optional `approved` and
+`plans/answer/v1` an optional `heard` in place, because the release had few
+users and a record without either reads as before. released.json's entries
+for both were rewritten for the new shapes.
+
 The map plugin's `map/layout/v1` changes in place until map increment 4
 lands, because increments 3 and 4 add optional fields to it. The unstable
 list cannot hold it, because the list accepts only the external plugin

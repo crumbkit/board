@@ -5,10 +5,11 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use board_model::{
-    Answer, Code, EFFECT_TYPE, EFFECT_TYPES, Effect, Fields, LogicalPath, MAX_DECIDE_BYTES,
-    MAX_RECORD_BYTES, ObjectId, PUT_OP, PathError, PluginName, RM_OP, Refusal, SEEN_TYPE, Seen,
-    canonical_json, parse_json,
+    Act, Answer, Code, EFFECT_TYPE, EFFECT_TYPES, Effect, Fields, LogicalPath, MAX_DECIDE_BYTES,
+    MAX_RECORD_BYTES, Need, ObjectId, PUT_OP, PathError, PluginName, RM_OP, Refusal, SEEN_TYPE,
+    Seen, Signers, SigningSetting, canonical_json, parse_json,
 };
+use board_plugin::Listed;
 use board_tree::{GitError, Removes, Target, Working, WriteError};
 use serde_json::Value;
 
@@ -53,6 +54,32 @@ pub struct Signing {
     pub cache: Option<PathBuf>,
     /// All the signer sees of the environment.
     pub environment: Vec<(&'static str, OsString)>,
+}
+
+impl Signing {
+    /// Signing's state with `setting`, the personal board's: on when the
+    /// allowed signers file has an `owner` line. A file Board does not trust
+    /// reads as on, so the acts it lists are refused as unsigned.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "board-ops's effects module is the one reader of the allowed signers file"
+    )]
+    pub fn state(&self, setting: SigningSetting) -> board_model::Signing {
+        let signers = match self.allowed.as_deref().map(board_plugin::owner_listed) {
+            None | Some(Ok(Listed::Missing)) => Signers::Missing,
+            Some(Ok(Listed::NoOwner)) => Signers::NoOwner,
+            Some(Ok(Listed::Owner) | Err(_)) => Signers::Owner,
+        };
+        board_model::Signing::new(signers, setting)
+    }
+
+    /// The allowed signers file as a refusal names it.
+    fn file(&self) -> String {
+        (self.allowed.as_ref()).map_or_else(
+            || "Board's allowed signers file".to_owned(),
+            |file| file.display().to_string(),
+        )
+    }
 }
 
 /// The directories of pending effects, answers and answered effects in the
@@ -115,6 +142,12 @@ pub enum EffectError {
         path: String,
         why: String,
     },
+    #[error(
+        "{what} needs the owner's signature and {file} is missing; Board has verified a signature before, so it does not take an answer instead"
+    )]
+    FileMissing { what: String, file: String },
+    #[error("{what} is not approved: {why}")]
+    NotApproved { what: String, why: String },
     #[error("the records in {} cannot be read: {source}", directory)]
     Read { directory: String, source: GitError },
     #[error("the personal board cannot be opened: {source}")]
@@ -136,6 +169,8 @@ impl EffectError {
             Self::Resolve { source } => source.code(),
             Self::NotFound { .. } | Self::Forged { .. } => Code::SettingsNotFound,
             Self::Unsigned { .. } | Self::OwnerUnsigned { .. } => Code::SettingsUnsigned,
+            Self::FileMissing { .. } => Code::SigningFileMissing,
+            Self::NotApproved { .. } => Code::SigningNotApproved,
             Self::Read { source, .. } => source.code(),
             Self::Open { source } => source.code(),
             Self::Write { source } => source.code(),
@@ -172,6 +207,8 @@ impl EffectError {
             Self::Write { source } => source.fields(),
             Self::Resolve { source } => source.fields(),
             Self::Read { .. }
+            | Self::FileMissing { .. }
+            | Self::NotApproved { .. }
             | Self::NoPersonal { .. }
             | Self::TooLarge { .. }
             | Self::Unshown { .. } => Fields::default(),
@@ -230,14 +267,80 @@ impl Asker {
             (self.personal.as_ref()).ok_or_else(|| EffectError::NoPersonal { what: what() })?;
         Board::open(root, self.home.clone()).map_err(|source| EffectError::Open { source })
     }
+
+    /// Signing's state with the personal board's setting, or the default
+    /// setting when the known boards file names no personal board.
+    pub(crate) fn signing_now(&self) -> Result<board_model::Signing, EffectError> {
+        let setting = match &self.personal {
+            Some(_) => self.personal(String::new)?.config().signing.clone(),
+            None => SigningSetting::default(),
+        };
+        Ok(self.signing.state(setting))
+    }
 }
 
-/// The owner's answer to `effect`, if they gave one. An approval counts
-/// only with the owner's signature of it, checked against `allowed`.
+/// The personal board's config with `signing.configured` set, and the
+/// blob it replaces, which records that Board has verified one of the
+/// owner's signatures, so that from now on a missing allowed signers file
+/// refuses the acts signing lists. None when it is set already or the
+/// config cannot be read.
+pub(crate) fn configured(personal: &Board) -> Option<(ObjectId, Value)> {
+    let (blob, mut value, config) = crate::board::config_file(personal.repositories()).ok()?;
+    if config.signing.configured {
+        return None;
+    }
+    let signing = (value.as_object_mut()?)
+        .entry("signing")
+        .or_insert_with(|| serde_json::json!({}));
+    signing
+        .as_object_mut()?
+        .insert("configured".to_owned(), Value::Bool(true));
+    Some((blob, value))
+}
+
+/// The logical path of a board's config.
+pub(crate) fn config_path() -> LogicalPath {
+    "/.board/board"
+        .parse()
+        .expect("the config's path is a logical path")
+}
+
+/// Writes [`configured`] in its own commit. A failure leaves signing on,
+/// and the next verified signature writes it.
+pub(crate) fn mark_configured(personal: &Board) {
+    if let Some((blob, value)) = configured(personal) {
+        let bytes = canonical_json(&value);
+        let _ = personal.put(&config_path(), Expect::Blob(blob), bytes.as_bytes());
+    }
+}
+
+/// Whether the answer at `approved`, a logical path in `personal`, approves
+/// the act on `target`, as [`board_model::approving`] says. `Err` says why
+/// not.
+pub(crate) fn approved_by(personal: &Board, approved: &str, target: &str) -> Result<(), String> {
+    let relative = |path: &str| path.trim_start_matches('/').to_owned();
+    let read = |path: &str, kind: &str| {
+        read_record(personal, &relative(path), kind).map_err(|error| error.to_string())
+    };
+    let answer = read(approved, "plans/answer/v1")?
+        .ok_or_else(|| format!("no plans/answer/v1 is at {approved} in the personal board"))?;
+    let question = (answer.get("question").and_then(Value::as_str))
+        .map(|question| read(question, "plans/question/v1"))
+        .transpose()?
+        .flatten();
+    board_model::approving(&answer, question.as_ref(), target)
+        .map(|_| ())
+        .map_err(|why| format!("the answer at {approved} does not approve it: {why}"))
+}
+
+/// The owner's answer to `effect`, if they gave one. While signing lists
+/// effects, an approval counts only with the owner's signature of it,
+/// checked against the allowed signers file. Otherwise a signature or the
+/// answer `approved` names counts.
 fn seen(
     personal: &Board,
     effect: &Effect,
-    allowed: Option<&Path>,
+    signing: &Signing,
 ) -> Result<Option<Answer>, EffectError> {
     let id = effect.id();
     let value = read_record(personal, &format!("{SEEN}/{id}"), SEEN_TYPE)?;
@@ -246,9 +349,28 @@ fn seen(
     };
     if seen.answer == Answer::Approve {
         let signature = seen.signature.as_deref().unwrap_or_default();
-        verified(effect, allowed, signature)?;
+        let now = signing.state(personal.config().signing.clone());
+        match (now.need(Act::Effect), &seen.approved) {
+            (Need::FileMissing, _) => return Err(file_missing(signing, &id)),
+            (Need::Answer, Some(approved)) if signature.is_empty() => {
+                approved_by(personal, approved, &id).map_err(|why| EffectError::NotApproved {
+                    what: format!("pending effect {id}"),
+                    why,
+                })?;
+            }
+            _ => verified(effect, signing.allowed.as_deref(), signature)?,
+        }
     }
     Ok(Some(seen.answer))
+}
+
+/// The refusal of an approval of the pending effect `id` while signing
+/// lists effects and the allowed signers file is gone.
+fn file_missing(signing: &Signing, id: &str) -> EffectError {
+    EffectError::FileMissing {
+        what: format!("approving pending effect {id}"),
+        file: signing.file(),
+    }
 }
 
 /// Checks that `signature` is the owner's signature of `effect`'s
@@ -452,10 +574,12 @@ impl Board {
     }
 
     /// Checks the owner's own `change` to `target`. One that
-    /// [`owner_signs`] or [`removes_config`] needs the owner to sign
-    /// [`Effect::owner_write`] now,
-    /// with Touch ID, while the put holds the lock; Board keeps no
-    /// signature of it.
+    /// [`owner_signs`] or [`removes_config`] is an owner's write, and one
+    /// that changes `signing` in a board's config is an edit of signing.
+    /// Each needs what signing's state says: an owner's write needs the
+    /// owner to sign [`Effect::owner_write`] now, with Touch ID, while the
+    /// put holds the lock, when signing lists it; an edit of signing needs
+    /// it whenever signing is on. Board keeps no signature of it.
     #[expect(
         clippy::disallowed_methods,
         reason = "board-ops's effects module builds the owner-write statement it signs"
@@ -465,11 +589,35 @@ impl Board {
             return Ok(());
         }
         let on_disk = self.repository().landing(&target.path);
-        if !owner_signs(&target.path, &on_disk) && !removes_config(&change, &target.path, &on_disk)
-        {
+        let write =
+            owner_signs(&target.path, &on_disk) || removes_config(&change, &target.path, &on_disk);
+        let edit = self.edits_signing(&change, &target.path, &on_disk);
+        if !write && !edit {
             return Ok(());
         }
         let landed = landed(&on_disk, change.shape(&on_disk));
+        let now = self.asker.signing_now()?;
+        let need = [
+            write.then(|| now.need(Act::OwnerWrite)),
+            edit.then(|| now.need_to_edit()),
+        ]
+        .into_iter()
+        .flatten()
+        .max_by_key(|need| match need {
+            Need::Answer => 0,
+            Need::Signature => 1,
+            Need::FileMissing => 2,
+        });
+        match need {
+            Some(Need::Signature) => {}
+            Some(Need::FileMissing) => {
+                return Err(EffectError::FileMissing {
+                    what: format!("the owner's {} of {landed}", change.op()),
+                    file: self.asker.signing.file(),
+                });
+            }
+            Some(Need::Answer) | None => return Ok(()),
+        }
         let unsigned = |why: String| EffectError::OwnerUnsigned {
             op: change.op(),
             path: landed.clone(),
@@ -490,6 +638,26 @@ impl Board {
         decide::signature(&self.asker.signing, Path::new(&root), &statement)
             .map(|_| ())
             .map_err(unsigned)
+    }
+
+    /// Whether `change`, to the file given as `given` that lands at
+    /// `on_disk`, changes `signing` in this board's config: a put whose
+    /// `signing` differs from the one the working tree holds, or the
+    /// config's removal while it holds one.
+    fn edits_signing(&self, change: &Change<'_>, given: &str, on_disk: &str) -> bool {
+        let config = [given, on_disk]
+            .iter()
+            .any(|file| file.eq_ignore_ascii_case(".board/board.json"));
+        if !config {
+            return false;
+        }
+        let current = crate::board::config_file(self.repositories())
+            .ok()
+            .and_then(|(_, value, _)| value.get("signing").cloned());
+        match change {
+            Change::Put(_, admitted, _) => admitted.value.get("signing") != current.as_ref(),
+            Change::Remove(_) => current.is_some(),
+        }
     }
 }
 

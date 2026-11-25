@@ -83,9 +83,9 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
 }
 
 /// The outputs keep the Python plugin's fields, which the Claude Code mod
-/// reads.
+/// reads, with how each order was approved and the signing state line.
 #[test]
-fn verify_and_pinned_answer_with_the_python_plugins_fields() {
+fn verify_and_pinned_answer_with_the_python_plugins_fields_and_the_signing_state() {
     let manifest = super::manifest();
     let verify = &manifest["capabilities"][0]["outputSchema"];
     assert_eq!(
@@ -93,6 +93,7 @@ fn verify_and_pinned_answer_with_the_python_plugins_fields() {
         json!([
             "path",
             "signer",
+            "approval",
             "order",
             "expires",
             "context",
@@ -101,7 +102,9 @@ fn verify_and_pinned_answer_with_the_python_plugins_fields() {
     );
     assert_eq!(verify["properties"]["expires"]["format"], "date");
     let pinned = &manifest["capabilities"][1]["outputSchema"];
-    assert_eq!(pinned["required"], json!(["orders", "left_out"]));
+    assert_eq!(pinned["required"], json!(["signing", "orders", "left_out"]));
+    let signers = &manifest["capabilities"][3]["outputSchema"];
+    assert_eq!(signers["required"][0], "signing");
     assert_eq!(
         pinned["$defs"]["LeftOut"]["required"],
         json!(["path", "code", "message"])

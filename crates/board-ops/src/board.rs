@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use board_model::{
     CONFIG_TYPE, Classified, Code, Content, Fields, LogicalPath, Object, ObjectId, PluginName,
-    Source, classify,
+    SigningSetting, Source, classify,
 };
 use board_tree::{Checkout, GitError, Repositories, Repository, ResolveError, latest};
 use serde::Deserialize;
@@ -34,6 +34,10 @@ pub struct Config {
     /// refuses to write or sync (docs/architecture/writes/minimum.md).
     #[serde(default)]
     pub min_board: Option<MinBoard>,
+    /// Which of the owner's acts need a Touch ID signature, read from the
+    /// personal board's config (docs/architecture/writes/signing.md).
+    #[serde(default)]
+    pub signing: SigningSetting,
 }
 
 /// The object store a board uploads large and binary files to.

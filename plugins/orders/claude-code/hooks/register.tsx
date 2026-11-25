@@ -3,7 +3,7 @@ import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { Pinned, Request } from '../types'
 import { SLOT, drawsInto, joinBand, keepOneBand } from './band'
-import { BLOCK, contextText, ordersButton, orderName, parsePinned } from './pinned'
+import { BLOCK, approvalOf, contextText, ordersButton, orderName, parsePinned } from './pinned'
 
 // The mod reads and signs orders in the owner's personal board through
 // Board. The button only runs `board call orders.sign`, which opens the
@@ -250,7 +250,7 @@ export const register: Register = on => {
           <Text dimColor>
             {order.path}, until {order.expires}
           </Text>
-          <Text color="green">Verified: signed by {order.signer}.</Text>
+          <Text color="green">Verified: {approvalOf(order)}.</Text>
           <Box marginTop={1}>
             <Text>{order.order}</Text>
           </Box>
@@ -285,7 +285,7 @@ export const register: Register = on => {
                 await update($, showContext, () => false)
               }}
             />
-            <Text color="green">Verified: signed by {d.signer}.</Text>
+            <Text color="green">Verified: {approvalOf(d)}.</Text>
             <Text>{d.order}</Text>
           </Box>
         ))}

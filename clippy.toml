@@ -33,6 +33,7 @@ disallowed-methods = [
     { path = "std::fs::remove_dir_all", reason = "file writes are owned by board-tree (the tree) and board-index (the cache)" },
     { path = "board_plugin::sign::sign", reason = "signing is called only by board-ops's effects module (STANDARDS.md 29)" },
     { path = "board_plugin::sign::verify", reason = "signing is called only by board-ops's effects module (STANDARDS.md 29)" },
+    { path = "board_plugin::sign::owner_listed", reason = "the allowed signers file is read only by board-ops's effects module (STANDARDS.md 29)" },
     { path = "board_model::effect::Effect::approval", reason = "a statement is built only where board-ops's effects module signs or verifies it (STANDARDS.md 29)" },
     { path = "board_model::effect::Effect::owner_write", reason = "a statement is built only where board-ops's effects module signs or verifies it (STANDARDS.md 29)" },
     { path = "board_model::effect::order::Order::statement", reason = "a statement is built only where board-ops's effects module signs or verifies it (STANDARDS.md 29)" },

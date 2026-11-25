@@ -370,7 +370,7 @@ fn generic(code: Code) -> &'static str {
             "a board needs `.board/board.json` at its repository root, spelled exactly so; in a git repository, `board init` makes it a board; outside one, run `git init` first; for a board elsewhere, run `board -C <dir> check`"
         }
         Code::ConfigInvalid => {
-            "`.board/board.json` holds `$type` `board/config/v1`, and may hold `commit_on_put` (true or false), `min_board` (a version such as \"0.4.0\", a UTC timestamp such as \"2026-11-13T10:00:00Z\", or an object with `version` and `built`), `plugins` (distinct plugin names) and `store` (a `backend` and a `location`), nothing else"
+            "`.board/board.json` holds `$type` `board/config/v1`, and may hold `commit_on_put` (true or false), `min_board` (a version such as \"0.4.0\", a UTC timestamp such as \"2026-11-13T10:00:00Z\", or an object with `version` and `built`), `plugins` (distinct plugin names), `signing` (`require`, a list of acts from order, effect, owner-write, plan, data and mockup, and `configured`, true or false) and `store` (a `backend` and a `location`), nothing else"
         }
         Code::ConfigBoardTooOld => {
             "reads still work; the message ends with the install step that satisfies the gate, for this build: a release of the version named, or a source checkout at the tag or commit date named, built with `cargo install --path crates/board-cli --locked`; or ask whoever set `min_board` in `.board/board.json` (the board's own, or for a write through a mount, the mounted board's) whether it can be lowered"
@@ -655,6 +655,12 @@ fn generic(code: Code) -> &'static str {
         }
         Code::SettingsUnsigned => {
             "when an answer or an owner's put under `effects/` fails: install board-sign at ~/.local/bin/board-sign (Board runs ~/.local/bin/attention-sign while board-sign is missing), list the owner's key as `owner` in ~/.config/board/allowed_signers, both in the home your account's passwd entry names, and sign again; a refusal needs no signature. When a plugin's decide fails: delete the seen record from /effects/seen/ in the personal board, so the decide asks again"
+        }
+        Code::SigningFileMissing => {
+            "Board has verified the owner's signature before, so a listed act needs ~/.config/board/allowed_signers and never falls back to an answer: the owner restores the file in the home the passwd entry names, and `board --personal call orders.signers` prints the lines it holds"
+        }
+        Code::SigningNotApproved => {
+            "with signing off, or for an act `signing.require` in the personal board's .board/board.json leaves out, an approval names an answer: the owner answers a plans/question/v1 that names what is approved, choosing its option `approve`, through the questions pane, Board.app or /ask, and the answer names `by.person`; pass that answer's path with --approved"
         }
         Code::UiUnknownKind => {
             "name a kind from the catalogue in each slot's `kind`; `board ui kinds` lists them"

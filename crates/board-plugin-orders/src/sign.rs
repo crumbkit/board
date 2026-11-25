@@ -16,6 +16,9 @@ pub(crate) struct Input {
     /// The order's logical path, such as /orders/no-force-push.
     #[schemars(regex(pattern = "^/"), extend("format" = "board-path"))]
     pub(crate) path: String,
+    /// The owner's plans/answer/v1 that approves the order in chat, by its logical path, where signing takes an answer for orders; the order is then approved without Touch ID.
+    #[schemars(regex(pattern = "^/"), extend("format" = "board-path"))]
+    pub(crate) approved: Option<String>,
 }
 
 /// The order the owner signed.
@@ -25,12 +28,13 @@ pub(crate) struct Output {
     pub(crate) path: String,
 }
 
-/// Signs the order at the input's path. An order whose day has passed is
+/// Signs the order at the input's path, or, given `approved`, records the
+/// answer that approves it in chat. An order whose day has passed is
 /// refused before the owner sees it. The put expects the blob the order
 /// was read from, so an order edited while the owner read it is refused
 /// with Board's `board::put::stale` and keeps its new text unsigned.
 pub(crate) fn sign(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let Input { path } = PluginError::read_input("orders", "sign", input)?;
+    let Input { path, approved } = PluginError::read_input("orders", "sign", input)?;
     let mut held = order::read(host, &path)?;
     verify::in_force(
         &path,
@@ -38,8 +42,13 @@ pub(crate) fn sign(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         host.settings().now,
         "set a later expires in the draft before asking the owner to sign it",
     )?;
-    let signature = (host.sign_order(&held.order)).map_err(|error| unsigned(&path, &error))?;
-    held.record["signature"] = json!(signature);
+    if let Some(approved) = approved {
+        verify::in_chat(host, &path, &held.order, &approved)?;
+        held.record["approved"] = json!(approved);
+    } else {
+        let signature = (host.sign_order(&held.order)).map_err(|error| unsigned(&path, &error))?;
+        held.record["signature"] = json!(signature);
+    }
     let line = json!({"path": path, "expect": held.blob, "record": held.record});
     (host.put(&[line])).map_err(|error| refused("put --batch", &error.refusal()))?;
     Ok(serde_json::to_value(Output { path }).expect("the output is a plain string"))

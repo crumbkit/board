@@ -270,8 +270,8 @@ pub(super) const BUDGETS: Budgets = Budgets::new()
         ),
         Budget::new(
             "answer",
-            1_260,
-            "answer says on one page how an approval is signed and checked, its Effects: line says that it is destructive, and its global flags line names --no-input, which a program adds to every run.",
+            1_500,
+            "answer says on one page how an approval is signed and checked, and how --approved names the owner's answer where signing takes one in place of a signature, its Effects: line says that it is destructive, and its global flags line names --no-input, which a program adds to every run.",
         ),
         Budget::new(
             "skills install",

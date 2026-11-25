@@ -1,8 +1,8 @@
 //! `board decide` and `board answer`.
 
 use board_model::{
-    Answer, BINARY_NAME, Code, Effect, LogicalPath, MAX_DECIDE_BYTES, PathError, Seen,
-    canonical_json, is_effect_id, parse_json, shown_digest, utc,
+    Act, Answer, BINARY_NAME, Code, Effect, LogicalPath, MAX_DECIDE_BYTES, Need, PathError, Seen,
+    SigningState, canonical_json, is_effect_id, parse_json, shown_digest, utc,
 };
 use serde_json::{Value, json};
 
@@ -12,8 +12,8 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use super::{
-    ANSWERED, Asker, EFFECT_TYPE, EffectError, PENDING, SEEN, Signing, hold, read_held, root, seen,
-    verified,
+    ANSWERED, Asker, EFFECT_TYPE, EffectError, PENDING, SEEN, Signing, approved_by, config_path,
+    configured, file_missing, hold, read_held, root, seen, verified,
 };
 use crate::board::Board;
 use crate::put::{Expect, Failure, PutError, PutReport, Removal, Schemas};
@@ -147,7 +147,7 @@ impl Board {
         effect.asked = Some(utc(SystemTime::now()));
         let id = effect.id();
         let (plugin, op, path) = (plugin.clone(), capability.to_owned(), path.clone());
-        match seen(&personal, &effect, self.asker.signing.allowed.as_deref())? {
+        match seen(&personal, &effect, &self.asker.signing)? {
             Some(Answer::Approve) => {
                 report.effect = Some(id);
                 Ok(report)
@@ -231,15 +231,19 @@ pub(super) fn landed(
 
 /// Writes the owner's `answer` to the pending effect `id` in the personal
 /// board and moves the effect from `effects/pending/` to
-/// `effects/answered/`, in one commit. An approval holds
-/// `signature`, made elsewhere, or else one the signer makes now; either is
-/// checked before it is written. A plugin may not answer.
+/// `effects/answered/`, in one commit. While signing lists effects, an
+/// approval holds `signature`, made elsewhere, or else one the signer makes
+/// now; either is checked before it is written. Otherwise an approval may
+/// instead name `approved`, the owner's answer that approves the effect,
+/// which is checked as [`board_model::approving`] says. A plugin may not
+/// answer. The first signature Board verifies marks signing configured.
 pub fn answer(
     asker: &Asker,
     id: &str,
     answer: Answer,
     reason: Option<String>,
     signature: Option<String>,
+    approved: Option<String>,
 ) -> Result<AnswerReport, EffectError> {
     if let Some(plugin) = &asker.plugin {
         return Err(EffectError::FromPlugin {
@@ -252,14 +256,43 @@ pub fn answer(
     let (effect, blob) = read_pending(&personal, id)?;
     let not_found = || EffectError::NotFound { id: id.to_owned() };
     let mut seen = Seen::new(id, answer, reason);
+    let mut signed_now = false;
     if answer == Answer::Approve {
-        seen.signature = Some(match signature {
-            Some(signature) => {
-                verified(&effect, asker.signing.allowed.as_deref(), &signature)?;
-                signature
+        let now = asker.signing.state(personal.config().signing.clone());
+        let what = || format!("pending effect {id}");
+        match (now.need(Act::Effect), signature, approved) {
+            (Need::FileMissing, ..) => return Err(file_missing(&asker.signing, id)),
+            (Need::Signature, _, Some(_)) => {
+                return Err(EffectError::NotApproved {
+                    what: what(),
+                    why: "signing is on and lists effects, so an answer does not approve one; \
+                          approve without --approved and sign with Touch ID"
+                        .to_owned(),
+                });
             }
-            None => signed(asker, &personal, &effect)?,
-        });
+            (_, Some(signature), _) => {
+                verified(&effect, asker.signing.allowed.as_deref(), &signature)?;
+                seen.signature = Some(signature);
+                signed_now = true;
+            }
+            (Need::Answer, None, Some(path)) => {
+                approved_by(&personal, &path, id)
+                    .map_err(|why| EffectError::NotApproved { what: what(), why })?;
+                seen.approved = Some(path);
+            }
+            (Need::Answer, None, None) if now.state == SigningState::Off => {
+                return Err(EffectError::NotApproved {
+                    what: what(),
+                    why: "signing is off, so an approval names the owner's answer with \
+                          --approved"
+                        .to_owned(),
+                });
+            }
+            (_, None, None) => {
+                seen.signature = Some(signed(asker, &personal, &effect)?);
+                signed_now = true;
+            }
+        }
     }
     let at = format!("/{SEEN}/{id}").parse().map_err(|_| not_found())?;
     let kept = format!("/{ANSWERED}/{id}")
@@ -267,10 +300,15 @@ pub fn answer(
         .map_err(|_| not_found())?;
     // An effect asked again after the owner removed its answer replaces the
     // copy kept from the first answer.
-    let records = [
+    let mut records = vec![
         (at, json!(seen), Expect::Absent),
         (kept, json!(effect), Expect::Any),
     ];
+    // The first signature Board verifies marks signing configured, in the
+    // answer's commit.
+    if signed_now && let Some((blob, config)) = configured(&personal) {
+        records.push((config_path(), config, Expect::Blob(blob)));
+    }
     let pending = Removal {
         path: format!("/{PENDING}/{id}")
             .parse()

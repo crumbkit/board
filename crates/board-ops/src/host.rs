@@ -10,16 +10,16 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use board_model::{
-    CapabilityName, Code, Fields, LogicalPath, Moved, Order, PluginName, RecordType, Refusal,
+    CapabilityName, Fields, LogicalPath, Moved, Order, PluginName, RecordType, Refusal, Signing,
+    SigningSetting,
 };
 use board_plugin::child::{Exited, ProcessError};
 use board_plugin::{CallReport, Manifest, Signers, Target};
 pub use board_tree::Origin;
 use serde_json::Value;
 
-use crate::effects::{
-    Asker, DecideReport, OwnerWriteError, Shown, SignOrderError, VerifyOrderError,
-};
+use crate::Board;
+use crate::effects::{DecideReport, OwnerWriteError, Shown, SignOrderError, VerifyOrderError};
 use crate::known::{self, KnownBoards};
 use crate::mount::{MountError, MountUpdateReport};
 use crate::plugins::Plugins;
@@ -28,14 +28,18 @@ use crate::query::{MAX_LIMIT, QueryError, QueryReport};
 use crate::read::{GetReport, ReadError};
 use crate::refs::{Absent, RefsError, RefsReport};
 use crate::sync::{Guard, SyncError, Synced};
-use crate::{Board, OpenError};
 
 mod error;
 mod memo;
+mod opened;
 mod settings;
 pub use error::PluginError;
 pub(crate) use memo::Memo;
+use opened::{opened, prefixes};
 pub use settings::{Settings, Variables};
+
+/// Board's allowed signers file, as a host with no home names it.
+const SIGNERS_FILE: &str = "Board's allowed signers file";
 
 /// A plugin compiled into Board, which runs in Board's own process.
 pub trait Plugin: Sync {
@@ -281,6 +285,18 @@ pub trait Host {
     fn order_signers(&self) -> Result<Signers, VerifyOrderError> {
         Err(VerifyOrderError::NotOffered)
     }
+    /// Signing's state, from Board's allowed signers file and the personal
+    /// board's `signing` setting, which says which acts need the owner's
+    /// signature and which take an answer. A host with no owner reads as
+    /// signing on with the default setting, so an answer approves none of
+    /// the acts it lists.
+    fn signing(&self) -> Signing {
+        Signing::new(board_model::Signers::Owner, SigningSetting::default())
+    }
+    /// Board's allowed signers file, as signing's state line names it.
+    fn signers_file(&self) -> String {
+        SIGNERS_FILE.to_owned()
+    }
     /// Each board the known boards file lists. A host with no known boards
     /// file, such as a test's, lists none.
     fn known_boards(&self) -> Vec<PathBuf> {
@@ -419,108 +435,6 @@ impl Deref for HostBoard<'_> {
             Self::Called(board) => board,
             Self::Opened(board) => board,
         }
-    }
-}
-
-impl Hosted<'_> {
-    /// The board opened again, with the same built-in plugins and build,
-    /// and the same mount read at a checkout, as the plugin's own `board`
-    /// opens it. Its timings stay in the board it opens, outside the call's
-    /// trace.
-    fn again(&self) -> Result<Board, OpenError> {
-        let mut board = self.board.open_beside(self.board.repository().path())?;
-        board.build_in(self.board.built_in.0);
-        board.built_by(self.board.build);
-        if let Some(checkout) = self.board.repositories().checkout() {
-            board.read_checkout(checkout.clone());
-        }
-        Ok(board)
-    }
-
-    /// Opens the board again as the plugin, as a put through a mount opens
-    /// the mounted board, so every check reads the plugin where it already
-    /// does, and writes `lines` there, marking the commit with `bulk`.
-    fn put_marked(
-        &self,
-        lines: &[Value],
-        bulk: Option<&crate::Bulk>,
-    ) -> Result<PutReport, PutError> {
-        let (board, text) = self.batch_of(lines, bulk)?;
-        board.put_batch(&mut text.as_bytes())
-    }
-
-    /// The board opened as the plugin, and `lines` as the text of a batch.
-    fn batch_of(
-        &self,
-        lines: &[Value],
-        bulk: Option<&crate::Bulk>,
-    ) -> Result<(Board, String), PutError> {
-        let plugin = self.plugin()?;
-        let mut board = self
-            .again()
-            .map_err(|error| PutError::Open(Box::new(error)))?;
-        board.ask_as(Asker {
-            plugin: Some(plugin),
-            ..Asker::default()
-        });
-        if let Some(bulk) = bulk {
-            board.mark_bulk(bulk.clone());
-        }
-        let text = lines
-            .iter()
-            .map(Value::to_string)
-            .collect::<Vec<_>>()
-            .join("\n");
-        Ok((board, text))
-    }
-
-    fn plugin(&self) -> Result<PluginName, PutError> {
-        (self.plugin.clone()).map_err(|text| PutError::BadPlugin { text })
-    }
-}
-
-/// The logical path of each of `places`, or the refusal of the first whose
-/// path is too long to be one, so a caller never mistakes a dropped place
-/// for no place.
-fn prefixes(places: &[board_tree::Place]) -> Result<Vec<LogicalPath>, Box<Refusal>> {
-    (places.iter())
-        .map(|place| {
-            (place.prefix())
-                .map_err(|error| Box::new(Refusal::new(error.code(), &error, &Fields::default())))
-        })
-        .collect()
-}
-
-fn opened(error: &OpenError) -> Refusal {
-    Refusal::new(error.code(), error, &error.fields())
-}
-
-impl Hosted<'_> {
-    /// Opens the board again asking as the plugin, with the personal
-    /// board and signing `board decide` reads.
-    fn asking(&self, capability: &str) -> Result<Board, Box<Refusal>> {
-        if !matches!(capability.parse(), Ok(Target::Named { .. })) {
-            let message = format!(
-                "the capability {capability:?} to decide must be `<plugin>.<capability>`, such as review.comment"
-            );
-            let refusal = Refusal::new(Code::CliUsage, message, &Fields::default());
-            return Err(Box::new(refusal.with_hint(
-                "name the capability as the plugin's name, a dot and the capability, as `board decide --capability` takes it",
-            )));
-        }
-        let plugin = self.plugin().map_err(|error| Box::new(error.refusal()))?;
-        let default = KnownBoards::default();
-        let known = self.plugins.known.unwrap_or(&default);
-        let home = self.board.repositories().home().map(Path::to_path_buf);
-        let asker = known::asker(
-            Some(plugin),
-            Some(known),
-            home,
-            self.plugins.signing.clone(),
-        )?;
-        let mut board = self.again().map_err(|error| Box::new(opened(&error)))?;
-        board.ask_as(asker);
-        Ok(board)
     }
 }
 
@@ -716,7 +630,26 @@ impl Host for Hosted<'_> {
     )]
     fn sign_order(&self, order: &Order) -> Result<String, SignOrderError> {
         let root = self.board.repository().path();
-        crate::effects::sign_order(&self.plugins.signing, root, order)
+        let signature = crate::effects::sign_order(&self.plugins.signing, root, order)?;
+        if let Some(personal) = self.personal() {
+            crate::effects::mark_configured(&personal);
+        }
+        Ok(signature)
+    }
+
+    fn signing(&self) -> Signing {
+        let setting = (self.personal()).map_or_else(
+            || self.board.config().signing.clone(),
+            |personal| personal.config().signing.clone(),
+        );
+        self.plugins.signing.state(setting)
+    }
+
+    fn signers_file(&self) -> String {
+        (self.plugins.signing.allowed.as_ref()).map_or_else(
+            || SIGNERS_FILE.to_owned(),
+            |file| file.display().to_string(),
+        )
     }
 
     #[expect(

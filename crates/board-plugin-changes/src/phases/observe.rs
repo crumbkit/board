@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use board_model::Act;
 use board_ops::{Host, PluginError};
 use board_plugin::shape::Record;
 use serde_json::Value;
@@ -127,7 +128,13 @@ pub(crate) fn observe_in(
     if wanted.contains(&Read::PlannedRules) {
         planned_rules(host, &mut found)?;
     }
-    if wanted.contains(&Read::Approval) {
+    if wanted.contains(&Read::Signing) {
+        found.signed = crate::gates::signing::signed_acts(&host.signing());
+    }
+    let signs_off = [Act::Data, Act::Mockup]
+        .iter()
+        .any(|act| found.signed.contains(act));
+    if wanted.contains(&Read::Approval) || signs_off {
         found.approval = approval(host, &found)?;
     }
     if wanted.contains(&Read::AfterReview) {

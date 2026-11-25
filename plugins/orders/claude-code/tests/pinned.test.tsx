@@ -14,6 +14,7 @@ const CWD = '/Users/ana/Code/board'
 const EVALS = {
   path: '/orders/evals',
   signer: 'owner',
+  approval: 'signed by owner',
   order: 'Record every test as an eval.',
   expires: '2026-12-31',
   context: '/orders/evals.md',
@@ -25,6 +26,7 @@ const REPORT = {
     capability: 'pinned',
     plugin: 'orders',
     output: {
+      signing: 'Signing is off: every act takes an answer in chat.',
       orders: [EVALS],
       left_out: [
         { path: '/orders/old', code: 'orders::order::expired', message: 'the order expired on 2026-10-01' },
@@ -90,12 +92,24 @@ const start = ($: Engine) =>
 test('the context block holds each verified order with its expiry but not its context, and names each one left out', () => {
   const pinned = parsePinned(BOARD, 0, JSON.stringify(REPORT), '')
   expect(contextText(pinned)).toBe(
-    'The owner signed each order below with Touch ID, and `board call orders.verify` checked it as this ' +
+    'The owner approved each order below, and `board call orders.verify` checked it as this ' +
       'session started. Each one binds you until it expires. When you need to interpret an order, read its ' +
       'non-binding context with `board --personal orders verify --path <order>`.\n\n' +
-      '## /orders/evals, until 2026-12-31\n\nRecord every test as an eval.\n\n' +
+      '## /orders/evals, until 2026-12-31\n\nsigned by owner\n\nRecord every test as an eval.\n\n' +
       '## Pinned orders not shown\n\n- /orders/old: orders::order::expired. the order expired on 2026-10-01',
   )
+})
+
+test('an order approved in chat says so on its own line, where a signed one says signed by owner', () => {
+  const chat = { ...EVALS, path: '/orders/review', approval: 'approved in chat, not signed' }
+  const report = { ...REPORT, data: { ...REPORT.data, output: { orders: [EVALS, chat], left_out: [] } } }
+  const text = contextText(parsePinned(BOARD, 0, JSON.stringify(report), '')) ?? ''
+  expect(text).toContain('## /orders/evals, until 2026-12-31\n\nsigned by owner\n\n')
+  expect(text).toContain('## /orders/review, until 2026-12-31\n\napproved in chat, not signed\n\n')
+  // An older Board names no approval; its orders were all signed.
+  const { approval: _, ...older } = EVALS
+  const old = { ...REPORT, data: { ...REPORT.data, output: { orders: [older], left_out: [] } } }
+  expect(contextText(parsePinned(BOARD, 0, JSON.stringify(old), ''))).toContain('\n\nsigned by owner\n\n')
 })
 
 test('a board that refuses the call is reported with its code, and an empty answer adds no block', () => {
@@ -146,6 +160,8 @@ test('the band shows one Orders button and no order by name, and the button open
     const band = await $.ui.mount({ plugin: 'board-orders', surface, component: 'AbovePrompt', props: BAND_PROPS })
     expect((await band.find({ key: 'orders' }))?.text).toBe('Orders 1: 1 left out')
     expect(await band.find({ text: /evals/ })).toBeUndefined()
+    // The band never names signing, whatever its state (the plan's decision log).
+    expect(await band.find({ text: /signing/i })).toBeUndefined()
     await band.press({ key: 'orders' })
     await band.unmount()
 
@@ -160,6 +176,7 @@ test('the band shows one Orders button and no order by name, and the button open
     await pane.press({ key: 'order:/orders/evals' })
     expect(await pane.find({ text: '/orders/evals, until 2026-12-31' })).toBeDefined()
     expect(await pane.find({ text: 'Verified: signed by owner.' })).toBeDefined()
+    expect(await pane.find({ text: /signing/i })).toBeUndefined()
     expect(await pane.find({ text: 'Record every test as an eval.' })).toBeDefined()
     expect(await pane.find({ text: 'Ana asked for this on 2026-10-20.' })).toBeUndefined()
     await pane.press({ key: 'context' })

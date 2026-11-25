@@ -362,6 +362,39 @@ pub fn signers(board: &Path, attention: Option<&Path>) -> Result<Signers, SignEr
     Ok(merged)
 }
 
+/// Whether an allowed signers file lists the owner, which decides whether
+/// Board's signing is on (docs/architecture/writes/signing.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Listed {
+    /// No file is there.
+    Missing,
+    /// The file is there and no line names `owner` among its principals.
+    NoOwner,
+    /// A line names `owner` among its principals.
+    Owner,
+}
+
+/// Whether the allowed signers file `file` has a line whose principals
+/// name `owner` exactly. A file Board does not trust is refused, as
+/// `verify` refuses it, before it is read.
+pub fn owner_listed(file: &Path) -> Result<Listed, SignError> {
+    if !file.exists() {
+        return Ok(Listed::Missing);
+    }
+    let text = read_signers(file)?;
+    let owner = (text.lines().filter_map(Entry::parse)).any(|entry| {
+        entry
+            .principals
+            .iter()
+            .any(|principal| principal == PRINCIPAL)
+    });
+    Ok(if owner {
+        Listed::Owner
+    } else {
+        Listed::NoOwner
+    })
+}
+
 /// The text of the allowed signers file `file`, empty when there is none.
 fn read_signers(file: &Path) -> Result<String, SignError> {
     if !file.exists() {

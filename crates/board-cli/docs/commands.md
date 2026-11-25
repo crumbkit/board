@@ -400,9 +400,10 @@ Answer a pending effect
 ### Arguments
 
 - `<ID>`: The pending effect's id, 64 hex digits. Required.
-- `<ANSWER>`: approve admits it, after the owner signs it with Touch ID; refuse refuses it. Required.
+- `<ANSWER>`: approve admits it, with Touch ID or --approved; refuse refuses it. Required.
 - `--reason <REASON>`: Why, kept in the seen record
 - `--signature <FILE>`: A signature made elsewhere: this file, or - for stdin
+- `--approved <PATH>`: The owner's answer that approves it, where signing takes one
 
 Effects: destructive, not idempotent, closed-world.
 

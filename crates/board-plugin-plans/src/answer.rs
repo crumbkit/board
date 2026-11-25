@@ -62,6 +62,10 @@ pub(crate) struct Output {
     /// When the answer was recorded, in UTC to the second.
     #[schemars(extend("format" = "date-time"))]
     answered: String,
+    /// Whether the words are a prompt the owner typed in the session the
+    /// input names, as its prompt log says; left out with no session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    heard: Option<bool>,
     /// The change the question blocks, which `changes.attach` was asked to
     /// keep the answer; left out when the question blocks no change.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -92,6 +96,11 @@ pub(crate) fn answer(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         agent,
         written_by,
     } = PluginError::read_input("plans", "answer", input)?;
+    // Only the words given are checked: an option's text the owner did not
+    // type is never heard.
+    let heard = session
+        .as_deref()
+        .map(|session| heard(host, session, words.as_deref()));
     let by = Actor::of(session, program, person, agent);
     let answer_path = answer_path_of("answer", &path)?;
     let asked = question::read(host, "answer", &path)?;
@@ -145,6 +154,9 @@ pub(crate) fn answer(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     if let Some(written_by) = written_by {
         record.insert("written_by".to_owned(), json!(written_by));
     }
+    if let Some(heard) = heard {
+        record.insert("heard".to_owned(), json!(heard));
+    }
     // The question is put back unchanged, so that a question withdrawn or
     // edited after the read refuses the whole batch.
     let lines = [
@@ -163,6 +175,7 @@ pub(crate) fn answer(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         choice: option,
         words,
         answered,
+        heard,
         attached,
     };
     Ok(serde_json::to_value(output).expect("Output holds only strings"))
@@ -185,6 +198,37 @@ fn attach(host: &dyn Host, work: Option<(String, String)>, answer: &str) -> Opti
         .err())
     .map(|refusal| refusal.code.as_str().to_owned());
     Some(Attached { change, refused })
+}
+
+/// Whether `words` are a prompt the owner typed in `session`, or a line of
+/// one, as the board-plans mod's log at
+/// `$XDG_STATE_HOME/board/prompts/<session>`, or
+/// `~/.local/state/board/prompts/<session>`, says. No words, a session id
+/// that is not a plain name, or no log reads as not heard.
+fn heard(host: &dyn Host, session: &str, words: Option<&str>) -> bool {
+    let Some(words) = words else {
+        return false;
+    };
+    let plain = !session.is_empty()
+        && (session.chars()).all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    let Some(directory) = prompts(host).filter(|_| plain) else {
+        return false;
+    };
+    std::fs::read_to_string(directory.join(session))
+        .is_ok_and(|log| board_model::heard_in(&log, words, host.settings().now))
+}
+
+/// The directory of the board-plans mod's prompt logs.
+fn prompts(host: &dyn Host) -> Option<std::path::PathBuf> {
+    let environment = &host.settings().environment;
+    let absolute = |name: &str| {
+        (environment.get(name))
+            .map(std::path::PathBuf::from)
+            .filter(|path| path.is_absolute())
+    };
+    (absolute("XDG_STATE_HOME"))
+        .or_else(|| absolute("HOME").map(|home| home.join(".local/state")))
+        .map(|state| state.join("board/prompts"))
 }
 
 /// The id and text of each of the question's options that has both.

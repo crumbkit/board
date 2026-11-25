@@ -140,6 +140,8 @@ codes! {
     SettingsNotFound => "board::settings::not_found",
     SettingsNoPersonal => "board::settings::no_personal",
     SettingsUnsigned => "board::settings::unsigned",
+    SigningFileMissing => "board::signing::file_missing",
+    SigningNotApproved => "board::signing::not_approved",
     UiUnknownKind => "board::ui::unknown_kind",
     UiSlotMismatch => "board::ui::slot_mismatch",
     UiSlotInvalid => "board::ui::slot_invalid",

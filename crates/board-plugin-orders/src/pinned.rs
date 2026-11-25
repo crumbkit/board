@@ -33,6 +33,9 @@ pub(crate) struct LeftOut {
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "PinnedOutput", deny_unknown_fields)]
 pub(crate) struct Output {
+    /// Whether signing is on, in one line, such as `Signing is off: every
+    /// act takes an answer in chat.`
+    pub(crate) signing: String,
     pub(crate) orders: Vec<verify::Output>,
     pub(crate) left_out: Vec<LeftOut>,
 }
@@ -52,6 +55,7 @@ pub(crate) fn pinned(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     let report =
         (host.query(&sql, Limit::ALL)).map_err(|error| refused("query", &error.refusal()))?;
     let mut output = Output {
+        signing: host.signing().line(&host.signers_file()),
         orders: Vec::new(),
         left_out: Vec::new(),
     };

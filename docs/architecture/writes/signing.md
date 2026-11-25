@@ -7,9 +7,9 @@ on.
 
 ## What is signed
 
-Every approval carries the owner's Touch ID signature. An agent's shell has
-no `BOARD_PLUGIN`, so it counts as the owner and could otherwise approve its
-own effects.
+While signing is on, each act its setting lists carries the owner's Touch
+ID signature. An agent's shell has no `BOARD_PLUGIN`, so it counts as the
+owner and could otherwise approve its own effects.
 
 - An approval signs `Effect::approval`.
   - It starts `board/approve/v1` and names the effect id, which binds the
@@ -34,6 +34,12 @@ own effects.
   cannot sign an owner's write or an order.
 - The three layouts are frozen by the vectors below: a change needs a new
   first line and a new vectors version.
+
+## Optional signing
+
+`signing` in the personal board's `.board/board.json` lists the acts that
+need Touch ID while signing is on, and the other acts take an answer;
+[signing/optional.md](signing/optional.md) says how.
 
 ## The signer
 
@@ -69,8 +75,8 @@ own effects.
 - `/usr/bin/ssh-keygen -Y verify`, at a fixed path so `PATH` cannot supply
   another verifier, checks the signature against
   `.config/board/allowed_signers` in the same passwd home for the principal
-  `owner`. It runs before an answer is written, whenever a decide reads an
-  approval, and as an owner's write runs.
+  `owner`. It runs before an answer is written, whenever a decide reads a
+  signed approval, and as an owner's write that needs a signature runs.
 - `Host::verify_order` checks an order's signature the same way, in
   `attention/order/v1`. When no line of Board's file admits the key, it
   falls back to `.config/attention/allowed_signers`, warning
@@ -97,8 +103,9 @@ STANDARDS.md 29 states the rule; `rules/signing-one-owner.json`
 records it.
 
 - `board_model::effect` builds the statements and names the namespaces.
-- `board_plugin::sign` runs the signer and `ssh-keygen` and checks the
-  allowed signers file.
+- `board_plugin::sign` runs the signer and `ssh-keygen`, checks the
+  allowed signers file, and reads whether it lists the owner
+  (`owner_listed`), which only the effects module calls.
 - Only board-ops's effects module calls them. Clippy's `disallowed-methods`
   refuses any other caller of `sign`, `verify`, `Effect::approval`,
   `Effect::owner_write` and `Order::statement`; each caller carries an
@@ -118,36 +125,10 @@ records it.
 - `deny.toml` bans `ssh-key`, `ssh-encoding`, `p256`, `ecdsa` and
   `openssl`, so no crate signs or verifies in process.
 
-## Across repositories
+## Across repositories and vectors
 
-| Statement | Built by | Signed by | Verified by | Namespace |
-| --- | --- | --- | --- | --- |
-| Approval | board `Effect::approval` | board-app `board-sign approve` | board `board_plugin::verify` | `board/approve/v1` |
-| Owner's write | board `Effect::owner_write` | board-app `board-sign approve` | board `board_plugin::verify` | `board/write/v1` |
-| Order | board `Order::statement` | board-app `board-sign sign` | board `Host::verify_order` | `attention/order/v1` |
-
-- board-app's pairing writes both allowed signers files.
-- Board verifies with `ssh-keygen`. board-app builds the SSHSIG armor
-  itself.
-- The vectors' v1 manifest still names board-attention as the order
-  layout's owner, because a released version is never edited. Board owns
-  the order layout now, because the attention plugin is built into Board.
-
-## Vectors
-
-- `vectors/signing/v1/` holds the statements, signatures, a test key and an
-  allowed signers file. `vectors/signing/README.md` says how each file was
-  made and which repository owns each layout. board-app is to test against
-  them.
-- `crates/board-ops/tests/signing_vectors.rs` checks that Board builds all
-  three statements byte for byte, maps each to its namespace, admits the
-  owner's signatures and refuses those in another namespace or by another
-  key.
-- `released.json` lists every vector file, so the `released` test refuses an
-  edit in place.
-- A changed layout or namespace adds `vectors/signing/v2/`. The pull
-  request names the board-app pull request that takes it, and both merge
-  the same day.
+[signing/vectors.md](signing/vectors.md) says what crumbkit/board and
+board-app agree on and how the vectors fix each statement's bytes.
 
 ## What an agent never does
 

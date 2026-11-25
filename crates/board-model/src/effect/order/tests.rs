@@ -62,3 +62,16 @@ fn only_a_statement_whose_whole_first_line_is_the_order_type_is_signed_as_an_ord
     assert_eq!(signature_namespace(ORDER_TYPE), APPROVAL_HEADER);
     assert_ne!(ORDER_TYPE, WRITE_HEADER);
 }
+
+#[test]
+fn an_orders_digest_is_the_sha256_of_its_statement_and_changes_with_its_text() {
+    use sha2::{Digest as _, Sha256};
+    let order = order(Pinned::Yes, "why\n");
+    let digest = order.digest();
+    let expected = (Sha256::digest(order.statement().as_bytes()).iter())
+        .fold(String::new(), |hex, byte| hex + &format!("{byte:02x}"));
+    assert_eq!(digest, format!("sha256:{expected}"));
+    let mut edited = order;
+    edited.order.push_str(" now");
+    assert_ne!(edited.digest(), digest);
+}

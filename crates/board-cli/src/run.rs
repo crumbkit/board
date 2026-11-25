@@ -348,7 +348,9 @@ not answer.
 
 An approval runs ~/.local/bin/attention-sign, which signs after Touch ID,
 and checks it against ~/.config/board/allowed_signers, in the passwd home.
---signature skips the signer and checks the signature given.
+--signature skips the signer and checks the signature given. Where signing
+takes an answer for effects, --approved names the owner's plans/answer/v1
+in the personal board in place of a signature.
 
 Examples:
   board answer 4b2e0c8a9d1f37b6e5a0c2d84f9b1e7a3c6d0f8b2a5e9c1d4f7a0b3e6c9d2f5a approve

@@ -3,7 +3,9 @@
 
 use std::time::{Duration, SystemTime};
 
+use board_model::{Act, Need, Order};
 use board_ops::{Host, PluginError, VerifyOrderError};
+use board_plugin::PRINCIPAL;
 use board_plugin::shape::Date as DateShape;
 use board_repos::{Date, today};
 use schemars::JsonSchema;
@@ -29,8 +31,13 @@ pub(crate) struct Input {
 #[schemars(rename = "VerifyOutput", deny_unknown_fields)]
 pub(crate) struct Output {
     pub(crate) path: String,
-    /// The principal in the allowed signers file whose key signed it.
+    /// The principal in the allowed signers file whose key signed it, or
+    /// `owner` for an order the owner approved in chat.
     pub(crate) signer: String,
+    /// How the owner approved it: `signed by owner`, or `approved in chat,
+    /// not signed` for an order an answer approved where signing takes an
+    /// answer for orders.
+    pub(crate) approval: String,
     /// The binding instruction.
     pub(crate) order: String,
     #[schemars(with = "DateShape")]
@@ -47,21 +54,44 @@ pub(crate) fn verify(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     Ok(serde_json::to_value(output).expect("the output is plain strings"))
 }
 
-/// The order at `path`, when its signature verifies and it has not
+/// How a signed order reads.
+pub(crate) const SIGNED: &str = "signed by owner";
+
+/// How an order the owner approved in chat reads.
+pub(crate) const APPROVED: &str = "approved in chat, not signed";
+
+/// The order at `path`, when its signature verifies, or the answer it names
+/// approves it where signing takes an answer for orders, and it has not
 /// expired.
 pub(crate) fn verified(host: &dyn Host, path: &str) -> Result<Output, PluginError> {
     let held = order::read(host, path)?;
-    let Some(signature) = &held.fields.signature else {
-        return Err(refusal(
-            "orders::order::unsigned",
-            format!(
-                "{path} has no signature, so the owner has not approved it; ask the owner to sign it"
-            ),
-            [("path", json!(path))],
-        ));
+    let approval = match (&held.fields.signature, &held.fields.approved) {
+        (Some(signature), _) => {
+            let signer = (host.verify_order(&held.order, signature))
+                .map_err(|error| unverified(path, &error))?;
+            debug_assert_eq!(signer, PRINCIPAL);
+            SIGNED
+        }
+        (None, Some(approved)) => {
+            in_chat(host, path, &held.order, approved)?;
+            APPROVED
+        }
+        (None, None) => {
+            return Err(refusal(
+                "orders::order::unsigned",
+                format!(
+                    "{path} has no signature, so the owner has not approved it; ask the owner to \
+                     sign it, or, where signing takes an answer for orders, to approve it in chat \
+                     through a question that names {}",
+                    held.order.digest()
+                ),
+                [
+                    ("path", json!(path)),
+                    ("digest", json!(held.order.digest())),
+                ],
+            ));
+        }
     };
-    let signer =
-        (host.verify_order(&held.order, signature)).map_err(|error| unverified(path, &error))?;
     in_force(
         path,
         held.expires,
@@ -70,12 +100,61 @@ pub(crate) fn verified(host: &dyn Host, path: &str) -> Result<Output, PluginErro
     )?;
     Ok(Output {
         path: path.to_owned(),
-        signer: signer.to_owned(),
+        signer: PRINCIPAL.to_owned(),
+        approval: approval.to_owned(),
         order: held.fields.order,
         expires: held.expires.to_string(),
         context: held.fields.context,
         context_text: held.order.context_text,
     })
+}
+
+/// Refuses unless the answer at `approved` approves `order` in chat: signing
+/// takes an answer for orders, and the answer is the owner's choice of
+/// `approve` in a question, asked before it, that names the order's digest.
+pub(crate) fn in_chat(
+    host: &dyn Host,
+    path: &str,
+    order: &Order,
+    approved: &str,
+) -> Result<(), PluginError> {
+    let fields = [("path", json!(path)), ("approved", json!(approved))];
+    match host.signing().need(Act::Order) {
+        Need::Answer => {}
+        Need::Signature => {
+            return Err(refusal(
+                "orders::order::unsigned",
+                format!(
+                    "{path} was approved in chat, but signing is on and orders need Touch ID; ask \
+                     the owner to sign it"
+                ),
+                fields,
+            ));
+        }
+        Need::FileMissing => {
+            return Err(refusal(
+                "orders::signers::missing",
+                format!(
+                    "{path} was approved in chat, but Board has verified a signature before and \
+                     {} is missing, so orders need it restored",
+                    host.signers_file()
+                ),
+                fields,
+            ));
+        }
+    }
+    let answer = order::record(host, approved)?;
+    let question = (answer.get("question").and_then(Value::as_str))
+        .map(|question| order::record(host, question))
+        .transpose()?;
+    board_model::approving(&answer, question.as_ref(), &order.digest()).map_err(|why| {
+        refusal(
+            "orders::order::not_approved",
+            format!("{path} names {approved}, which does not approve it: {why}"),
+            fields,
+        )
+    })?;
+    Ok(())
 }
 
 /// Refuses an order whose day has passed at `now` with

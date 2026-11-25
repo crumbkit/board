@@ -65,6 +65,12 @@ fn get(host: &dyn Host, path: &str) -> Result<(Vec<u8>, Option<String>), PluginE
     Ok((report.bytes, blob))
 }
 
+/// The JSON record at `path`, such as the answer an order names.
+pub(crate) fn record(host: &dyn Host, path: &str) -> Result<Value, PluginError> {
+    let (bytes, _) = get(host, path)?;
+    serde_json::from_slice(&bytes).map_err(|error| invalid(path, &error.to_string()))
+}
+
 /// The order at `path` and its context, each value checked before the
 /// statement copies it.
 pub(crate) fn read(host: &dyn Host, path: &str) -> Result<Held, PluginError> {

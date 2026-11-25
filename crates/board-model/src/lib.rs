@@ -18,6 +18,7 @@ mod pointer;
 mod record;
 mod refusal;
 mod repo;
+mod signing;
 mod stat;
 mod time;
 mod ui;
@@ -58,6 +59,10 @@ pub use crate::repo::{
     IdentityError, MAX_REMOTE_SEGMENT_BYTES, REPO_TYPE, REPOSITORIES, REPOSITORY_TYPE, Remote,
     Repo, RepositoryError, RepositoryRecord, URI_SCHEME, github_remote, origin_identity,
     record_uri, repo_identity, repository_schema, shown_remote,
+};
+pub use crate::signing::{
+    APPROVE_OPTION, Act, Approving, Need, PROMPT_DAYS, Signers, Signing, SigningSetting,
+    SigningState, approving, heard_in, prompt_digest,
 };
 pub use crate::stat::{Change, Stat};
 pub use crate::time::{moment, utc, utc_seconds};

@@ -70,7 +70,7 @@ impl Owner {
             signing: self.signing(true),
             ..Asker::default()
         };
-        answer(&owner, id, answered, None, None).unwrap();
+        answer(&owner, id, answered, None, None, None).unwrap();
     }
 }
 
@@ -163,7 +163,7 @@ fn a_built_ins_decide_the_owner_refused_is_refused_and_an_approved_one_is_admitt
 }
 
 #[test]
-fn a_built_ins_decide_checks_an_approval_against_the_allowed_signers_and_without_them_it_is_unsigned()
+fn a_built_ins_decide_checks_an_approval_against_the_allowed_signers_and_without_them_it_is_refused_as_missing()
  {
     let (scenario, owner) = (scenario(), Owner::new());
     let known = owner.known();
@@ -177,8 +177,10 @@ fn a_built_ins_decide_checks_an_approval_against_the_allowed_signers_and_without
     };
     let id = ask(true).unwrap_err().1.unwrap();
     owner.answer(&id, Answer::Approve);
+    // The approval's signature marked signing configured, so a decide with
+    // no allowed signers file is refused until the file is back.
     let (code, _) = ask(false).unwrap_err();
-    assert_eq!(code, "board::settings::unsigned");
+    assert_eq!(code, "board::signing::file_missing");
     assert_eq!(ask(true).unwrap(), Some(id));
 }
 

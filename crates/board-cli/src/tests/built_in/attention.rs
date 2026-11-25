@@ -74,6 +74,7 @@ fn an_order_the_owner_signs_verifies_and_is_listed_once_pinned() {
     let verified = json!({
         "path": "/orders/push",
         "signer": "owner",
+        "approval": "signed by owner",
         "order": "Do not push to main.",
         "expires": "2999-12-31",
         "context": "/orders/push.md",
@@ -85,7 +86,11 @@ fn an_order_the_owner_signs_verifies_and_is_listed_once_pinned() {
     );
     assert_eq!(
         pinned(&personal),
-        json!({"orders": [verified], "left_out": []})
+        json!({
+            "signing": "Signing is on: orders, effects and owner's writes need Touch ID.",
+            "orders": [verified],
+            "left_out": []
+        })
     );
 }
 
@@ -636,7 +641,10 @@ fn pinned_lists_no_order_of_a_mounted_board_and_lists_the_same_order_in_its_own_
         "{}",
         text(&found.stdout)
     );
-    assert_eq!(pinned(&personal), json!({"orders": [], "left_out": []}));
+    assert_eq!(
+        (&pinned(&personal)["orders"], &pinned(&personal)["left_out"]),
+        (&json!([]), &json!([]))
+    );
     personal.write("orders/push.json", &order);
     personal.write("orders/push.md", CONTEXT);
     assert_eq!(pinned(&personal)["left_out"][0]["path"], "/orders/push");
@@ -675,4 +683,188 @@ fn pinned_leaves_out_an_order_past_32_kib_of_pinned_text_and_lists_both_orders_t
             );
         }
     }
+}
+
+/// A signers file with no `owner` line, so signing is off.
+fn no_owner(personal: &Personal) -> PathBuf {
+    let file = personal.signer.directory().join("no_owner");
+    personal
+        .signer
+        .write("no_owner", Item::File("ana ssh-ed25519 AAAA\n"));
+    file
+}
+
+/// Sets `signing` in the personal board's config to `setting`.
+fn set_signing(personal: &Personal, setting: &Value) {
+    let mut config = personal.record("/.board/board").unwrap();
+    config["signing"] = setting.clone();
+    personal.write(".board/board.json", &config.to_string());
+}
+
+/// Writes the owner's answer choosing `approve` in a question that names
+/// `digest`, asked before it, and returns the answer's path.
+fn approving_answer(personal: &Personal, digest: &str) -> &'static str {
+    let question = json!({
+        "$type": "plans/question/v1",
+        "question": format!("Approve the order /orders/push at {digest}?"),
+        "asked": "2026-11-24T10:00:00Z",
+        "by": {"session": "local_1"},
+        "status": "open",
+        "options": [{"id": "approve", "text": "Approve"}, {"id": "refuse", "text": "Refuse"}],
+    });
+    let answer = json!({
+        "$type": "plans/answer/v1",
+        "question": "/projects/p/questions/q",
+        "choice": "approve",
+        "words": "yes",
+        "answered": "2026-11-24T10:05:00Z",
+        "by": {"person": "ana"},
+    });
+    personal.write("projects/p/questions/q.json", &question.to_string());
+    personal.write("projects/p/answers/q.json", &answer.to_string());
+    "/projects/p/answers/q"
+}
+
+/// The digest an unsigned order's refusal names, for its question.
+fn digest_of(personal: &Personal) -> String {
+    let ran = call(personal, "verify", "/orders/push");
+    assert_eq!(refused(&ran), "orders::order::unsigned");
+    json(&ran)["fields"]["digest"].as_str().unwrap().to_owned()
+}
+
+fn signing_files(personal: &Personal, board: PathBuf) -> (PathBuf, PathBuf) {
+    let attention = personal.signer.directory().join("no_attention");
+    (board, attention)
+}
+
+#[test]
+fn an_order_approved_in_chat_verifies_only_where_signing_takes_an_answer_and_says_not_signed() {
+    let personal = personal();
+    draft(&personal, "push", &json!({"pinned": true}), CONTEXT);
+    let digest = digest_of(&personal);
+    let answer = approving_answer(&personal, &digest);
+    let mut stored = personal.record("/orders/push").unwrap();
+    stored["approved"] = json!(answer);
+    personal.write("orders/push.json", &stored.to_string());
+    let off = signing_files(&personal, no_owner(&personal));
+    let ran = run_with(&personal, off.clone(), None, &VERIFY);
+    assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
+    let verified = json(&ran)["data"]["output"].clone();
+    assert_eq!(verified["approval"], "approved in chat, not signed");
+    let ran = run_with(
+        &personal,
+        off.clone(),
+        None,
+        &["--json", "call", "orders.pinned"],
+    );
+    let listed = json(&ran)["data"]["output"].clone();
+    assert_eq!(
+        listed["signing"],
+        "Signing is off: every act takes an answer in chat."
+    );
+    assert_eq!(
+        listed["orders"][0]["approval"],
+        "approved in chat, not signed"
+    );
+    assert_eq!(
+        refused(&call(&personal, "verify", "/orders/push")),
+        "orders::order::unsigned"
+    );
+    set_signing(&personal, &json!({"require": ["effect"]}));
+    admitted(&call(&personal, "verify", "/orders/push"));
+    personal.write("orders/push.md", "an edited context.\n");
+    let ran = run_with(&personal, off, None, &VERIFY);
+    assert_eq!(refused(&ran), "orders::order::not_approved");
+}
+
+#[test]
+fn an_order_approved_by_an_answer_with_no_person_does_not_verify_with_signing_off() {
+    let personal = personal();
+    draft(&personal, "push", &json!({}), CONTEXT);
+    let digest = digest_of(&personal);
+    let answer = approving_answer(&personal, &digest);
+    let mut unnamed = personal.record(answer).unwrap();
+    unnamed["by"] = json!({"session": "local_1"});
+    personal.write("projects/p/answers/q.json", &unnamed.to_string());
+    let mut stored = personal.record("/orders/push").unwrap();
+    stored["approved"] = json!(answer);
+    personal.write("orders/push.json", &stored.to_string());
+    let off = signing_files(&personal, no_owner(&personal));
+    assert_eq!(
+        refused(&run_with(&personal, off, None, &VERIFY)),
+        "orders::order::not_approved"
+    );
+}
+
+#[test]
+fn sign_with_an_approving_answer_records_it_where_signing_takes_an_answer_and_is_refused_where_orders_need_touch_id()
+ {
+    let personal = personal();
+    draft(&personal, "push", &json!({}), CONTEXT);
+    let digest = digest_of(&personal);
+    let answer = approving_answer(&personal, &digest);
+    let sign = [
+        "--json",
+        "call",
+        "orders.sign",
+        "--path",
+        "/orders/push",
+        "--approved",
+        answer,
+    ];
+    assert_eq!(refused(&personal.run(&sign)), "orders::order::unsigned");
+    assert_eq!(
+        personal.record("/orders/push").unwrap().get("approved"),
+        None
+    );
+    let off = signing_files(&personal, no_owner(&personal));
+    let ran = run_with(&personal, off.clone(), None, &sign);
+    assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
+    let stored = personal.record("/orders/push").unwrap();
+    assert_eq!(
+        (stored.get("signature"), &stored["approved"]),
+        (None, &json!(answer))
+    );
+    assert_eq!(
+        json(&run_with(&personal, off, None, &VERIFY))["data"]["output"]["approval"],
+        "approved in chat, not signed"
+    );
+}
+
+#[test]
+fn pinned_and_signers_start_with_the_signing_state_for_off_on_and_a_shortened_list() {
+    let personal = personal();
+    let line = |files: Option<(PathBuf, PathBuf)>, capability: &str| {
+        let arguments = ["--json", "call", capability];
+        let ran = match files {
+            Some(files) => run_with(&personal, files, None, &arguments),
+            None => personal.run(&arguments),
+        };
+        assert_eq!(ran.code, 0, "{}{}", text(&ran.stdout), text(&ran.stderr));
+        json(&ran)["data"]["output"]["signing"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let off = signing_files(&personal, no_owner(&personal));
+    assert_eq!(
+        line(Some(off.clone()), "orders.pinned"),
+        "Signing is off: every act takes an answer in chat."
+    );
+    assert_eq!(
+        line(Some(off.clone()), "orders.signers"),
+        format!("Signing is off: {} has no owner line.", off.0.display())
+    );
+    let on = "Signing is on: orders, effects and owner's writes need Touch ID.";
+    assert_eq!(line(None, "orders.pinned"), on);
+    assert_eq!(line(None, "orders.signers"), on);
+    set_signing(&personal, &json!({"require": ["order", "plan"]}));
+    assert_eq!(
+        line(None, "orders.pinned"),
+        "Signing is on: orders and plans need Touch ID."
+    );
+    assert_eq!(
+        line(None, "orders.signers"),
+        "Signing is on: orders and plans need Touch ID."
+    );
 }

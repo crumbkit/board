@@ -324,15 +324,15 @@
     {
       "rule": "help-budget/command",
       "applies_to": "board answer",
-      "reason": "answer says on one page how an approval is signed and checked, its Effects: line says that it is destructive, and its global flags line names --no-input, which a program adds to every run.",
+      "reason": "answer says on one page how an approval is signed and checked, and how --approved names the owner's answer where signing takes one in place of a signature, its Effects: line says that it is destructive, and its global flags line names --no-input, which a program adds to every run.",
       "costs": [
-        "Each read of the page can cost 60 bytes more than the default, about 15 tokens."
+        "Each read of the page can cost 300 bytes more than the default, about 75 tokens."
       ],
       "budget": {
-        "bytes": 1260,
+        "bytes": 1500,
         "default": 1200,
-        "extra_bytes": 60,
-        "extra_tokens": 15
+        "extra_bytes": 300,
+        "extra_tokens": 75
       }
     },
     {

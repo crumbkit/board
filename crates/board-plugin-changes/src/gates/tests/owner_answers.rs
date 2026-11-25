@@ -166,3 +166,78 @@ fn an_option_without_the_understanding_checks_path_fails_data_signed_and_names_i
         "{detail}"
     );
 }
+
+/// The status of each check of [`combined`]'s change with `signed` listed by
+/// signing and `approval` read.
+fn signed_statuses(
+    signed: &[board_model::Act],
+    approval: Approval,
+) -> std::collections::BTreeMap<String, Status> {
+    let approve = format!(
+        "Approve {PATH} as planned, with the data in {} and the mockups {} and `/artifacts/m2`.",
+        super::UNDERSTOOD,
+        super::MOCKUP
+    );
+    let mut observed = combined(&approve).observed();
+    observed.signed = signed.iter().copied().collect();
+    observed.approval = approval;
+    (gate(&observed).into_iter())
+        .map(|each| (each.check.clone(), each.status))
+        .collect()
+}
+
+/// With signing on and listing a plan, data or mockups, the owner's answer
+/// no longer signs that off and the owner's Touch ID approval does; the
+/// sign-offs signing leaves out still take the answer.
+#[test]
+fn a_sign_off_signing_lists_passes_only_with_the_owners_touch_id_approval() {
+    use board_model::Act;
+    let ids = [
+        (Act::Plan, "owner-approval"),
+        (Act::Data, "data-signed"),
+        (Act::Mockup, "mockups"),
+    ];
+    for (act, id) in ids {
+        let answered = signed_statuses(&[act], Approval::None);
+        assert_eq!(answered[id], Status::Missing, "{act:?}");
+        for (other, other_id) in ids.iter().filter(|(each, _)| *each != act) {
+            assert_eq!(
+                answered[*other_id],
+                Status::Pass,
+                "{act:?} leaves {other:?}"
+            );
+        }
+        let signed = signed_statuses(&[act], Approval::Signed);
+        assert_eq!(signed[id], Status::Pass, "{act:?}");
+    }
+    let none = signed_statuses(&[], Approval::None);
+    for (_, id) in ids {
+        assert_eq!(none[id], Status::Pass, "{id}");
+    }
+}
+
+#[test]
+fn checks_that_take_a_sign_off_read_signings_state() {
+    let observed = given("plan").observed();
+    assert!(reads(observed.checks()).contains(&Read::Signing));
+}
+
+#[test]
+fn signing_lists_a_change_sign_off_only_while_it_is_on() {
+    use board_model::{Act, Signers, Signing, SigningSetting};
+    let all = SigningSetting {
+        require: Some(Act::ALL.to_vec()),
+        configured: false,
+    };
+    let off = Signing::new(Signers::NoOwner, all.clone());
+    assert!(crate::gates::signing::signed_acts(&off).is_empty());
+    let on = Signing::new(Signers::Owner, all);
+    assert_eq!(
+        crate::gates::signing::signed_acts(&on)
+            .into_iter()
+            .collect::<Vec<_>>(),
+        [Act::Plan, Act::Data, Act::Mockup]
+    );
+    let default = Signing::new(Signers::Owner, SigningSetting::default());
+    assert!(crate::gates::signing::signed_acts(&default).is_empty());
+}

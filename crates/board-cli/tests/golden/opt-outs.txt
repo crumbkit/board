@@ -137,9 +137,9 @@ help-budget/command: board decide
   Cost: Each read of the page can cost 60 bytes more than the default, about 15 tokens.
 
 help-budget/command: board answer
-  Budget: 1260 bytes, where the default is 1200 bytes.
-  Reason: answer says on one page how an approval is signed and checked, its Effects: line says that it is destructive, and its global flags line names --no-input, which a program adds to every run.
-  Cost: Each read of the page can cost 60 bytes more than the default, about 15 tokens.
+  Budget: 1500 bytes, where the default is 1200 bytes.
+  Reason: answer says on one page how an approval is signed and checked, and how --approved names the owner's answer where signing takes one in place of a signature, its Effects: line says that it is destructive, and its global flags line names --no-input, which a program adds to every run.
+  Cost: Each read of the page can cost 300 bytes more than the default, about 75 tokens.
 
 help-budget/command: board skills install
   Budget: 1400 bytes, where the default is 1200 bytes.

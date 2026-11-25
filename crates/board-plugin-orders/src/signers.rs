@@ -87,6 +87,9 @@ pub(crate) struct LeftOut {
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "SignersOutput", deny_unknown_fields)]
 pub(crate) struct Output {
+    /// Whether signing is on, in one line: with signing off, it names the
+    /// file that has no `owner` line.
+    pub(crate) signing: String,
     /// Board's allowed signers file, which the owner writes `text` to.
     pub(crate) file: String,
     /// Every line of Board's file, with the attention file's keys merged in.
@@ -99,16 +102,19 @@ pub(crate) struct Output {
 pub(crate) fn signers(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input {} = PluginError::read_input("orders", "signers", input)?;
     let merged = host.order_signers().map_err(|error| unread(&error))?;
-    Ok(serde_json::to_value(output(merged)).expect("the output is plain strings and numbers"))
+    let signing = host.signing().signers_line(&host.signers_file());
+    let output = output(signing, merged);
+    Ok(serde_json::to_value(output).expect("the output is plain strings and numbers"))
 }
 
-pub(crate) fn output(merged: Signers) -> Output {
+pub(crate) fn output(signing: String, merged: Signers) -> Output {
     let change = |change| match change {
         LineChange::Gained => Change::Gained,
         LineChange::Added => Change::Added,
         LineChange::Merged => Change::Merged,
     };
     Output {
+        signing,
         file: merged.file.display().to_string(),
         text: merged.text,
         changes: (merged.changes.into_iter())
