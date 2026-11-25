@@ -63,13 +63,14 @@ Examples:
   board schemas list --json")]
     List(SchemasList),
     /// Print the JSON Schema of each document.
+    ///
+    /// It also prints the schema of each record type a built-in plugin
+    /// ships, as `board plugin enable` writes it, which `board schemas list`
+    /// does not list.
     #[command(after_help = "\
-It also prints the schema of each record type a built-in plugin ships, as
-`board plugin enable` writes it, which `board schemas list` does not list.
-
 Examples:
   board schemas show board/check-report/v2
-  board schemas show rules/report/v1")]
+  board schemas show rules/source/v1")]
     Show(SchemasShow),
 }
 
@@ -161,7 +162,7 @@ pub(crate) fn schemas(
         }
         SchemasCommand::Show(args) => {
             let shown = show(&mut view, tool, args, built_in);
-            noted(Printer { view }.kit(SCHEMAS_SHOW, Ok(shown)), notes)
+            noted(Printer { view }.kit(SHOWN, Ok(shown)), notes)
         }
     }
 }
@@ -171,22 +172,20 @@ pub(crate) fn schemas(
 #[derive(Args, Clone, Debug, PartialEq, Eq)]
 #[command(about = None, long_about = None)]
 pub(crate) struct SchemasShow {
-    /// The ids of the documents that `schemas list` lists, separated by
-    /// spaces
+    /// The ids of the documents that `schemas list` lists, or of the record
+    /// types the built-in plugins ship, separated by spaces
     #[arg(required = true, value_name = "ID", num_args = 1..=100)]
     ids: Vec<String>,
 }
 
-/// The document `board schemas show` prints, crumbkit's
-/// `board/schemas-show/v1` with Board's row. Marked built in, as crumbkit
-/// marks its own, so `commands list` still tells the command is crumbkit's.
-pub(crate) const SCHEMAS_SHOW: Document<Batch<Shown, crumbkit::Error>> = Document::new(
+/// crumbkit's `SCHEMAS_SHOW`, which its leaf declares, with Board's row,
+/// for printing; a test keeps the two schemas equal.
+pub(crate) const SHOWN: Document<Batch<Shown, crumbkit::Error>> = Document::new(
     "crumbkit",
     "schemas-show",
     1,
     "The JSON Schema of each document id given.",
-)
-.built_in();
+);
 
 /// The path of `schemas show`, and of `schemas list`, which an unknown id's
 /// recovery runs.

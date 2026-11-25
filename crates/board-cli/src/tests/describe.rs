@@ -305,6 +305,7 @@ fn schemas_list_names_each_document_board_prints_and_show_prints_its_schema() {
 #[test]
 fn schemas_show_prints_outside_a_board_the_schema_plugin_enable_writes_for_a_plugin_type() {
     let board = Scenario::board();
+    board.identified();
     let enabled = board_built_in(board.workdir(), &["plugin", "enable", "rules"]);
     assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
     let written = std::fs::read(
@@ -328,10 +329,71 @@ fn schemas_show_prints_outside_a_board_the_schema_plugin_enable_writes_for_a_plu
     assert_eq!(row["schema"], written);
     let misspelt = show("rules/reprot/v1");
     assert_eq!(misspelt.code, 1, "{}", text(&misspelt.stdout));
+    let failure = &json(&misspelt)["failures"][0];
+    assert_eq!(failure["code"], "board::schemas::not_found");
+    assert_eq!(failure["message"], "board has no document rules/reprot/v1");
     assert_eq!(
-        json(&misspelt)["failures"][0]["code"],
-        "board::schemas::not_found"
+        failure["recovery"],
+        json!({"kind": "run", "call": "board schemas list"})
     );
+    // The board's own copy, even one that differs, changes nothing.
+    board.write(".board/types/rules/report/v1.schema.json", Item::File("{}"));
+    let inside = board_built_in(
+        board.workdir(),
+        &[
+            "schemas",
+            "show",
+            "--json",
+            "--no-input",
+            "--",
+            "rules/report/v1",
+        ],
+    );
+    assert_eq!(inside.code, 0, "{}", text(&inside.stderr));
+    assert_eq!(json(&inside)["data"][0]["schema"], written);
+}
+
+#[test]
+fn board_s_schemas_show_document_has_crumbkit_s_schema() {
+    assert_eq!(
+        crumbkit::schemas::document_schema(crate::describe::SHOWN),
+        crumbkit::schemas::document_schema(crumbkit::schemas::SCHEMAS_SHOW)
+    );
+}
+
+#[test]
+fn commands_list_marks_schemas_show_as_crumbkit_s_command() {
+    let outside = Scenario::new();
+    let listed = board_in(
+        outside.workdir(),
+        &[
+            "commands",
+            "list",
+            "schemas",
+            "show",
+            "--json",
+            "--full",
+            "--no-input",
+        ],
+    );
+    assert_eq!(listed.code, 0, "{}", text(&listed.stderr));
+    let rows = json(&listed)["data"].as_array().unwrap().clone();
+    let row = (rows.iter())
+        .find(|row| row["path"] == "board schemas show")
+        .unwrap_or_else(|| panic!("no schemas show in {rows:?}"));
+    assert_eq!(row["built_in"], true, "{row}");
+}
+
+#[test]
+fn each_built_in_plugin_ships_a_schema_for_each_type_its_manifest_lists() {
+    for plugin in board_plugins::BUILT_IN.0 {
+        let manifest = plugin.manifest();
+        let shipped: BTreeSet<_> = (plugin.schemas().into_iter())
+            .map(|(name, _)| name)
+            .collect();
+        let listed: BTreeSet<_> = manifest.types.into_iter().collect();
+        assert_eq!(shipped, listed, "{}", manifest.name);
+    }
 }
 
 #[test]

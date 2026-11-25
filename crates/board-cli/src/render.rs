@@ -15,7 +15,7 @@ use board_tree::{Status, Synced};
 use clap::error::{ContextKind, ContextValue, ErrorKind};
 use crumbkit::commands::COMMANDS_LIST;
 use crumbkit::help::{Effects, Goal, Group, Leaf};
-use crumbkit::schemas::SCHEMAS_LIST;
+use crumbkit::schemas::{SCHEMAS_LIST, SCHEMAS_SHOW};
 use crumbkit::{Document, Listing, Prose};
 use serde_json::{Map, Value, json};
 
@@ -93,7 +93,7 @@ pub(crate) const LEAVES: &[Leaf] = &[
         .document(SCHEMAS_LIST)
         .effects(READS),
     Leaf::new(&["schemas", "show"])
-        .document(crate::describe::SCHEMAS_SHOW)
+        .document(SCHEMAS_SHOW)
         .effects(READS),
 ];
 
