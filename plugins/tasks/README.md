@@ -207,8 +207,8 @@ on stdin, when no flag is given. `--repo` names the
 repo. Otherwise it is the one repo whose record covers the remote, from
 `--remote` or the caller's `origin`, else the personal repo, else `/`.
 `--parent <path>`, `--kind project` and `--brief <path>` write those fields.
-`--parent` and `--brief` take paths in the board, as `tree` lists them, and
-are written as paths in the task's own repo. A path in another repo is refused
+`--parent`, `--brief` and each `--after` take paths in the board, as `tree`
+lists them, and are written as paths in the task's own repo. A path in another repo is refused
 with `tasks::add::cross_repo`, and a parent that holds no task with
 `tasks::add::parent_not_found`, so `add` never writes a parent that reaches
 nothing. Two

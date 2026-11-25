@@ -294,3 +294,28 @@ fn add_refuses_an_after_or_refs_flag_that_joins_paths_with_a_comma() {
     let refs = "refs: [\"/exchange/sent/a.md\", \"/exchange/sent/b.md\"]\n";
     assert!(written.contains(refs), "{written}");
 }
+
+#[test]
+fn add_writes_an_after_under_a_mount_as_a_path_in_that_repo_and_refuses_another_repos() {
+    let tasks = Tasks::new();
+    let work = tasks.mounted();
+    tasks.write("tasks/plan.md", &open("Plan", json!({})));
+    // A relative --after read from inside the work mount arrives as a path
+    // under /repos/work. The fixture's notes repos are boards of their own,
+    // so a run started in the clone finds that board, and the test gives
+    // the path as the mount's prefix would make it.
+    let added = |after: &str| {
+        let flags = ["--title", "Wait", "--repo", "/repos/work", "--after", after];
+        tasks.call("add", &flags)
+    };
+    let refused = added("/tasks/plan.md").unwrap_err();
+    assert_eq!(refused["code"], "tasks::add::cross_repo", "{refused}");
+    assert_eq!(refused["fields"]["after"], json!(["/tasks/plan.md"]));
+    assert!(!work.join("tasks/wait.md").exists());
+    added("/repos/work/tasks/report.md").unwrap();
+    let written = std::fs::read_to_string(work.join("tasks/wait.md")).unwrap();
+    assert!(
+        written.contains("after: [\"/tasks/report.md\"]\n"),
+        "{written}"
+    );
+}

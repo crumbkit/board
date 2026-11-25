@@ -7,6 +7,10 @@
   a value that joins paths with a comma, such as
   `--after /tasks/a.md,/tasks/b.md`, is refused with a hint to repeat the flag.
   Before, such a value was written as one prerequisite that names no task.
+  Each `after` path is now written as a path in the task's own repo, as
+  `parent` and `brief` are, so `/repos/work/tasks/a.md` on a task in
+  `/repos/work` is written as `/tasks/a.md`, and an `after` in another repo
+  is refused with `tasks::add::cross_repo`.
   The `changes.plan` descriptions now say that `uses` and `paths` can be
   given as repeated flags.
 
