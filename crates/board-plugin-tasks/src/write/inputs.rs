@@ -181,10 +181,18 @@ pub(crate) struct AddInput {
     pub(crate) parent: Option<String>,
     #[schemars(
         regex(pattern = r"^/"),
-        description = "The repo to write the task to: / for the board's own tree, or a notes \
-                       repo's mount path; the caller's git remote chooses it when left out."
+        description = "The repo to write the task to: / for the board's own tree, which needs \
+                       reason and stays on this Mac, or a notes repo's mount path; the caller's \
+                       git remote chooses it when left out."
     )]
     pub(crate) repo: Option<String>,
+    #[schemars(
+        length(min = 1),
+        description = "Why a task given repo / belongs with this board, such as a queue item; \
+                       repo / needs it, and one that is only spaces is missing. It is printed in \
+                       the output's about and stored nowhere, and ignored for any other repo."
+    )]
+    pub(crate) reason: Option<String>,
     #[schemars(
         length(min = 1),
         description = "A git remote, or owner/name, to choose the repos by in place of the origin \

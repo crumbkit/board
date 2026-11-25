@@ -72,8 +72,14 @@ the fields the person gives, and `origin_unread` needs `--repo`. Give each
 task it waits on as its own `--after`, and each context as its own
 `--contexts`, so a task that follows two others is
 `board -C <board> tasks add --title 'Ship it' --after /tasks/agree-scope.md --after /tasks/build-it.md`.
-`--after none` says the task waits on nothing. To point someone else at a task in a shared
-board, give its URI: `board -C <board> uri <path>` prints one, such as
+`--after none` says the task waits on nothing. A task the person should see
+off this Mac goes to the personal notes repo, such as
+`--repo /repos/personal`. The board's own tree, `--repo /`, stays on this
+Mac; use it only for tasks that belong with the board, such as queue items,
+with `--reason '<why>'`. Read `about` in the output, which says where the
+task went and whether it left this Mac, and tell the person when it did not.
+To point someone else at a task in a shared board, give its URI:
+`board -C <board> uri <path>` prints one, such as
 `board://acme/team-board/tasks/fix-login`, which `board get` reads from any
 clone the reader's known boards list.
 

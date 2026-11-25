@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `tasks add` says where the task went. Its output gains `about`, one
+  sentence naming the repo that took the task and whether it left this Mac,
+  `remote`, the remote that repo pushes to, and `leaves_this_mac`, true when
+  the call pushed it. `--repo /` now needs `--reason`, and is refused without
+  one with `tasks::repo::reason_needed`, which names the personal notes repo.
+  The hints of `tasks::repo::origin_unread` and `tasks::repo::ambiguous` give
+  a full command for each repo that could take the task. A script that
+  passes `--repo /` must add `--reason`.
+
 - `board call` takes a capability's input property that is a list of
   strings as a flag given once for each item, in the order given, such as
   `board call tasks.add --title t --after /tasks/a.md --after /tasks/b.md`.

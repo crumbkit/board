@@ -14,6 +14,10 @@ use crate::refusal;
 /// into its repo and its path in that repo.
 const TASKS_DIR: &str = "/tasks/";
 
+/// Why a change's task given the board's own tree belongs there, which
+/// `tasks.add` needs for `/`.
+const CHANGE_TASK: &str = "the task of a change, which belongs with the board that records it";
+
 /// A task's board path as its notes repo and its path in that repo.
 ///
 /// `/repos/notes/tasks/a.md` is (`/repos/notes`, `/tasks/a.md`), and
@@ -72,7 +76,8 @@ pub(crate) fn routing(
 /// says, and returns its board path.
 ///
 /// `parent` is the parent task's board path; the new task goes to the
-/// parent's repo, since a task's parent is in its own repo.
+/// parent's repo, since a task's parent is in its own repo. A task sent
+/// to the board's own tree carries [`CHANGE_TASK`] as its reason.
 pub(crate) fn add_task(
     host: &dyn Host,
     title: &str,
@@ -85,6 +90,9 @@ pub(crate) fn add_task(
         route.insert("repo".to_owned(), json!(repo));
         route.insert("parent".to_owned(), json!(path));
         route.remove("remote");
+    }
+    if route.get("repo").and_then(Value::as_str) == Some("/") {
+        route.insert("reason".to_owned(), json!(CHANGE_TASK));
     }
     let output = board::call(host, "tasks.add", &Value::Object(route))?;
     Ok((output.get("path").and_then(Value::as_str))
