@@ -199,8 +199,11 @@ task has an `after` or a `parent`.
 `board tasks add --title <title>` writes a new open task to
 `tasks/<slug>.md`, its slug derived from the title as notes derives a note's,
 with `-2` and on added when the name is taken. It takes `--text` for the body,
-and `--due`, `--defer`, `--repeat`, `--ephemeral` and `--from_hour`; `after`
-and `contexts`, which are lists, come as JSON on stdin. `--repo` names the
+and `--due`, `--defer`, `--repeat`, `--ephemeral` and `--from_hour`. `after`,
+`contexts` and `refs` are lists, and each item is its own flag, such as
+`--after /tasks/agree-scope.md --after /tasks/build-it.md`, in the order
+given; `--after none` alone writes an empty list. They may also come as JSON
+on stdin, when no flag is given. `--repo` names the
 repo. Otherwise it is the one repo whose record covers the remote, from
 `--remote` or the caller's `origin`, else the personal repo, else `/`.
 `--parent <path>`, `--kind project` and `--brief <path>` write those fields.

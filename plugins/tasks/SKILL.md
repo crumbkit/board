@@ -68,8 +68,11 @@ may be on a phone, so keep each message short.
    stops. Then say how many were done, deferred and dropped.
 
 To add a task, run `board -C <board> tasks add --title '<title>'` with
-the fields the person gives; `contexts` and `after` go as JSON on stdin, and
-`origin_unread` needs `--repo`. To point someone else at a task in a shared
+the fields the person gives, and `origin_unread` needs `--repo`. Give each
+task it waits on as its own `--after`, and each context as its own
+`--contexts`, so a task that follows two others is
+`board -C <board> tasks add --title 'Ship it' --after /tasks/agree-scope.md --after /tasks/build-it.md`.
+`--after none` says the task waits on nothing. To point someone else at a task in a shared
 board, give its URI: `board -C <board> uri <path>` prints one, such as
 `board://acme/team-board/tasks/fix-login`, which `board get` reads from any
 clone the reader's known boards list.
