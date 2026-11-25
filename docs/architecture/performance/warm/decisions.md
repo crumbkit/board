@@ -29,6 +29,15 @@ A source's key hashes:
   repository it opened, or the code that says why it did not;
 - for each mount it reaches, the same of that source, without its route.
 
+A source with a file whose blob its repository lacks, such as one read
+from a partial clone, is kept under a second key. That key hashes the
+first and a stamp of the repository's objects: the stat of its pack
+directory and of each directory of loose objects, taken before the walk
+reads the source. A fetch or a loose write that brings a blob changes the
+stamp, so the source is decided again. A run
+stamps a source's objects only when the index does not hold its decision
+under the first key.
+
 A run opens a mounted repository and looks up its pinned commit only when
 the repository's stamp changed ([index.md](index.md)), so a deleted repository
 or a lost commit still changes the key. The repositories one source's mounts
@@ -63,8 +72,12 @@ order.
 
 These sources are decided on every run:
 
-- one with a file that could not be read, or a read or resolution that
-  failed with a git error, which may pass;
+- one whose read or resolution failed with a git error, which may pass,
+  such as a reference to a blob another repository lacks;
+- one with a file whose blob its repository holds but could not read, as
+  after an I/O error;
+- one with a file whose blob its repository lacks, when that repository
+  borrows objects through alternates, which the stamp does not cover;
 - one holding a mount whose route is too long to name;
 - one that reaches a commit through another repository than the one that
   commit was walked in;
