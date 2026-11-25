@@ -1,9 +1,26 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import type { Engine } from 'claude-code/testing'
+import type { Engine, MockClock } from 'claude-code/testing'
 
 import { SLOT, bandRows } from '../hooks/band'
-import { badgeValue, boardName, contextText, parseBadges, parseCheck, parseForPath, parsePersonal, rulesBadge, sections, SPEED_CHECK } from '../hooks/rules'
+import {
+  REMEMBERED,
+  REMEMBER_ROOTS,
+  badgeValue,
+  boardName,
+  contextText,
+  freshText,
+  parseBadges,
+  parseCheck,
+  parseForPath,
+  parsePersonal,
+  recalled,
+  remembering,
+  rulesBadge,
+  sections,
+  SPEED_CHECK,
+} from '../hooks/rules'
+import type { Remembered } from '../hooks/rules'
 
 // These prove what a session is told about rules and when, with git and
 // board stood in by a process.run hook. They do not run board: the Python
@@ -26,7 +43,8 @@ const BAND = {
 } as const
 
 type Answers = {
-  check?: { exitCode: number; stdout: string }
+  /** What rules.check answers; 'held' waits until the test calls `release`. */
+  check?: { exitCode: number; stdout: string } | 'held'
   forPath?: Record<string, object[]> | 'fails'
   /** The known boards file's text; none when absent. */
   config?: string
@@ -38,6 +56,10 @@ type Answers = {
   repository?: string
   /** 'fails' when the shell that starts the speed check cannot run. */
   speed?: 'fails'
+  /** What the mod's store holds at the start. */
+  stored?: Record<string, unknown>
+  /** The clock's time at the start. */
+  now?: number
 }
 
 const CONFIG = '/home/me/.config/board/config.json'
@@ -50,6 +72,14 @@ function engine(on: On, answers: Answers) {
   const detached: string[] = []
   const appended: string[] = []
   const logs: string[] = []
+  let release: (answer: { exitCode: number; stdout: string }) => void = () => undefined
+  const clock = mock.clock(on, { now: answers.now ?? 0 })
+  const store: Record<string, unknown> = { ...answers.stored }
+  on('store.get', (_, e) => ({ value: store[e.key] }))
+  on('store.set', (_, e) => {
+    store[e.key] = e.value
+    return { value: undefined }
+  })
   const run = (exitCode: number, stdout: string) => ({
     value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   })
@@ -82,6 +112,11 @@ function engine(on: On, answers: Answers) {
     }
     if (line.includes('rules.check')) {
       events.push('check')
+      if (answers.check === 'held') {
+        return new Promise<ReturnType<typeof run>>(resolve => {
+          release = answer => resolve(run(answer.exitCode, answer.stdout))
+        })
+      }
       const check = answers.check ?? { exitCode: 0, stdout: CHECK }
       return run(check.exitCode, check.stdout)
     }
@@ -108,10 +143,16 @@ function engine(on: On, answers: Answers) {
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
   on('prompt.context', (_, e) => ({ blocks: e.blocks }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  return { events, detached, appended, logs }
+  return { events, detached, appended, logs, clock, store, release: (answer: { exitCode: number; stdout: string }) => release(answer) }
 }
 
-const start = ($: Engine) => $.session.start({ cwd: `${ROOT}/src`, surface: 'terminal', isInteractive: true })
+const begin = ($: Engine) => $.session.start({ cwd: `${ROOT}/src`, surface: 'terminal', isInteractive: true })
+/** Starts the session and lets the checks it starts on the clock answer. */
+async function start($: Engine, clock: MockClock) {
+  const started = begin($)
+  await clock.advance(0)
+  return started
+}
 const edit = ($: Engine, file: string) =>
   $.tool.call({ tool: 'Edit', file_path: `${ROOT}/${file}`, old_string: 'a', new_string: 'b', replace_all: false })
 
@@ -204,8 +245,8 @@ test('a repository no board holds has no rules, and a check that fails is said p
 })
 
 test('session start checks the repository root once, and the first message carries its rules as one block', async ($, on) => {
-  const { events } = engine(on, {})
-  await start($)
+  const { clock, events } = engine(on, {})
+  await start($, clock)
   const context = await $.prompt.context({ blocks: [{ name: 'claudeMd', text: 'instructions' }] })
   expect(events).toEqual(['check'])
   expect(context.blocks.map(b => b.name)).toEqual(['claudeMd', 'boardRules'])
@@ -213,8 +254,8 @@ test('session start checks the repository root once, and the first message carri
 })
 
 test('session start starts the speed check detached at the repository root, once', async ($, on) => {
-  const { detached } = engine(on, {})
-  await start($)
+  const { clock, detached } = engine(on, {})
+  await start($, clock)
   expect(detached).toHaveLength(1)
   expect(detached[0]).toContain(`${SPEED_CHECK} in ${ROOT}`)
   expect(detached[0]).toContain('$HOME/.local/bin')
@@ -222,23 +263,23 @@ test('session start starts the speed check detached at the repository root, once
 })
 
 test('a speed check that cannot start is logged and the session starts with its rules', async ($, on) => {
-  const { events, logs } = engine(on, { speed: 'fails' })
-  await start($)
+  const { clock, events, logs } = engine(on, { speed: 'fails' })
+  await start($, clock)
   expect(events).toEqual(['check'])
   expect(logs.some(log => log.startsWith('board: the speed check did not start'))).toBe(true)
 })
 
 test('with no board the first message carries no block', async ($, on) => {
   const missing = JSON.stringify({ schema: 'board/failure/v1', code: 'board::config::not_found', message: 'no board' })
-  engine(on, { check: { exitCode: 1, stdout: missing } })
-  await start($)
+  const { clock } = engine(on, { check: { exitCode: 1, stdout: missing } })
+  await start($, clock)
   const context = await $.prompt.context({ blocks: [] })
   expect(context.blocks).toEqual([])
 })
 
 test('an edit of a file with a rule the session was not told about appends a row naming it before the edit runs', async ($, on) => {
-  const { events, appended } = engine(on, { forPath: { 'src/listing.rs': [PARSER] } })
-  await start($)
+  const { clock, events, appended } = engine(on, { forPath: { 'src/listing.rs': [PARSER] } })
+  await start($, clock)
   await edit($, 'src/listing.rs')
   expect(events).toEqual(['check', `for-path ${ROOT}/src/listing.rs`, 'append', 'edit'])
   expect(appended).toEqual([
@@ -248,8 +289,8 @@ test('an edit of a file with a rule the session was not told about appends a row
 })
 
 test('the row before an edit gives an obligation its close line and a standing rule none', async ($, on) => {
-  const { appended } = engine(on, { forPath: { 'docs/guide.md': [OWED, PARSER] } })
-  await start($)
+  const { clock, appended } = engine(on, { forPath: { 'docs/guide.md': [OWED, PARSER] } })
+  await start($, clock)
   await edit($, 'docs/guide.md')
   expect(appended).toEqual([
     `These board rules apply to ${ROOT}/docs/guide.md, which you are editing now. Follow each one in this ` +
@@ -261,8 +302,8 @@ test('the row before an edit gives an obligation its close line and a standing r
 })
 
 test('an edit of a file whose rules the session was told about appends nothing, and a file is asked about once', async ($, on) => {
-  const { events } = engine(on, { forPath: { 'AGENTS.md': [DOCS], 'src/listing.rs': [PARSER] } })
-  await start($)
+  const { clock, events } = engine(on, { forPath: { 'AGENTS.md': [DOCS], 'src/listing.rs': [PARSER] } })
+  await start($, clock)
   await edit($, 'AGENTS.md')
   await edit($, 'src/listing.rs')
   await edit($, 'src/listing.rs')
@@ -339,13 +380,13 @@ test('the band shows the configured badges, the Board badge and the Rules button
       { label: 'Quiet', argv: ['quiet'] },
     ],
   })
-  const { events, logs } = engine(on, {
+  const { clock, events, logs } = engine(on, {
     config,
     badges,
     commands: { 'home-name': 'work\n', broken: 'fails', slow: 'hangs', quiet: '' },
     repository: `${PERSONAL}/team`,
   })
-  await start($)
+  await start($, clock)
   expect(events.filter(e => e.startsWith('badge')).sort()).toEqual([
     `badge broken in ${ROOT}/src`,
     `badge home-name in ${ROOT}/src`,
@@ -378,8 +419,8 @@ test('the band shows the configured badges, the Board badge and the Rules button
 })
 
 test('the pane lists an obligation under Obligations owed with its close line beneath it', async ($, on) => {
-  engine(on, { repository: PERSONAL, check: { exitCode: 0, stdout: report({ measured: [], stated: [OWED] }) } })
-  await start($)
+  const { clock } = engine(on, { repository: PERSONAL, check: { exitCode: 0, stdout: report({ measured: [], stated: [OWED] }) } })
+  await start($, clock)
   for (const surface of ['terminal', 'desktop'] as const) {
     const pane = await $.ui.mount({ plugin: 'board-rules', surface, component: 'Pane', requestId: 'board-rules', props: PANE_PROPS })
     expect(await pane.find({ text: '/rules/crumbkit/docs-owed-9: The merge of #9 owes a docs sweep.' })).toBeDefined()
@@ -389,8 +430,8 @@ test('the pane lists an obligation under Obligations owed with its close line be
 })
 
 test('the parts sit in their own slots in the band row', async ($, on) => {
-  engine(on, { repository: PERSONAL, config: JSON.stringify({ personal: PERSONAL }) })
-  await start($)
+  const { clock } = engine(on, { repository: PERSONAL, config: JSON.stringify({ personal: PERSONAL }) })
+  await start($, clock)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   const drawn = await band.drawn()
   const row = bandRows(drawn)[0]
@@ -401,13 +442,13 @@ test('the parts sit in their own slots in the band row', async ($, on) => {
 
 test('a badges file that is malformed or cannot be read is one red badge naming the file and the problem', async ($, on) => {
   const answers: Answers = { badges: '{"badges": "Home"}', repository: PERSONAL, config: JSON.stringify({ personal: PERSONAL }) }
-  engine(on, answers)
-  await start($)
+  const { clock } = engine(on, answers)
+  await start($, clock)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect((await band.findAll({ type: 'Text' })).map(t => t.text)).toEqual([`${BADGES} has no badges list`, 'Board', ' personal ', '|'])
   await band.unmount()
   answers.badges = 'unreadable'
-  await start($)
+  await start($, clock)
   const again = await $.ui.mount({ ...BAND, surface: 'terminal' })
   // The test engine words the read's failure its own way; a session shows the file system's error.
   expect((await again.find({ type: 'Text' }))?.text?.startsWith(`${BADGES} could not be read: `)).toBe(true)
@@ -415,24 +456,24 @@ test('a badges file that is malformed or cannot be read is one red badge naming 
 
 test('a failed check shows the Rules button in red with its code', async ($, on) => {
   const failed = JSON.stringify({ schema: 'board/failure/v1', code: 'rules::rule::degraded', message: 'docs-1 is degraded' })
-  engine(on, { check: { exitCode: 1, stdout: failed } })
-  await start($)
+  const { clock } = engine(on, { check: { exitCode: 1, stdout: failed } })
+  await start($, clock)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect((await band.find({ key: 'rules' }))?.text).toBe('Rules: rules::rule::degraded')
 })
 
 test('with no board and no configured badges the band draws nothing of the mod\'s', async ($, on) => {
   const missing = JSON.stringify({ schema: 'board/failure/v1', code: 'board::config::not_found', message: 'no board' })
-  engine(on, { check: { exitCode: 1, stdout: missing } })
-  await start($)
+  const { clock } = engine(on, { check: { exitCode: 1, stdout: missing } })
+  await start($, clock)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await band.find({ key: 'rules' })).toBeUndefined()
   expect(await band.findAll({ type: 'Text' })).toEqual([])
 })
 
 test('a compaction forgets the rows, so the next edit names its rule again', async ($, on) => {
-  const { appended } = engine(on, { forPath: { 'src/listing.rs': [PARSER] } })
-  await start($)
+  const { clock, appended } = engine(on, { forPath: { 'src/listing.rs': [PARSER] } })
+  await start($, clock)
   await $.prompt.context({ blocks: [] })
   await edit($, 'src/listing.rs')
   await $.prompt.context({ blocks: [] })
@@ -441,8 +482,8 @@ test('a compaction forgets the rows, so the next edit names its rule again', asy
 })
 
 test('a subagent is told on its own, and a file outside the repository runs nothing', async ($, on) => {
-  const { events } = engine(on, { forPath: { 'src/listing.rs': [PARSER] } })
-  await start($)
+  const { clock, events } = engine(on, { forPath: { 'src/listing.rs': [PARSER] } })
+  await start($, clock)
   await edit($, 'src/listing.rs')
   await $.tool.call({ tool: 'Edit', file_path: `${ROOT}/src/listing.rs`, old_string: 'a', new_string: 'b', replace_all: false, agentId: 'a1' })
   await $.tool.call({ tool: 'Write', file_path: '/tmp/notes.md', content: 'x' })
@@ -450,8 +491,147 @@ test('a subagent is told on its own, and a file outside the repository runs noth
 })
 
 test('a for-path run that fails lets the edit run and appends nothing', async ($, on) => {
-  const { events } = engine(on, { forPath: 'fails' })
-  await start($)
+  const { clock, events } = engine(on, { forPath: 'fails' })
+  await start($, clock)
   await edit($, 'src/listing.rs')
   expect(events).toEqual(['check', 'edit'])
+})
+
+// What the mod remembers across sessions, and the starts that use it.
+
+const AT = Date.UTC(2026, 10, 25, 1, 56)
+const KEPT: Remembered = { at: AT, rules: [{ kind: 'standing', rule: '/rules/example/readme', requirement: 'Keep the usage section of the README current.' }], board: 'team' }
+const FAILED = JSON.stringify({ schema: 'board/failure/v1', code: 'board::query::timeout', message: 'the query ran longer than 1s' })
+
+test('only a well-formed entry for the root is recalled, and the 16 newest roots are kept', () => {
+  expect(recalled({ [ROOT]: KEPT }, ROOT)).toEqual(KEPT)
+  expect(recalled({ [ROOT]: KEPT }, '/work/other')).toBeNull()
+  expect(recalled({ [ROOT]: { ...KEPT, rules: [{ rule: 3 }] } }, ROOT)).toBeNull()
+  expect(recalled({ [ROOT]: { ...KEPT, at: 'soon' } }, ROOT)).toBeNull()
+  expect(recalled('not a map', ROOT)).toBeNull()
+  const many = Object.fromEntries(Array.from({ length: REMEMBER_ROOTS }, (_, i) => [`/work/r${i}`, { ...KEPT, at: AT + i }]))
+  const kept = remembering(many, ROOT, { ...KEPT, at: AT + 100 })
+  expect(Object.keys(kept)).toHaveLength(REMEMBER_ROOTS)
+  expect(kept['/work/r0']).toBeUndefined()
+  expect(kept[ROOT]?.at).toBe(AT + 100)
+  expect(remembering({ [ROOT]: KEPT, '/work/x': KEPT }, ROOT, null)).toEqual({ '/work/x': KEPT })
+  expect(remembering('junk', ROOT, KEPT)).toEqual({ [ROOT]: KEPT })
+})
+
+test('the block names the time of a remembered check, and a pending check says the rules will follow', () => {
+  expect(contextText({ kind: 'read', root: ROOT, rules: KEPT.rules, at: AT })).toContain(
+    'These are from the check at 2026-11-25 01:56 UTC. A fresh check runs now, and this session is told if it finds other rules.',
+  )
+  expect(contextText({ kind: 'pending', root: ROOT })).toBe(
+    `\`board call rules.check\` is still running for ${ROOT}. The rules on its files will follow in a message when it answers. ` +
+      'Until then, run `board call rules.for-path --path <file>` in its directory before you edit a file.',
+  )
+  expect(rulesBadge({ kind: 'pending', root: ROOT })).toEqual({ label: 'Rules …', problem: false })
+  expect(freshText(null, ROOT)).toBe(`The rules check for ${ROOT} has answered: no board holds it, so it has no rules.`)
+  expect(freshText({ kind: 'read', root: ROOT, rules: [] }, ROOT)).toBe(
+    `The rules check for ${ROOT} has answered since this session started: no rules apply to its files.`,
+  )
+})
+
+test('a start with a remembered answer runs no board command before it returns, and the block carries the remembered rules', async ($, on) => {
+  const { clock, events, store } = engine(on, { repository: PERSONAL, now: AT + 60_000, stored: { [REMEMBERED]: { [ROOT]: KEPT } } })
+  await begin($)
+  expect(events).toEqual([])
+  const context = await $.prompt.context({ blocks: [] })
+  expect(context.blocks[0]?.text).toContain('- /rules/example/readme: Keep the usage section of the README current.')
+  expect(context.blocks[0]?.text).toContain('from the check at 2026-11-25 01:56 UTC')
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await band.findAll({ type: 'Text' })).map(t => t.text)).toEqual(['Board', ' team ', '|'])
+  await band.unmount()
+  await clock.advance(0)
+  // The remembered rules differ from the fresh ones, so their row follows the check.
+  expect(events).toEqual(['check', 'append'])
+  const fresh = parseCheck(ROOT, 0, CHECK, '')
+  expect(store[REMEMBERED]).toEqual({ [ROOT]: { at: AT + 60_000, rules: fresh?.kind === 'read' ? fresh.rules : [], board: 'board' } })
+})
+
+test('a fresh answer that names other rules appends one row with them; the same rules append nothing', async ($, on) => {
+  const { clock, appended } = engine(on, { now: AT, stored: { [REMEMBERED]: { [ROOT]: KEPT } } })
+  await begin($)
+  await $.prompt.context({ blocks: [] })
+  await clock.advance(0)
+  expect(appended).toHaveLength(1)
+  expect(appended[0]).toContain(`The rules check for ${ROOT} has answered since this session started, and these rules replace any listed before.`)
+  expect(appended[0]).toContain('- /rules/crumbkit/docs-1: AGENTS.md has at most 200 words. (now 196 of 200 words)')
+  await begin($)
+  await $.prompt.context({ blocks: [] })
+  await clock.advance(0)
+  expect(appended).toHaveLength(1)
+})
+
+const STALE =
+  `The fresh rules check for ${ROOT} failed, so the rules from the check at 2026-11-25 01:56 UTC may be out of date: ` +
+  'board::query::timeout: the query ran longer than 1s. Before you edit a file, run `board call rules.for-path --path <file>` in its directory.'
+
+test('a fresh check that fails after the first message keeps the remembered rules, logs why and says so in one row', async ($, on) => {
+  const { clock, appended, logs, store } = engine(on, { now: AT, check: { exitCode: 1, stdout: FAILED }, stored: { [REMEMBERED]: { [ROOT]: KEPT } } })
+  await begin($)
+  await $.prompt.context({ blocks: [] })
+  await clock.advance(0)
+  expect(appended).toEqual([STALE])
+  expect(logs).toContain(
+    `board: the rules check for ${ROOT} failed, so the session keeps the rules from the check at 2026-11-25 01:56 UTC: board::query::timeout: the query ran longer than 1s`,
+  )
+  const context = await $.prompt.context({ blocks: [] })
+  expect(context.blocks[0]?.text).toContain('/rules/example/readme')
+  expect(context.blocks[0]?.text).toContain(STALE)
+  expect(context.blocks[0]?.text).not.toContain('A fresh check runs now')
+  expect(store[REMEMBERED]).toEqual({ [ROOT]: KEPT })
+})
+
+test('a fresh check that fails before the first message appends nothing, and the block says the rules may be out of date', async ($, on) => {
+  const { clock, appended } = engine(on, { now: AT, check: { exitCode: 1, stdout: FAILED }, stored: { [REMEMBERED]: { [ROOT]: KEPT } } })
+  await start($, clock)
+  const context = await $.prompt.context({ blocks: [] })
+  expect(context.blocks[0]?.text).toContain('/rules/example/readme')
+  expect(context.blocks[0]?.text).toContain(STALE)
+  await clock.advance(0)
+  expect(appended).toEqual([])
+})
+
+test('a fresh check that answers while the first block is built is not lost', async ($, on) => {
+  const { clock, appended, release } = engine(on, { now: AT, check: 'held', stored: { [REMEMBERED]: { [ROOT]: KEPT } } })
+  await start($, clock)
+  const building = $.prompt.context({ blocks: [] })
+  release({ exitCode: 0, stdout: CHECK })
+  const context = await building
+  await clock.advance(0)
+  const told = [context.blocks[0]?.text ?? '', ...appended].join('\n')
+  expect(told).toContain('- /rules/crumbkit/docs-1: AGENTS.md has at most 200 words.')
+})
+
+test('with nothing remembered a check slower than 5 seconds is said to be running, and its answer follows as one row', async ($, on) => {
+  const { clock, appended, release, store } = engine(on, { now: AT, check: 'held' })
+  const started = begin($)
+  await clock.advance(0)
+  await clock.advance(5_000)
+  await started
+  const context = await $.prompt.context({ blocks: [] })
+  expect(context.blocks[0]?.text).toContain('is still running')
+  release({ exitCode: 0, stdout: CHECK })
+  await clock.advance(0)
+  expect(appended).toHaveLength(1)
+  expect(appended[0]).toContain('- /rules/example/readme: Keep the usage section of the README current.')
+  expect(Object.keys(store[REMEMBERED] as object)).toEqual([ROOT])
+})
+
+test('with nothing remembered a failed check is said as today and nothing is stored', async ($, on) => {
+  const { clock, store } = engine(on, { now: AT, check: { exitCode: 1, stdout: FAILED } })
+  await start($, clock)
+  const context = await $.prompt.context({ blocks: [] })
+  expect(context.blocks[0]?.text).toContain('`board call rules.check` failed for')
+  expect(store[REMEMBERED]).toBeUndefined()
+})
+
+test('a root no board holds any more is forgotten', async ($, on) => {
+  const missing = JSON.stringify({ schema: 'board/failure/v1', code: 'board::config::not_found', message: 'no board' })
+  const { clock, store } = engine(on, { now: AT, check: { exitCode: 1, stdout: missing }, stored: { [REMEMBERED]: { [ROOT]: KEPT, '/work/x': KEPT } } })
+  await begin($)
+  await clock.advance(0)
+  expect(store[REMEMBERED]).toEqual({ '/work/x': KEPT })
 })
