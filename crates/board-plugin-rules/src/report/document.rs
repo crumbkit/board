@@ -9,6 +9,7 @@ use board_plugin::shape::{
 };
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::records::{Checker, Kind, ShowAt, rule_output_schema};
 
@@ -276,10 +277,10 @@ pub(crate) struct ZeroRead {
     pub(crate) run: Option<String>,
     /// Whole seconds since the run finished; null with no run.
     pub(crate) age_s: Option<u64>,
-    /// Each measure the rule names and the number the run recorded, null
-    /// when it recorded none.
-    #[schemars(schema_with = "numbers_or_null")]
-    pub(crate) measures: BTreeMap<String, Option<f64>>,
+    /// Each measure the rule names and the value the run recorded, a
+    /// number, a label or a flag, null when it recorded none.
+    #[schemars(schema_with = "measures_or_null")]
+    pub(crate) measures: BTreeMap<String, Option<Value>>,
 }
 
 /// A group and the state its members roll up to.
@@ -386,10 +387,12 @@ pub(crate) struct SuiteRun {
     /// The run, by its logical path.
     #[schemars(with = "PathKey")]
     pub(crate) id: String,
-    /// When the run finished, or started when it records no finish.
-    #[schemars(with = "Timestamp")]
-    pub(crate) finished: String,
-    /// The commit the run's `versions` name; null when they name none.
+    /// When the run finished, or started when it records no finish; null
+    /// when it records neither as a time.
+    #[schemars(schema_with = "or_null::<Timestamp>")]
+    pub(crate) finished: Option<String>,
+    /// The commit the run's `versions.commit` names; null when it names
+    /// none.
     #[schemars(schema_with = "or_null::<CommitName>")]
     pub(crate) commit: Option<String>,
     /// `fail` when a case failed or erred, else `pass`.
@@ -400,9 +403,10 @@ pub(crate) struct SuiteRun {
     /// commit, as `git rev-list --count` counts them; null when they
     /// cannot be counted.
     pub(crate) commits_since: Option<u64>,
-    /// Why `commits_since` is null: `rules::report::run_commit_missing`,
-    /// `rules::report::run_commit_not_ancestor` or `rules::report::no_git`;
-    /// null when it is counted.
+    /// Why `commits_since` is null: `rules::report::run_commit_unnamed`
+    /// when the run names no commit, `rules::report::run_commit_missing`
+    /// when the clone lacks it, `rules::report::run_commit_not_ancestor`
+    /// or `rules::report::no_git`; null when it is counted.
     #[schemars(schema_with = "or_null::<CodeName>")]
     pub(crate) commits_since_code: Option<String>,
 }
@@ -490,7 +494,10 @@ pub(crate) fn or_null<T: JsonSchema>(generator: &mut SchemaGenerator) -> Schema 
     json_schema!({"anyOf": [shape, {"type": "null"}]})
 }
 
-/// A map of measure names to a number or null.
-fn numbers_or_null(_: &mut SchemaGenerator) -> Schema {
-    json_schema!({"type": "object", "additionalProperties": {"type": ["number", "null"]}})
+/// A map of measure names to a number, a label, a flag or null.
+fn measures_or_null(_: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "object",
+        "additionalProperties": {"type": ["number", "string", "boolean", "null"]}
+    })
 }

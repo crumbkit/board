@@ -16,11 +16,12 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 101] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 103] = [
     // This repository's board's copies of the rules plugin's schemas.
     (".board/controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
     (".board/rules/report/v1", "/rules/-/checker/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version checker compiles"),
     (".board/rules/report/v1", "/rules/-/checker/measures/-", Local, "a measure name is any key a run of the named suite records under measures, which runs leaves free"),
+    (".board/rules/report/v1", "/rules/-/zero/measures/{key}", UntilAdopted, "Prose: a measure's value as a label, as runs/run/v1's measures"),
     (".board/rules/report/v1", "/suites/-/run/failed/-/case", UntilAdopted, "Slug, as runs/run/v1's case ids, once runs adopts it (audit row 55)"),
     (".board/rules/rule/v1", "/checker/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version checker compiles"),
     (".board/rules/rule/v1", "/checker/measures/-", Local, "a measure name is any key a run of the named suite records under measures, which runs leaves free"),
@@ -94,6 +95,7 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 101] = [
     ("review/report/v1", "/source", UntilAdopted, "Url (audit row 13)"),
     ("rules/report/v1", "/rules/-/checker/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version checker compiles"),
     ("rules/report/v1", "/rules/-/checker/measures/-", Local, "a measure name is any key a run of the named suite records under measures, which runs leaves free"),
+    ("rules/report/v1", "/rules/-/zero/measures/{key}", UntilAdopted, "Prose: a measure's value as a label, as runs/run/v1's measures"),
     ("rules/report/v1", "/suites/-/run/failed/-/case", UntilAdopted, "Slug, as runs/run/v1's case ids, once runs adopts it (audit row 55)"),
     ("rules/rule/v1", "/checker/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version checker compiles"),
     ("rules/rule/v1", "/checker/measures/-", Local, "a measure name is any key a run of the named suite records under measures, which runs leaves free"),

@@ -874,7 +874,7 @@
               "type": "null"
             }
           ],
-          "description": "The commit the run's `versions` name; null when they name none."
+          "description": "The commit the run's `versions.commit` names; null when it names\nnone."
         },
         "commits_since": {
           "description": "Commits reachable from `repository.commit` and not from the run's\ncommit, as `git rev-list --count` counts them; null when they\ncannot be counted.",
@@ -895,7 +895,7 @@
               "type": "null"
             }
           ],
-          "description": "Why `commits_since` is null: `rules::report::run_commit_missing`,\n`rules::report::run_commit_not_ancestor` or `rules::report::no_git`;\nnull when it is counted."
+          "description": "Why `commits_since` is null: `rules::report::run_commit_unnamed`\nwhen the run names no commit, `rules::report::run_commit_missing`\nwhen the clone lacks it, `rules::report::run_commit_not_ancestor`\nor `rules::report::no_git`; null when it is counted."
         },
         "failed": {
           "description": "Each case that failed or erred, with the run's note on it.",
@@ -905,10 +905,17 @@
           "type": "array"
         },
         "finished": {
-          "description": "When the run finished, or started when it records no finish.",
-          "format": "date-time",
-          "pattern": "Z$",
-          "type": "string"
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When the run finished, or started when it records no finish; null\nwhen it records neither as a time."
         },
         "id": {
           "description": "The run, by its logical path.",
@@ -1064,10 +1071,12 @@
           "additionalProperties": {
             "type": [
               "number",
+              "string",
+              "boolean",
               "null"
             ]
           },
-          "description": "Each measure the rule names and the number the run recorded, null\nwhen it recorded none.",
+          "description": "Each measure the rule names and the value the run recorded, a\nnumber, a label or a flag, null when it recorded none.",
           "type": "object"
         },
         "run": {

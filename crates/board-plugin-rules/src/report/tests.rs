@@ -138,12 +138,11 @@ fn every_result_comes_out_and_a_degraded_rule_is_one_unreadable_row_while_the_ot
             pair("/rules/budget/over", "over"),
             pair("/rules/budget/within", "within"),
             pair("/rules/capture", "unreadable"),
-            pair("/rules/elsewhere", "written"),
             pair("/rules/version/behind", "behind"),
             pair("/rules/version/within", "within"),
             pair("/rules/written", "written"),
         ],
-        "a rule outside the imposed root is no row: {report}"
+        "a rule outside the imposed root, and one that reaches no file, is no row: {report}"
     );
     assert_eq!(
         row(&report, "/rules/broken")["code"],
@@ -228,6 +227,7 @@ fn a_rule_in_two_groups_counts_in_both_and_each_group_rolls_up_to_its_state() {
         group("Docs", &["/rules/docs/plain"]),
         group("Broken", &["/rules/docs/*", "/rules/rust/pii"]),
         group("None", &["/rules/python/*"]),
+        group("Go", &["/rules/go/vet"]),
     ];
     let (_scenario, host) = board(
         &[
@@ -244,6 +244,7 @@ fn a_rule_in_two_groups_counts_in_both_and_each_group_rolls_up_to_its_state() {
             ("rules/groups/docs.json", &groups[3]),
             ("rules/groups/broken.json", &groups[4]),
             ("rules/groups/none.json", &groups[5]),
+            ("rules/groups/go.json", &groups[6]),
         ],
         &[],
     );
@@ -256,6 +257,7 @@ fn a_rule_in_two_groups_counts_in_both_and_each_group_rolls_up_to_its_state() {
         [
             (&json!("/rules/groups/broken"), &json!("unreadable")),
             (&json!("/rules/groups/docs"), &json!("not_reached")),
+            (&json!("/rules/groups/go"), &json!("not_reached")),
             (&json!("/rules/groups/none"), &json!("not_reached")),
             (&json!("/rules/groups/pii"), &json!("passing")),
             (&json!("/rules/groups/rust"), &json!("failing")),
@@ -263,9 +265,9 @@ fn a_rule_in_two_groups_counts_in_both_and_each_group_rolls_up_to_its_state() {
         ],
         "{report}"
     );
-    let rust = &report["groups"][4]["counts"];
+    let rust = &report["groups"][5]["counts"];
     assert_eq!((&rust["over"], &rust["within"]), (&json!(1), &json!(1)));
-    assert_eq!(report["groups"][5]["counts"]["over"], 1);
+    assert_eq!(report["groups"][6]["counts"]["over"], 1);
     assert_eq!(
         row(&report, "/rules/rust/version-server")["groups"],
         json!(["/rules/groups/rust", "/rules/groups/server"])
@@ -280,6 +282,19 @@ fn a_rule_in_two_groups_counts_in_both_and_each_group_rolls_up_to_its_state() {
             .all(|row| !row["id"].as_str().unwrap().starts_with("/rules/groups/")),
         "the rule index never lists a group as a rule: {report}"
     );
+    let whole = report_of(&host);
+    let go = (whole["groups"].as_array().unwrap().iter())
+        .find(|group| group["id"] == "/rules/groups/go")
+        .unwrap();
+    assert_eq!(
+        go["state"], "not_reached",
+        "under the root a group of rules that reach no file is not reached: {whole}"
+    );
+    assert!(
+        (whole["rules"].as_array().unwrap().iter()).all(|row| row["id"] != "/rules/go/vet"),
+        "under the root a rule that reaches no file is no row: {whole}"
+    );
+    assert_eq!(whole["drift"]["not_reached"], json!(["/rules/go/vet"]));
     let applying = crate::for_path::for_path(&host, &json!({"path": "/rules/groups/rust"}));
     assert_eq!(applying.unwrap()["rules"], json!([]));
     shipped("rules/report/v1").validate(&report).unwrap();
@@ -392,8 +407,8 @@ fn lists_are_cut_at_20_and_say_how_many_they_left_out() {
 const RUNNER: &str = "zelda-qx";
 
 /// A compliance suite naming `subject` of `kind`, and its one run, whose
-/// `versions` name `commit` and whose case `fmt` failed with a note.
-fn compliance(kind: &str, subject: &str, commit: &str) -> [(&'static str, String); 2] {
+/// `versions` are `versions` and whose case `fmt` failed with a note.
+fn compliance(kind: &str, subject: &str, versions: &Value) -> [(&'static str, String); 2] {
     let suite = json!({
         "$type": "runs/suite/v1",
         "subjects": [subject],
@@ -409,7 +424,7 @@ fn compliance(kind: &str, subject: &str, commit: &str) -> [(&'static str, String
         "finished": "1970-01-01T01:00:00+01:00",
         "scope": "full",
         "dirty": false,
-        "versions": {"commit": commit},
+        "versions": versions,
         "results": [
             {"case": "fmt", "outcome": "fail", "note": "two files are not formatted"},
             {"case": "lint", "outcome": "pass"},
@@ -444,7 +459,12 @@ fn history() -> (Scenario, Commits) {
 /// The report of a board laid over `scenario`'s history, holding
 /// [`compliance`] of `kind` naming `subject` for `commit`.
 fn reported_at(scenario: &Scenario, kind: &str, subject: &str, commit: &str) -> Value {
-    let [suite, run] = compliance(kind, subject, commit);
+    reported_with(scenario, kind, subject, &json!({"commit": commit}))
+}
+
+/// [`reported_at`] with the run's `versions` given whole.
+fn reported_with(scenario: &Scenario, kind: &str, subject: &str, versions: &Value) -> Value {
+    let [suite, run] = compliance(kind, subject, versions);
     let files = [(suite.0, suite.1.as_str()), (run.0, run.1.as_str())];
     let host = with_git(enabling_in(scenario, &["rules", "runs"], &files), &[]);
     report_of(&host)
@@ -522,17 +542,110 @@ fn a_suite_that_is_no_compliance_check_or_names_another_repository_is_left_out()
 }
 
 #[test]
-fn run_commit_reads_versions_commit_first_then_the_first_hex_value() {
+fn run_commit_reads_versions_commit_alone() {
     assert_eq!(
         run_commit(&json!({"versions": {"a": "abcdef1", "commit": "1234567"}})),
         Some("1234567".to_owned())
     );
     assert_eq!(
-        run_commit(&json!({"versions": {"model": "opus", "repo": "abcdef1"}})),
-        Some("abcdef1".to_owned())
+        run_commit(&json!({"versions": {"board": "abcdef1", "date": "20261125"}})),
+        None,
+        "a hex-looking value under another name is no commit"
     );
-    assert_eq!(run_commit(&json!({"versions": {"model": "opus"}})), None);
+    assert_eq!(run_commit(&json!({"versions": {"commit": "opus"}})), None);
     assert_eq!(run_commit(&json!({})), None);
+}
+
+#[test]
+fn a_run_finishes_at_its_finish_else_its_start_and_at_no_time_when_neither_is_one() {
+    let finished = suites::finished;
+    assert_eq!(
+        finished(&json!({"finished": "1970-01-01T01:00:00+01:00", "started": "x"})),
+        Some("1970-01-01T00:00:00Z".to_owned())
+    );
+    assert_eq!(
+        finished(&json!({"finished": "soon", "started": "1970-01-01T00:00:05Z"})),
+        Some("1970-01-01T00:00:05Z".to_owned())
+    );
+    assert_eq!(finished(&json!({"finished": "soon", "started": "x"})), None);
+}
+
+#[test]
+fn a_run_that_names_no_commit_says_so_apart_from_a_commit_the_clone_lacks() {
+    let (scenario, commits) = history();
+    let versions = json!({"crumbkit/app": commits.run.to_string()});
+    let report = reported_with(&scenario, "compliance", "owner/app", &versions);
+    let run = &report["suites"][0]["run"];
+    assert_eq!(run["commit"], Value::Null, "{report}");
+    assert_eq!(
+        (&run["commits_since"], &run["commits_since_code"]),
+        (&Value::Null, &json!("rules::report::run_commit_unnamed"))
+    );
+    shipped("rules/report/v1").validate(&report).unwrap();
+}
+
+#[test]
+fn a_group_board_marks_invalid_is_a_refusal_and_no_group_row() {
+    let plain = rule(&["docs/*"], &json!({}));
+    let invalid = json!({"$type": "rules/group/v1", "purpose": "P.", "members": ["/rules/*"]});
+    let (_scenario, host) = board(
+        &[
+            ("docs/a.md", "one"),
+            ("rules/plain.json", &plain),
+            ("rules/groups/untitled.json", &invalid.to_string()),
+        ],
+        &[],
+    );
+    let report = report_of(&host);
+    assert_eq!(report["groups"], json!([]), "{report}");
+    let refused: Vec<(&Value, &Value)> = (report["refused"].as_array().unwrap().iter())
+        .map(|refusal| (&refusal["code"], &refusal["rules"]))
+        .collect();
+    assert_eq!(
+        refused,
+        [(
+            &json!("rules::report::group_unreadable"),
+            &json!(["/rules/groups/untitled"])
+        )]
+    );
+    shipped("rules/report/v1").validate(&report).unwrap();
+}
+
+#[test]
+fn a_zero_rule_keeps_a_measure_recorded_as_a_label_apart_from_one_not_recorded() {
+    let zero = json!({
+        "$type": "rules/rule/v1",
+        "requirement": "R.",
+        "purpose": "P.",
+        "paths": ["src/*"],
+        "checker": {"check": "zero", "suite": "/suites/users", "measures": ["remaining", "status", "absent"]},
+    });
+    let suite = json!({"$type": "runs/suite/v1", "method": "Count the users."});
+    let run = json!({
+        "$type": "runs/run/v1",
+        "suite": "/suites/users",
+        "by": {"program": "claude-code"},
+        "started": "1970-01-01T00:00:00Z",
+        "scope": "full",
+        "dirty": false,
+        "results": [],
+        "measures": {"remaining": 0, "status": "unknown"},
+    });
+    let (_scenario, host) = board(
+        &[
+            ("src/old.rs", "fn old() {}"),
+            ("rules/zero.json", &zero.to_string()),
+            ("suites/users.json", &suite.to_string()),
+            ("suites/users/runs/1.json", &run.to_string()),
+        ],
+        &[],
+    );
+    let report = report_of(&host);
+    assert_eq!(
+        row(&report, "/rules/zero")["zero"]["measures"],
+        json!({"remaining": 0, "status": "unknown", "absent": null})
+    );
+    shipped("rules/report/v1").validate(&report).unwrap();
 }
 
 #[test]

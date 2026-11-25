@@ -79,7 +79,7 @@ pub(crate) fn report(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     let drift = drift(&imposed_set, &imposed, &own);
     rules.extend(own.into_iter().map(|(row, _)| row));
     let groups = groups(host, &mut rules, &imposed_set, &mut refused)?;
-    let suites = suites(host, &place, &repository)?;
+    let suites = suites(host, &place, &repository, &mut refused)?;
     let report = ReportRecord {
         tag: Tag::default(),
         generated: board_model::utc_seconds(host.settings().now),
@@ -217,7 +217,12 @@ fn imposed_rows(
         }
     }
     let reached = check::reach(host, scope, &measured)?;
-    let applying: Vec<&String> = reached.applying.iter().collect();
+    let touches_a_file =
+        |logical: &str| !reached.files[logical].is_empty() || reached.unnamed.contains_key(logical);
+    // Under the root `check` lists every rule; the report lists only those that reach a file.
+    let applying: Vec<&String> = (reached.applying.iter())
+        .filter(|logical| touches_a_file(logical))
+        .collect();
     let (budgets, versions) = check::measure_files(
         host,
         &applying,
@@ -261,7 +266,7 @@ fn imposed_rows(
     let key = |logical: &str| below(logical, root.as_str());
     let mut set: BTreeMap<String, ImposedRule> = BTreeMap::new();
     for (logical, control) in &measured {
-        let reached = !reached.files[logical].is_empty() || reached.unnamed.contains_key(logical);
+        let reached = touches_a_file(logical);
         let fields = Some(Compared::of(control));
         let id = logical.clone();
         set.insert(
@@ -398,7 +403,7 @@ fn zero_row(control: &Control, zeroed: zero::Zeroed, refused: &mut Vec<Refused>)
             .map(|each| {
                 (
                     each.name.clone(),
-                    each.value.as_ref().and_then(Value::as_f64),
+                    (each.value.clone()).filter(|value| !value.is_null()),
                 )
             })
             .collect(),
@@ -543,9 +548,33 @@ fn drift(
 const GROUPS: &str = "SELECT logical, body FROM records WHERE type = 'rules/group/v1' \
     AND source = 'worktree' AND status = 'ok' ORDER BY logical";
 
+/// Each group Board marks invalid in the board's own tree, with its code.
+const INVALID_GROUPS: &str = "SELECT logical, COALESCE(code, '') FROM records \
+    WHERE type = 'rules/group/v1' AND source = 'worktree' AND status != 'ok' \
+    AND logical IS NOT NULL ORDER BY logical";
+
+/// The refusal for the group at `logical` that Board marks invalid with
+/// `code`, or whose body does not read as a group when `code` is empty.
+fn group_unreadable(logical: String, code: &str) -> Refused {
+    let message = if code.is_empty() {
+        format!("the group {logical}'s body does not read as a rules/group/v1")
+    } else {
+        format!(
+            "Board marks the group {logical} invalid with {code}; run `board check {logical}` for why"
+        )
+    };
+    Refused {
+        code: "rules::report::group_unreadable".to_owned(),
+        rules: vec![logical],
+        message,
+    }
+}
+
 /// Each group's rolled-up state, with each row given the groups it is in.
 /// A member pattern that matches no rule the report knows, reaching or
-/// not, is a `rules::report::member_unmatched` warning.
+/// not, is a `rules::report::member_unmatched` warning, and a group that
+/// Board marks invalid or that does not read is a
+/// `rules::report::group_unreadable` refusal.
 fn groups(
     host: &dyn Host,
     rows: &mut [Row],
@@ -557,10 +586,14 @@ fn groups(
         .collect();
     let known: Vec<String> = known.into_iter().map(str::to_owned).collect();
     let mut out = Vec::new();
+    for (logical, code) in index::string_pairs::<Vec<(String, String)>>(host, INVALID_GROUPS)? {
+        refused.push(group_unreadable(logical, &code));
+    }
     for (logical, body) in index::string_pairs::<Vec<(String, String)>>(host, GROUPS)? {
         let Some(group) = (parse_json(body.as_bytes()).ok())
             .and_then(|record| GroupRecord::deserialize(&record).ok())
         else {
+            refused.push(group_unreadable(logical, ""));
             continue;
         };
         for pattern in &group.members {

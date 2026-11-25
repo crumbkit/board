@@ -2,7 +2,6 @@
 //! reads, each with its newest qualifying run and the commits since it.
 
 use std::collections::BTreeSet;
-use std::time::SystemTime;
 
 use board_model::{LogicalPath, parse_json};
 use board_ops::{Host, PluginError};
@@ -10,7 +9,7 @@ use board_plugin::Target;
 use serde_json::{Value, json};
 
 use super::place::{Place, Ran, git};
-use super::{FailedCase, RepositoryRead, SuiteRow, SuiteRun, Verdict};
+use super::{FailedCase, Refused, RepositoryRead, SuiteRow, SuiteRun, Verdict};
 use crate::{check, index};
 
 /// Each suite, wherever it is.
@@ -18,11 +17,13 @@ const SUITES: &str = "SELECT logical, body FROM records WHERE type = 'runs/suite
     AND logical IS NOT NULL ORDER BY logical";
 
 /// Each compliance suite whose `subjects` name the repository, by its name
-/// or its mount, and its newest qualifying run.
+/// or its mount, and its newest qualifying run. A suite whose body does not
+/// parse is a `rules::report::suite_unreadable` refusal.
 pub(crate) fn suites(
     host: &dyn Host,
     place: &Place,
     repository: &RepositoryRead,
+    refused: &mut Vec<Refused>,
 ) -> Result<Vec<SuiteRow>, PluginError> {
     let names = |subject: &str| {
         subject.eq_ignore_ascii_case(&repository.name)
@@ -31,6 +32,11 @@ pub(crate) fn suites(
     let mut rows = Vec::new();
     for (logical, body) in index::string_pairs::<Vec<(String, String)>>(host, SUITES)? {
         let Ok(suite) = parse_json(body.as_bytes()) else {
+            refused.push(Refused {
+                code: "rules::report::suite_unreadable".to_owned(),
+                message: format!("the suite {logical}'s body is not JSON"),
+                rules: vec![logical],
+            });
             continue;
         };
         let compliance = suite["kind"] == "compliance";
@@ -95,13 +101,7 @@ fn suite_run(
                 .map(str::to_owned),
         })
         .collect();
-    let finished = (latest["finished"].as_str())
-        .or_else(|| latest["started"].as_str())
-        .and_then(board_model::moment)
-        .map_or_else(
-            || board_model::utc_seconds(SystemTime::UNIX_EPOCH),
-            board_model::utc_seconds,
-        );
+    let finished = finished(latest);
     let (commits_since, commits_since_code) =
         match commits_since(host, place, repository, commit.as_deref()) {
             Ok(count) => (Some(count), None),
@@ -122,17 +122,22 @@ fn suite_run(
     }
 }
 
-/// The commit a run's `versions` name: `commit` when it names one, else
-/// the first value, by name, that is 7 to 40 lowercase hex digits.
+/// When `latest` finished, or started when it records no finish, in UTC;
+/// none when neither is a moment.
+pub(crate) fn finished(latest: &Value) -> Option<String> {
+    let moment = |name: &str| latest[name].as_str().and_then(board_model::moment);
+    moment("finished")
+        .or_else(|| moment("started"))
+        .map(board_model::utc_seconds)
+}
+
+/// The commit a run's `versions.commit` names, when it is 7 to 40
+/// lowercase hex digits.
 pub(crate) fn run_commit(run: &Value) -> Option<String> {
-    let versions = run["versions"].as_object()?;
-    let commit = |value: &Value| {
-        let text = value.as_str()?;
-        let hex = (7..=40).contains(&text.len())
-            && (text.bytes()).all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
-        hex.then(|| text.to_owned())
-    };
-    (versions.get("commit").and_then(commit)).or_else(|| versions.values().find_map(commit))
+    let text = run["versions"]["commit"].as_str()?;
+    let hex = (7..=40).contains(&text.len())
+        && (text.bytes()).all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
+    hex.then(|| text.to_owned())
 }
 
 /// The commits reachable from the report's commit and not from `run`'s,
@@ -145,12 +150,13 @@ fn commits_since(
     run: Option<&str>,
 ) -> Result<u64, &'static str> {
     const MISSING: &str = "rules::report::run_commit_missing";
+    const UNNAMED: &str = "rules::report::run_commit_unnamed";
     const NOT_ANCESTOR: &str = "rules::report::run_commit_not_ancestor";
     const NO_GIT: &str = "rules::report::no_git";
+    let run = run.ok_or(UNNAMED)?;
     let (Some(clone), Some(head)) = (&place.clone, &repository.commit) else {
         return Err(NO_GIT);
     };
-    let run = run.ok_or(MISSING)?;
     let present = git(
         host,
         clone,

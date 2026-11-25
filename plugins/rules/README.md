@@ -373,8 +373,8 @@ of the rename deletes them.
     malformed, it is null and `refused` holds
     `rules::report::ci_env_invalid`.
   - `rules`: each rule of the imposed set, the rules under `--imposed`,
-    `/rules` when left out, that reaches the repository, measured as
-    `check` measures it, then each rule the mounted repository holds
+    `/rules` when left out, that reaches a file in the repository, measured
+    as `check` measures it, then each rule the mounted repository holds
     itself, with `result` `unmeasured`. A budget is `within` or `over`, a
     version rule `within` or `behind`, a zero rule takes its state, a rule
     this command does not measure is `written`, and a degraded rule, an
@@ -387,19 +387,27 @@ of the rename deletes them.
     when none is measured, and `not_reached` when none reaches the
     repository.
   - `suites`: each suite of kind `compliance` whose `subjects` name the
-    repository, its newest full run of a clean revision, the run's
-    commit, its failed cases with their notes, and `commits_since`, the
+    repository, its newest full run of a clean revision, when it finished
+    (null when the run records no time), the commit its `versions.commit`
+    names, its failed cases with their notes, and `commits_since`, the
     commits from the run's commit to `repository.commit`. When git cannot
     count them, `commits_since_code` says why:
+    `rules::report::run_commit_unnamed` when the run names no commit,
     `rules::report::run_commit_missing` when the clone lacks the run's
     commit, as a shallow CI checkout does (set `fetch-depth: 0`),
     `rules::report::run_commit_not_ancestor`, or `rules::report::no_git`.
   - `drift`: the repository's own rules with no imposed rule of the same
     path below the imposed root in `extra`, those whose fields differ in
     `differs`, and the imposed rules that reach no file in `not_reached`.
-  - `refused`: each refusal and warning met, such as a degraded rule or a
+  - `refused`: each refusal and warning met, such as a degraded rule, a
     group member pattern that matches no rule
-    (`rules::report::member_unmatched`).
+    (`rules::report::member_unmatched`), a group that Board marks invalid
+    or that does not read (`rules::report::group_unreadable`), or a suite
+    whose body does not parse (`rules::report::suite_unreadable`).
+
+  A zero rule's row gives in `zero.measures` each measure as the run
+  recorded it, a number, a label or a flag, or null when the run recorded
+  none.
 
   The command exits 0 whatever the rules found. It fails with
   `rules::report::no_repository` when the clone has no origin and no
