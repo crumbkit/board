@@ -165,6 +165,13 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         if let ("brief" | "parent", Some(path)) = (key, value.as_str()) {
             value = json!(in_repo(&found, &repo, path, &[(key, json!(path))], "add")?);
         }
+        if let ("after", Some(after)) = (key, &given.after) {
+            let fields = [(key, json!(after))];
+            let paths = (after.iter())
+                .map(|path| in_repo(&found, &repo, path, &fields, "add"))
+                .collect::<Result<Vec<_>, _>>()?;
+            value = json!(paths);
+        }
         fields.push((key, value));
     }
     fields.push(("reviewed", json!(day.to_string())));

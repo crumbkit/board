@@ -80,8 +80,7 @@ fn reset(desk: &Desk) {
 /// Each run of the stub gh, its arguments joined by spaces.
 fn log(desk: &Desk) -> Vec<String> {
     std::fs::read_to_string(desk.bin().join("gh-log.txt"))
-        .map(|log| log.lines().map(str::to_owned).collect())
-        .unwrap_or_default()
+        .map_or_default(|log| log.lines().map(str::to_owned).collect())
 }
 
 /// The stdin of the stub gh's run numbered `n`, from 1.

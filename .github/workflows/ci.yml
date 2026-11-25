@@ -92,7 +92,7 @@ jobs:
   git-floor:
     runs-on: ubuntu-24.04
     container:
-      image: rust:1.99.1-bookworm
+      image: rust:1.100.0-bookworm
       options: --init
     timeout-minutes: 20
     steps:

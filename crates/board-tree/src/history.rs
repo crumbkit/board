@@ -138,8 +138,7 @@ impl Repository {
     pub fn history(&self, start: ObjectId, path: &str, walk: Walk) -> Result<History, GitError> {
         let shallow: HashSet<gix::ObjectId> = (self.git().shallow_commits())
             .map_err(|error| self.missing(start, error))?
-            .map(|commits| commits.iter().copied().collect())
-            .unwrap_or_default();
+            .map_or_default(|commits| commits.iter().copied().collect());
         let followed = self.followed(start, path)?;
         let mut walker = Walker {
             repository: self,

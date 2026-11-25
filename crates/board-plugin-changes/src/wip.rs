@@ -236,8 +236,7 @@ fn in_build(host: &dyn Host) -> Result<Vec<(String, ChangeRecord)>, PluginError>
 pub(crate) fn active_days(host: &dyn Host) -> Result<u32, PluginError> {
     let given = (host.settings().environment.0.iter())
         .find(|(name, _)| name == ACTIVE_DAYS_VARIABLE)
-        .map(|(_, value)| value.to_string_lossy().into_owned())
-        .unwrap_or_default();
+        .map_or_default(|(_, value)| value.to_string_lossy().into_owned());
     if given.is_empty() {
         return Ok(ACTIVE_DAYS);
     }

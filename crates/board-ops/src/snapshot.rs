@@ -289,7 +289,7 @@ impl Board {
         (entries, listings): (&[Entry], &Listings),
         head: Option<ObjectId>,
     ) -> Option<(Digest, HashSet<board_tree::Crossing>)> {
-        let head = head.map(|tree| tree.to_string()).unwrap_or_default();
+        let head = head.map_or_default(|tree| tree.to_string());
         let moved = format!("{:?}", self.repositories().moved());
         let listed = listed(entries);
         let directories = seen_directories(listings);
@@ -643,18 +643,13 @@ fn listed(entries: &[Entry]) -> Vec<u8> {
         } = entry;
         field(path);
         field(logical.as_ref().map_or("", LogicalPath::as_str));
-        field(&blob.map(|blob| blob.to_string()).unwrap_or_default());
+        field(&blob.map_or_default(|blob| blob.to_string()));
         field(match status {
             Status::Ok => "",
             Status::Degraded(code) => code.as_str(),
         });
-        field(&size.map(|size| size.to_string()).unwrap_or_default());
-        field(
-            &link
-                .as_ref()
-                .map(|link| link.blob.to_string())
-                .unwrap_or_default(),
-        );
+        field(&size.map_or_default(|size| size.to_string()));
+        field(&link.as_ref().map_or_default(|link| link.blob.to_string()));
         field(link.as_ref().map_or("", |link| link.target.as_str()));
     }
     bytes

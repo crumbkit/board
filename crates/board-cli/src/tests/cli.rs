@@ -114,10 +114,7 @@ fn every_command_argument_and_option_has_help() {
 #[test]
 fn every_command_that_runs_ends_its_help_in_examples_that_parse() {
     for (name, command) in leaves() {
-        let help = command
-            .get_after_help()
-            .map(ToString::to_string)
-            .unwrap_or_default();
+        let help = command.get_after_help().map_or_default(ToString::to_string);
         assert!(help.contains("Examples:\n"), "{name} has no examples");
         let shown = examples(&help);
         assert!(
@@ -144,10 +141,7 @@ fn every_command_group_ends_its_help_in_examples_of_its_commands_that_parse() {
         .filter(|command| command.has_subcommands())
     {
         let name = group.get_name();
-        let help = group
-            .get_after_help()
-            .map(ToString::to_string)
-            .unwrap_or_default();
+        let help = group.get_after_help().map_or_default(ToString::to_string);
         assert!(help.contains("Examples:\n"), "{name} has no examples");
         let shown = examples(&help);
         for sub in group
@@ -568,9 +562,7 @@ fn a_refused_command_line_names_the_value_at_fault_and_its_corrected_twin_runs()
         let call = format!("board {} -h", refused[0]);
         assert_eq!(error["recovery"]["call"], call.as_str(), "{refused:?}");
         let text_form = text(&board_in(scenario.workdir(), refused).stderr);
-        let usage = usage
-            .map(|usage| format!("  usage: {usage}\n"))
-            .unwrap_or_default();
+        let usage = usage.map_or_default(|usage| format!("  usage: {usage}\n"));
         assert_eq!(
             text_form,
             format!("error: {said}\n{usage}  help:  run `{call}`\n  code:  board::cli::usage\n")
