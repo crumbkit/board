@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+## 0.1.2 (2026-11-25)
+
+- `board call rules.check --path /` answers within Board's 1-second query
+  limit on a board that mounts many repositories. Before, it failed there
+  with `board::query::timeout` on every run, and the rules mod's session
+  start fell back to asking `rules.for-path` before each edit.
+- A warm `board ls` reads the decision Board kept for each mounted source
+  wholly in its scope instead of deciding every source again. Its output is
+  the same as a cold run's.
+- The Claude Code rules mod starts a session with the rules from its last
+  good check of the repository, says when that check ran, and runs
+  `rules.check` again in the background with a 120-second limit. A
+  repository it has not checked before waits up to 5 seconds, as before.
+- A mounted source read from a partial clone, whose repository lacks some
+  blobs, is kept between warm runs until its repository's objects change.
+- A warm run opens a mounted repository only when its stamp changed, and
+  after a working-tree change decides again only the entries the change
+  could alter. A warm query, call or check of an unchanged board reuses the
+  working tree's kept decision and lists no directory.
+- `board changes next` and `board changes advance` read through one board
+  snapshot, so each takes about half the time.
+- Board records how long each hot command takes, and
+  `board timing check` judges each one's p90 against the owner's budgets.
+  The check is silent: it opens no task and files no question yet.
+- The built-in `orders` plugin checks signed orders against
+  `~/.config/board/allowed_signers`, falling back to the attention file
+  with the warning `orders::signers::legacy`. `board orders pinned`,
+  `verify`, `sign` and `signers` replace the `attention.*` calls, which
+  keep working in this release and print their replacement.
+- The handoff mod prompts a session once when it reaches the
+  `handoff-context-tokens` limit, and stops telling sessions to hand off
+  once the usage window is back under its share.
+- `board github push` and `pr-create` no longer refuse a diff because the
+  bytes of a binary file match a text rule; the result lists each binary
+  file that was not scanned.
+- `tasks.claim` syncs the notes repository before it checks the stored task
+  schema, so a repository another clone migrated is claimed without a
+  refusal.
+- A review with no high finding still counts after one fix round when a
+  `changes/fix/v1` record names the report and the commits that answer its
+  findings.
+- The development flow asks the owner's data rechecks at land without
+  blocking the merge, and a plan that answers `ux` none and `data` none
+  needs no owner approval.
+
 - In the plan phase, `board changes next` and `board changes advance` ask
   the rules plugin for the rules on the plan's paths once, where they asked
   twice, and read both the obligations and the rules on the planned paths
@@ -75,6 +120,11 @@
   `board map check --path /maps/<name>` lists what a reader would see as
   broken, with the box it estimated for each text, and counts the findings
   the map accepts apart.
+
+## 0.1.1 (2026-11-23)
+
+- `board github push`, `board github pr-create` and the pre-push hook work
+  with git 2.39, the git that Xcode 16 ships. Board needs git 2.39 or later.
 
 - The new `priorities` plugin keeps the owner's priorities in one
   `priorities/list/v1` record at `/priorities`, ranked in a short and a
