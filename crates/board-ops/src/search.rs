@@ -2,11 +2,14 @@
 //! compiled to one SQL statement over the `entries` view and run through
 //! the same snapshot as `board query` (docs/commands/search.md).
 //!
-//! A word matches, in any ASCII case, as a substring of the entry's path,
-//! its title, its body and its text: the prose of a Markdown file, or the
-//! text of a JSON file with no `$type`. A phrase matches as one string. The match is
-//! SQLite's `LIKE`, which folds ASCII case as it compares, so no lower-case
-//! copy of a body is made. `type:` takes
+//! A word matches as a substring of the entry's path, its title, its body
+//! and its text: the prose of a Markdown file, or the text of a JSON file
+//! with no `$type`. A phrase matches as one string. A word of three or more
+//! characters matches a text through the trigram index `texts_fts`, which
+//! folds Unicode case, so a warm search reads no prose. A shorter word,
+//! which a trigram index cannot answer, and every word against a path, a
+//! title or a body, match with SQLite's `LIKE`, which folds ASCII case as it
+//! compares, so no lower-case copy of a body is made. `type:` takes
 //! the short names of [`board_search::fields::TYPES`], each matching every
 //! version of its type, and `type:doc` the entries with no `$type`.
 //! `from:` matches `by.person`, `by.agent` or `by.program`, and `from:me`
@@ -165,6 +168,12 @@ pub struct Statement {
     /// The words and phrases that are not excluded, which the ranking
     /// counts.
     ranked: Vec<String>,
+    /// Each distinct word and phrase the trigram index answers, in order:
+    /// the one at `n` is the set `w<n>`.
+    trigrams: Vec<String>,
+    /// Whether a word reads the prose, because it is too short for the
+    /// trigram index.
+    scans: bool,
 }
 
 /// The statement for `query`, with `from:me` read as `owner`, the owner the
@@ -180,9 +189,18 @@ pub fn compile(query: &Query, owner: Option<&str>) -> Result<Statement, Vec<Synt
     let mut errors = fields::check(query);
     let (mut filters, mut words) = (Vec::new(), Vec::new());
     let mut ranked = Vec::new();
+    let mut trigrams: Vec<String> = Vec::new();
+    for part in query.parts() {
+        if let Term::Word { text } | Term::Phrase { text } = &part.term
+            && indexed(text)
+            && !trigrams.contains(text)
+        {
+            trigrams.push(text.clone());
+        }
+    }
     for part in query.parts() {
         let texts = matches!(part.term, Term::Word { .. } | Term::Phrase { .. });
-        match condition(part, owner) {
+        match condition(part, owner, &trigrams) {
             Ok(condition) if texts => words.push(condition),
             Ok(condition) => filters.push(condition),
             Err(mut unknown) => errors.append(&mut unknown),
@@ -204,17 +222,54 @@ pub fn compile(query: &Query, owner: Option<&str>) -> Result<Statement, Vec<Synt
     } else {
         conditions.join(" AND ")
     };
-    Ok(Statement { condition, ranked })
+    let scans = query.parts().iter().any(|part| match &part.term {
+        Term::Word { text } | Term::Phrase { text } => !indexed(text),
+        Term::Filter { .. } => false,
+    });
+    Ok(Statement {
+        condition,
+        ranked,
+        trigrams,
+        scans,
+    })
 }
 
-/// The SQL condition of one part, or the `from:me` values that name nobody
+/// Whether the trigram index answers `text`: it holds three or more
+/// characters, so every match holds one of its trigrams.
+fn indexed(text: &str) -> bool {
+    text.chars().nth(2).is_some()
+}
+
+/// SQL that is 1 when the entry's text holds `text` and 0 when it does not:
+/// its id in the set of texts the trigram index finds for it, or a `LIKE`
+/// scan of the prose when the index cannot answer it.
+fn prose(text: &str, trigrams: &[String]) -> String {
+    match trigrams.iter().position(|indexed| indexed == text) {
+        Some(at) => format!("(xid IN w{at})"),
+        None => holds("x", text),
+    }
+}
+
+/// The FTS5 query that finds `text` as one string: a string in double
+/// quotes, each quote in it doubled.
+fn phrase(text: &str) -> String {
+    format!("\"{}\"", text.replace('"', "\"\""))
+}
+
+/// The SQL condition of one part, with the words of `trigrams` read from
+/// their sets, or the `from:me` values that name nobody
 /// because `owner` is `None`. A `type:` value that names no short type, or
 /// a `path:` value that does not start with `/`, matches nothing;
 /// [`fields::check`] reports it.
-fn condition(part: &Part, owner: Option<&str>) -> Result<String, Vec<SyntaxError>> {
+fn condition(
+    part: &Part,
+    owner: Option<&str>,
+    trigrams: &[String],
+) -> Result<String, Vec<SyntaxError>> {
     let matched = match &part.term {
         Term::Word { text } | Term::Phrase { text } => {
-            let (body, prose, path) = (holds("b", text), holds("x", text), holds("path", text));
+            let (body, prose, path) =
+                (holds("b", text), prose(text, trigrams), holds("path", text));
             let title = holds("t", text);
             if in_body(text) {
                 format!("({body} OR {prose} OR {path} OR (k = '' AND {title}))")
@@ -325,7 +380,9 @@ fn any_of(conditions: &[String]) -> String {
 
 /// The entries with the columns the conditions read: `path`; `t`, the
 /// title; `b`, a record's body; `x`, the text of a Markdown file or of a
-/// JSON file with no `$type`; `k`, the type; `m`, when the working tree last
+/// JSON file with no `$type`, or empty text when `{prose}` is `NULL`;
+/// `xid`, that text's id, or 0 when it has none, which no text has; `k`,
+/// the type; `m`, when the working tree last
 /// changed the file, or the smallest integer for an entry of a mount; and
 /// `person`, `agent` and `program`, from `by`, in lower case. Each is empty
 /// text where the entry has none. A record's title is the first of
@@ -339,7 +396,7 @@ WITH e AS (
     SELECT e.source, e.path AS physical, e.logical AS path, e.blob, e.kind, e.role, e.type
     FROM entries AS e WHERE e.logical IS NOT NULL
 ), r AS (
-    SELECT e.path, e.type, b.body, x.body AS prose,
+    SELECT e.path, e.type, b.body, {prose} AS prose, coalesce(x.id, 0) AS xid,
         CASE WHEN e.type IS NULL
             THEN coalesce(x.heading,
                 substr(e.path, length(rtrim(e.path, replace(e.path, '/', ''))) + 1))
@@ -354,7 +411,7 @@ WITH e AS (
         AND (e.role = 'markdown' OR (e.role = 'json' AND e.type IS NULL))
     LEFT JOIN main.worktree AS w ON e.source = 'worktree' AND w.path = e.physical
 ), c AS (
-    SELECT path, type, title, m,
+    SELECT path, type, title, m, xid,
         coalesce(title, '') AS t, coalesce(body, '') AS b, coalesce(prose, '') AS x,
         coalesce(type, '') AS k,
         lower(coalesce(json_extract(body, '$.by.person'), '')) AS person,
@@ -378,9 +435,20 @@ impl Statement {
             counted.join(" + ")
         };
         let titled = hits(&|word| holds("t", word));
-        let bodied = hits(&|word| format!("({} OR {})", holds("b", word), holds("x", word)));
+        let bodied =
+            hits(&|word| format!("({} OR {})", holds("b", word), prose(word, &self.trigrams)));
+        // Only a word too short for the trigram index reads the prose.
+        let entries = ENTRIES.replace("{prose}", if self.scans { "x.body" } else { "NULL" });
+        let mut sets = String::new();
+        for (at, text) in self.trigrams.iter().enumerate() {
+            let query = literal(&phrase(text));
+            let _ = write!(
+                sets,
+                ", w{at} AS (SELECT rowid FROM main.texts_fts WHERE texts_fts MATCH {query})"
+            );
+        }
         let mut sql = format!(
-            "{ENTRIES}, s AS (
+            "{entries}{sets}, s AS (
     SELECT path, type, substr(title, 1, {TITLE_CHARS}) AS title,
         {titled} AS title_hits, {bodied} AS body_hits, m
     FROM c WHERE {}

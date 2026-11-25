@@ -13,6 +13,7 @@ mod cache;
 mod format;
 mod kept;
 mod prune;
+mod texts;
 mod worktree;
 
 const ROOT: &str = "/boards/one";
@@ -119,7 +120,8 @@ fn a_file_s_text_is_stored_once_by_its_blob() {
 }
 
 #[test]
-fn an_index_of_the_previous_format_without_texts_is_deleted_and_rebuilt_with_them() {
+fn an_index_of_the_previous_format_without_texts_is_deleted_and_rebuilt_with_them_and_their_index()
+{
     let cache = tempfile::tempdir().unwrap();
     drop(filled(cache.path()));
     let file = location(cache.path(), Path::new(ROOT));
@@ -136,12 +138,12 @@ fn an_index_of_the_previous_format_without_texts_is_deleted_and_rebuilt_with_the
     let tables: i64 = index
         .connection
         .query_row(
-            "SELECT count(*) FROM sqlite_schema WHERE name = 'texts'",
+            "SELECT count(*) FROM sqlite_schema WHERE name IN ('texts', 'texts_fts')",
             [],
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(tables, 1);
+    assert_eq!(tables, 2);
     assert!(!has_fact(index));
 }
 

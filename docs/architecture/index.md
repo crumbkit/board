@@ -23,7 +23,7 @@ directory of each other board whose recorded root it can see is gone.
 | `validations` | schema result: code, failing JSON pointer, reason, failure count | record blob, schema blob |
 | `refs` | references a valid record makes, ordered: JSON pointer, target path, accepted types, `x-board-local` | record blob, schema blob, ordinal |
 | `links` | a Markdown file's links to board paths outside its frontmatter, in order, as written | blob, ordinal |
-| `texts` | a Markdown or untyped JSON file's first heading and prose, for search (docs/commands/search.md) | blob |
+| `texts`, `texts_fts` | search's text of each Markdown or untyped JSON file ([index/texts.md](index/texts.md)) | id |
 | `mounts` | each mount point and the commit it reaches, or its code | source, path |
 | `pointers` | a mounted tree's mount pointers | scan key, path |
 | `directories` | each directory's stat and items as a walk listed them ([performance/warm/index.md](performance/warm/index.md)) | path |

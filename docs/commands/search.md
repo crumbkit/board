@@ -19,7 +19,7 @@ part matches.
 
 | Part | Matches |
 | --- | --- |
-| `budget` | A word. It matches an entry whose path, title, body or text holds it, in any ASCII case. |
+| `budget` | A word. It matches an entry whose path, title, body or text holds it, in any ASCII case. A word of three or more characters matches a text in any Unicode case. |
 | `"budget review"` | A phrase in double quotes. It matches as one string, spaces included. |
 | `type:question` | The kind of record, by a short name. Each short name matches every version of its type. |
 | `type:doc` | An entry with no `$type`, such as a Markdown note or an image. |
@@ -52,7 +52,11 @@ entry with no `$type` is titled by its first heading, or by its file name
 when it has none.
 
 Words match by substring, so `run` also matches `running` and `prune`. Word
-boundaries come in a later version of the syntax. The body a word matches is
+boundaries come in a later version of the syntax. A word matches a path, a
+title and a record's body in any ASCII case, so `budget` matches `BUDGET`
+there but `été` does not match `ÉTÉ`. A word of three or more characters
+matches a text in any Unicode case, so `été` matches `ÉTÉ` in a Markdown
+file. A shorter word matches a text in any ASCII case. The body a word matches is
 the record's JSON, so a word can also match a field's name, such as `status`.
 A Markdown file's text is its prose after any frontmatter, and a JSON file
 with no `$type` has its whole text. The index keeps the first 64 KiB of each,
@@ -135,15 +139,20 @@ that added `board search` refuses a file that holds `owner`.
 
 Board compiles the query to one SQL statement over the `entries` view of the
 index, joined to the record bodies and the `texts` table, and runs it through
-the same snapshot as `board query`. Every value from
+the same snapshot as `board query`. A word or phrase of three or more
+characters finds its texts through `texts_fts`, a trigram index of the
+texts, so it reads no prose, and the ranking counts each word's texts from
+that index too. A shorter word, which a trigram index cannot answer, reads
+the prose of each text the filters leave. Every value from
 the query goes into the statement as a blob literal of its bytes in hex, so no
 text from the query reaches the SQL as text. A search runs for at most one
 second, as every query does, and is refused with `board::query::timeout` when
 it runs longer. The refusal's hint says to add a filter, such as `type:task`
 or `from:erin`, or to use a longer or less common word, because a word that
-most entries hold makes the search read and rank most of the board. The
-statement checks the filters before the words, so a filter also saves reading
-the bodies and texts of the entries it rules out.
+most entries hold makes the search read and rank most of the board, and a
+word of one or two characters reads every text. The statement checks the
+filters before the words, so a filter also saves reading the bodies and texts
+of the entries it rules out.
 
 ## Examples
 

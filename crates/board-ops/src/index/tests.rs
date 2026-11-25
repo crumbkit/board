@@ -660,3 +660,32 @@ fn a_schema_copied_into_the_reserved_namespace_still_validates_the_records_of_it
         );
     }
 }
+
+/// How many texts `main.texts` holds and how many `texts_fts` has indexed,
+/// one row of `texts_fts_docsize` for each.
+fn texts(scenario: &Scenario, cache: &std::path::Path) -> (i64, i64) {
+    let sql = "SELECT (SELECT count(*) FROM main.texts), \
+               (SELECT count(*) FROM main.texts_fts_docsize)";
+    let rows = read(scenario, cache, sql);
+    (rows[0][0].as_i64().unwrap(), rows[0][1].as_i64().unwrap())
+}
+
+#[test]
+fn a_refresh_after_one_markdown_file_changes_indexes_the_trigrams_of_exactly_one_new_text() {
+    let scenario = tasks();
+    scenario
+        .write("notes/a.md", Item::File("# Lighthouse\n"))
+        .write("notes/b.md", Item::File("# Kettle\n"));
+    let cache = tempfile::tempdir().unwrap();
+    assert_eq!(texts(&scenario, cache.path()), (2, 2), "cold");
+    assert_eq!(texts(&scenario, cache.path()), (2, 2), "warm");
+    scenario.write("notes/a.md", Item::File("# Orchard\n"));
+    assert_eq!(texts(&scenario, cache.path()), (3, 3), "one changed");
+    let found = read(
+        &scenario,
+        cache.path(),
+        "SELECT x.blob FROM main.texts_fts AS f JOIN main.texts AS x ON x.id = f.rowid \
+         WHERE texts_fts MATCH '\"orchard\"'",
+    );
+    assert_eq!(found, [json!([scenario.blob("# Orchard\n").to_string()])]);
+}

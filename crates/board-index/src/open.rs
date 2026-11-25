@@ -3,8 +3,10 @@
 
 use std::ffi::OsStr;
 use std::fmt::Write as _;
+use std::fs::{DirBuilder, OpenOptions};
 use std::io::{self, Write as _};
 use std::os::unix::ffi::OsStrExt as _;
+use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -150,14 +152,22 @@ impl Index {
 }
 
 /// Creates the index file's directory and, when `reset`, deletes the file
-/// and `SQLite`'s journals beside it.
+/// and `SQLite`'s journals beside it. The index keeps the board's prose, so
+/// the directory is created readable only by its owner, and so is the file.
+/// `SQLite` gives each journal the mode of its database file.
 #[expect(
     clippy::disallowed_methods,
     reason = "board-index owns the cache's files"
 )]
 fn directory(file: &Path, reset: bool) -> io::Result<()> {
     if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent)?;
+        if let Some(cache) = parent.parent() {
+            std::fs::create_dir_all(cache)?;
+        }
+        match DirBuilder::new().mode(0o700).create(parent) {
+            Err(error) if error.kind() != io::ErrorKind::AlreadyExists => return Err(error),
+            _ => {}
+        }
     }
     if reset {
         for suffix in ["", "-wal", "-shm"] {
@@ -169,6 +179,12 @@ fn directory(file: &Path, reset: bool) -> io::Result<()> {
             }
         }
     }
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(file)?;
     Ok(())
 }
 

@@ -595,3 +595,155 @@ fn a_cache_holding_an_index_of_the_previous_format_builds_one_of_this_format_and
     assert!(file.exists(), "{}", file.display());
     assert!(previous.exists(), "{}", previous.display());
 }
+
+#[test]
+fn each_documented_example_answers_the_same_warm_as_cold() {
+    let scenario = documents();
+    for (text, _) in EXAMPLES {
+        let cache = tempfile::tempdir().unwrap();
+        let cold = open(&scenario)
+            .search(&statement(text), 50, None, Some(cache.path()))
+            .unwrap();
+        let warm = open(&scenario)
+            .search(&statement(text), 50, None, Some(cache.path()))
+            .unwrap();
+        assert_eq!(warm, cold, "{text}");
+        assert_eq!(cold.memory, None, "{text}");
+    }
+}
+
+/// The logical paths, in order, of the entries under `/d` whose text holds
+/// `word` by a `LIKE` scan of the `texts` view.
+fn scanned(board: &Board, word: &str) -> Vec<String> {
+    let sql = format!(
+        "SELECT e.logical FROM entries AS e JOIN texts AS x ON x.blob = e.blob \
+         WHERE e.logical LIKE '/d/%' AND x.body LIKE '%{word}%' ORDER BY e.logical"
+    );
+    let rows = board.query(&sql, 1000, None, None).unwrap().rows;
+    rows.iter()
+        .map(|row| row[0].as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// The logical paths, in order, that `board search` finds for `word` among
+/// the files under `/d`.
+fn searched(board: &Board, word: &str) -> Vec<String> {
+    let report = search(board, &format!("path:/d {word}"), 1000, None);
+    let mut found: Vec<String> = report.results.into_iter().map(|hit| hit.path).collect();
+    found.sort();
+    found
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::prelude::ProptestConfig::with_cases(24))]
+
+    /// The alphabet holds no character of the paths `/d/n0.md` to
+    /// `/d/n3.md` or their file names, so a word matches only by its text.
+    #[test]
+    fn a_word_of_three_or_more_characters_finds_the_texts_a_like_scan_finds(
+        texts in proptest::collection::vec("[abcABC ]{0,40}", 1..5),
+        words in proptest::collection::vec("[abcABC]{3,5}", 1..5),
+    ) {
+        let scenario = Scenario::board();
+        for (at, text) in texts.iter().enumerate() {
+            scenario.write(&format!("d/n{at}.md"), Item::File(text));
+        }
+        let board = open(&scenario);
+        for word in &words {
+            proptest::prop_assert_eq!(searched(&board, word), scanned(&board, word), "{}", word);
+        }
+    }
+}
+
+#[test]
+fn a_non_ascii_word_finds_a_text_holding_it_in_another_case_and_an_ascii_word_only_texts_holding_it()
+ {
+    let scenario = Scenario::board();
+    scenario
+        .write("d/summer.md", Item::File("Notes from the ÉTÉ offsite.\n"))
+        .write("d/plain.md", Item::File("Notes from the ete offsite.\n"));
+    let board = open(&scenario);
+    assert_eq!(searched(&board, "été"), ["/d/summer.md"]);
+    assert_eq!(searched(&board, "ÉTÉ"), ["/d/summer.md"]);
+    assert_eq!(searched(&board, "ete"), ["/d/plain.md"]);
+    assert_eq!(searched(&board, "ETE"), ["/d/plain.md"]);
+}
+
+#[test]
+fn a_word_of_one_or_two_characters_finds_its_texts_by_scan() {
+    let scenario = Scenario::board();
+    scenario
+        .write("d/one.md", Item::File("a rare aQz pair\n"))
+        .write("d/two.md", Item::File("no such pair\n"));
+    let board = open(&scenario);
+    assert_eq!(searched(&board, "qz"), ["/d/one.md"]);
+    assert_eq!(searched(&board, "QZ"), ["/d/one.md"]);
+    assert_eq!(searched(&board, "Q"), ["/d/one.md"]);
+}
+
+/// Whether the program `SQLite` compiles for the search `text` reads the
+/// `body` column of `main.texts`: an `OpenRead` of the table's root page in
+/// `main` names a cursor, and a `Column` of that cursor at the body's
+/// position reads it.
+fn reads_prose(board: &Board, text: &str, cache: &std::path::Path) -> bool {
+    let root = board
+        .query(
+            "SELECT rootpage FROM main.sqlite_schema WHERE name = 'texts'",
+            1,
+            None,
+            Some(cache),
+        )
+        .unwrap()
+        .rows[0][0]
+        .as_i64()
+        .unwrap();
+    let columns = board
+        .query(
+            "SELECT cid FROM pragma_table_info('texts', 'main') WHERE name = 'body'",
+            1,
+            None,
+            Some(cache),
+        )
+        .unwrap()
+        .rows[0][0]
+        .as_i64()
+        .unwrap();
+    let sql = format!("EXPLAIN {}", statement(text).sql(None));
+    let program = board.query(&sql, 100_000, None, Some(cache)).unwrap().rows;
+    let field = |row: &[serde_json::Value], name: usize| row[name].as_i64();
+    let cursors: Vec<i64> = program
+        .iter()
+        .filter(|row| {
+            row[1] == "OpenRead" && field(row, 3) == Some(root) && field(row, 4) == Some(0)
+        })
+        .filter_map(|row| field(row, 2))
+        .collect();
+    program.iter().any(|row| {
+        row[1] == "Column"
+            && field(row, 2).is_some_and(|cursor| cursors.contains(&cursor))
+            && field(row, 3) == Some(columns)
+    })
+}
+
+#[test]
+fn a_warm_search_for_words_of_three_or_more_characters_reads_no_prose_and_one_for_a_shorter_word_does()
+ {
+    let scenario = documents();
+    let cache = tempfile::tempdir().unwrap();
+    let board = open(&scenario);
+    board
+        .search(&statement("riverbank"), 50, None, Some(cache.path()))
+        .unwrap();
+    for text in [
+        "riverbank",
+        "the plan board",
+        "type:task the plan",
+        "\"offsite agenda\"",
+        "-lunch",
+    ] {
+        assert!(!reads_prose(&board, text, cache.path()), "{text}");
+    }
+    for text in ["ri", "riverbank ri"] {
+        assert!(reads_prose(&board, text, cache.path()), "{text}");
+    }
+}

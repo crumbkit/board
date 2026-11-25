@@ -12,8 +12,12 @@
   path starts with `/notes`; a value without a leading `/` is refused with
   `relative_path`. Results of equal rank, and a query of filters alone,
   come newest first. A `--after` cursor printed by an older build is
-  refused; run the search again. The index format is 29, so the first run
-  of this build builds a new index.
+  refused; run the search again. A word of three or more characters finds
+  its texts through `texts_fts`, a trigram index of the prose, and matches
+  a text in any Unicode case; a shorter word scans the prose. The index
+  directory is created with mode 0700 and the index file and its journals
+  with mode 0600, because the index keeps the board's prose. The index
+  format is 29, so the first run of this build builds a new index.
 
 - `board call tasks.add` reads each `--after` and `--refs` value as a board
   path. A value without a leading `/` is read from the current directory, and

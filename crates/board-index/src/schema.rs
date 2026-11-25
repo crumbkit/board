@@ -80,12 +80,27 @@ CREATE TABLE bodies (
     body TEXT NOT NULL
 );
 -- What search reads in a Markdown file or a JSON file with no `$type`: its
--- first heading and its prose, cut at 64 KiB. A rowid table, as `bodies`.
+-- first heading and its prose, cut at 64 KiB. A rowid table, as `bodies`,
+-- whose `id` names the row in `texts_fts`; as an INTEGER PRIMARY KEY a
+-- full VACUUM keeps it.
 CREATE TABLE texts (
+    id INTEGER PRIMARY KEY,
     blob TEXT NOT NULL UNIQUE,
     heading TEXT,
     body TEXT NOT NULL
 );
+-- The trigrams of each text's body, so a word of three or more characters
+-- finds its texts without reading them. It keeps no copy of the prose, and
+-- the two triggers keep it in step with `texts`.
+CREATE VIRTUAL TABLE texts_fts USING fts5(
+    body, content = 'texts', content_rowid = 'id', tokenize = 'trigram'
+);
+CREATE TRIGGER texts_stored AFTER INSERT ON texts BEGIN
+    INSERT INTO texts_fts (rowid, body) VALUES (new.id, new.body);
+END;
+CREATE TRIGGER texts_pruned AFTER DELETE ON texts BEGIN
+    INSERT INTO texts_fts (texts_fts, rowid, body) VALUES ('delete', old.id, old.body);
+END;
 CREATE TABLE validations (
     record TEXT NOT NULL,
     schema TEXT NOT NULL,
