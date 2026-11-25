@@ -1,5 +1,6 @@
 //! `board call <plugin>.<capability>` takes the capability's top-level
-//! string, integer, number and boolean input properties as flags.
+//! string, integer, number and boolean input properties as flags, and each
+//! array of strings as a flag that may be repeated.
 
 use super::plugins::{RESULT, installed};
 use super::*;
@@ -714,4 +715,203 @@ fn json_hint(output: &Output) -> String {
         .as_str()
         .unwrap_or_default()
         .to_owned()
+}
+
+/// A manifest whose `add` takes a title, four string arrays, the first of
+/// board paths, and an array of objects.
+const ORDERED: &str = r#"{
+  "$type": "board/plugin-manifest/v1",
+  "name": "tasks",
+  "version": "0.1.0",
+  "description": "Open tasks.",
+  "run": ["./run"],
+  "capabilities": [{
+    "name": "add",
+    "description": "Add a task.",
+    "inputSchema": {"type": "object", "properties": {
+      "title": {"type": "string"},
+      "after": {"type": "array", "description": "The tasks it waits on.",
+        "items": {"type": "string", "format": "board-path"}},
+      "contexts": {"type": "array",
+        "items": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"}},
+      "kinds": {"type": "array", "items": {"type": "string", "enum": ["task", "project"]}},
+      "labels": {"type": "array", "items": {"type": "string"}},
+      "owed": {"type": "array", "items": {"type": "object"}}
+    }},
+    "outputSchema": {"type": "object"}
+  }]
+}"#;
+
+/// A board enabling tasks, with tasks installed offering `add` with
+/// `ORDERED`'s input and a `tasks` directory to run from.
+fn ordered() -> (Scenario, Scenario) {
+    let (board, data) = flagged();
+    data.write("plugins/tasks/plugin.json", Item::File(ORDERED));
+    board.write("tasks/a.md", Item::File("a"));
+    (board, data)
+}
+
+/// The input `arguments` after `call tasks.add` send, run in `directory`
+/// below the board.
+fn added(board: &Scenario, data: &Scenario, directory: &str, arguments: &[&str]) -> Value {
+    let plugins = data.workdir().join("plugins");
+    let arguments = [&["call", "tasks.add"], arguments].concat();
+    let output = board_full(
+        &board.workdir().join(directory),
+        None,
+        Some(&plugins),
+        &arguments,
+        b"",
+    );
+    assert_eq!(output.code, 0, "{arguments:?}: {}", text(&output.stderr));
+    sent(data)
+}
+
+#[test]
+fn a_string_array_flag_given_twice_sends_both_values_in_order() {
+    let (board, data) = ordered();
+    let flags = [
+        "--title",
+        "t",
+        "--after",
+        "/tasks/a.md",
+        "--after",
+        "/tasks/b.md",
+    ];
+    assert_eq!(
+        added(&board, &data, "", &flags),
+        json!({"title": "t", "after": ["/tasks/a.md", "/tasks/b.md"]})
+    );
+    let once = ["--contexts", "errands", "--kinds", "project"];
+    assert_eq!(
+        added(&board, &data, "", &once),
+        json!({"contexts": ["errands"], "kinds": ["project"]})
+    );
+}
+
+#[test]
+fn a_relative_path_in_a_path_array_flag_is_read_from_the_current_directory() {
+    let (board, data) = ordered();
+    let flags = ["--after", "a.md", "--after", "./none", "--labels", "x.md"];
+    assert_eq!(
+        added(&board, &data, "tasks", &flags),
+        json!({"after": ["/tasks/a.md", "/tasks/none"], "labels": ["x.md"]})
+    );
+}
+
+#[test]
+fn an_item_that_fails_its_schema_is_refused_as_bad_input_as_on_stdin() {
+    let (board, data) = ordered();
+    let refused = call(
+        &board,
+        &data,
+        &["--json", "call", "tasks.add", "--contexts", "a.md"],
+        "",
+    );
+    assert_eq!(refused.code, 1);
+    assert_eq!(code(&refused), "board::plugin::bad_input");
+    let stdin = json!({"contexts": ["a.md"]}).to_string();
+    let piped = call(&board, &data, &["--json", "call", "tasks.add"], &stdin);
+    assert_eq!(code(&piped), "board::plugin::bad_input");
+}
+
+#[test]
+fn none_alone_sends_an_empty_array_and_beside_another_value_is_refused() {
+    let (board, data) = ordered();
+    assert_eq!(
+        added(&board, &data, "tasks", &["--after", "none"]),
+        json!({"after": []})
+    );
+    assert_eq!(
+        added(&board, &data, "", &["--contexts", "none"]),
+        json!({"contexts": []})
+    );
+    for arguments in [
+        ["--after", "none", "--after", "/tasks/a.md"],
+        ["--after", "/tasks/a.md", "--after", "none"],
+    ] {
+        let refused = call(
+            &board,
+            &data,
+            &[&["--json", "call", "tasks.add"], &arguments[..]].concat(),
+            "",
+        );
+        assert_eq!(refused.code, 2, "{arguments:?}");
+        assert_eq!(code(&refused), "board::cli::usage", "{arguments:?}");
+    }
+}
+
+#[test]
+fn a_comma_in_a_path_array_flag_is_refused_with_a_hint_to_repeat_the_flag() {
+    let (board, data) = ordered();
+    let refused = call(
+        &board,
+        &data,
+        &["call", "tasks.add", "--after", "/tasks/a.md,/tasks/b.md"],
+        "",
+    );
+    assert_eq!(refused.code, 2);
+    let stderr = text(&refused.stderr);
+    assert!(stderr.contains("repeat --after for each path"), "{stderr}");
+    assert_eq!(
+        added(&board, &data, "", &["--labels", "a,b"]),
+        json!({"labels": ["a,b"]})
+    );
+}
+
+#[test]
+fn an_array_of_objects_stays_on_stdin_and_help_says_how_to_give_a_string_array() {
+    let (board, data) = ordered();
+    let help = call(&board, &data, &["call", "tasks.add", "-h"], "");
+    assert_eq!(help.code, 0, "{}", text(&help.stderr));
+    let text = String::from_utf8(help.stdout).unwrap();
+    assert!(
+        text.contains("These properties go on stdin: owed."),
+        "{text}"
+    );
+    assert!(text.contains("--kinds <kinds>"), "{text}");
+    assert!(!text.contains("--owed"), "{text}");
+    assert!(
+        text.contains(
+            "The tasks it waits on; repeat the flag for each path, or give none alone for an \
+             empty list; a path without a leading / is read from the current directory, so \
+             give ./none for a path named none."
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains(
+            "array; repeat the flag for each value, or give none alone for an empty list."
+        ),
+        "{text}"
+    );
+    let refused = call(
+        &board,
+        &data,
+        &["--json", "call", "tasks.add", "--owed", "x"],
+        "",
+    );
+    assert_eq!(code(&refused), "board::cli::usage");
+}
+
+#[test]
+fn a_closed_schema_with_a_list_flag_still_reads_its_input_on_stdin_without_a_flag() {
+    let (board, data) = ordered();
+    let mut manifest: Value = serde_json::from_str(ORDERED).unwrap();
+    let input = &mut manifest["capabilities"][0]["inputSchema"];
+    input["additionalProperties"] = json!(false);
+    input["properties"].as_object_mut().unwrap().remove("owed");
+    data.write(
+        "plugins/tasks/plugin.json",
+        Item::File(&manifest.to_string()),
+    );
+    let stdin = json!({"title": "t", "after": ["/tasks/a.md"]}).to_string();
+    let piped = call(&board, &data, &["call", "tasks.add"], &stdin);
+    assert_eq!(piped.code, 0, "{}", text(&piped.stderr));
+    assert_eq!(sent(&data), json!({"title": "t", "after": ["/tasks/a.md"]}));
+    let help = text(&call(&board, &data, &["call", "tasks.add", "-h"], "").stdout);
+    assert!(
+        help.contains("Without a flag, Board reads the input as JSON on stdin"),
+        "{help}"
+    );
 }
