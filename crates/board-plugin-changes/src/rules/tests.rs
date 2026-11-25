@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use board_model::{LogicalPath, PluginCode, PluginName, Refusal};
+use board_model::{Code, Fields, LogicalPath, PluginCode, PluginName, Refusal};
 use board_ops::{
     Absent, DecideReport, Elsewhere, GetReport, Host, Limit, MountError, MountUpdateReport,
     PutError, PutReport, QueryError, QueryReport, ReadError, RefsError, RefsReport, Settings,
@@ -27,12 +27,14 @@ pub(crate) const PATHS: [&str; 3] = [
 
 /// A board whose index holds the plan at [`PLAN`] and the obligations
 /// `owed`, whose tree holds nothing, and whose rules plugin answers
-/// `rules.for-paths` with `answer` or refuses it with that code, counting
-/// each call by its target.
+/// `rules.for-paths` with `answer` or refuses it with that code, Board's
+/// own when it is one, counting each call by its target. With
+/// `obligations_fail`, the query for obligations passes the output budget.
 pub(crate) struct Ruled {
     settings: Settings,
     answer: Result<Value, &'static str>,
     owed: Vec<&'static str>,
+    obligations_fail: bool,
     pub(crate) calls: RefCell<BTreeMap<String, usize>>,
 }
 
@@ -49,7 +51,16 @@ impl Ruled {
             },
             answer,
             owed: owed.to_vec(),
+            obligations_fail: false,
             calls: RefCell::new(BTreeMap::new()),
+        }
+    }
+
+    /// This host, with its query for obligations failing.
+    pub(crate) fn failing_obligations(self) -> Self {
+        Self {
+            obligations_fail: true,
+            ..self
         }
     }
 
@@ -88,6 +99,11 @@ impl Host for Ruled {
             return Ok(report(vec![vec![json!("blob"), json!(plan.to_string())]]));
         }
         if sql.contains("= 'obligation'") {
+            if self.obligations_fail {
+                let mut cut = report(Vec::new());
+                cut.truncated = true;
+                return Ok(cut);
+            }
             let rows = (self.owed.iter())
                 .filter(|each| sql.contains(&literal(each)))
                 .map(|each| vec![json!(each)])
@@ -146,6 +162,14 @@ impl Host for Ruled {
                 output: output.clone(),
                 warnings: Vec::new(),
             }),
+            Err(code) if code.starts_with("board::") => {
+                let code = Code::parse(code).unwrap();
+                Err(Box::new(Refusal::new(
+                    code,
+                    "the rules plugin is not enabled",
+                    &Fields::default(),
+                )))
+            }
             Err(code) => {
                 let rules: PluginName = "rules".parse().unwrap();
                 let code = PluginCode::parse(&rules, (*code).to_owned()).unwrap();
