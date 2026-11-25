@@ -49,6 +49,15 @@ enum Between {
     /// The call calls `pliar.due`, a process plugin that says it is
     /// read-only and commits the note with git.
     ProcessLiar,
+    /// The call calls `preader.due`, a process plugin that says it is
+    /// read-only and writes nothing.
+    ProcessReader,
+    /// The call opens its own board again with `-C` and queries the note
+    /// through that host.
+    SameBoardRead,
+    /// A second board commits the note, then the call runs a process
+    /// outside the board that commits nothing.
+    CommitThenRunOutside,
     /// A second handle on the index prunes it.
     Prune,
 }
@@ -81,9 +90,10 @@ const OTHER_WRITER: &[(&str, bool)] = &[
     ("reader", true),
     ("liar", true),
     ("pliar", true),
+    ("preader", true),
 ];
 
-const ENABLED: &[&str] = &["fixture", "writer", "reader", "liar", "pliar"];
+const ENABLED: &[&str] = &["fixture", "writer", "reader", "liar", "pliar", "preader"];
 
 /// A shell script that writes the note in the board at `root` and commits
 /// it with git, as another session's `board put` would.
@@ -112,6 +122,22 @@ fn install_liar(data: &Scenario, root: &Path) {
         committing(root)
     );
     data.write("plugins/pliar/run", Item::File(&script));
+    install(data, "preader", true, Reply::Output(r#"{"count": 0}"#));
+    let mut reading = manifest("preader");
+    reading["run"] = json!(["sh", "./run"]);
+    reading["capabilities"][0]["annotations"] = json!({"readOnlyHint": true});
+    data.write(
+        "plugins/preader/plugin.json",
+        Item::File(&reading.to_string()),
+    );
+}
+
+/// A second board's put of the note, which commits it.
+fn commit_elsewhere(root: &Path) {
+    let mut other = Board::open(root, None).unwrap();
+    other.ask_as(crate::Asker::default());
+    let line = note_line("fixture").to_string();
+    other.put_batch(&mut line.as_bytes()).unwrap();
 }
 
 /// The put line that writes the note as `plugin`'s item.
@@ -188,12 +214,19 @@ fn querying(between: Between, root: PathBuf, cache: PathBuf, elsewhere: PathBuf)
                 Between::ProcessLiar => {
                     host.call(&target("pliar.due"), &json!({"n": 1})).unwrap();
                 }
-                Between::Commit => {
-                    let mut other = Board::open(&root, None).unwrap();
-                    other.ask_as(crate::Asker::default());
-                    let line = note_line("fixture").to_string();
-                    other.put_batch(&mut line.as_bytes()).unwrap();
+                Between::ProcessReader => {
+                    host.call(&target("preader.due"), &json!({"n": 1})).unwrap();
                 }
+                Between::SameBoardRead => {
+                    let same = host.board(&Elsewhere::Directory(root.clone())).unwrap();
+                    assert_eq!(notes(&*same), 0);
+                }
+                Between::CommitThenRunOutside => {
+                    commit_elsewhere(&root);
+                    let arguments = ["-c".to_owned(), "printf x > outside".to_owned()];
+                    assert_eq!(host.run(&shell(&arguments)).unwrap().code, Some(0));
+                }
+                Between::Commit => commit_elsewhere(&root),
                 Between::Prune => {
                     let other = Board::open(&root, None).unwrap();
                     let index = Index::open(Some(&cache), other.repository().path()).unwrap();
@@ -509,4 +542,89 @@ fn a_read_only_callee_that_syncs_updates_a_mount_or_decides_drops_the_snapshots_
         );
         assert_eq!(taken, 2, "{route:?}");
     }
+}
+
+#[test]
+fn a_read_only_process_plugin_or_a_same_board_host_that_only_reads_keeps_the_one_snapshot() {
+    for between in [Between::ProcessReader, Between::SameBoardRead] {
+        let (output, taken) = around(between);
+        assert_eq!(
+            (&output["first"], &output["second"]),
+            (&json!(0), &json!(0)),
+            "{between:?}"
+        );
+        assert_eq!(taken, 1, "{between:?}");
+    }
+}
+
+#[test]
+fn a_foreign_commit_before_a_process_outside_that_commits_nothing_keeps_the_snapshot() {
+    let (output, taken) = around(Between::CommitThenRunOutside);
+    assert_eq!(
+        (&output["first"], &output["second"]),
+        (&json!(0), &json!(0))
+    );
+    assert_eq!(taken, 1);
+}
+
+#[test]
+fn refs_after_a_foreign_commit_and_the_query_after_it_read_the_same_board() {
+    let (scenario, cache) = twin_board();
+    let root = scenario.workdir().to_path_buf();
+    let reading = answering(
+        "fixture",
+        Box::new(move |host| {
+            let first = notes(host);
+            commit_elsewhere(&root);
+            let note: LogicalPath = NOTE.parse().unwrap();
+            let resolved = host
+                .refs(std::slice::from_ref(&note), Absent::Refuse, &[])
+                .unwrap()
+                .into_iter()
+                .all(|answer| answer.is_ok());
+            Ok(json!({"count": 0, "first": first, "resolved": resolved, "second": notes(host)}))
+        }),
+    );
+    let (output, taken) = called(&scenario, cache.path(), vec![reading]);
+    assert_eq!(output["first"], 0);
+    assert_eq!(output["resolved"], true, "refs reads the newer board");
+    assert_eq!(
+        output["second"], 1,
+        "the query after refs reads the same board"
+    );
+    assert_eq!(taken, 3, "refs drops the View taken before the commit");
+}
+
+#[test]
+fn a_query_after_a_foreign_commit_and_the_refs_after_it_read_the_same_board() {
+    let (scenario, cache) = twin_board();
+    let root = scenario.workdir().to_path_buf();
+    let reading = answering(
+        "fixture",
+        Box::new(move |host| {
+            let resolves = |path: &str| {
+                let path: LogicalPath = path.parse().unwrap();
+                (host.refs(std::slice::from_ref(&path), Absent::Refuse, &[]))
+                    .unwrap()
+                    .into_iter()
+                    .all(|answer| answer.is_ok())
+            };
+            // The root resolves, so this takes the Report snapshot.
+            let first = resolves("/");
+            commit_elsewhere(&root);
+            let queried = notes(host);
+            Ok(json!({"count": 0, "first": first, "queried": queried, "second": resolves(NOTE)}))
+        }),
+    );
+    let (output, taken) = called(&scenario, cache.path(), vec![reading]);
+    assert_eq!(output["first"], true);
+    assert_eq!(output["queried"], 1, "the query reads the newer board");
+    assert_eq!(
+        output["second"], true,
+        "the refs after the query reads the same board"
+    );
+    assert_eq!(
+        taken, 3,
+        "the query drops the Report taken before the commit"
+    );
 }

@@ -40,17 +40,22 @@ both; a call into another board keeps its own. Another session's commit
 does not drop them, because every record a plugin call writes after
 reading it carries the blob it read as its `expect`, so Board refuses a
 write over a newer record as `board::put::stale`. A schema line takes no
-`expect`, because a batch writes a schema only where the board lacks it. The call drops both
-before it puts, syncs, updates a mount, decides, calls a capability without
-`readOnlyHint: true`, or runs a process in the board's own working tree. A
-process that runs elsewhere, such as `git diff` in a mounted clone or one
-in a new temporary directory, keeps both, because a snapshot reads each
-mount at the commit its mount record names. After such a process, or after
-a read-only installed plugin's capability, the next read compares `HEAD`
-once and drops both if it moved, which catches a `board put` either made.
-In a board whose `commit_on_put` is false, a put leaves `HEAD` where it
-was, so there every process, and every installed plugin's capability,
-drops both, and every read compares `HEAD`. A kept View that another
+`expect`, because a batch writes a schema only where the board lacks it.
+The call drops both before it puts, syncs, updates a mount, decides, calls
+a capability without `readOnlyHint: true`, or runs a process in the
+board's own working tree. A process that runs elsewhere, such as `git
+diff` in a mounted clone or one in a new temporary directory, keeps both,
+because a snapshot reads each mount at the commit its mount record names.
+Before such a process, or a read-only installed plugin's capability, the
+call reads `HEAD`; the next read compares `HEAD` with it once and drops
+both if it moved, which catches a `board put` either made. Both snapshots
+are taken lazily, so before one is taken while the other is held, the call
+compares `HEAD` once and drops the held one if it moved, and both show one
+board. A host the call opens on another board that writes back through a
+mount into this board does not drop them. In a board whose
+`commit_on_put` is false, a put leaves `HEAD` where it was, so there every
+process, and every installed plugin's capability, drops both, and every
+read compares `HEAD`. A kept View that another
 process prunes under (index.md) is dropped, and the query runs on a fresh
 one within the same three tries. A call does not see another session's
 commit or uncommitted edit made after its first read; the next call does.
