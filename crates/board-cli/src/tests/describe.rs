@@ -303,6 +303,66 @@ fn schemas_list_names_each_document_board_prints_and_show_prints_its_schema() {
 }
 
 #[test]
+fn schemas_show_prints_outside_a_board_the_schema_plugin_enable_writes_for_a_plugin_type() {
+    let board = Scenario::board();
+    let enabled = board_built_in(board.workdir(), &["plugin", "enable", "rules"]);
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    let written = std::fs::read(
+        board
+            .workdir()
+            .join(".board/types/rules/report/v1.schema.json"),
+    )
+    .unwrap();
+    let written: Value = serde_json::from_slice(&written).unwrap();
+    let outside = Scenario::new();
+    let show = |id: &str| {
+        board_built_in(
+            outside.workdir(),
+            &["schemas", "show", "--json", "--no-input", "--", id],
+        )
+    };
+    let shown = show("rules/report/v1");
+    assert_eq!(shown.code, 0, "{}", text(&shown.stderr));
+    let row = &json(&shown)["data"][0];
+    assert_eq!(row["id"], "rules/report/v1");
+    assert_eq!(row["schema"], written);
+    let misspelt = show("rules/reprot/v1");
+    assert_eq!(misspelt.code, 1, "{}", text(&misspelt.stdout));
+    assert_eq!(
+        json(&misspelt)["failures"][0]["code"],
+        "board::schemas::not_found"
+    );
+}
+
+#[test]
+fn schemas_show_keeps_the_order_of_documents_plugin_types_and_unknown_ids() {
+    let outside = Scenario::new();
+    let shown = board_built_in(
+        outside.workdir(),
+        &[
+            "schemas",
+            "show",
+            "--json",
+            "--no-input",
+            "--",
+            "rules/report/v1",
+            "nothing/here/v1",
+            "board/check-report/v2",
+        ],
+    );
+    assert_eq!(shown.code, 1, "{}", text(&shown.stdout));
+    let shown = json(&shown);
+    let ids: Vec<&str> = (shown["data"].as_array().unwrap().iter())
+        .map(|row| row["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["rules/report/v1", "board/check-report/v2"]);
+    let failure = &shown["failures"][0];
+    assert_eq!(failure["code"], "board::schemas::not_found");
+    assert_eq!(failure["key"], "nothing/here/v1");
+    assert_eq!(failure["index"], 1);
+}
+
+#[test]
 fn every_leaf_takes_no_input_and_json_before_its_own_words() {
     let listed = leaves();
     let tabled: Vec<String> = LINES.iter().map(|(path, ..)| (*path).to_owned()).collect();

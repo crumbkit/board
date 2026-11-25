@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `board schemas show` prints the schema each built-in plugin ships for its
+  record types, such as `rules/report/v1`, as `board plugin enable` writes
+  it, in any directory and whether or not a board enables the plugin.
+  `board schemas list` does not list them.
 - `board rules report --path <path>` prints one `rules/report/v1` document
   of every rule, group and compliance suite that reaches a repository, for
   its CI to upload: each rule's result, each group's rolled-up state, each
