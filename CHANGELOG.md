@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- `board rules report --path <path>` prints one `rules/report/v1` document
+  of every rule, group and compliance suite that reaches a repository, for
+  its CI to upload: each rule's result, each group's rolled-up state, each
+  suite's newest clean full run with the commits since it, where the
+  repository's own rules differ from the imposed set, every refusal, and
+  the GitHub Actions run that made it. It writes nothing and exits 0
+  whatever the rules found. A degraded rule is one `unreadable` row, and
+  the other rules are still measured. A new `rules/group/v1` record names a
+  group of rules. A board refuses rules calls with
+  `board::plugin::schema_differs` until `board plugin enable rules` writes
+  the two new schemas.
+- Two shared record shapes join `board_plugin::shape`: `CodeName`, a code
+  such as `board::ref::dangling`, and `DottedVersion`, such as `1.99.1`,
+  which a version rule's `at_least` now uses with the same pattern.
+
 ## 0.1.2 (2026-11-25)
 
 - The review gate's `paths` check passes when the change's diff edits files

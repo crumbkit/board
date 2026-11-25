@@ -167,6 +167,14 @@ pub(crate) fn declared() -> Running {
     })
 }
 
+/// The release number of the Board this process runs as, such as `0.1.1`:
+/// the declared build's `major.minor.patch`, without a pre-release or build
+/// suffix.
+pub fn running_release() -> String {
+    let [major, minor, patch] = declared().version.numbers;
+    format!("{major}.{minor}.{patch}")
+}
+
 /// A board's `min_board`: the oldest Board that may write it. It is a
 /// version string (`"0.4.0"`), a UTC timestamp (`"2026-11-13T10:00:00Z"`),
 /// or an object with `version` and `built`, either or both. A Board older
