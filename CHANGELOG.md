@@ -4,6 +4,12 @@
 
 ## 0.1.2 (2026-11-25)
 
+- Board marks its cache directory, `~/.cache/board` or
+  `$XDG_CACHE_HOME/board`, as a cache. It writes `CACHEDIR.TAG` there, which
+  backup tools that honour the tag skip, and on macOS it first excludes the
+  directory from Time Machine, as `tmutil addexclusion` does. A directory
+  Board cannot mark usually gives the warning `board::cache::unmarked`, and
+  the run goes on; the next run tries again.
 - `board call rules.check --path /` answers within Board's 1-second query
   limit on a board that mounts many repositories. Before, it failed there
   with `board::query::timeout` on every run, and the rules mod's session

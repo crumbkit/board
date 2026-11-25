@@ -11,6 +11,12 @@ its owner (mode 0600). `BOARD_TIMINGS=0` turns recording off. A plugin inherits
 `BOARD_TIMINGS` and `XDG_CACHE_HOME`, so the runs it starts record to the same
 log.
 
+Board marks `board/` as a cache when it opens an index or appends a line: it
+writes `CACHEDIR.TAG` there, after excluding the directory from Time Machine
+on macOS. A directory Board cannot mark usually gives the warning
+`board::cache::unmarked`; a run a signal ends does not. The next run tries
+again.
+
 A record holds the start time (`at_ms`), Board's `version`, the subcommands
 run (`command`, such as `plugin find`, never the values given), the
 `capability` a `call` ran as `<plugin>.<capability>` (null for any other run,

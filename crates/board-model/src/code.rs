@@ -79,6 +79,7 @@ codes! {
     SymlinkLoop => "board::symlink::loop",
     SymlinkDangling => "board::symlink::dangling",
     IndexFailed => "board::index::failed",
+    CacheUnmarked => "board::cache::unmarked",
     QueryInvalid => "board::query::invalid",
     QueryTimeout => "board::query::timeout",
     OutputOverBudget => "board::output::over_budget",
