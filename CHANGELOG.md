@@ -37,15 +37,27 @@
 - `board github push` and `pr-create` no longer refuse a diff because the
   bytes of a binary file match a text rule; the result lists each binary
   file that was not scanned.
-- `tasks.claim` syncs the notes repository before it checks the stored task
-  schema, so a repository another clone migrated is claimed without a
-  refusal.
+- `tasks.claim` in a notes repository whose clone still stores the
+  `tasks/task/v2` schema from before the shapes migration refuses with the
+  new code `tasks::repo::schema_stale`, whose hint names the commands that
+  migrate the clone. Before, the claim failed with `board::record::invalid`.
+  The claim syncs the clone before it checks, so a repository another clone
+  migrated and pushed is claimed without a refusal.
 - A review with no high finding still counts after one fix round when a
   `changes/fix/v1` record names the report and the commits that answer its
   findings.
 - The development flow asks the owner's data rechecks at land without
-  blocking the merge, and a plan that answers `ux` none and `data` none
-  needs no owner approval.
+  blocking the merge, and `board changes owed` lists each change done in
+  the last 14 days that still owes one. A plan that answers `ux` none and
+  `data` none needs no owner approval. `board changes ask` files one
+  question whose approving option passes the owner approval, data and
+  mockup checks together. A review still counts after later commits that
+  edit only record paths or cleanly merge main.
+- A `runs/suite/v1` record has an optional `kind`: a compliance check, a
+  benchmark, an eval or a test. `runs.migrate` adds it to existing suites,
+  and classifies a suite whose name ends in `-tests` as a test suite.
+- The Claude Code questions badge reads Board only for a session whose band
+  is drawn.
 
 - In the plan phase, `board changes next` and `board changes advance` ask
   the rules plugin for the rules on the plan's paths once, where they asked
