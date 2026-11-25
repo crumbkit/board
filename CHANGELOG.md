@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- A built-in plugin call keeps the board snapshots it took while other
+  sessions commit, so a plan-phase `changes next` no longer takes a new
+  snapshot after each foreign commit. It still takes new ones after its own
+  put, sync, mount update or decide, a nested call that may write, a process
+  in the board's tree, and a process or read-only installed plugin during
+  which HEAD moved. A host a call opens on the same board shares its
+  snapshots. Each record a plugin call writes after reading it now carries
+  the blob it read as its expect: the flow version that `changes start`,
+  `reflow`, `migrate` and `changes run --sandbox` write, a new boundary
+  crossing, and the task autosync rewrites. When
+  another writer stores that path first, the call fails with
+  `board::put::stale` and writes nothing, and a rerun reads the newer
+  record. Of two concurrent starts of one flow version, the second is now
+  refused as stale.
+
 - `board call tasks.add` reads each `--after` and `--refs` value as a board
   path. A value without a leading `/` is read from the current directory, and
   a value that joins paths with a comma, such as

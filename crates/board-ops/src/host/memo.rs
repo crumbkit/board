@@ -1,13 +1,21 @@
 //! The snapshots one built-in plugin call keeps, so its reads share them
 //! (docs/architecture/index.md). A call keeps at most one View snapshot,
 //! for queries, and one Report snapshot, for `refs`, and a read-only
-//! capability it calls in the same board keeps the same ones. Both are
-//! dropped when the board's HEAD moves, and before anything the call does
-//! that may change files HEAD does not show yet: a write, a nested call to a
-//! capability that does not say it is read-only, and a process that runs in
-//! the board's own tree. A process elsewhere, such as `git diff` in a
-//! mounted clone, changes nothing a snapshot reads, because a snapshot
-//! reads each mount at the commit its mount record names.
+//! capability it calls in the same board, or a host it opens on the same
+//! board, keeps the same ones. Another session's commit does not drop
+//! them: each record a plugin call writes after reading it carries the
+//! blob it read as its expect, so Board refuses a write over a newer
+//! record as stale. A schema line takes no expect; Board writes a schema
+//! only where the board lacks it.
+//! Both are dropped before anything the call does that may change what
+//! they show: a write, a nested call to a capability that does not say it
+//! is read-only, and a process that runs in the board's own tree. After a
+//! process elsewhere, or a read-only process plugin, the next read
+//! compares HEAD once and drops them if it moved, since either may have
+//! run `board put`. A process elsewhere, such as `git diff` in a mounted
+//! clone, changes nothing else a snapshot reads, because a snapshot reads
+//! each mount at the commit its mount record names. In a board that does
+//! not commit on put, every read compares HEAD.
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -33,6 +41,8 @@ struct Kept {
     head: Head,
     view: Option<Viewed>,
     report: Option<Snapshot>,
+    /// Whether the next read compares HEAD with `head`.
+    unsure: bool,
 }
 
 /// The HEAD the kept snapshots were taken at.
@@ -52,16 +62,36 @@ impl Memo {
         *self.0.borrow_mut() = Kept::default();
     }
 
+    /// The snapshots of a host opened on `opened` from one acting on
+    /// `called` with `memo`: the same ones when both are one board, so a
+    /// put through either drops them, else new ones.
+    pub(crate) fn opened(memo: &Rc<Self>, called: &Board, opened: &Board) -> Rc<Self> {
+        if opened.repository().path() == called.repository().path() {
+            Rc::clone(memo)
+        } else {
+            Rc::default()
+        }
+    }
+
+    /// Makes the next read compare HEAD, after something that may have
+    /// committed to the board and shows HEAD any put it made.
+    pub(crate) fn doubt(&self) {
+        self.0.borrow_mut().unsure = true;
+    }
+
     /// Drops both snapshots before a process runs in `directory`, unless
     /// it runs outside `board`'s tree (none is a new temporary directory)
-    /// and `board` commits on put, so HEAD shows any put the process makes.
-    /// `directory` is canonicalized to compare with the canonical root.
+    /// and `board` commits on put, so HEAD shows any put the process makes;
+    /// then the next read compares HEAD. `directory` is canonicalized to
+    /// compare with the canonical root.
     pub(crate) fn forget_running(&self, board: &Board, directory: Option<&Path>) {
         let root = board.repository().path();
         let outside = directory.is_none_or(|directory| {
             (directory.canonicalize()).is_ok_and(|directory| !directory.starts_with(root))
         });
-        if !(outside && board.config().commit_on_put) {
+        if outside && board.config().commit_on_put {
+            self.doubt();
+        } else {
             self.forget();
         }
     }
@@ -107,15 +137,24 @@ impl Memo {
         Ok(answers)
     }
 
-    /// Drops both snapshots unless they were taken at the board's HEAD. A
-    /// HEAD that cannot be read matches nothing.
+    /// Drops both snapshots unless they were taken at the board's HEAD,
+    /// when HEAD is in doubt: after [`Memo::doubt`], before the first
+    /// snapshot, and on every read in a board that does not commit on put.
+    /// A HEAD that cannot be read matches nothing.
     fn at(&self, board: &Board) {
+        {
+            let kept = self.0.borrow();
+            if !kept.unsure && kept.head != Head::Unknown && board.config().commit_on_put {
+                return;
+            }
+        }
         let head = match board.repository().head() {
             Ok(Some(commit)) => Head::Commit(commit),
             Ok(None) => Head::Unborn,
             Err(_) => Head::Unknown,
         };
         let mut kept = self.0.borrow_mut();
+        kept.unsure = false;
         if head == Head::Unknown || kept.head != head {
             *kept = Kept {
                 head,

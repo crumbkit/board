@@ -31,7 +31,8 @@ impl Board {
     /// [`Board::call`] from a built-in plugin's call, whose snapshots are
     /// `memo`. A built-in capability whose `readOnlyHint` is true reads
     /// through them, and an installed one keeps them when the board commits
-    /// on put; before any other runs they are dropped.
+    /// on put, until the next read finds HEAD moved; before any other runs
+    /// they are dropped.
     pub(crate) fn call_sharing(
         &self,
         target: &Target,
@@ -49,12 +50,15 @@ impl Board {
             == Some(true);
         // Every write a built-in plugin's host offers (put, sync, mount
         // update, decide, a nested call that may write, a process in the
-        // board's tree) drops the memo it shares, and a commit moves HEAD,
-        // so a wrong hint cannot leave a stale read through the host. A
-        // process plugin's own `board put` moves HEAD only when the board
-        // commits on put.
+        // board's tree) drops the memo it shares, so a wrong hint cannot
+        // leave a stale read through the host. A process plugin's own
+        // `board put` moves HEAD only when the board commits on put, and
+        // the caller's next read compares HEAD.
         let built_in = matches!(chosen.origin, Origin::BuiltIn { .. });
         let memo = if read_only && (built_in || self.config().commit_on_put) {
+            if !built_in {
+                memo.doubt();
+            }
             Rc::clone(memo)
         } else {
             memo.forget();

@@ -392,7 +392,8 @@ pub(crate) struct Hosted<'a> {
     /// [`Host::board`] opens adds to the same list.
     pub(crate) warnings: &'a RefCell<Vec<String>>,
     /// The snapshots this call's reads share, with the call that called it
-    /// when this call's capability is read-only.
+    /// when this call's capability is read-only, and with the host that
+    /// opened this one on the same board.
     pub(crate) memo: Rc<Memo>,
 }
 
@@ -624,6 +625,7 @@ impl Host for Hosted<'_> {
         board.build_in(self.board.built_in.0);
         board.built_by(self.board.build);
         board.running_as(self.board.running.clone());
+        let memo = Memo::opened(&self.memo, &self.board, &board);
         Ok(Box::new(Hosted {
             board: HostBoard::Opened(Box::new(board)),
             settings: self.settings.clone(),
@@ -631,7 +633,7 @@ impl Host for Hosted<'_> {
             plugins: self.plugins.clone(),
             root: self.root,
             warnings: self.warnings,
-            memo: Rc::default(),
+            memo,
         }))
     }
 
