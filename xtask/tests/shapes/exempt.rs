@@ -16,11 +16,12 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 99] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 101] = [
     // This repository's board's copies of the rules plugin's schemas.
-    (".board/controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
     (".board/controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
-    (".board/rules/rule/v1", "/checker/at_least", Local, "a version floor of dotted numbers, which only a version checker compares"),
+    (".board/rules/report/v1", "/rules/-/checker/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version checker compiles"),
+    (".board/rules/report/v1", "/rules/-/checker/measures/-", Local, "a measure name is any key a run of the named suite records under measures, which runs leaves free"),
+    (".board/rules/report/v1", "/suites/-/run/failed/-/case", UntilAdopted, "Slug, as runs/run/v1's case ids, once runs adopts it (audit row 55)"),
     (".board/rules/rule/v1", "/checker/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version checker compiles"),
     (".board/rules/rule/v1", "/checker/measures/-", Local, "a measure name is any key a run of the named suite records under measures, which runs leaves free"),
     // The schemas the plugins ship.
@@ -41,7 +42,6 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 99] = [
     ("boundary/crossing/v1", "/to", Local, "a destination is named by the action that sends to it, and only boundaries match it"),
     ("boundary/crossing/v1", "/verdicts/-/part", Local, "a part is named by the action that sends it, and only boundaries match it"),
     ("boundary/crossing/v1", "/verdicts/-/rule", UntilAdopted, "a reference to the rule, once crossings no longer hold the checker under rule (PR 8 of /changes/control-becomes-rule)"),
-    ("controls/control/v1", "/rule/at_least", Local, "a version floor of dotted numbers, which only a version rule compares"),
     ("controls/control/v1", "/rule/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version rule compiles"),
     ("evals/eval/v1", "/conclusion", UntilAdopted, "Prose"),
     ("evals/eval/v1", "/mounts/-", UntilAdopted, "Ref<Mount> (audit row 25)"),
@@ -92,7 +92,9 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 99] = [
     ("review/report/v1", "/patch_ids/-", UntilAdopted, "ObjectId (audit row 6)"),
     ("review/report/v1", "/range", UntilAdopted, "CommitRange (audit row 5)"),
     ("review/report/v1", "/source", UntilAdopted, "Url (audit row 13)"),
-    ("rules/rule/v1", "/checker/at_least", Local, "a version floor of dotted numbers, which only a version checker compares"),
+    ("rules/report/v1", "/rules/-/checker/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version checker compiles"),
+    ("rules/report/v1", "/rules/-/checker/measures/-", Local, "a measure name is any key a run of the named suite records under measures, which runs leaves free"),
+    ("rules/report/v1", "/suites/-/run/failed/-/case", UntilAdopted, "Slug, as runs/run/v1's case ids, once runs adopts it (audit row 55)"),
     ("rules/rule/v1", "/checker/capture", Local, "a regular expression in the syntax of Rust's regex crate, which only a version checker compiles"),
     ("rules/rule/v1", "/checker/measures/-", Local, "a measure name is any key a run of the named suite records under measures, which runs leaves free"),
     ("runs/run/v1", "/finished", UntilAdopted, "Timestamp (audit row 41)"),

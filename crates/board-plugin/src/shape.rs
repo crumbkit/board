@@ -421,6 +421,20 @@ patterned! {
 }
 
 patterned! {
+    /// A code Board or a plugin gives for why it refused or degraded
+    /// something: the owner, an area and a reason joined by `::`, such as
+    /// `board::ref::dangling` or `rules::rule::degraded`. The owner is
+    /// `board` or a plugin's name; the area and reason are snake case.
+    CodeName = "^[a-z0-9-]+::[a-z0-9_]+::[a-z0-9_]+$"
+}
+
+patterned! {
+    /// A version as numbers separated by dots, such as `1.99.1` or
+    /// `0.1`, with no prefix or suffix.
+    DottedVersion = "^[0-9]+(\\.[0-9]+)*$"
+}
+
+patterned! {
     /// A repository as GitHub names it, `owner/name`, such as
     /// `crumbkit/board`.
     Repository = "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
@@ -615,8 +629,10 @@ pub fn registry() -> Map<String, Value> {
     let mut generator = SchemaGenerator::default();
     Map::from_iter([
         object::<Actor>(),
+        entry::<CodeName>(&mut generator),
         entry::<CommitName>(&mut generator),
         entry::<Date>(&mut generator),
+        entry::<DottedVersion>(&mut generator),
         entry::<Glob>(&mut generator),
         entry::<LogicalGlob>(&mut generator),
         entry::<ObjectId>(&mut generator),

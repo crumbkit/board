@@ -1,0 +1,41 @@
+{
+  "additionalProperties": false,
+  "description": "`rules/group/v1`: a named set of rules whose states `report` rolls up\ninto one, such as every Rust rule. A rule may be in several groups, and\na group holds rules only, never another group.",
+  "properties": {
+    "$type": {
+      "const": "rules/group/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "members": {
+      "description": "The rules in the group, as GLOB patterns over rule paths from the\nboard's root, such as `/rules/rust/*` or `/rules/*-server`, where\n`*` also matches `/`. A rule in a mounted repository is matched by\nits path from the repository's root.",
+      "items": {
+        "minLength": 1,
+        "pattern": "^/",
+        "type": "string",
+        "x-board-glob": true
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "purpose": {
+      "description": "Why the group exists.",
+      "type": "string",
+      "x-board-prose": true
+    },
+    "title": {
+      "description": "The group's name for people, such as `Rust`.",
+      "pattern": "^\\S+( \\S+){0,24}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "title",
+    "purpose",
+    "members"
+  ],
+  "title": "GroupRecord",
+  "type": "object",
+  "x-board-folder": "/rules/groups/"
+}

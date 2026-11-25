@@ -241,9 +241,11 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
         registry.keys().map(String::as_str).collect::<Vec<_>>(),
         [
             "Actor",
+            "CodeName",
             "CommitName",
             "Date",
             "Digest",
+            "DottedVersion",
             "Glob",
             "LogicalGlob",
             "ObjectId",
@@ -788,5 +790,53 @@ fn a_shape_with_a_former_name_admits_the_field_under_either_name_and_not_both() 
             board_model::Code::RecordInvalid,
             "{refused}"
         );
+    }
+}
+
+#[test]
+fn a_code_name_of_three_snake_case_parts_is_admitted_and_one_of_two_parts_or_upper_case_is_refused()
+{
+    let schema = json!({
+        "type": "object",
+        "properties": {"code": registry()["CodeName"].clone()},
+    });
+    let schema = board_validate::Schema::compile(schema).unwrap();
+    let code = |text: &str| json!({ "code": text });
+    for (refused, admitted) in [
+        ("rules::degraded", "rules::rule::degraded"),
+        ("Rules::rule::degraded", "rules::rule::degraded"),
+        ("board::ref::Dangling", "board::ref::dangling"),
+        ("rules::rule::degraded::more", "rules::rule::degraded"),
+        ("my_plugin::a::b", "my-plugin::a::b"),
+    ] {
+        assert_eq!(
+            schema.validate(&code(refused)).unwrap_err().code(),
+            board_model::Code::RecordInvalid,
+            "{refused:?}"
+        );
+        schema.validate(&code(admitted)).unwrap();
+    }
+}
+
+#[test]
+fn a_dotted_version_of_numbers_is_admitted_and_one_with_a_suffix_or_an_empty_part_is_refused() {
+    let schema = json!({
+        "type": "object",
+        "properties": {"version": registry()["DottedVersion"].clone()},
+    });
+    let schema = board_validate::Schema::compile(schema).unwrap();
+    let version = |text: &str| json!({ "version": text });
+    for (refused, admitted) in [
+        ("1.99.1-rc1", "1.99.1"),
+        ("v1.2", "1.2"),
+        ("1..2", "1.2"),
+        ("1.", "1"),
+    ] {
+        assert_eq!(
+            schema.validate(&version(refused)).unwrap_err().code(),
+            board_model::Code::RecordInvalid,
+            "{refused:?}"
+        );
+        schema.validate(&version(admitted)).unwrap();
     }
 }

@@ -12,9 +12,11 @@ use crate::check::tests::recording;
 use crate::records::CONTROL_TYPE;
 
 /// The types the plugin ships: its own, then those before the rename.
-const TYPES: [&str; 4] = [
+const TYPES: [&str; 6] = [
     "rules/rule/v1",
     "rules/source/v1",
+    "rules/group/v1",
+    "rules/report/v1",
     "controls/control/v1",
     "controls/source/v1",
 ];
@@ -52,7 +54,8 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
             "check",
             "evaluate",
             "from-standards",
-            "migrate"
+            "migrate",
+            "report"
         ]
     );
     assert_eq!(manifest.description, skill_description());
@@ -427,7 +430,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_check_is_answered() {
     assert_eq!(refused.code, "rules::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "rules offers no capability budgets; it offers for-path, for-paths, check, evaluate, from-standards and migrate"
+        "rules offers no capability budgets; it offers for-path, for-paths, check, evaluate, from-standards, migrate and report"
     );
     let check: CapabilityName = "check".parse().unwrap();
     let answered = Rules.call(&host, &check, json!({})).unwrap();
