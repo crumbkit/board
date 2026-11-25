@@ -9,12 +9,14 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::board;
-use crate::change::{attached, kind_of, pull_of, read, referenced};
+use crate::change::{attached, current, kind_of, pull_of, read, referenced};
+use crate::diff::{edited, outside};
 use crate::flow::of_change;
 use crate::gates::{
     Observed, REPORT_TYPE, RUN_TYPE, objects, ran_on, reviewed_head, same_commit, sections,
 };
 use crate::phases::{PathInput, after_review, fixes, plan_file, plan_text};
+use crate::records::ChangeRecord;
 use crate::{PLUGIN, to_value};
 
 /// Severities in the order a report's findings are counted.
@@ -27,6 +29,8 @@ const PROBLEM: &str = "Problem";
 const OUT_OF_SCOPE: &str = "Out of scope";
 const PROVES: &str = "What the tests prove";
 const DOES_NOT_PROVE: &str = "What the tests do not prove";
+/// The heading that lists the files the change added to its plan's paths.
+const ADDED: &str = "Files added to the plan's paths";
 /// Cases a run lists as failed, errored or skipped before the rest are only
 /// counted.
 const CASES: usize = 20;
@@ -329,6 +333,18 @@ pub(crate) fn body(observed: &Observed, closes: &[String]) -> String {
             "## Work in progress\n\nIt moved into build past the WIP limit: {reason}"
         ));
     }
+    if !observed.outside.is_empty() {
+        let added: Vec<String> = observed
+            .outside
+            .iter()
+            .map(|file| quoted_text(file))
+            .collect();
+        parts.push(format!(
+            "## {ADDED}\n\nThe change edits these files, which no path in its plan named when \
+             the plan was written:\n\n{}",
+            bullets(&added)
+        ));
+    }
     parts.push(format!("## Evidence\n\n{}", bullets(&evidence(observed))));
     for issue in closes {
         parts.push(format!("Closes {issue}"));
@@ -364,6 +380,20 @@ fn evidence(observed: &Observed) -> Vec<String> {
         lines.push(format!("{}: {cited}", quoted_text(path)));
     }
     lines
+}
+
+/// The files the change's diff edits that no path of its plan matches,
+/// none when it has no head or plan paths or git cannot list the diff,
+/// which the review gate's `paths` check reports.
+fn added(host: &dyn Host, change: &ChangeRecord) -> Result<Vec<String>, PluginError> {
+    let (_, _, planned) = current(host, change)?;
+    let Some(head) = change.head.as_deref().filter(|_| !planned.is_empty()) else {
+        return Ok(Vec::new());
+    };
+    match edited(host, &change.mount, head)? {
+        Ok(files) => outside(host, &files, &planned),
+        Err(_) => Ok(Vec::new()),
+    }
 }
 
 /// The pages of the GitHub issues among `tickets`, which the body closes.
@@ -406,6 +436,7 @@ pub(crate) fn pr(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     observed.cited = cited;
     observed.plan = plan;
     observed.plan_file = plan_file;
+    observed.outside = added(host, &observed.change)?;
     if let Some(flow) = of_change(host, &path, &observed.change)? {
         let checks = flow.phases.iter().flat_map(|phase| &phase.checks);
         observed.after_review = after_review(host, &observed, checks)?;

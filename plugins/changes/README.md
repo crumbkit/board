@@ -1137,12 +1137,16 @@ gained, and a review of only the fix commits still checks every commit of
 the change. The check fails, saying why, when the change has no head,
 when nothing is at its mount, when its mount is a plain directory ("<mount>
 is not a mount"), and when git cannot give the diff. A rename counts as
-deleting one path and adding another. Each file it lists, by its path under the mount, must match one of
-the `paths` of the plan the change names with SQLite's `GLOB`. Otherwise `advance` refuses
-with `changes::paths::outside_plan` and names the files, because their
-rules were not in the brief. Update the plan's paths with `plan`, or revert
-the edit. A plan with no paths, no report on `head`, or a diff git cannot
-list also fails the check.
+deleting one path and adding another. Each file it lists, by its path under
+the mount, that no `paths` of the plan the change names matches with
+SQLite's `GLOB` is a file the change adds to its plan's paths. The check
+passes and its detail names those files, saying their rules were not in the
+brief, and `pr` lists them in the pull request body. The change does not
+write its plan again for them, and nothing about them is stored: each
+reading computes them from the diff. The `ui-paths` and `data-paths` checks
+read the same diff, so an added file those rules list still fails them. A
+plan with no paths, or a diff git cannot list, fails the check with
+`changes::paths::outside_plan`.
 
 Commits match when one is a prefix of the other and both have at least 7
 digits.
@@ -1174,6 +1178,7 @@ broken reference of its own is still read.
 | Review | Each attached `review/report/v1`: verdict, author, range, findings by severity. |
 | Evidence | The change, the plan, and every reference with its type (`file` for a file that is not a record, `directory` for a directory), or the code that hid it. |
 | Work in progress | The change's `over_limit`, when set. |
+| Files added to the plan's paths | Each file the change's diff edits that no path of its plan matches, when there are any, as the review gate's `paths` check names them. |
 | `Closes <issue>` | The `url` of each `github/issue/v1` in `tickets`. |
 
 Plan headings match without case. A plan section holds its subsections, and

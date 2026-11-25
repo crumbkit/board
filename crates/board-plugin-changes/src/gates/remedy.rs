@@ -163,8 +163,8 @@ fn default(each: &flow::Check) -> String {
              `board changes attach --path {change} --suite /suites/<name>`."
             .to_owned(),
         Kind::Paths => {
-            "Add the files to the plan's paths with `board changes plan --path {change}`, or \
-             revert the edits."
+            "Write the plan again with its paths with `board changes plan --path {change}`, or \
+             make the change's diff readable as the detail says."
                 .to_owned()
         }
         Kind::Tasks => {

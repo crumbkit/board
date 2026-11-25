@@ -654,7 +654,7 @@ fn the_review_gate_reads_the_head_from_the_right_side_of_a_three_dot_range() {
 }
 
 #[test]
-fn the_review_gate_refuses_a_diff_outside_the_planned_paths_and_passes_one_inside_them() {
+fn the_review_gate_passes_a_diff_outside_the_planned_paths_and_names_the_files_it_adds() {
     let reviewed =
         || (given("review").records(vec![("/r", report(&json!({})))])).with(json!({"head": HEAD}));
     assert_eq!(reviewed().check("paths"), ("pass", String::new()));
@@ -663,14 +663,13 @@ fn the_review_gate_refuses_a_diff_outside_the_planned_paths_and_passes_one_insid
     assert_eq!(
         outside.check("paths"),
         (
-            "missing",
-            "the change's diff edits files outside the plan's paths, so their rules were not in \
-             the brief: /repos/x/b.rs, /repos/x/c.rs; add them to the paths with `board \
-             changes plan`, or revert the edit"
+            "pass",
+            "the change adds the files its diff edits outside the plan's paths to them: \
+             /repos/x/b.rs, /repos/x/c.rs; their rules were not in the brief, and `board \
+             changes pr` lists them in the pull request body"
                 .to_owned()
         )
     );
-    assert_eq!(outside.code("paths"), "changes::paths::outside_plan");
     let mut unplanned = reviewed();
     unplanned.planned = Vec::new();
     assert_eq!(
@@ -685,6 +684,7 @@ fn the_review_gate_refuses_a_diff_outside_the_planned_paths_and_passes_one_insid
     let mut unread = reviewed();
     unread.diff_unread = Some("git failed");
     assert_eq!(unread.check("paths"), ("missing", "git failed".to_owned()));
+    assert_eq!(unread.code("paths"), "changes::paths::outside_plan");
 }
 
 #[test]

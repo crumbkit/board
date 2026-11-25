@@ -52,6 +52,16 @@ fn missing(board: &Changes) -> Value {
     board.refusal("advance", &path())["fields"]["missing"].clone()
 }
 
+/// The detail of the `paths` check `next` shows for /changes/t.
+fn paths_detail(board: &Changes) -> String {
+    let next = board.call("next", &path());
+    let check = (next["gate"].as_array().unwrap().iter())
+        .find(|each| each["check"] == "paths")
+        .unwrap();
+    assert_eq!(check["status"], "pass", "{check}");
+    check["detail"].as_str().unwrap().to_owned()
+}
+
 /// The phase a successful `advance` moved the change to.
 fn advanced(board: &Changes) -> Value {
     board.call("advance", &path())["to"].clone()
@@ -291,7 +301,7 @@ fn a_review_attached_before_the_plan_is_revised_still_passes_the_gate_and_is_cit
 }
 
 #[test]
-fn review_refuses_a_diff_that_edits_a_file_outside_the_planned_paths_until_the_plan_covers_it() {
+fn review_passes_a_diff_that_edits_a_file_outside_the_planned_paths_and_the_body_lists_it() {
     let board = Changes::new();
     let (base, head) = board.edited(&[("src/a.rs", "a\n"), ("docs/b.md", "b\n")]);
     board.change_at(
@@ -301,16 +311,18 @@ fn review_refuses_a_diff_that_edits_a_file_outside_the_planned_paths_until_the_p
     );
     board.write("r/1.json", &approving(&head, &base));
     board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
-    let refused = board.refusal("advance", &path());
-    assert_eq!(refused["code"], "changes::paths::outside_plan");
-    let message = refused["message"].as_str().unwrap();
-    assert!(message.contains("/repos/x/docs/b.md"), "{message}");
-    assert!(!message.contains("/repos/x/src/a.rs"), "{message}");
-    board.call_stdin(
-        "plan",
-        &planning(&["/repos/x/src/**", "/repos/x/docs/b.md"]),
-    );
+    let detail = paths_detail(&board);
+    assert!(detail.contains("/repos/x/docs/b.md"), "{detail}");
+    assert!(!detail.contains("/repos/x/src/a.rs"), "{detail}");
     assert_eq!(advanced(&board), "land");
+    board.call("pr", &path());
+    let body = board.text("changes/t/pr.md");
+    assert!(
+        body.contains("## Files added to the plan's paths"),
+        "{body}"
+    );
+    assert!(body.contains("- `/repos/x/docs/b.md`"), "{body}");
+    assert!(!body.contains("- `/repos/x/src/a.rs`"), "{body}");
 }
 
 #[test]
@@ -325,11 +337,8 @@ fn review_checks_every_commit_since_the_followed_branch_when_a_report_covers_onl
     );
     board.write("r/1.json", &approving(&head, &first));
     board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
-    let refused = board.refusal("advance", &path());
-    assert_eq!(refused["code"], "changes::paths::outside_plan");
-    let message = refused["message"].as_str().unwrap();
-    assert!(message.contains("/repos/x/docs/b.md"), "{message}");
-    board.call_stdin("plan", &planning(&["/repos/x/src/**", "/repos/x/docs/**"]));
+    let detail = paths_detail(&board);
+    assert!(detail.contains("/repos/x/docs/b.md"), "{detail}");
     assert_eq!(advanced(&board), "land");
 }
 
@@ -358,11 +367,9 @@ fn review_leaves_out_what_the_followed_branch_gained_when_the_change_is_rebased_
         &json!({"head": head, "records": ["/r/1"]}),
     );
     board.write("r/1.json", &approving(&head, &old));
-    let refused = board.refusal("advance", &path());
-    assert_eq!(refused["code"], "changes::paths::outside_plan");
-    let message = refused["message"].as_str().unwrap();
-    assert!(message.contains("/repos/x/docs/mine.md"), "{message}");
-    assert!(!message.contains("/repos/x/docs/upstream.md"), "{message}");
+    let detail = paths_detail(&board);
+    assert!(detail.contains("/repos/x/docs/mine.md"), "{detail}");
+    assert!(!detail.contains("/repos/x/docs/upstream.md"), "{detail}");
 }
 
 #[test]

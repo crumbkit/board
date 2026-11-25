@@ -2,10 +2,20 @@
 
 ## Unreleased
 
+- The review gate's `paths` check passes when the change's diff edits files
+  that no path of its plan matches. Its detail names them as files the
+  change adds to its plan's paths, and `changes pr` lists them in the pull
+  request body under "Files added to the plan's paths", so an agent no longer
+  writes its plan again to add a file it needs. The check still refuses
+  with `changes::paths::outside_plan` when the plan has no paths or git
+  cannot list the diff, and the `ui-paths` and `data-paths` checks still
+  read every edited file.
+
 - In the plan phase, `board changes next` and `board changes advance` ask
   the rules plugin for the rules on the plan's paths once, where they asked
   twice, and read both the obligations and the rules on the planned paths
   from that answer. The gate's checks and their details are unchanged.
+
 - `board call tasks.add` reads each `--after` and `--refs` value as a board
   path. A value without a leading `/` is read from the current directory, and
   a value that joins paths with a comma, such as

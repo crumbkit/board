@@ -392,6 +392,9 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
                     (Status::Missing, format!("{detail}{unanchored}"))
                 }
                 (Some(detail), None) => (Status::Missing, detail),
+                (None, _) if each.kind.known() == Some(&CheckKind::Paths) => {
+                    (Status::Pass, paths_added(observed))
+                }
                 (None, _) => (Status::Pass, kinds::passed(observed, each, &values)),
             };
             let (code, actor, said) = if left_out.is_empty() {
@@ -763,17 +766,21 @@ fn paths_missing(observed: &Observed) -> Option<String> {
                 .to_owned(),
         );
     }
-    if let Some(unread) = &observed.diff_unread {
-        return Some(unread.clone());
+    observed.diff_unread.clone()
+}
+
+/// What a passing `paths` check says: the files the change's diff edits
+/// that no planned path matches, which the change adds to its plan's
+/// paths without writing the plan again; empty when there are none.
+fn paths_added(observed: &Observed) -> String {
+    if observed.outside.is_empty() {
+        return String::new();
     }
-    (!observed.outside.is_empty()).then(|| {
-        format!(
-            "the change's diff edits files outside the plan's paths, so their rules were not in \
-             the brief: {}; add them to the paths with `board changes plan`, or revert the \
-             edit",
-            observed.outside.join(", ")
-        )
-    })
+    format!(
+        "the change adds the files its diff edits outside the plan's paths to them: {}; their \
+         rules were not in the brief, and `board changes pr` lists them in the pull request body",
+        observed.outside.join(", ")
+    )
 }
 
 /// The head commit a report covers: the right side of its `base..head`
