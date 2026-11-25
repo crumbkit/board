@@ -500,6 +500,10 @@ fn with_server<T>(
             if let Some(bytes) = board_index::read_server(cache, &root).unwrap() {
                 break read_record(&bytes).unwrap();
             }
+            if server.is_finished() {
+                let ended = server.join().unwrap().map(|_| ());
+                panic!("the server stopped before it wrote a server file: {ended:?}");
+            }
             assert!(
                 start.elapsed() < WAIT,
                 "the server wrote no server file within {:?}",
@@ -564,7 +568,7 @@ fn a_server_with_no_authorised_request_exits_when_idle() {
 fn launch(scenario: &Scenario, cache: &std::path::Path) -> (Launch, std::path::PathBuf) {
     let opened = cache.join("opened");
     let script = format!(
-        "#!/bin/sh\nprintf %s \"$1\" > {0}.part && mv {0}.part {0}\n",
+        "#!/bin/sh\nprintf %s \"$1\" > '{0}.part' && mv '{0}.part' '{0}'\n",
         opened.display()
     );
     scenario.write("browser.sh", Item::Executable(&script));
