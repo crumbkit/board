@@ -233,7 +233,7 @@ pub(crate) fn enabled(board: &Board, plugins: Option<&Path>) -> (Vec<Grafted>, V
         board.plugin_list(None)
     });
     let mut grafted = Vec::new();
-    for entry in listed.map(|listed| listed.plugins).unwrap_or_default() {
+    for entry in listed.map_or_default(|listed| listed.plugins) {
         match &entry.state {
             _ if !entry.enabled => {}
             PluginState::Installed(manifest) => grafted.extend(

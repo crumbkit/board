@@ -99,8 +99,7 @@ impl Mac {
     /// Each line a stub logged.
     fn logged(&self, name: &str) -> Vec<String> {
         std::fs::read_to_string(self.bin.workdir().join(format!("{name}.log")))
-            .map(|log| log.lines().map(str::to_owned).collect())
-            .unwrap_or_default()
+            .map_or_default(|log| log.lines().map(str::to_owned).collect())
     }
 
     fn state(&self) -> PathBuf {

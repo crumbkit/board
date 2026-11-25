@@ -69,7 +69,7 @@ pub(crate) fn owners(text: &str) -> Vec<Rule> {
 
 /// The patterns someone other than `handle` owns, each once, in order.
 pub(crate) fn ask_first(rules: &[Rule], handle: Option<&str>) -> Vec<String> {
-    let mine = handle.map(str::to_lowercase).unwrap_or_default();
+    let mine = handle.map_or_default(str::to_lowercase);
     let mut asking: Vec<String> = Vec::new();
     for rule in rules {
         let theirs = !rule.owners.is_empty()

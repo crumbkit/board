@@ -124,8 +124,7 @@ fn held(path: &Path) -> Result<bool, PluginError> {
     let text = (path.is_file())
         .then(|| std::fs::read(path).ok())
         .flatten()
-        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-        .unwrap_or_default();
+        .map_or_default(|bytes| String::from_utf8_lossy(&bytes).into_owned());
     if text == HOOK {
         return Ok(true);
     }
