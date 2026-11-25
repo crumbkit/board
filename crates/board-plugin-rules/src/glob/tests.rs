@@ -1,6 +1,8 @@
 //! The Rust GLOB gives `SQLite`'s answer for each pattern and path, which
 //! `SQLite` itself reports through a board's query.
 
+use std::collections::BTreeSet;
+
 use board_ops::{Host, Limit, literal};
 use serde_json::Value;
 
@@ -126,18 +128,32 @@ fn the_rust_glob_answers_as_sqlite_does_for_every_short_pattern_and_path() {
             .collect();
         rows.join(", ")
     };
+    // Only the matching pairs come back, so the query stays far inside the
+    // query time limit.
     let sql = format!(
-        "SELECT p.column1, t.column1, t.column1 GLOB p.column1 FROM (VALUES {}) p, (VALUES {}) t",
+        "SELECT p.column1, t.column1 FROM (VALUES {}) p, (VALUES {}) t \
+         WHERE t.column1 GLOB p.column1",
         table(&patterns),
         table(&texts)
     );
     let report = host.query(&sql, Limit::ALL).unwrap();
-    assert_eq!(report.rows.len(), patterns.len() * texts.len());
-    for row in report.rows {
-        let [Value::String(pattern), Value::String(text), sqlite] = &row[..] else {
-            panic!("{row:?}");
-        };
-        let sqlite = *sqlite == 1;
-        assert_eq!(glob(pattern, text), sqlite, "{text:?} GLOB {pattern:?}");
-    }
+    let sqlite: BTreeSet<(String, String)> = (report.rows.into_iter())
+        .map(|row| match <[Value; 2]>::try_from(row) {
+            Ok([Value::String(pattern), Value::String(text)]) => (pattern, text),
+            row => panic!("{row:?}"),
+        })
+        .collect();
+    let rust: BTreeSet<(String, String)> = (patterns.iter())
+        .flat_map(|pattern| texts.iter().map(move |text| (pattern, text)))
+        .filter(|(pattern, text)| glob(pattern, text))
+        .map(|(pattern, text)| (pattern.clone(), text.clone()))
+        .collect();
+    assert!(!sqlite.is_empty());
+    let only_sqlite: Vec<_> = sqlite.difference(&rust).take(10).collect();
+    let only_rust: Vec<_> = rust.difference(&sqlite).take(10).collect();
+    assert!(
+        only_sqlite.is_empty() && only_rust.is_empty(),
+        "(pattern, path) pairs SQLite matches and Rust does not: {only_sqlite:?}; \
+         that Rust matches and SQLite does not: {only_rust:?}"
+    );
 }
