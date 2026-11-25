@@ -1064,3 +1064,76 @@ fn a_zero_rule_is_unreadable_and_check_still_answers_when_the_suite_is_missing()
         "the zero rule reads no file and calls runs.latest once"
     );
 }
+
+#[test]
+fn check_at_the_root_of_a_board_with_thousands_of_files_and_patterns_answers_within_the_query_limit()
+ {
+    // 4,000 files and 10,000 patterns: comparing each file with each
+    // pattern makes 40 million GLOBs, past the 1-second query limit.
+    let files: Vec<(String, String)> = (0..40)
+        .flat_map(|dir| {
+            (0..100).map(move |file| (format!("src/d{dir:02}/f{file:03}.txt"), "x".to_owned()))
+        })
+        .collect();
+    // Rule r matches r + 1 files in one directory by `?`; its other
+    // patterns share that directory's prefix and match nothing.
+    let rule = |r: usize, extra: &[&str]| {
+        let mut paths: Vec<String> = (0..200)
+            .map(|j| {
+                if j <= r {
+                    format!("src/d{:02}/f{j:03}.t?t", r % 40)
+                } else {
+                    format!("src/d{:02}/none{j}*", j % 40)
+                }
+            })
+            .collect();
+        paths.extend(extra.iter().map(|path| (*path).to_owned()));
+        json!({
+            "$type": "rules/rule/v1",
+            "requirement": "R.",
+            "purpose": "P.",
+            "paths": paths,
+            "checker": words(100_000),
+        })
+        .to_string()
+    };
+    let rules: Vec<(String, String)> = (0..50)
+        .map(|r| {
+            let extra: &[&str] = match r {
+                // A whole directory, one file of which a `?` pattern reaches too.
+                0 => &["src/d39/*", "src/d00/f000.txt"],
+                // No literal prefix, a range and a negated set.
+                49 => &["*/d0[0-1]/f09[^0-8].txt"],
+                _ => &[],
+            };
+            (format!("rules/r{r:02}.json"), rule(r, extra))
+        })
+        .collect();
+    let all: Vec<(&str, &str)> = (files.iter().chain(&rules))
+        .map(|(path, text)| (path.as_str(), text.as_str()))
+        .collect();
+    let (_scenario, host) = enabling(&["rules"], &all);
+    let output = check(&host, &json!({})).unwrap();
+    let used: Vec<(&str, u64)> = (output["measured"].as_array().unwrap().iter())
+        .map(|each| {
+            (
+                each["rule"].as_str().unwrap(),
+                each["used"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    let expected: Vec<(String, u64)> = (0..50u64)
+        .map(|r| {
+            let count = match r {
+                0 => 101,
+                49 => 52,
+                _ => r + 1,
+            };
+            (format!("/rules/r{r:02}"), count)
+        })
+        .collect();
+    let expected: Vec<(&str, u64)> = (expected.iter())
+        .map(|(rule, count)| (rule.as_str(), *count))
+        .collect();
+    assert_eq!(used, expected);
+}

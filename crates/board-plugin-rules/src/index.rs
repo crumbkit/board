@@ -1,7 +1,8 @@
 //! What the plugin reads from the index: its controls and the files their
-//! patterns match. Matching stays in `SQLite`, with its GLOB.
+//! patterns match. `check` matches its patterns in Rust (see [`matched`]);
+//! the other capabilities match theirs in `SQLite`, with its GLOB.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use board_model::{LogicalPath, parse_json};
 use board_ops::{Host, Limit, PluginError, QueryReport, literal};
@@ -9,6 +10,7 @@ use board_plugin::shape::Open;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::glob;
 use crate::records::{Checker, Kind, ShowAt, rule_types};
 
 /// Each file a pattern can match, with `full`: its display path without the
@@ -21,16 +23,6 @@ use crate::records::{Checker, Kind, ShowAt, rule_types};
 pub(crate) const FILES: &str = "(SELECT *, COALESCE(substr(logical, 2) \
     || CASE WHEN substr(logical, -length(path) - 1) = '/' || path THEN '' ELSE '.json' END, \
     CASE source WHEN 'worktree' THEN path END) AS full FROM entries WHERE kind != 'pointer')";
-
-/// Each pattern of each readable control in the board's own tree.
-/// MATERIALIZED parses each control's body once, not once for every file a
-/// pattern is compared with.
-const PATTERNS: &str = concat!(
-    "patterns AS MATERIALIZED (SELECT r.logical, r.path, p.value AS pattern \
-     FROM records r, json_each(r.body, '$.paths') p WHERE r.type IN ",
-    rule_types!(),
-    " AND r.status = 'ok' AND r.source = 'worktree')"
-);
 
 /// The first two columns of each row of `sql` that holds a string in both.
 pub(crate) fn string_pairs<C: FromIterator<(String, String)>>(
@@ -193,53 +185,98 @@ pub(crate) fn degraded(host: &dyn Host) -> Result<Vec<(String, Value)>, PluginEr
         .collect())
 }
 
-/// Each control and each file one of its patterns matches, of the files
-/// at or under `scope`. A pattern matches a file's `full` path (see
-/// [`FILES`]), so files in mounted boards match by their display path
-/// through the mount. A pointer's file holds where it leads, never what a
-/// budget counts, so no pattern matches one. Under `/` every file is
-/// compared; under another path only the files there are, which keeps the
-/// comparison of every file with every pattern small in a board that
-/// mounts many repositories. A file with no display path lies under `/`
-/// alone.
-pub(crate) fn matched(host: &dyn Host, scope: &LogicalPath) -> Result<Vec<Match>, PluginError> {
+/// Each of `controls` and each file one of its patterns matches, of the
+/// files at or under `scope`, ordered by control and then by each file's
+/// `full` path and source, with a file that several of a control's
+/// patterns match listed once. A pattern matches a file's `full` path (see
+/// [`FILES`]) as `SQLite`'s GLOB would, so files in mounted boards match by
+/// their display path through the mount. A pointer's file holds where it
+/// leads, never what a budget counts, so no pattern matches one. Under `/`
+/// every file is listed; under another path only the files there are. A
+/// file with no display path lies under `/` alone.
+///
+/// One query lists the files and Rust compares them with the patterns,
+/// because comparing every file with every pattern in `SQLite` passes the
+/// query time limit on a board that mounts many repositories. The files are
+/// sorted by `full`, so each pattern is compared only with the files that
+/// start with its literal prefix.
+pub(crate) fn matched(
+    host: &dyn Host,
+    scope: &LogicalPath,
+    controls: &BTreeMap<String, Control>,
+) -> Result<Vec<Match>, PluginError> {
     let within = if *scope == LogicalPath::root() {
         String::new()
     } else {
         let exact = literal(scope.as_str());
         let beneath = literal(&format!("{}/", scope.as_str()));
-        format!(" WHERE logical = {exact} OR substr(logical, 1, length({beneath})) = {beneath}")
+        format!(" AND (logical = {exact} OR substr(logical, 1, length({beneath})) = {beneath})")
     };
     let sql = format!(
-        "WITH files AS MATERIALIZED (SELECT * FROM {FILES}{within}), {PATTERNS} SELECT DISTINCT \
-         c.logical, COALESCE(e.logical, e.full), e.status, e.code, c.path, e.full, e.source \
-         FROM patterns c, files e WHERE e.full GLOB c.pattern \
-         ORDER BY c.path, e.full, e.source"
+        "SELECT COALESCE(logical, full), status, code, full, source FROM {FILES} \
+         WHERE full IS NOT NULL{within}"
     );
-    let report = rows(host, &sql)?;
-    Ok((report.rows.into_iter())
-        .filter_map(|row| {
-            let mut row = row.into_iter();
-            let (Some(Value::String(control)), Some(Value::String(file)), Some(status)) =
-                (row.next(), row.next(), row.next())
-            else {
-                return None;
-            };
-            let code = row.next().and_then(|code| code.as_str().map(str::to_owned));
-            let health = if status == "ok" {
-                Health::Whole
-            } else {
-                Health::Degraded(code)
-            };
-            let file = match file.parse() {
-                Ok(path) => File::Named(path),
-                Err(_) => File::Unnamed(file),
-            };
-            Some(Match {
-                control,
-                file,
-                health,
-            })
+    let mut files: Vec<Listed> = (rows(host, &sql)?.rows.into_iter())
+        .filter_map(|row| match <[Value; 5]>::try_from(row) {
+            Ok(
+                [
+                    Value::String(shown),
+                    status,
+                    code,
+                    Value::String(full),
+                    source,
+                ],
+            ) => Some(Listed {
+                shown,
+                whole: status == "ok",
+                code: code.as_str().map(str::to_owned),
+                full,
+                source: source.as_str().map(str::to_owned),
+            }),
+            _ => None,
         })
-        .collect())
+        .collect();
+    files.sort_by(|one, other| (&one.full, &one.source).cmp(&(&other.full, &other.source)));
+    let mut found = Vec::new();
+    for (logical, control) in controls {
+        let mut reached = BTreeSet::new();
+        for pattern in control.paths.iter().flatten() {
+            let prefix = glob::prefix(pattern);
+            let first = files.partition_point(|file| file.full.as_str() < prefix);
+            let candidates = (files[first..].iter().enumerate())
+                .take_while(|(_, file)| file.full.starts_with(prefix));
+            for (at, file) in candidates {
+                if glob::glob(pattern, &file.full) {
+                    reached.insert(first + at);
+                }
+            }
+        }
+        found.extend(reached.into_iter().map(|at| {
+            let file = &files[at];
+            Match {
+                control: logical.clone(),
+                file: match file.shown.parse() {
+                    Ok(path) => File::Named(path),
+                    Err(_) => File::Unnamed(file.shown.clone()),
+                },
+                health: if file.whole {
+                    Health::Whole
+                } else {
+                    Health::Degraded(file.code.clone())
+                },
+            }
+        }));
+    }
+    Ok(found)
+}
+
+/// A file as [`matched`] lists it: by its display path or, with none, its
+/// `full` path, whether Board reads it whole, its code when not, its
+/// `full` path and its source.
+struct Listed {
+    shown: String,
+    whole: bool,
+    code: Option<String>,
+    full: String,
+    source: Option<String>,
 }
