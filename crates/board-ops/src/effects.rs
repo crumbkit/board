@@ -579,6 +579,18 @@ impl Board {
             });
         };
         let landing = (target.path.as_str(), on_disk.as_str(), &path);
+        if self.unsigns(&change, &on_disk)
+            && self.asker.signing_now()?.need_to_edit() != Need::Answer
+        {
+            return Err(EffectError::FromPlugin {
+                plugin: plugin.clone(),
+                path: Some(path),
+                what: format!(
+                    "{} {landed}, a signed record that keeps signing configured",
+                    change.verb()
+                ),
+            });
+        }
         match owners(landing, change) {
             Some(what) => Err(EffectError::FromPlugin {
                 plugin: plugin.clone(),
@@ -607,7 +619,10 @@ impl Board {
         let on_disk = self.repository().landing(&target.path);
         let write =
             owner_signs(&target.path, &on_disk) || removes_config(&change, &target.path, &on_disk);
-        let edit = self.edits_signing(&change, &target.path, &on_disk);
+        // Removing or unsigning a signed record could turn signing off, so
+        // it needs what an edit of signing needs.
+        let edit =
+            self.edits_signing(&change, &target.path, &on_disk) || self.unsigns(&change, &on_disk);
         if !write && !edit {
             return Ok(());
         }
@@ -654,6 +669,34 @@ impl Board {
         decide::signature(&self.asker.signing, Path::new(&root), &statement)
             .map(|_| ())
             .map_err(unsigned)
+    }
+
+    /// Whether `change` removes the signed record at `on_disk`, a seen
+    /// record or an order that [`holds_signature`] counts, or puts one
+    /// without a signature in its place. A record Board cannot read counts
+    /// as signed.
+    fn unsigns(&self, change: &Change<'_>, on_disk: &str) -> bool {
+        let lower = on_disk.to_ascii_lowercase();
+        let counted = [SEEN, ORDERS]
+            .iter()
+            .any(|directory| lower.starts_with(&format!("{directory}/")));
+        if !counted || !board_model::is_json_file(on_disk) {
+            return false;
+        }
+        let signed = |value: &Value| {
+            (value.get("signature").and_then(Value::as_str)).is_some_and(|text| !text.is_empty())
+        };
+        let held = match self.repository().read_working(on_disk) {
+            Ok(Working::Read(contents)) => parse_json(&contents.bytes)
+                .ok()
+                .is_none_or(|value| signed(&value)),
+            Ok(Working::Missing) => false,
+            Ok(Working::TooLarge) | Err(_) => true,
+        };
+        held && match change {
+            Change::Put(_, admitted, _) => !signed(&admitted.value),
+            Change::Remove(_) => true,
+        }
     }
 
     /// Whether `change`, to the file given as `given` that lands at

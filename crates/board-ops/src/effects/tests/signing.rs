@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 use super::{
     Asker, EffectError, Signing, answer, asked, asker, board, decide, exists, opened, personal,
-    put, read, signer, signing,
+    put, read, rm, signer, signing,
 };
 use crate::Board;
 use crate::tests::task;
@@ -421,4 +421,67 @@ fn once_configured_an_edit_of_signing_with_the_signers_file_missing_is_refused()
         read(&mine, ".board/board.json")["signing"],
         json!({"configured": true})
     );
+}
+
+/// Writes in `mine` an order with a signature, which keeps signing
+/// configured. Only that a signature is there counts.
+fn signed_order(mine: &Scenario) {
+    let order = json!({"$type": board_model::ORDER_TYPE, "signature": "signed"});
+    mine.write("orders/deadband.json", Item::File(&order.to_string()));
+}
+
+#[test]
+fn while_signing_is_on_removing_or_unsigning_a_signed_record_needs_touch_id_whatever_require_lists()
+{
+    let mine = personal();
+    set(&mine, &json!({"require": []}));
+    signed_order(&mine);
+    let no_signer = Asker {
+        signing: Signing {
+            signer: None,
+            ..signing()
+        },
+        ..asker(None, Some(&mine))
+    };
+    let unsigned = owning(&mine, no_signer);
+    let error = rm(&unsigned, "/orders/deadband").unwrap_err();
+    assert_eq!(error.code(), Code::SettingsUnsigned, "{error}");
+    let error = put(&unsigned, "/orders/deadband", &task("")).unwrap_err();
+    assert_eq!(error.code(), Code::SettingsUnsigned, "{error}");
+    assert!(exists(&mine, "orders/deadband.json"));
+    let gone = owning(&mine, missing(&mine));
+    let error = rm(&gone, "/orders/deadband").unwrap_err();
+    assert_eq!(error.code(), Code::SigningFileMissing, "{error}");
+    rm(&owning(&mine, asker(None, Some(&mine))), "/orders/deadband").unwrap();
+    assert!(!exists(&mine, "orders/deadband.json"));
+}
+
+#[test]
+fn removing_the_signed_records_and_then_the_signers_file_does_not_turn_signing_off() {
+    let (scenario, mine) = (board(), personal());
+    signed_order(&mine);
+    let board = opened(&scenario, Some("review"), Some(&mine));
+    let id = asked(decide(&board, "/pulls/7"));
+    answered(&mine, &id, &json!({"person": "ana"}));
+    let no_signer = Asker {
+        signing: Signing {
+            signer: None,
+            ..signing()
+        },
+        ..asker(None, Some(&mine))
+    };
+    assert!(rm(&owning(&mine, no_signer), "/orders/deadband").is_err());
+    let mut plugin = Board::open(mine.workdir(), None).unwrap();
+    plugin.ask_as(asker(Some("review"), Some(&mine)));
+    let error = rm(&plugin, "/orders/deadband").unwrap_err();
+    assert_eq!(error.code(), Code::SettingsFromPlugin, "{error}");
+    let error = answer(
+        &missing(&mine),
+        &id,
+        Answer::Approve,
+        None,
+        None,
+        Some(ANSWER.to_owned()),
+    );
+    assert_eq!(code(error), Code::SigningFileMissing);
 }

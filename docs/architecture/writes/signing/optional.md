@@ -28,6 +28,10 @@ a signature:
   only a signed edit sets. While configured, a missing allowed signers file
   refuses each listed act with `board::signing::file_missing` and never
   falls back to an answer.
+- While signing is on, removing a signed record that Board counts, or
+  putting one without a signature in its place, needs what an edit of
+  `signing` needs: the owner's signature, whatever `require` lists. A
+  plugin may not do it.
 - An edit of `signing` needs a signature whenever signing is on, whatever
   `require` lists. A plugin never writes `.board/`.
 - `board orders pinned` and `board orders signers` give the state in their
@@ -87,3 +91,8 @@ an edit of the order voids the answer (`board_model::approving`).
 - Board reads `signing` from the working tree's `.board/board.json`, so an
   agent with a shell that writes the file directly changes `require` or
   `configured` without Touch ID. The guard covers `board put` only.
+- Board finds the personal board through `$XDG_CONFIG_HOME/board/config.json`,
+  which the caller sets. An agent that points it at a decoy personal board
+  with `require: []` approves effects there with its own answer, and its
+  owner's writes in the real board read the decoy's setting, so they skip
+  the signature. Nothing shows in the owner's board.
