@@ -182,18 +182,60 @@ fn a_task_routed_to_the_boards_own_tree_is_said_to_have_found_no_notes_repo() {
 }
 
 #[test]
-fn a_title_is_quoted_for_the_shell_in_a_hints_command() {
+fn a_title_is_quoted_for_the_shell_and_given_with_equals_in_a_hints_command() {
+    let board = "board -C /b";
     assert_eq!(
-        added::command("Ship it", "/repos/work", false),
-        "board tasks add --title 'Ship it' --repo /repos/work"
+        added::command(board, "Ship it", "/repos/work", false),
+        "board -C /b tasks add --title='Ship it' --repo /repos/work"
     );
     assert_eq!(
-        added::command("Bob's", "/", true),
-        "board tasks add --title 'Bob'\"'\"'s' --repo / --reason '<why it belongs with this \
-         board>'"
+        added::command(board, "Bob's", "/", true),
+        "board -C /b tasks add --title='Bob'\"'\"'s' --repo / --reason '<why it belongs with \
+         this board>'"
     );
     assert_eq!(
-        added::command("plain", "/r", false),
-        "board tasks add --title plain --repo /r"
+        added::command(board, "plain", "/r", false),
+        "board -C /b tasks add --title=plain --repo /r"
     );
+    assert_eq!(
+        added::command(board, "-v", "/r", false),
+        "board -C /b tasks add --title=-v --repo /r"
+    );
+}
+
+#[test]
+fn a_routed_sentence_shows_the_remote_without_its_userinfo() {
+    let remote = "https://someone:not-a-real-token@github.com/example-org/home.git";
+    let said = added::said(
+        "/tasks/x.md",
+        "/",
+        (None, Some("tasks::repo::not_synced")),
+        Route::Routed(Some(remote)),
+        None,
+    );
+    assert!(
+        said.contains("no notes repo covers example-org/home and"),
+        "{said}"
+    );
+    assert!(!said.contains("token"), "{said}");
+}
+
+#[test]
+fn a_reason_is_printed_only_for_the_boards_own_tree() {
+    let notes = added::said(
+        "/repos/notes/tasks/x.md",
+        "/repos/notes",
+        (Some(PUSHED_TO), None),
+        Route::Named,
+        Some("a queue item"),
+    );
+    assert!(!notes.contains("reason"), "{notes}");
+    let own = added::said(
+        "/tasks/x.md",
+        "/",
+        (None, Some("tasks::repo::not_synced")),
+        Route::Named,
+        Some("a queue item"),
+    );
+    assert!(own.ends_with(" The reason given: a queue item."), "{own}");
 }

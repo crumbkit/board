@@ -5,17 +5,19 @@
 use std::path::Path;
 
 use board_model::shown_remote;
-use board_ops::{Host, Origin, PluginError};
+use board_ops::{Host, Limit, Origin, PluginError};
 use board_repos::{Listed, Repo, covering};
 use schemars::JsonSchema;
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::Written;
 use crate::{PLUGIN, hinted};
 
 /// What a hint's command gives `--reason`, for the reader to fill in.
 const REASON: &str = "'<why it belongs with this board>'";
+/// What each routing hint ends with: its commands carry only the title.
+const OTHER_FLAGS: &str = ", with the call's other flags";
 
 /// The task as `add` left it, with where it went. `about` says in one
 /// sentence which repo holds the task and whether it left this Mac.
@@ -94,7 +96,7 @@ pub(crate) fn said(
                 Route::Routed(remote) => {
                     let covered = remote.map_or_else(
                         || "the call gave no git remote".to_owned(),
-                        |remote| format!("no notes repo covers {remote}"),
+                        |remote| format!("no notes repo covers {}", shown_remote(remote)),
                     );
                     format!(", because {covered} and the board lists no personal notes repo")
                 }
@@ -113,21 +115,37 @@ pub(crate) fn said(
              Mac until the next sync."
         ),
     };
-    if let Some(reason) = reason {
+    if let Some(reason) = reason.filter(|_| repo == "/") {
         let reason = reason.trim().trim_end_matches('.');
         said.extend([" The reason given: ", reason, "."]);
     }
     said
 }
 
-/// The command that adds the task titled `title` to `repo`, with a
-/// reason to fill in when `reason`.
-pub(crate) fn command(title: &str, repo: &str, reason: bool) -> String {
-    let mut command = format!("board tasks add --title {} --repo {repo}", quote(title));
+/// The command that adds the task titled `title` to `repo` in the board
+/// `board` names, with a reason to fill in when `reason`. The title is
+/// given with `=`, so one that starts with `-` is not read as a flag.
+pub(crate) fn command(board: &str, title: &str, repo: &str, reason: bool) -> String {
+    let mut command = format!("{board} tasks add --title={} --repo {repo}", quote(title));
     if reason {
         command.extend([" --reason ", REASON]);
     }
     command
+}
+
+/// `board -C <root>` for the board this call runs in, so a hint's command
+/// opens it from any directory; `board` when its root is not known.
+fn board_of(host: &dyn Host) -> String {
+    let sql = "SELECT repository FROM sources WHERE source = 'worktree'";
+    let report = host.query(sql, Limit::ALL).ok();
+    (report.as_ref())
+        .and_then(|report| report.rows.first())
+        .and_then(|row| row.first())
+        .and_then(Value::as_str)
+        .map_or_else(
+            || "board".to_owned(),
+            |root| format!("board -C {}", quote(root)),
+        )
 }
 
 /// `text` quoted for a POSIX shell, as Python's `shlex.quote` quotes it.
@@ -161,38 +179,36 @@ fn pushing(remote: Option<&str>) -> String {
 /// The ways to file the task titled `title` other than by routing: the
 /// personal notes repo first, when the board has one, then `/` with a
 /// reason.
-fn ways(personal: Option<&(String, Option<String>)>, title: &str) -> Vec<String> {
+fn ways(board: &str, personal: Option<&(String, Option<String>)>, title: &str) -> Vec<String> {
     let mut ways = Vec::new();
     if let Some((root, remote)) = personal {
         ways.push(format!(
             "`{}` to file it in the personal notes repo{}",
-            command(title, root, false),
+            command(board, title, root, false),
             pushing(remote.as_deref())
         ));
     }
     ways.push(format!(
         "`{}` to keep it in this board's own tree, where it stays on this Mac",
-        command(title, "/", true)
+        command(board, title, "/", true)
     ));
     ways
 }
 
 /// The hint of `tasks::repo::origin_unread` for the task titled `title`.
 pub(crate) fn unread_hint(host: &dyn Host, found: &[Listed], title: &str) -> String {
-    let mut ways = ways(personal(host, found).as_ref(), title);
+    let mut ways = ways(&board_of(host), personal(host, found).as_ref(), title);
     ways.push("`--remote <owner/name>` for the repository it belongs to".to_owned());
-    format!("run it again as {}", ways.join(", or "))
+    format!("run it again as {}{OTHER_FLAGS}", ways.join(", or "))
 }
 
 /// The hint of `tasks::repo::ambiguous`: a command for each candidate.
-pub(crate) fn ambiguous_hint(candidates: &[String], title: &str) -> String {
+pub(crate) fn ambiguous_hint(host: &dyn Host, candidates: &[String], title: &str) -> String {
+    let board = board_of(host);
     let commands: Vec<String> = (candidates.iter())
-        .map(|candidate| format!("`{}`", command(title, candidate, false)))
+        .map(|candidate| format!("`{}`", command(&board, title, candidate, false)))
         .collect();
-    format!(
-        "run one of {}, with the call's other flags",
-        commands.join(" or ")
-    )
+    format!("run one of {}{OTHER_FLAGS}", commands.join(" or "))
 }
 
 /// The refusal of `--repo /` given without a reason, naming the
@@ -211,7 +227,8 @@ pub(crate) fn reason_needed(host: &dyn Host, found: &[Listed], title: &str) -> P
         "--repo / writes the task to this board's own tree, which tasks add never pushes, so it \
          stays on this Mac; give --reason to say why it belongs with this board{elsewhere}"
     );
-    let hint = format!("run {}", ways(personal.as_ref(), title).join(", or "));
+    let ways = ways(&board_of(host), personal.as_ref(), title);
+    let hint = format!("run {}{OTHER_FLAGS}", ways.join(", or "));
     let (root, remote) = personal.unzip();
     hinted(
         "tasks::repo::reason_needed",

@@ -216,8 +216,10 @@ caller inside a git repository whose origin git does not give is refused with
 own repository is the exception: a caller in a board with no origin is routed
 as one outside any repository, so the board takes the task when it lists no
 personal repo. A repository nested inside the board is not the board's own.
-The hints of `origin_unread` and `ambiguous` give a full command for each
-repo that could take the task, the personal notes repo first.
+The hints of `origin_unread`, `ambiguous` and `reason_needed` give a full
+command for each repo that could take the task, the personal notes repo
+first. Each names the board with `-C` and gives the title as `--title=`, and
+the call's other flags are added to it.
 
 A task a person should see off this Mac goes to the personal notes repo,
 which `add` pushes. `add` never pushes the board's own tree, so a task in
@@ -225,9 +227,10 @@ which `add` pushes. `add` never pushes the board's own tree, so a task in
 is for tasks that belong with the board, such as queue items, and needs
 `--reason <text>`. Without one it is refused with
 `tasks::repo::reason_needed`, which names the personal notes repo and its
-remote when the board has one. The reason is printed in `about` and stored
-nowhere. A task routed to `/` because no notes repo covers the remote and the
-board lists no personal repo needs no reason.
+remote when the board has one. A reason that is only spaces is missing. The
+reason is printed in `about` and stored nowhere, and a reason given for any
+other repo is ignored. A task routed to `/` because no notes repo covers the
+remote and the board lists no personal repo needs no reason.
 
 `add` returns the task as the other writes do, with three more fields.
 `about` is one sentence that says which repo took the task and whether it

@@ -114,8 +114,11 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         Some(remote) => Some(remote.clone()),
         None => origin(host, &given, &found)?,
     };
-    let repo = routed(&found, &given, remote.as_deref())?;
-    if given.repo.is_some() && repo.root == "/" && given.reason.is_none() {
+    let repo = routed(host, &found, &given, remote.as_deref())?;
+    let reason = (given.reason.as_deref())
+        .map(str::trim)
+        .filter(|reason| !reason.is_empty());
+    if given.repo.is_some() && repo.root == "/" && reason.is_none() {
         return Err(added::reason_needed(host, &found, &given.title));
     }
     let day = day(host);
@@ -192,7 +195,6 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         Some(_) => Route::Named,
         None => Route::Routed(remote.as_deref()),
     };
-    let reason = given.reason.as_deref();
     Ok(json!(added::added(host, &repo, written, route, reason)))
 }
 
@@ -632,7 +634,12 @@ fn checked(
 /// The repo a new task goes to: the one named; else the one covering the
 /// remote; else the personal one; else `/`. Two repos covering the remote,
 /// or two personal ones, are refused, since a task must not cross a silo.
-fn routed(found: &[Listed], given: &AddInput, remote: Option<&str>) -> Result<Repo, PluginError> {
+fn routed(
+    host: &dyn Host,
+    found: &[Listed],
+    given: &AddInput,
+    remote: Option<&str>,
+) -> Result<Repo, PluginError> {
     let name = given.repo.as_deref();
     let clone_of = |at: &str| {
         (at != "/")
@@ -677,7 +684,7 @@ fn routed(found: &[Listed], given: &AddInput, remote: Option<&str>) -> Result<Re
             "tasks::repo::ambiguous",
             why,
             [("candidates", json!(candidates))],
-            &added::ambiguous_hint(&candidates, &given.title),
+            &added::ambiguous_hint(host, &candidates, &given.title),
         ));
     }
     let at = candidates

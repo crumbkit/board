@@ -60,7 +60,7 @@ const CAPABILITIES: [(&str, &str); 11] = [
     (
         "add",
         "Write a new open task to tasks/<slug>.md in the repo the caller's remote routes to, and \
-         say in about which repo took it and whether it left this Mac; --repo / needs --reason.",
+         say in `about` which repo took it and whether it left this Mac; --repo / needs --reason.",
     ),
     (
         "claim",

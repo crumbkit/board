@@ -189,7 +189,8 @@ pub(crate) struct AddInput {
     #[schemars(
         length(min = 1),
         description = "Why a task given repo / belongs with this board, such as a queue item; \
-                       repo / needs it. It is printed in the output's about and stored nowhere."
+                       repo / needs it, and one that is only spaces is missing. It is printed in \
+                       the output's about and stored nowhere, and ignored for any other repo."
     )]
     pub(crate) reason: Option<String>,
     #[schemars(

@@ -7,6 +7,8 @@ use super::write::write_hook;
 use super::*;
 
 const EXAMPLE_ORG: &str = "git@github.com:example-org/home.git";
+/// A remote that holds a token, which no sentence may show.
+const TOKENED: &str = "https://someone:not-a-real-token@github.com/example-org/home.git";
 
 /// The remote of the notes repo `name`, as its clone's origin names it.
 fn remote_of(tasks: &Tasks, name: &str) -> String {
@@ -36,8 +38,9 @@ fn words(command: &str) -> Vec<String> {
     words
 }
 
-/// The `board ...` commands a refusal's hint names, in backticks.
-fn commands(refused: &Value) -> Vec<String> {
+/// The `board ...` commands a refusal's hint names, in backticks, each
+/// as printed.
+fn printed(refused: &Value) -> Vec<String> {
     let hint = refused["recovery"]["text"].as_str().unwrap();
     (hint.split('`').skip(1).step_by(2))
         .filter(|part| part.starts_with("board "))
@@ -45,16 +48,31 @@ fn commands(refused: &Value) -> Vec<String> {
         .collect()
 }
 
-/// Runs `command`, a hint's `board ...` line, from `caller` with `--json`,
-/// and gives the call's output.
+/// The commands of [`printed`], each required to name `tasks`'s board with
+/// `-C`, shown without it so a test can compare them.
+fn commands(tasks: &Tasks, refused: &Value) -> Vec<String> {
+    let board = tasks.board.workdir().canonicalize().unwrap();
+    (printed(refused).iter())
+        .map(|command| {
+            let words = words(command);
+            assert_eq!(words[..2], ["board", "-C"], "{command}");
+            let named = Path::new(&words[2]).canonicalize().unwrap();
+            assert_eq!(named, board, "{command}");
+            let prefix = format!("board -C {} ", words[2]);
+            let rest = command.strip_prefix(&prefix).unwrap();
+            format!("board {rest}")
+        })
+        .collect()
+}
+
+/// Runs `command`, a hint's `board ...` line, word for word from `caller`
+/// with nothing added, and gives what it printed, the call's output.
 fn ran(tasks: &Tasks, command: &str, caller: &Path) -> Value {
     let words = words(command);
-    let mut arguments = vec!["--json"];
-    arguments.extend(words[1..].iter().map(String::as_str));
-    let output = tasks.run(&arguments, 0, Some(caller), "");
-    let document = json(&output);
-    assert_eq!(output.code, 0, "{command}: {document}");
-    document["data"]["output"].clone()
+    let typed: Vec<&str> = words.iter().map(String::as_str).collect();
+    let output = tasks.run_typed(&typed, 0, caller.to_path_buf(), "");
+    assert_eq!(output.code, 0, "{command}: {}", text(&output.stderr));
+    serde_json::from_slice(&output.stdout).unwrap()
 }
 
 #[test]
@@ -114,12 +132,12 @@ fn repo_root_without_a_reason_is_refused_naming_the_personal_repo_and_with_one_i
         message.contains(&format!("/repos/personal, which pushes to {remote}")),
         "{message}"
     );
-    let hinted = commands(&refused);
+    let hinted = commands(&tasks, &refused);
     assert_eq!(
         hinted,
         [
-            "board tasks add --title 'Queue it' --repo /repos/personal",
-            "board tasks add --title 'Queue it' --repo / --reason '<why it belongs with this \
+            "board tasks add --title='Queue it' --repo /repos/personal",
+            "board tasks add --title='Queue it' --repo / --reason '<why it belongs with this \
              board>'",
         ]
     );
@@ -159,9 +177,9 @@ fn repo_root_without_a_reason_in_a_board_with_no_personal_repo_names_none() {
         (&refused["fields"]["personal"], &refused["fields"]["remote"]),
         (&Value::Null, &Value::Null)
     );
-    let hinted = commands(&refused);
+    let hinted = commands(&tasks, &refused);
     assert_eq!(hinted.len(), 1, "{hinted:?}");
-    let output = ran(&tasks, &hinted[0], tasks.outside.path());
+    let output = ran(&tasks, &printed(&refused)[0], tasks.outside.path());
     assert_eq!(output["path"], "/tasks/queue-it.md");
 }
 
@@ -169,10 +187,7 @@ fn repo_root_without_a_reason_in_a_board_with_no_personal_repo_names_none() {
 fn a_task_routed_to_the_boards_own_tree_needs_no_reason_and_says_no_notes_repo_took_it() {
     let tasks = Tasks::new();
     let output = tasks
-        .call(
-            "add",
-            &["--title", "Call the bank", "--remote", EXAMPLE_ORG],
-        )
+        .call("add", &["--title", "Call the bank", "--remote", TOKENED])
         .unwrap();
     assert_eq!(
         (
@@ -188,11 +203,9 @@ fn a_task_routed_to_the_boards_own_tree_needs_no_reason_and_says_no_notes_repo_t
     );
     assert_eq!(
         output["about"],
-        format!(
-            "Wrote /tasks/call-the-bank.md to this board's own tree, because no notes repo \
-             covers {EXAMPLE_ORG} and the board lists no personal notes repo. tasks add does not \
-             push it, so it stays on this Mac unless something else pushes this board."
-        )
+        "Wrote /tasks/call-the-bank.md to this board's own tree, because no notes repo covers \
+         example-org/home and the board lists no personal notes repo. tasks add does not push \
+         it, so it stays on this Mac unless something else pushes this board."
     );
     let outside = tasks.call("add", &["--title", "Buy milk"]).unwrap();
     assert!(
@@ -211,18 +224,19 @@ fn the_origin_unread_hint_names_the_personal_repo_first_and_each_command_runs_as
         .call_with("add", &["--title", "Ship it"], 0, &checkout, "")
         .unwrap_err();
     assert_eq!(refused["code"], "tasks::repo::origin_unread");
-    let hinted = commands(&refused);
+    let hinted = commands(&tasks, &refused);
     assert_eq!(
         hinted,
         [
-            "board tasks add --title 'Ship it' --repo /repos/personal",
-            "board tasks add --title 'Ship it' --repo / --reason '<why it belongs with this \
+            "board tasks add --title='Ship it' --repo /repos/personal",
+            "board tasks add --title='Ship it' --repo / --reason '<why it belongs with this \
              board>'",
         ]
     );
-    let first = ran(&tasks, &hinted[0], &checkout);
+    let printed = printed(&refused);
+    let first = ran(&tasks, &printed[0], &checkout);
     assert_eq!(first["path"], "/repos/personal/tasks/ship-it.md");
-    let second = ran(&tasks, &hinted[1], &checkout);
+    let second = ran(&tasks, &printed[1], &checkout);
     assert_eq!(second["path"], "/tasks/ship-it.md");
 }
 
@@ -234,15 +248,15 @@ fn the_ambiguous_hint_gives_a_command_for_each_candidate_and_each_runs_as_printe
     tasks.notes_repo("more", Some(covers), &[], true);
     let refused = tasks.refused("add", &["--title", "Ship it", "--remote", EXAMPLE_ORG]);
     assert_eq!(refused["code"], "tasks::repo::ambiguous");
-    let hinted = commands(&refused);
+    let hinted = commands(&tasks, &refused);
     assert_eq!(
         hinted,
         [
-            "board tasks add --title 'Ship it' --repo /repos/more",
-            "board tasks add --title 'Ship it' --repo /repos/work",
+            "board tasks add --title='Ship it' --repo /repos/more",
+            "board tasks add --title='Ship it' --repo /repos/work",
         ]
     );
-    let paths: Vec<Value> = (hinted.iter())
+    let paths: Vec<Value> = (printed(&refused).iter())
         .map(|command| ran(&tasks, command, tasks.outside.path())["path"].clone())
         .collect();
     assert_eq!(
@@ -252,4 +266,95 @@ fn the_ambiguous_hint_gives_a_command_for_each_candidate_and_each_runs_as_printe
             json!("/repos/work/tasks/ship-it.md")
         ]
     );
+}
+
+#[test]
+fn a_reason_that_is_only_spaces_is_missing_and_one_with_words_is_admitted() {
+    let tasks = Tasks::new();
+    let given = |reason: &str| {
+        let flags = ["--title", "Queue it", "--repo", "/", "--reason", reason];
+        tasks.call("add", &flags)
+    };
+    let refused = given("   ").unwrap_err();
+    assert_eq!(refused["code"], "tasks::repo::reason_needed");
+    assert!(!tasks.board.workdir().join("tasks/queue-it.md").exists());
+    let output = given(" a queue item ").unwrap();
+    assert!(
+        (output["about"].as_str().unwrap()).ends_with(" The reason given: a queue item."),
+        "{output}"
+    );
+}
+
+#[test]
+fn a_reason_given_for_a_notes_repo_is_ignored_and_one_for_the_boards_tree_is_printed() {
+    let tasks = Tasks::new();
+    tasks.mounted();
+    let flags = [
+        "--title",
+        "Ship it",
+        "--repo",
+        "/repos/work",
+        "--reason",
+        "a queue item",
+    ];
+    let output = tasks.call("add", &flags).unwrap();
+    assert_eq!(output["path"], "/repos/work/tasks/ship-it.md");
+    let about = output["about"].as_str().unwrap();
+    assert!(!about.contains("reason"), "{about}");
+    let flags = [
+        "--title",
+        "Ship it",
+        "--repo",
+        "/",
+        "--reason",
+        "a queue item",
+    ];
+    let output = tasks.call("add", &flags).unwrap();
+    let about = output["about"].as_str().unwrap();
+    assert!(
+        about.ends_with(" The reason given: a queue item."),
+        "{about}"
+    );
+}
+
+#[test]
+fn every_routing_hint_says_to_add_the_calls_other_flags() {
+    let tasks = Tasks::new();
+    tasks.mounted();
+    let checkout = tasks.checkout();
+    let unread = tasks
+        .call_with("add", &["--title", "Ship it"], 0, &checkout, "")
+        .unwrap_err();
+    let reason = tasks.refused("add", &["--title", "Ship it", "--repo", "/"]);
+    tasks.notes_repo(
+        "more",
+        Some(json!({"covers": ["example-org/home"]})),
+        &[],
+        true,
+    );
+    let ambiguous = tasks.refused("add", &["--title", "Ship it", "--remote", EXAMPLE_ORG]);
+    for refused in [unread, reason, ambiguous] {
+        let hint = refused["recovery"]["text"].as_str().unwrap();
+        assert!(hint.ends_with(", with the call's other flags"), "{hint}");
+    }
+}
+
+#[test]
+fn a_title_that_starts_with_a_dash_runs_as_printed_in_a_hint() {
+    let tasks = Tasks::new();
+    tasks.mounted();
+    let checkout = tasks.checkout();
+    let stdin = json!({"title": "-v is broken"}).to_string();
+    let refused = tasks
+        .call_with("add", &[], 0, &checkout, &stdin)
+        .unwrap_err();
+    assert_eq!(refused["code"], "tasks::repo::origin_unread");
+    let printed = printed(&refused);
+    assert!(
+        printed[0].contains(" --title='-v is broken' "),
+        "{printed:?}"
+    );
+    let output = ran(&tasks, &printed[0], &checkout);
+    let path = output["path"].as_str().unwrap();
+    assert!(path.starts_with("/repos/personal/tasks/"), "{path}");
 }

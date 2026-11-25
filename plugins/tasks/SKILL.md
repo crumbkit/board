@@ -74,10 +74,10 @@ goes to the personal notes repo, such as `--repo /repos/personal`. The
 board's own tree, `--repo /`, stays on this Mac; use it only for tasks that
 belong with the board, such as queue items, with `--reason '<why>'`. Read
 `about` in the output, which says where the task went and whether it left
-this Mac, and tell the person when it did not. To point someone else at a task in a shared
-board, give its URI: `board -C <board> uri <path>` prints one, such as
-`board://acme/team-board/tasks/fix-login`, which `board get` reads from any
-clone the reader's known boards list.
+this Mac, and tell the person when it did not. To point someone else at a
+task in a shared board, give its URI: `board -C <board> uri <path>` prints
+one, such as `board://acme/team-board/tasks/fix-login`, which `board get`
+reads from any clone the reader's known boards list.
 
 ## Sweep as a lead
 
