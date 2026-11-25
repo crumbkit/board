@@ -33,7 +33,7 @@ mod reflow;
 
 use moves::latest_reason;
 pub(crate) use moves::{ReopenInput, pause, reopen, resume};
-pub(crate) use observe::{after_review, fixes, observe, observe_in};
+pub(crate) use observe::{after_review, fixes, observe, observe_in, reviewed};
 pub(crate) use reflow::{ReflowInput, Reflowed, reflow};
 
 /// One change, by path.
