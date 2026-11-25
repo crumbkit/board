@@ -1186,10 +1186,10 @@ fn review_refuses_an_obligation_on_the_planned_paths_while_the_controls_plugin_i
 }
 
 /// A change in review, passing every other review check, whose diff edits
-/// /repos/x/docs/b.md outside its planned paths, with an obligation control
-/// on `covered` only.
-fn adding_a_file_under_an_obligation(board: &Changes, covered: &str) {
-    let (base, head) = board.edited(&[("src/a.rs", "a\n"), ("docs/b.md", "b\n")]);
+/// `added` outside its planned paths, with an obligation control whose
+/// fields beside its kind and text are `reach`.
+fn adding_a_file_under_an_obligation(board: &Changes, added: &str, reach: &Value) {
+    let (base, head) = board.edited(&[("src/a.rs", "a\n"), (added, "b\n")]);
     board.change_at(
         "changes/t.json",
         "review",
@@ -1197,26 +1197,50 @@ fn adding_a_file_under_an_obligation(board: &Changes, covered: &str) {
     );
     board.write("r/1.json", &approving(&head, &base));
     board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
-    let owed = json!({
+    let mut owed = json!({
         "$type": "controls/control/v1",
         "kind": "obligation",
         "requirement": "Sweep the docs.",
         "purpose": "p",
-        "paths": [covered],
     });
+    for (key, value) in reach.as_object().unwrap() {
+        owed[key] = value.clone();
+    }
     board.write("controls/x/docs.json", &owed.to_string());
 }
 
 #[test]
 fn review_refuses_an_obligation_on_a_file_the_change_adds_to_its_plans_paths() {
     let board = Changes::new();
-    adding_a_file_under_an_obligation(&board, "repos/x/docs/**");
+    adding_a_file_under_an_obligation(&board, "docs/b.md", &json!({"paths": ["repos/x/docs/**"]}));
     let refused = board.refusal("advance", &path());
     assert_eq!(refused["code"], "changes::gate::unmet");
     assert_eq!(refused["fields"]["missing"], json!(["obligations-settled"]));
+    let message = refused["message"].as_str().unwrap();
+    assert!(
+        message.contains("the plan's paths or to the files the change adds to them"),
+        "{message}"
+    );
     let unrelated = Changes::new();
-    adding_a_file_under_an_obligation(&unrelated, "repos/x/other/**");
+    adding_a_file_under_an_obligation(
+        &unrelated,
+        "docs/b.md",
+        &json!({"paths": ["repos/x/other/**"]}),
+    );
     assert_eq!(advanced(&unrelated), "land");
+}
+
+#[test]
+fn review_refuses_an_obligation_naming_an_added_file_whose_name_holds_glob_characters() {
+    let board = Changes::new();
+    let named = json!({"applies_to": ["/repos/x/app/[id]/page.tsx"]});
+    adding_a_file_under_an_obligation(&board, "app/[id]/page.tsx", &named);
+    let refused = board.refusal("advance", &path());
+    assert_eq!(refused["fields"]["missing"], json!(["obligations-settled"]));
+    let other = Changes::new();
+    let elsewhere = json!({"applies_to": ["/repos/x/app/i/page.tsx"]});
+    adding_a_file_under_an_obligation(&other, "app/[id]/page.tsx", &elsewhere);
+    assert_eq!(advanced(&other), "land");
 }
 
 #[test]

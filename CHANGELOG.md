@@ -11,8 +11,10 @@
   again to add a file it needs. The check still refuses with
   `changes::paths::outside_plan` when the plan has no paths or git cannot
   list the diff. The `ui-paths` and `data-paths` checks still read every
-  edited file, and the review gate's obligations count the obligations on
-  the added files as well as on the planned paths. A change in flight keeps
+  edited file. An `obligations` check in any phase counts the obligations on
+  the added files as well as on the planned paths, and says so in its
+  detail. The detail names at most ten added files and the body at most 50,
+  each with a count of the rest. A change in flight keeps
   the review instruction of the flow version it stored, which still says
   the gate refuses such a file; run `board changes reflow --path <change>
   --flow development` to take up the new instruction.

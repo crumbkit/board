@@ -670,6 +670,24 @@ fn the_review_gate_passes_a_diff_outside_the_planned_paths_and_names_the_files_i
                 .to_owned()
         )
     );
+    let mut many = reviewed();
+    many.outside = vec![
+        "/repos/x/0.rs",
+        "/repos/x/1.rs",
+        "/repos/x/2.rs",
+        "/repos/x/3.rs",
+        "/repos/x/4.rs",
+        "/repos/x/5.rs",
+        "/repos/x/6.rs",
+        "/repos/x/7.rs",
+        "/repos/x/8.rs",
+        "/repos/x/9.rs",
+        "/repos/x/10.rs",
+        "/repos/x/11.rs",
+    ];
+    let detail = many.check("paths").1;
+    assert!(detail.contains("/repos/x/9.rs, and 2 more."), "{detail}");
+    assert!(!detail.contains("/repos/x/10.rs"), "{detail}");
     let mut unplanned = reviewed();
     unplanned.planned = Vec::new();
     assert_eq!(
@@ -1384,6 +1402,18 @@ fn the_development_review_names_a_reviewer_with_tools_and_a_checkout_and_not_the
     let remedy = change.remedy("review");
     assert!(remedy.contains("tools and a checkout"), "{remedy}");
     assert!(!remedy.contains("board review run"), "{remedy}");
+}
+
+/// An `obligations` check reads the diff, so the obligations on a file the
+/// change adds to its plan's paths count in a phase with no `paths` check.
+#[test]
+fn an_obligations_check_reads_the_diff_with_the_plan_and_the_obligations() {
+    let check: crate::flow::Check =
+        serde_json::from_value(json!({"id": "o", "kind": "obligations"})).unwrap();
+    let read = reads(&[check]);
+    for wanted in [Read::Plan, Read::Diff, Read::Obligations] {
+        assert!(read.contains(&wanted), "{wanted:?} in {read:?}");
+    }
 }
 
 #[test]

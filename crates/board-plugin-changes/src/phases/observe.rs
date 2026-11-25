@@ -364,12 +364,36 @@ fn obligations(
     let rules = if found.outside.is_empty() {
         (answered(host, &found.change, answer)?.as_ref()).map_err(Clone::clone)?
     } else {
-        widened = on_plan(host, &[found.planned.as_slice(), &found.outside].concat())?;
+        let added = found.outside.iter().map(|file| glob_literal(file));
+        widened = on_plan(
+            host,
+            &(found.planned.iter().cloned())
+                .chain(added)
+                .collect::<Vec<_>>(),
+        )?;
         &widened
     };
     Ok((obligations_in(host, rules)?.into_iter())
         .map(|each| each.rule)
         .collect())
+}
+
+/// `file` as a SQLite GLOB pattern that matches only itself, since
+/// `rules.for-paths` reads `*`, `?` and `[` as pattern characters and an
+/// added file is a real name, such as `app/[id]/page.tsx`.
+pub(crate) fn glob_literal(file: &str) -> String {
+    let mut pattern = String::with_capacity(file.len());
+    for character in file.chars() {
+        match character {
+            '[' | '*' | '?' => {
+                pattern.push('[');
+                pattern.push(character);
+                pattern.push(']');
+            }
+            other => pattern.push(other),
+        }
+    }
+    pattern
 }
 
 /// What `planned-rule-paths` checks read: which rules they name the board

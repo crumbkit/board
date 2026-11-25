@@ -187,3 +187,28 @@ fn the_body_lists_the_files_the_change_added_to_its_plans_paths() {
         "{text}"
     );
 }
+
+/// The body lists at most 50 added files and counts the rest, so a change
+/// that adds a generated directory keeps its body inside GitHub's limit.
+#[test]
+fn the_body_lists_fifty_added_files_and_counts_the_rest() {
+    let change = crate::change::from_value(json!({
+        "$type": "changes/change/v1", "title": "T", "mount": "/repos/x", "phase": "land",
+    }))
+    .unwrap();
+    let mut observed = crate::gates::Observed::new(
+        "/changes/t",
+        change,
+        crate::records::Kind::Build,
+        crate::change::Referenced::default(),
+    );
+    observed.outside = (0..52)
+        .map(|number| format!("/repos/x/gen/{number}.rs"))
+        .collect();
+    let text = body(&observed, &[]);
+    assert!(
+        text.contains("- `/repos/x/gen/49.rs`\n- and 2 more\n"),
+        "{text}"
+    );
+    assert!(!text.contains("/repos/x/gen/50.rs"), "{text}");
+}

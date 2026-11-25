@@ -3,9 +3,7 @@
 //! it; the change adds that file to its plan's paths, and the passing
 //! detail names it.
 
-use super::remedy::Values;
 use super::{Observed, kinds};
-use crate::flow::{self, Kind};
 
 /// What is missing for the `paths` check, or none when it passes.
 pub(super) fn missing(observed: &Observed) -> Option<String> {
@@ -19,20 +17,17 @@ pub(super) fn missing(observed: &Observed) -> Option<String> {
     observed.diff_unread.clone()
 }
 
-/// What a passing check says. For a `paths` check that is the files the
-/// change adds to its plan's paths, empty when there are none; any other
-/// kind says what `kinds::passed` gives.
-pub(super) fn passed(observed: &Observed, each: &flow::Check, values: &Values) -> String {
-    if each.kind.known() != Some(&Kind::Paths) {
-        return kinds::passed(observed, each, values);
-    }
+/// What a passing `paths` check says: the files the change adds to its
+/// plan's paths, at most ten of them, or nothing when there are none.
+pub(super) fn passed(observed: &Observed) -> String {
     if observed.outside.is_empty() {
         return String::new();
     }
+    let added: Vec<&str> = observed.outside.iter().map(String::as_str).collect();
     format!(
         "these files are outside the plan's paths, and the change adds them to its paths without \
          a new plan: {}. Their rules were not in the review brief. `board changes pr` lists them \
          in the pull request body.",
-        observed.outside.join(", ")
+        kinds::bounded(&added)
     )
 }
