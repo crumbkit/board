@@ -94,28 +94,7 @@ fn stamp(named: &Path, commit: ObjectId, shared: &[Vec<u8>]) -> Option<Digest> {
         canonical.as_os_str().as_encoded_bytes().to_vec(),
     ]);
     stamp.0.extend_from_slice(shared);
-    // A `.git` file names a linked worktree's git directory; a `.git`
-    // directory is the git directory; with neither, the repository is bare.
-    let dot_git = canonical.join(".git");
-    let git_dir = match fs::read_to_string(&dot_git) {
-        Ok(text) => {
-            stamp.file(&dot_git)?;
-            canonical.join(text.strip_prefix("gitdir:")?.trim())
-        }
-        Err(error) if error.kind() == ErrorKind::IsADirectory => dot_git,
-        Err(error) if absent(&error) => canonical.clone(),
-        Err(_) => return None,
-    };
-    let git_dir = git_dir.canonicalize().ok()?;
-    stamp.directory(&git_dir)?;
-    let commondir = git_dir.join("commondir");
-    stamp.file(&commondir)?;
-    let common = match fs::read_to_string(&commondir) {
-        Ok(text) => git_dir.join(text.trim()).canonicalize().ok()?,
-        Err(error) if absent(&error) => git_dir.clone(),
-        Err(_) => return None,
-    };
-    stamp.directory(&common)?;
+    let (git_dir, common) = stamp.located(&canonical)?;
     let mut seen = HashSet::new();
     stamp.config(&common.join("config"), &mut seen, 0)?;
     stamp.config(&git_dir.join("config.worktree"), &mut seen, 0)?;
@@ -125,6 +104,31 @@ fn stamp(named: &Path, commit: ObjectId, shared: &[Vec<u8>]) -> Option<Digest> {
     stamp.file(&objects.join("pack"))?;
     stamp.file(&objects.join(&hex[..2]).join(&hex[2..]))?;
     Some(hashed(&stamp.0))
+}
+
+/// The stamp of the objects the repository at `named` holds: its pack
+/// directory and each directory of loose objects, whose times change when
+/// a blob arrives by a fetch or a loose write. `None` when the path does
+/// not resolve, a file cannot be read for a reason other than its absence,
+/// or the repository borrows objects through alternates, whose stores this
+/// does not stamp.
+pub(super) fn objects(named: &Path) -> Option<Vec<Vec<u8>>> {
+    let canonical = named.canonicalize().ok()?;
+    let mut stamp = Stamp(vec![
+        b"objects".to_vec(),
+        canonical.as_os_str().as_encoded_bytes().to_vec(),
+    ]);
+    let (_, common) = stamp.located(&canonical)?;
+    let objects = common.join("objects");
+    match fs::symlink_metadata(objects.join("info/alternates")) {
+        Err(error) if absent(&error) => {}
+        _ => return None,
+    }
+    stamp.file(&objects.join("pack"))?;
+    for fanout in 0..=u8::MAX {
+        stamp.file(&objects.join(format!("{fanout:02x}")))?;
+    }
+    Some(stamp.0)
 }
 
 /// Whether a read failed because the file, or a directory above it, is
@@ -137,6 +141,35 @@ fn absent(error: &std::io::Error) -> bool {
 struct Stamp(Vec<Vec<u8>>);
 
 impl Stamp {
+    /// The git directory and common directory of the repository whose
+    /// canonical path is `canonical`, with what was read to find them. A
+    /// `.git` file names a linked worktree's git directory; a `.git`
+    /// directory is the git directory; with neither, the repository is
+    /// bare.
+    fn located(&mut self, canonical: &Path) -> Option<(PathBuf, PathBuf)> {
+        let dot_git = canonical.join(".git");
+        let git_dir = match fs::read_to_string(&dot_git) {
+            Ok(text) => {
+                self.file(&dot_git)?;
+                canonical.join(text.strip_prefix("gitdir:")?.trim())
+            }
+            Err(error) if error.kind() == ErrorKind::IsADirectory => dot_git,
+            Err(error) if absent(&error) => canonical.to_path_buf(),
+            Err(_) => return None,
+        };
+        let git_dir = git_dir.canonicalize().ok()?;
+        self.directory(&git_dir)?;
+        let commondir = git_dir.join("commondir");
+        self.file(&commondir)?;
+        let common = match fs::read_to_string(&commondir) {
+            Ok(text) => git_dir.join(text.trim()).canonicalize().ok()?,
+            Err(error) if absent(&error) => git_dir.clone(),
+            Err(_) => return None,
+        };
+        self.directory(&common)?;
+        Some((git_dir, common))
+    }
+
     /// The path and stat of the file at `path`, followed through symlinks:
     /// its size, times, inode, device and mode, or that it is absent.
     fn file(&mut self, path: &Path) -> Option<()> {

@@ -2,12 +2,14 @@
 //! under (docs/architecture/performance/warm/decisions.md).
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use board_model::{Code, Digest, ObjectId, Source};
 
-use super::{Crossing, Reached};
+use super::{Cache, Crossing, Held, Reached, held, read_mounts, walk};
 use crate::git::Repository;
+use crate::repositories::Repositories;
+use crate::walk::Entry;
 
 /// A mount pointer as probed: what it names, and the repository it opened
 /// or why it could not be read.
@@ -23,6 +25,79 @@ pub(super) struct Probe {
 /// The key of the pointers the tree `root` holds, as `build` lists them.
 pub(super) fn scan(build: &str, root: ObjectId) -> Digest {
     hashed(&[b"pointers", build.as_bytes(), root.to_string().as_bytes()])
+}
+
+/// The key a source's decision or pointer list, keyed `key`, is kept under
+/// when a file in it cannot be read: `key` and the stamp of the objects of
+/// the repository at `repository`, so a blob that arrives there changes
+/// it. `None` when the store cannot be stamped.
+pub(super) fn lacking(key: &Digest, repository: &Path) -> Option<Digest> {
+    let mut fields = vec![b"lacking".to_vec(), key.hex().into_bytes()];
+    fields.extend(super::probes::objects(repository)?);
+    Some(hashed(&fields))
+}
+
+/// A mounted source's pointers, and the key of their list.
+pub(super) struct Listing<F> {
+    pub(super) scan: Digest,
+    /// Its entries and the cache's facts about them, when it was walked.
+    pub(super) walked: Option<(Vec<Entry>, F)>,
+    pub(super) held: Vec<Held>,
+    /// Whether the blob of one of its pointers could not be read.
+    pub(super) unread: bool,
+}
+
+impl Repositories {
+    /// The pointers in the source `commit`, whose tree is `root`, of the
+    /// repository at `repository`, from the list `cache` keeps for it, or
+    /// else by walking it, keeping the list it found when nothing failed to
+    /// read. A list made while a file could not be read is kept under the
+    /// key that also holds the repository's objects ([`lacking`]).
+    pub(super) fn listing<C: Cache>(
+        &self,
+        cache: &mut C,
+        (build, keeping): (&str, bool),
+        (commit, root, repository): (ObjectId, ObjectId, &Path),
+    ) -> Result<Listing<C::Facts>, C::Error> {
+        let scan = scan(build, root);
+        let stamped = |scan: &Digest| lacking(scan, repository);
+        let mut listed = || {
+            let held = cache.pointers(&scan).map(|held| (scan, held));
+            held.or_else(|| {
+                let key = stamped(&scan)?;
+                Some((key, cache.pointers(&key)?))
+            })
+        };
+        // A kept list holds each pointer's mount, so the repository is
+        // opened only to walk the source.
+        if let Some((scan, held)) = keeping.then(&mut listed).flatten() {
+            return Ok(Listing {
+                scan,
+                walked: None,
+                held,
+                unread: false,
+            });
+        }
+        let opened = self.open_at(repository)?;
+        let (entries, facts) = walk(&opened, commit, root, cache)?;
+        let mut held = held(&entries, &|path| C::is_pointer(&facts, path));
+        let unread = read_mounts(&opened, &Source::Commit(commit), &mut held);
+        let listed = if C::complete(&facts, &entries) {
+            Some(scan)
+        } else {
+            stamped(&scan)
+        };
+        let listed = listed.filter(|_| keeping && !unread);
+        if let Some(listed) = listed {
+            cache.put_pointers(&listed, &held)?;
+        }
+        Ok(Listing {
+            scan: listed.unwrap_or(scan),
+            walked: Some((entries, facts)),
+            held,
+            unread,
+        })
+    }
 }
 
 impl<F> Reached<F> {
@@ -49,6 +124,40 @@ impl<F> Reached<F> {
             mounted.key = key;
             mounted.crossings = crossings;
         }
+    }
+
+    /// Says whether `cache` keeps each source's decision. One not kept
+    /// under its key may be kept under the key that also holds its
+    /// repository's objects, as one that lacks a blob is, and then that is
+    /// its key.
+    pub(super) fn kept<C: Cache>(&mut self, cache: &mut C) {
+        let kept: Vec<(bool, Option<Digest>)> = (self.sources.iter())
+            .map(|mounted| {
+                let Some(key) = mounted.key else {
+                    return (false, None);
+                };
+                if cache.kept(&key) {
+                    return (true, None);
+                }
+                let lacking = self.lacking(mounted.commit, &key);
+                (lacking.is_some_and(|lacking| cache.kept(&lacking)), lacking)
+            })
+            .collect();
+        for (mounted, (kept, lacking)) in self.sources.iter_mut().zip(kept) {
+            mounted.kept = kept;
+            mounted.lacking = lacking;
+            if kept && lacking.is_some() {
+                mounted.key = lacking;
+            }
+        }
+    }
+
+    /// The key the decision of the source of `commit`, keyed `key`, is kept
+    /// under when a file in it cannot be read ([`lacking`]). Only its own
+    /// store: a read in another that fails keeps nothing.
+    pub(super) fn lacking(&self, commit: ObjectId, key: &Digest) -> Option<Digest> {
+        let mounted = (self.sources.iter()).find(|mounted| mounted.commit == commit)?;
+        lacking(key, &mounted.repository)
     }
 
     /// Each mount the probes of `commit`'s source and of every source it
