@@ -5,6 +5,7 @@ mod check;
 mod evaluate;
 mod for_path;
 mod for_paths;
+mod glob;
 mod index;
 mod judged;
 mod migrate;
