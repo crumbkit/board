@@ -330,6 +330,28 @@ fn a_source_whose_reference_reaches_a_blob_that_cannot_be_read_is_never_kept_and
 }
 
 #[test]
+fn a_mounted_source_with_a_blob_it_holds_but_cannot_read_is_never_kept_and_its_twin_is() {
+    use std::os::unix::fs::PermissionsExt;
+    for (sealed, expected) in [(true, 0), (false, 1)] {
+        let (library, commit) = library(&[("projects/q.json", LACKED)]);
+        let loose = library.workdir().join(object(library.blob(LACKED)));
+        if sealed {
+            // The store holds the blob, but reading it fails, as an I/O
+            // error would.
+            let unreadable = std::fs::Permissions::from_mode(0o000);
+            std::fs::set_permissions(&loose, unreadable).unwrap();
+        }
+        let scenario = board();
+        scenario.write("vendor.json", Item::File(&mount(&library.path(), commit)));
+        let cache = tempfile::tempdir().unwrap();
+        kept(&scenario, cache.path());
+        let warm = query_as(&scenario, cache.path(), BUILD);
+        assert_eq!(warm.kept, expected, "sealed: {sealed}");
+        assert_eq!(warm.walked, 1 - expected, "sealed: {sealed}");
+    }
+}
+
+#[test]
 fn a_mounted_source_whose_repository_has_alternates_and_lacks_a_blob_is_never_kept() {
     let (library, commit) = library(&[("projects/q.json", LACKED)]);
     let blob = library.blob(LACKED);
