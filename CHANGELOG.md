@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The rules plugin's README lists each code `board rules report` can put
+  in `refused`, says which are warnings that leave every row as it is, and
+  says that `rules::report::run_commit_unnamed` also covers a malformed
+  `versions.commit` and a run Board cannot read.
+
 ## 0.1.3 (2026-11-25)
 
 - `board rules report --path <path>` prints one `rules/report/v1` document
