@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `board search` matches every entry of the board and its mounts, not only
+  typed records. A word matches a Markdown file's first heading and its
+  prose after any frontmatter, a Markdown record's prose, and the text of a
+  JSON file with no `$type`, up to 64 KiB of each; any other file matches by
+  its path. An untyped entry is titled by its first heading or its file
+  name, and the text output prints `doc` as its type. `type:doc` matches
+  entries with no `$type`, and `path:/notes` matches entries whose logical
+  path starts with `/notes`; a value without a leading `/` is refused with
+  `relative_path`. Results of equal rank, and a query of filters alone,
+  come newest first. A `--after` cursor printed by an older build is
+  refused; run the search again. The index format is 29, so the first run
+  of this build builds a new index.
+
 - A `plans/question/v1` whose `blocks` names a `tasks/task/v3`, and an
   `artifacts/artifact/v1` whose `subject` names one, are no longer degraded
   with `board::ref::wrong_type`. Run `board plugin enable plans` and

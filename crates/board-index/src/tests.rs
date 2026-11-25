@@ -86,6 +86,66 @@ fn a_markdown_files_links_come_back_in_order_with_its_fact() {
 }
 
 #[test]
+fn a_file_s_text_is_stored_once_by_its_blob() {
+    let writer = Index::fall_back().unwrap().write().unwrap();
+    let text = |heading: Option<&str>, body: &str| board_model::Text {
+        heading: heading.map(str::to_owned),
+        body: body.to_owned(),
+    };
+    writer
+        .put_text(blob(1), &text(Some("Plan"), "# Plan\nprose"))
+        .unwrap();
+    writer.put_text(blob(1), &text(None, "other")).unwrap();
+    writer.put_text(blob(2), &text(None, "prose")).unwrap();
+    let rows: Vec<(String, Option<String>, String)> = writer
+        .connection()
+        .prepare("SELECT blob, heading, body FROM main.texts ORDER BY blob")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        rows,
+        [
+            (
+                blob(1).to_string(),
+                Some("Plan".to_owned()),
+                "# Plan\nprose".to_owned()
+            ),
+            (blob(2).to_string(), None, "prose".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn an_index_of_the_previous_format_without_texts_is_deleted_and_rebuilt_with_them() {
+    let cache = tempfile::tempdir().unwrap();
+    drop(filled(cache.path()));
+    let file = location(cache.path(), Path::new(ROOT));
+    let previous = (INDEX_VERSION - 1).to_string();
+    let old = Connection::open(&file).unwrap();
+    old.execute_batch("DROP TABLE texts").unwrap();
+    old.execute(
+        "UPDATE state SET value = ?1 WHERE key = 'index_version'",
+        [&previous],
+    )
+    .unwrap();
+    drop(old);
+    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let tables: i64 = index
+        .connection
+        .query_row(
+            "SELECT count(*) FROM sqlite_schema WHERE name = 'texts'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(tables, 1);
+    assert!(!has_fact(index));
+}
+
+#[test]
 fn a_tree_keeps_names_that_show_alike_apart_and_exact_and_its_files_show_them_lossily() {
     let writer = Index::fall_back().unwrap().write().unwrap();
     let names: [&[u8]; 4] = [b"x", b"x.json", b"\xff.md", b"\xfe.md"];

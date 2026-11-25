@@ -2,6 +2,7 @@
 //! Board shares with Flare.
 
 use std::path::Path;
+use std::time::{Duration, SystemTime};
 
 use board_model::{Code, Fields, Refusal};
 use board_scenario::{Item, Scenario};
@@ -20,6 +21,12 @@ const CASES: &str = include_str!(concat!(
     "/../board-search/cases/search-cases.json"
 ));
 
+/// When every record of [`fixture`] was last modified, so results of equal
+/// rank come by path.
+fn written() -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+}
+
 /// A board with two questions of two versions, a task and a decision.
 fn fixture() -> Scenario {
     let scenario = Scenario::board();
@@ -34,24 +41,30 @@ fn fixture() -> Scenario {
     scenario
         .write(
             "plans/q1.json",
-            Item::File(
+            Item::Dated(
                 r#"{"$type": "plans/question/v1", "question": "Which budget line pays?", "by": {"person": "erin"}}"#,
+                written(),
             ),
         )
         .write(
             "plans/q2.json",
-            Item::File(
+            Item::Dated(
                 r#"{"$type": "plans/question/v2", "question": "Can the budget wait?", "by": {"person": "olive"}}"#,
+                written(),
             ),
         )
         .write(
             "tasks/budget.json",
-            Item::File(r#"{"$type": "tasks/task/v2", "title": "Review the budget", "status": "open"}"#),
+            Item::Dated(
+                r#"{"$type": "tasks/task/v2", "title": "Review the budget", "status": "open"}"#,
+                written(),
+            ),
         )
         .write(
             "plans/d1.json",
-            Item::File(
+            Item::Dated(
                 r#"{"$type": "plans/decision/v1", "decision": "Hire two engineers", "by": {"agent": "planner"}}"#,
+                written(),
             ),
         );
     scenario
@@ -317,13 +330,18 @@ fn filters_lists_each_filter_and_each_short_type_with_its_prefix_without_a_board
     assert_eq!(data["fields"][1]["name"], "from");
     assert_eq!(data["fields"][1]["kind"], "person");
     assert_eq!(data["fields"][1]["values"], json!(["me"]));
+    assert_eq!(data["fields"][2]["name"], "path");
+    assert_eq!(data["fields"][2]["kind"], "path");
     assert_eq!(
         data["types"][1],
         json!({"name": "question", "prefix": "plans/question/"})
     );
-    assert_eq!(data["types"].as_array().unwrap().len(), 10);
+    assert_eq!(data["types"][10], json!({"name": "doc", "prefix": null}));
+    assert_eq!(data["types"].as_array().unwrap().len(), 11);
     let shown = board(directory.workdir(), None, &["search", "--filters"]);
-    assert!(text(&shown.stdout).contains("  question  plans/question/*\n"));
+    let shown = text(&shown.stdout);
+    assert!(shown.contains("  question  plans/question/*\n"), "{shown}");
+    assert!(shown.contains("  doc       no $type\n"), "{shown}");
 }
 
 #[test]
@@ -332,4 +350,44 @@ fn a_search_that_matches_nothing_says_so_and_exits_zero() {
     let output = board(scenario.workdir(), None, &["search", "\"no such words\""]);
     assert_eq!(output.code, 0);
     assert_eq!(text(&output.stdout), "no record matches\n");
+}
+
+#[test]
+fn an_untyped_file_prints_doc_as_its_type_and_its_heading_as_its_title_and_json_gives_null() {
+    let scenario = fixture();
+    scenario.write(
+        "notes/offsite.md",
+        Item::File("# Offsite budget review\n\nWe walk the riverbank.\n"),
+    );
+    let output = board(scenario.workdir(), None, &["search", "riverbank"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        "/notes/offsite.md  doc  Offsite budget review\n"
+    );
+    let json = board(scenario.workdir(), None, &["--json", "search", "riverbank"]);
+    assert_eq!(
+        super::json(&json)["data"]["results"],
+        json!([{"path": "/notes/offsite.md", "type": null, "title": "Offsite budget review"}])
+    );
+}
+
+#[test]
+fn a_path_without_a_leading_slash_is_refused_and_one_with_it_runs() {
+    let scenario = fixture();
+    let output = board(
+        scenario.workdir(),
+        None,
+        &["--json", "search", "path:plans"],
+    );
+    assert_eq!(output.code, 2);
+    let rendered = String::from_utf8_lossy(&output.stdout).into_owned()
+        + &String::from_utf8_lossy(&output.stderr);
+    assert!(rendered.contains("relative_path"), "{rendered}");
+    let admitted = board(scenario.workdir(), None, &["search", "path:/plans budget"]);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+    assert_eq!(
+        text(&admitted.stdout),
+        "/plans/q1  question  Which budget line pays?\n/plans/q2  question  Can the budget wait?\n"
+    );
 }

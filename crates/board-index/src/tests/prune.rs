@@ -73,6 +73,7 @@ fn stored(writer: &Writer, unreachable: bool) -> usize {
     writer
         .put_blob(blob(4), Role::Markdown, &markdown())
         .unwrap();
+    writer.put_text(blob(4), &prose()).unwrap();
     writer
         .put_validation(blob(1), blob(2), &valid("/a"))
         .unwrap();
@@ -91,6 +92,7 @@ fn stored(writer: &Writer, unreachable: bool) -> usize {
     writer
         .put_blob(blob(5), Role::Markdown, &markdown())
         .unwrap();
+    writer.put_text(blob(5), &prose()).unwrap();
     for gone in [3, 5] {
         writer.put_blob(blob(gone), Role::Json, &record()).unwrap();
         writer
@@ -104,24 +106,40 @@ fn stored(writer: &Writer, unreachable: bool) -> usize {
     writer
         .put_validation(blob(3), blob(2), &valid("/d"))
         .unwrap();
-    // One tree row, three blobs with two links and two bodies, two
+    // One tree row, three blobs with two links, two bodies and a text, two
     // validations and their refs.
-    1 + 3 + 2 + 2 + 2 + 2
+    1 + 3 + 2 + 2 + 2 + 2 + 1
+}
+
+/// A Markdown file's text.
+fn prose() -> board_model::Text {
+    board_model::Text {
+        heading: Some("Plan".to_owned()),
+        body: "# Plan".to_owned(),
+    }
 }
 
 /// The rows of every table a prune may delete from.
 fn counts(index: &Index) -> Vec<(String, i64)> {
-    ["trees", "blobs", "bodies", "validations", "refs", "links"]
-        .into_iter()
-        .map(|table| {
-            let sql = format!("SELECT count(*) FROM main.{table}");
-            let count = index
-                .connection
-                .query_row(&sql, [], |row| row.get(0))
-                .unwrap();
-            (table.to_owned(), count)
-        })
-        .collect()
+    [
+        "trees",
+        "blobs",
+        "bodies",
+        "validations",
+        "refs",
+        "links",
+        "texts",
+    ]
+    .into_iter()
+    .map(|table| {
+        let sql = format!("SELECT count(*) FROM main.{table}");
+        let count = index
+            .connection
+            .query_row(&sql, [], |row| row.get(0))
+            .unwrap();
+        (table.to_owned(), count)
+    })
+    .collect()
 }
 
 /// `index` holding the facts `stored` gives, with blob 3 unreachable when

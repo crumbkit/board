@@ -3,7 +3,7 @@
 
 /// The index format, which names the index file. `open.rs` and
 /// docs/architecture/index.md say what a new format does to older files.
-pub const INDEX_VERSION: u32 = 28;
+pub const INDEX_VERSION: u32 = 29;
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
@@ -77,6 +77,13 @@ CREATE TABLE blobs (
 -- ROWID, which suits small rows.
 CREATE TABLE bodies (
     blob TEXT NOT NULL UNIQUE,
+    body TEXT NOT NULL
+);
+-- What search reads in a Markdown file or a JSON file with no `$type`: its
+-- first heading and its prose, cut at 64 KiB. A rowid table, as `bodies`.
+CREATE TABLE texts (
+    blob TEXT NOT NULL UNIQUE,
+    heading TEXT,
     body TEXT NOT NULL
 );
 CREATE TABLE validations (
@@ -186,11 +193,12 @@ DELETE FROM temp.probed;
 /// validation and its references go unless both blobs are reached, a
 /// decision, a slot or a pointer list unless this run reached its key, and
 /// a probe unless this run used it.
-pub(crate) const PRUNE: [&str; 11] = [
+pub(crate) const PRUNE: [&str; 12] = [
     "DELETE FROM main.trees WHERE tree NOT IN temp.kept",
     "DELETE FROM main.blobs WHERE blob NOT IN temp.kept",
     "DELETE FROM main.links WHERE blob NOT IN temp.kept",
     "DELETE FROM main.bodies WHERE blob NOT IN temp.kept",
+    "DELETE FROM main.texts WHERE blob NOT IN temp.kept",
     "DELETE FROM main.validations
      WHERE record NOT IN temp.kept OR schema NOT IN temp.kept",
     "DELETE FROM main.refs WHERE record NOT IN temp.kept OR schema NOT IN temp.kept",
@@ -289,6 +297,9 @@ WHERE (blob, role) IN (SELECT blob, role FROM temp.resolved);
 CREATE TEMP VIEW IF NOT EXISTS bodies AS
 SELECT * FROM main.bodies
 WHERE blob IN (SELECT blob FROM temp.resolved WHERE kind = 'record');
+CREATE TEMP VIEW IF NOT EXISTS texts AS
+SELECT * FROM main.texts
+WHERE blob IN (SELECT blob FROM temp.resolved WHERE role IN ('markdown', 'json'));
 CREATE TEMP VIEW IF NOT EXISTS records AS
 SELECT e.source, e.path, e.logical, e.blob, e.type, e.status, e.code, b.body
 FROM temp.entries AS e

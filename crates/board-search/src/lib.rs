@@ -3,7 +3,7 @@
 //! text.
 //!
 //! The first slice of the syntax has plain words, quoted phrases, the
-//! `type:` and `from:` filters, a comma inside a filter's value meaning any
+//! `type:`, `from:` and `path:` filters, a comma inside a filter's value meaning any
 //! of, and a leading minus that excludes a part. A space between parts
 //! means all of them must match. Any other `field:` is an unknown filter
 //! until the increment that adds the field lands.
@@ -17,7 +17,9 @@
 //! shared case file, pinned in `cases/pin.json` to the Flare commit it came
 //! from, and this parser passes every case in it. [`fields`] holds Board's
 //! own filter list and the short type names `type:` takes, which Flare
-//! does not share.
+//! does not share. The `path:` filter, the `relative_path` code and the
+//! short type `doc` are Board's own, and Flare refuses them until it adopts
+//! them.
 
 mod error;
 pub mod fields;

@@ -23,6 +23,7 @@ directory of each other board whose recorded root it can see is gone.
 | `validations` | schema result: code, failing JSON pointer, reason, failure count | record blob, schema blob |
 | `refs` | references a valid record makes, ordered: JSON pointer, target path, accepted types, `x-board-local` | record blob, schema blob, ordinal |
 | `links` | a Markdown file's links to board paths outside its frontmatter, in order, as written | blob, ordinal |
+| `texts` | a Markdown or untyped JSON file's first heading and prose, for search (docs/commands/search.md) | blob |
 | `mounts` | each mount point and the commit it reaches, or its code | source, path |
 | `pointers` | a mounted tree's mount pointers | scan key, path |
 | `directories` | each directory's stat and items as a walk listed them ([performance/warm/index.md](performance/warm/index.md)) | path |
@@ -104,9 +105,8 @@ names a new record's file with `.json`. Beneath a non-JSON file, or naming an
 existing entry by its `.json` file, the path stays `path::not_found`.
 All paths resolve in one snapshot, and the board is checked once, only
 when a path resolves.
-Each answer is what the path alone gives, with the limit applied to each, so
-a run prints at most the number of paths times the limit reference lines,
-plus a note or error for each path. A refused path does not stop the others and makes the run exit 1. Text
+Each path's answer is limited on its own (STANDARDS.md 23), plus a note or
+error for each path. A refused path does not stop the others and makes the run exit 1. Text
 prints each path's lines under a `==> <path> <==` header, as `get` does, and
 an error names its path on a `key:` line. JSON is always one `board/refs-report/v2`,
 for one path too. `data` holds each path's references in the order asked, and

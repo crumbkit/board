@@ -2,9 +2,9 @@
 //! Typed references).
 
 use percent_encoding::percent_decode_str;
-use pulldown_cmark::{CowStr, Event, LinkType, Options, Parser, Tag};
+use pulldown_cmark::{CowStr, Event, LinkType, Options, Parser, Tag, TagEnd};
 
-use crate::frontmatter::body;
+use crate::frontmatter::{body, split};
 use crate::path::LogicalPath;
 
 /// The destination of each inline, reference and image link in `bytes`, as
@@ -35,6 +35,47 @@ pub fn links(bytes: &[u8]) -> Vec<String> {
         })
         .map(CowStr::into_string)
         .collect()
+}
+
+/// The most bytes of a file's prose the index keeps for search.
+pub const TEXT_BYTES: usize = 64 * 1024;
+
+/// What search reads in a file: its first heading as plain text, and its
+/// prose after any frontmatter, cut to [`TEXT_BYTES`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Text {
+    pub heading: Option<String>,
+    pub body: String,
+}
+
+/// The text of the file holding `bytes`, or `None` when they are not
+/// UTF-8. The prose is cut on the character boundary at or before
+/// [`TEXT_BYTES`], and the heading is the first one in that prose.
+pub fn text(bytes: &[u8]) -> Option<Text> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let prose = split(text).map_or(text, |(_, prose)| prose);
+    let prose = &prose[..prose.floor_char_boundary(TEXT_BYTES)];
+    Some(Text {
+        heading: heading(prose),
+        body: prose.to_owned(),
+    })
+}
+
+/// The text of the first heading in `prose`, its inline markup dropped.
+fn heading(prose: &str) -> Option<String> {
+    let mut events = Parser::new(prose);
+    events.find(|event| matches!(event, Event::Start(Tag::Heading { .. })))?;
+    let mut words = String::new();
+    for event in events {
+        match event {
+            Event::End(TagEnd::Heading(_)) => break,
+            Event::Text(part) | Event::Code(part) => words.push_str(&part),
+            Event::SoftBreak | Event::HardBreak => words.push(' '),
+            _ => {}
+        }
+    }
+    let words = words.trim();
+    (!words.is_empty()).then(|| words.to_owned())
 }
 
 /// The logical path that `destination`, a link in the file at `file`,

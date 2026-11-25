@@ -8,6 +8,8 @@
 ["blobs","CREATE TABLE blobs (\n    blob TEXT NOT NULL,\n    role TEXT NOT NULL,\n    kind TEXT NOT NULL,\n    type TEXT,\n    code TEXT,\n    reason TEXT,\n    PRIMARY KEY (blob, role)\n) WITHOUT ROWID"]
 ["bodies","CREATE TABLE bodies (\n    blob TEXT NOT NULL UNIQUE,\n    body TEXT NOT NULL\n)"]
 ["sqlite_autoindex_bodies_1",null]
+["texts","CREATE TABLE texts (\n    blob TEXT NOT NULL UNIQUE,\n    heading TEXT,\n    body TEXT NOT NULL\n)"]
+["sqlite_autoindex_texts_1",null]
 ["validations","CREATE TABLE validations (\n    record TEXT NOT NULL,\n    schema TEXT NOT NULL,\n    code TEXT,\n    pointer TEXT,\n    reason TEXT,\n    failures INTEGER,\n    PRIMARY KEY (record, schema)\n) WITHOUT ROWID"]
 ["refs","CREATE TABLE refs (\n    record TEXT NOT NULL,\n    schema TEXT NOT NULL,\n    ordinal INTEGER NOT NULL,\n    pointer TEXT NOT NULL,\n    target TEXT NOT NULL,\n    accepts TEXT,\n    local INTEGER NOT NULL,\n    PRIMARY KEY (record, schema, ordinal)\n) WITHOUT ROWID"]
 ["links","CREATE TABLE links (\n    blob TEXT NOT NULL,\n    ordinal INTEGER NOT NULL,\n    destination TEXT NOT NULL,\n    PRIMARY KEY (blob, ordinal)\n) WITHOUT ROWID"]

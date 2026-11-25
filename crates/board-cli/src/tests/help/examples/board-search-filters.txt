@@ -1,6 +1,7 @@
 Filters:
   type:  The kind of record, by a short name that matches every version of its type.
   from:  Who wrote the record: the person, agent or program its `by` names, or me for the board's owner.
+  path:  The start of the entry's logical path, such as /tasks; it must start with /.
 Types:
   task      tasks/task/*
   question  plans/question/*
@@ -12,3 +13,4 @@ Types:
   run       runs/run/*
   artifact  artifacts/artifact/*
   rule      rules/rule/*
+  doc       no $type

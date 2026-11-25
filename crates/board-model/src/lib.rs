@@ -38,7 +38,7 @@ pub use crate::flow::flow_version;
 pub use crate::frontmatter::{Feature, FrontmatterError, frontmatter};
 pub use crate::json::{Canonical, JsonError, canonical_json, parse_json};
 pub use crate::location::{Board, Location, Object, ObjectId, Source};
-pub use crate::markdown::{links, reached};
+pub use crate::markdown::{TEXT_BYTES, Text, links, reached, text};
 pub use crate::moved::{Moved, swapped};
 pub use crate::name::{CapabilityName, NameError, PluginCode, PluginCodeError, PluginName};
 pub use crate::path::{

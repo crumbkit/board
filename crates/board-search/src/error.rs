@@ -26,6 +26,8 @@ pub enum ErrorCode {
     /// A `from:` value that names nobody, such as `me` on a board whose
     /// configuration names no owner.
     UnknownPerson,
+    /// A `path:` value that does not start with `/`. Board's own.
+    RelativePath,
 }
 
 impl ErrorCode {
@@ -42,6 +44,7 @@ impl ErrorCode {
             Self::TooLong => "too_long",
             Self::UnknownType => "unknown_type",
             Self::UnknownPerson => "unknown_person",
+            Self::RelativePath => "relative_path",
         }
     }
 }
@@ -112,7 +115,7 @@ fn unknown_field(name: &str) -> String {
     let lower = name.to_ascii_lowercase();
     if LATER.contains(&lower.as_str()) {
         return format!(
-            "There is no filter called {name} yet; use type: or from:, or put the text in quotes to search for it."
+            "There is no filter called {name} yet; use type:, from: or path:, or put the text in quotes to search for it."
         );
     }
     let closest = Field::ALL
@@ -125,7 +128,7 @@ fn unknown_field(name: &str) -> String {
             field.name()
         ),
         _ => format!(
-            "There is no filter called {name}; use type: or from:, or put the text in quotes to search for it."
+            "There is no filter called {name}; use type:, from: or path:, or put the text in quotes to search for it."
         ),
     }
 }
@@ -143,6 +146,9 @@ pub(crate) fn message(code: ErrorCode, span: Span, field: Option<Field>, name: &
             "from needs a person, an agent or a program, such as from:me or from:claude-code."
                 .to_owned()
         }
+        (ErrorCode::EmptyValue, Some(Field::Path)) => {
+            "path needs a board path that starts with /, such as path:/tasks.".to_owned()
+        }
         (ErrorCode::EmptyValue, _) => {
             "type needs a kind of record, such as type:question.".to_owned()
         }
@@ -159,6 +165,9 @@ pub(crate) fn message(code: ErrorCode, span: Span, field: Option<Field>, name: &
         (ErrorCode::UnknownType, _) => format!(
             "There is no type called {name}; use one of {}.",
             crate::fields::type_names()
+        ),
+        (ErrorCode::RelativePath, _) => format!(
+            "path:{name} needs a board path that starts with /, such as path:/tasks."
         ),
         (ErrorCode::UnknownPerson, _) => format!(
             "from:{name} needs the board's owner; add \"owner\": \"<name>\" to $XDG_CONFIG_HOME/board/config.json, or name the person."
