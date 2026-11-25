@@ -57,20 +57,29 @@ pub struct Signing {
 }
 
 impl Signing {
-    /// Signing's state with `setting`, the personal board's: on when the
-    /// allowed signers file has an `owner` line. A file Board does not trust
-    /// reads as on, so the acts it lists are refused as unsigned.
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "board-ops's effects module is the one reader of the allowed signers file"
-    )]
-    pub fn state(&self, setting: SigningSetting) -> board_model::Signing {
-        let signers = match self.allowed.as_deref().map(board_plugin::owner_listed) {
-            None | Some(Ok(Listed::Missing)) => Signers::Missing,
-            Some(Ok(Listed::NoOwner)) => Signers::NoOwner,
-            Some(Ok(Listed::Owner) | Err(_)) => Signers::Owner,
+    /// Signing's state with `personal`'s setting, or the default setting
+    /// with no personal board: on when the allowed signers file or the
+    /// attention one has an `owner` line. A file Board does not trust reads
+    /// as on, so the acts it lists are refused as unsigned, and one whose
+    /// presence Board cannot tell refuses them as missing.
+    pub fn state(&self, personal: Option<&Board>) -> board_model::Signing {
+        let setting = personal.map_or_else(SigningSetting::default, |personal| {
+            personal.config().signing.clone()
+        });
+        let signers = match listed(self.allowed.as_deref()) {
+            Signers::Missing | Signers::NoOwner
+                if listed(self.attention_allowed.as_deref()) == Signers::Owner =>
+            {
+                Signers::Owner
+            }
+            signers => signers,
         };
-        board_model::Signing::new(signers, setting)
+        // A board that holds a signed record matters only when no owner
+        // line is there, so only then is it read.
+        let held = signers != Signers::Owner
+            && setting.configured.is_none()
+            && personal.is_some_and(holds_signature);
+        board_model::Signing::new(signers, setting, held)
     }
 
     /// The allowed signers file as a refusal names it.
@@ -79,6 +88,20 @@ impl Signing {
             || "Board's allowed signers file".to_owned(),
             |file| file.display().to_string(),
         )
+    }
+}
+
+/// What the allowed signers file `file` says of the owner.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "board-ops's effects module is the one reader of the allowed signers file"
+)]
+fn listed(file: Option<&Path>) -> Signers {
+    match file.map(board_plugin::owner_listed) {
+        None | Some(Ok(Listed::Missing)) => Signers::Missing,
+        Some(Ok(Listed::NoOwner)) => Signers::NoOwner,
+        Some(Ok(Listed::Unreadable)) => Signers::Unreadable,
+        Some(Ok(Listed::Owner) | Err(_)) => Signers::Owner,
     }
 }
 
@@ -271,48 +294,41 @@ impl Asker {
     /// Signing's state with the personal board's setting, or the default
     /// setting when the known boards file names no personal board.
     pub(crate) fn signing_now(&self) -> Result<board_model::Signing, EffectError> {
-        let setting = match &self.personal {
-            Some(_) => self.personal(String::new)?.config().signing.clone(),
-            None => SigningSetting::default(),
+        let personal = match &self.personal {
+            Some(_) => Some(self.personal(String::new)?),
+            None => None,
         };
-        Ok(self.signing.state(setting))
+        Ok(self.signing.state(personal.as_ref()))
     }
 }
 
-/// The personal board's config with `signing.configured` set, and the
-/// blob it replaces, which records that Board has verified one of the
-/// owner's signatures, so that from now on a missing allowed signers file
-/// refuses the acts signing lists. None when it is set already or the
-/// config cannot be read.
-pub(crate) fn configured(personal: &Board) -> Option<(ObjectId, Value)> {
-    let (blob, mut value, config) = crate::board::config_file(personal.repositories()).ok()?;
-    if config.signing.configured {
-        return None;
-    }
-    let signing = (value.as_object_mut()?)
-        .entry("signing")
-        .or_insert_with(|| serde_json::json!({}));
-    signing
-        .as_object_mut()?
-        .insert("configured".to_owned(), Value::Bool(true));
-    Some((blob, value))
+/// Whether `personal` holds a signed record: an answer under
+/// `effects/seen/` or an order under `orders/` with a signature. A board
+/// that does has had signing configured, so a missing allowed signers file
+/// refuses the acts signing lists. A directory Board cannot list reads as
+/// holding one.
+fn holds_signature(personal: &Board) -> bool {
+    let signed = |directory: &str, record_type: &str| {
+        let Ok(names) = (personal.repository()).names(&board_model::Source::WorkingTree, directory)
+        else {
+            return true;
+        };
+        (names.iter().filter(|name| !name.directory)).any(|name| {
+            let at = format!("{directory}/{}", name.segment);
+            let record = read_record(personal, &at, record_type);
+            record.map_or(true, |record| {
+                record.is_some_and(|record| {
+                    (record.get("signature").and_then(Value::as_str))
+                        .is_some_and(|signature| !signature.is_empty())
+                })
+            })
+        })
+    };
+    signed(SEEN, SEEN_TYPE) || signed(ORDERS, board_model::ORDER_TYPE)
 }
 
-/// The logical path of a board's config.
-pub(crate) fn config_path() -> LogicalPath {
-    "/.board/board"
-        .parse()
-        .expect("the config's path is a logical path")
-}
-
-/// Writes [`configured`] in its own commit. A failure leaves signing on,
-/// and the next verified signature writes it.
-pub(crate) fn mark_configured(personal: &Board) {
-    if let Some((blob, value)) = configured(personal) {
-        let bytes = canonical_json(&value);
-        let _ = personal.put(&config_path(), Expect::Blob(blob), bytes.as_bytes());
-    }
-}
+/// The directory of orders in the personal board.
+const ORDERS: &str = "orders";
 
 /// Whether the answer at `approved`, a logical path in `personal`, approves
 /// the act on `target`, as [`board_model::approving`] says. `Err` says why
@@ -349,7 +365,7 @@ fn seen(
     };
     if seen.answer == Answer::Approve {
         let signature = seen.signature.as_deref().unwrap_or_default();
-        let now = signing.state(personal.config().signing.clone());
+        let now = signing.state(Some(personal));
         match (now.need(Act::Effect), &seen.approved) {
             (Need::FileMissing, _) => return Err(file_missing(signing, &id)),
             (Need::Answer, Some(approved)) if signature.is_empty() => {

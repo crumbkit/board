@@ -7,12 +7,13 @@ const FILE: &str = "/Users/ana/signers";
 fn setting(require: Option<&[Act]>, configured: bool) -> SigningSetting {
     SigningSetting {
         require: require.map(<[Act]>::to_vec),
-        configured,
+        configured: configured.then_some(true),
     }
 }
 
+/// Signing's state for a board that holds no signed record.
 fn signing(signers: Signers, setting: SigningSetting) -> Signing {
-    Signing::new(signers, setting)
+    Signing::new(signers, setting, false)
 }
 
 #[test]
@@ -53,6 +54,40 @@ fn the_state_comes_from_the_owner_line_and_the_configured_flag() {
     assert_eq!(state(Signers::Owner, true), SigningState::Configured);
     assert_eq!(state(Signers::NoOwner, true), SigningState::Configured);
     assert_eq!(state(Signers::Missing, true), SigningState::FileMissing);
+}
+
+#[test]
+fn a_board_that_holds_a_signed_record_is_configured_unless_the_owner_set_configured_false() {
+    let held = |signers, configured: Option<bool>| {
+        let setting = SigningSetting {
+            require: None,
+            configured,
+        };
+        Signing::new(signers, setting, true).state
+    };
+    assert_eq!(held(Signers::Missing, None), SigningState::FileMissing);
+    assert_eq!(held(Signers::NoOwner, None), SigningState::Configured);
+    assert_eq!(held(Signers::Missing, Some(false)), SigningState::Off);
+    let read: SigningSetting = serde_json::from_value(json!({"configured": false})).unwrap();
+    assert_eq!(read.configured, Some(false));
+}
+
+#[test]
+fn a_signers_file_board_cannot_read_refuses_the_listed_acts_whatever_configured_says() {
+    for configured in [None, Some(false), Some(true)] {
+        let setting = SigningSetting {
+            require: None,
+            configured,
+        };
+        let unreadable = Signing::new(Signers::Unreadable, setting, false);
+        assert_eq!(
+            unreadable.state,
+            SigningState::FileMissing,
+            "{configured:?}"
+        );
+        assert_eq!(unreadable.need(Act::Effect), Need::FileMissing);
+        assert_eq!(unreadable.need(Act::Plan), Need::Answer);
+    }
 }
 
 #[test]
@@ -179,13 +214,20 @@ fn answer(extra: &serde_json::Value) -> serde_json::Value {
 
 #[test]
 fn an_answer_heard_not_heard_or_from_an_owner_surface_approves_while_the_heard_check_is_silent() {
+    use std::time::{Duration, UNIX_EPOCH};
+    let now = UNIX_EPOCH + Duration::from_secs(10_000_000);
     let question = question();
-    let heard =
-        super::approving(&answer(&json!({"heard": true})), Some(&question), EFFECT).unwrap();
-    assert_eq!(heard.heard, Some(true));
-    let unheard =
-        super::approving(&answer(&json!({"heard": false})), Some(&question), EFFECT).unwrap();
-    assert_eq!(unheard.heard, Some(false));
+    let words = "Approve the review effect";
+    let typed = answer(&json!({"words": words}));
+    let heard = super::approving(&typed, Some(&question), EFFECT).unwrap();
+    let log = format!("9999000 {}\n", super::prompt_digest(words));
+    assert!(heard.heard(Some(&log), now));
+    assert!(!heard.heard(None, now));
+    // The stored field is the writer's claim, so the check never reads it.
+    let claimed = answer(&json!({"words": words, "heard": true}));
+    let claimed = super::approving(&claimed, Some(&question), EFFECT).unwrap();
+    assert!(!claimed.heard(Some(""), now));
+    assert_eq!(claimed.session.as_deref(), Some("local_1"));
     let pane = answer(&json!({"written_by": "plans/pane-answer"}));
     let surface = super::approving(&pane, Some(&question), EFFECT).unwrap();
     assert_eq!(surface.surface.as_deref(), Some("plans/pane-answer"));
@@ -231,6 +273,18 @@ fn words_are_heard_when_a_prompt_log_entry_from_the_last_30_days_holds_their_dig
     let old = format!("{} {digest}\n", 10_000_000 - 31 * 24 * 60 * 60);
     assert!(!super::heard_in(&old, "Approve it, yes", now));
     assert!(!super::heard_in("garbage\n\n", "Approve it, yes", now));
+}
+
+#[test]
+fn one_word_or_a_digest_logged_after_now_is_never_heard() {
+    use std::time::{Duration, UNIX_EPOCH};
+    let now = UNIX_EPOCH + Duration::from_secs(10_000_000);
+    let yes = format!("9999000 {}\n", super::prompt_digest("yes"));
+    assert!(!super::heard_in(&yes, "yes", now));
+    assert!(!super::heard_in(&yes, "  yes \n", now));
+    let words = "Approve it, yes";
+    let later = format!("10000001 {}\n", super::prompt_digest(words));
+    assert!(!super::heard_in(&later, words, now));
 }
 
 #[test]

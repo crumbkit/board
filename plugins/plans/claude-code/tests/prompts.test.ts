@@ -33,6 +33,11 @@ test('the log keeps 30 days of well-formed lines and drops the rest', () => {
   expect(kept([fresh, edge, old, 'garbage', `${now} short`, ''].join('\n'), now)).toEqual([fresh, edge])
 })
 
+test('the log drops a line dated after now, so no digest stays for good', () => {
+  const now = 10_000_000
+  expect(kept(`${now + 1} ${ABC}\n${now} ${ABC}`, now)).toEqual([`${now} ${ABC}`])
+})
+
 test('only a prompt the owner typed at the terminal or through Remote Control is logged', () => {
   const typed = { text: 'yes', origin: { kind: 'composer' } }
   expect(typedByOwner(typed)).toBe(true)

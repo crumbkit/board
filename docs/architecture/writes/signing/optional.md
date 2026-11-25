@@ -13,15 +13,21 @@ a signature:
   `owner-write` (a put under `effects/` or removing a board's config),
   `plan`, `data` and `mockup` (a change's sign-offs). With `require` left
   out, the list is `order`, `effect` and `owner-write`.
-- Signing is on when Board's allowed signers file has a line whose
-  principals name `owner`. Board reads the file on each call
-  (`board_plugin::owner_listed`); a file it does not trust reads as on.
+- Signing is on when Board's allowed signers file, or the attention one,
+  has a line whose principals name `owner`. Board reads the files on each
+  call (`board_plugin::owner_listed`); a file it does not trust reads as
+  on. A path whose presence Board cannot tell, such as a link to nothing or
+  a directory it cannot search, refuses each listed act with
+  `board::signing::file_missing`.
 - With signing on, a listed act needs Touch ID and an unlisted act takes an
   answer. With signing off, every act takes an answer.
-- Board writes `signing.configured` true on the first signature it
-  verifies of an approval or an order. After that, a missing allowed
-  signers file refuses each listed act with `board::signing::file_missing`
-  and never falls back to an answer.
+- Signing is configured once the personal board holds a signed record: a
+  seen record under `effects/seen/` or an order under `orders/` with a
+  `signature`. Board reads that only when no `owner` line is found, and
+  writes nothing. `signing.configured` overrides it: true or false, which
+  only a signed edit sets. While configured, a missing allowed signers file
+  refuses each listed act with `board::signing::file_missing` and never
+  falls back to an answer.
 - An edit of `signing` needs a signature whenever signing is on, whatever
   `require` lists. A plugin never writes `.board/`.
 - `board orders pinned` and `board orders signers` give the state in their
@@ -38,11 +44,8 @@ a signature:
 - With signing off, an approval without `--approved` or `--signature` is
   refused with `board::signing::not_approved`. With signing on and effects
   listed, `--approved` is refused the same way.
-- Once Board has verified a signature, a missing allowed signers file
-  refuses an approval with `board::signing::file_missing`.
-- The first approval whose signature Board verifies writes
-  `signing.configured` true in the personal board's config, in the answer's
-  commit.
+- Once the personal board holds a signed record, a missing allowed signers
+  file refuses an approval with `board::signing::file_missing`.
 - A put of a board's config that changes `signing` is an edit of it.
 - With signing off, no owner's write asks for a signature.
 
@@ -65,7 +68,11 @@ an edit of the order voids the answer (`board_model::approving`).
   board-plans mod logs the SHA-256 of each prompt the owner types at the
   terminal or through Remote Control, and of each of its lines, in
   `~/.local/state/board/prompts/<session>`, kept 30 days and never synced.
+  Words of one word are never heard, nor a digest dated after the check.
   Board records `heard` and does not yet refuse an answer by it.
+- A check reads `heard` from the prompt log of the answer's `by.session`
+  when it runs (`Approving::heard`), never from the answer's `heard`
+  field, which whoever wrote the answer chose.
 
 ## Limits
 
@@ -77,3 +84,6 @@ an edit of the order voids the answer (`board_model::approving`).
   heard; the owner answers through the questions pane, Board.app or /ask in
   Claude Code.
 - A prompt the owner pasted from an agent counts as typed.
+- Board reads `signing` from the working tree's `.board/board.json`, so an
+  agent with a shell that writes the file directly changes `require` or
+  `configured` without Touch ID. The guard covers `board put` only.

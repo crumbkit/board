@@ -185,18 +185,108 @@ fn with_signing_on_and_effects_unlisted_an_answer_approves() {
 }
 
 #[test]
-fn the_first_verified_signature_marks_signing_configured_in_the_answers_commit() {
+fn a_signed_approval_in_the_board_makes_signing_configured_without_writing_the_config() {
     let (scenario, mine) = (board(), personal());
     let board = opened(&scenario, Some("review"), Some(&mine));
     let first = asked(decide(&board, "/pulls/7"));
-    let refused = asked(decide(&board, "/pulls/8"));
+    let second = asked(decide(&board, "/pulls/8"));
     let owner = asker(None, Some(&mine));
-    answer(&owner, &refused, Answer::Refuse, None, None, None).unwrap();
-    assert_eq!(read(&mine, ".board/board.json").get("signing"), None);
+    let before = read(&mine, ".board/board.json");
     answer(&owner, &first, Answer::Approve, None, None, None).unwrap();
-    let config = read(&mine, ".board/board.json");
-    assert_eq!(config["signing"], json!({"configured": true}));
-    assert_eq!(config["commit_on_put"], json!(false));
+    assert_eq!(read(&mine, ".board/board.json"), before);
+    answered(&mine, &second, &json!({"person": "ana"}));
+    let error = answer(
+        &missing(&mine),
+        &second,
+        Answer::Approve,
+        None,
+        None,
+        Some(ANSWER.to_owned()),
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), Code::SigningFileMissing, "{error}");
+}
+
+#[test]
+fn a_board_holding_a_signed_order_refuses_when_the_signers_file_is_gone_before_any_flag_is_set() {
+    let (scenario, mine) = (board(), personal());
+    // Only that a signature is there counts, so any text stands in for one.
+    let order = json!({"$type": board_model::ORDER_TYPE, "signature": "signed"});
+    mine.write("orders/deadband.json", Item::File(&order.to_string()));
+    let board = opened(&scenario, Some("review"), Some(&mine));
+    let id = asked(decide(&board, "/pulls/7"));
+    answered(&mine, &id, &json!({"person": "ana"}));
+    let error = answer(
+        &missing(&mine),
+        &id,
+        Answer::Approve,
+        None,
+        None,
+        Some(ANSWER.to_owned()),
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), Code::SigningFileMissing, "{error}");
+    set(&mine, &json!({"configured": false}));
+    answer(
+        &missing(&mine),
+        &id,
+        Answer::Approve,
+        None,
+        None,
+        Some(ANSWER.to_owned()),
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_dangling_signers_link_refuses_each_listed_act_with_no_signature_ever_verified() {
+    let (scenario, mine) = (board(), personal());
+    let board = opened(&scenario, Some("review"), Some(&mine));
+    let id = asked(decide(&board, "/pulls/7"));
+    answered(&mine, &id, &json!({"person": "ana"}));
+    let link = signer().directory().join("dangling");
+    std::os::unix::fs::symlink(signer().directory().join("nowhere"), &link).unwrap();
+    let owner = Asker {
+        signing: Signing {
+            allowed: Some(link),
+            ..signing()
+        },
+        ..asker(None, Some(&mine))
+    };
+    let error = answer(
+        &owner,
+        &id,
+        Answer::Approve,
+        None,
+        None,
+        Some(ANSWER.to_owned()),
+    );
+    assert_eq!(code(error), Code::SigningFileMissing);
+}
+
+#[test]
+fn an_owner_line_in_the_attention_signers_file_alone_turns_signing_on() {
+    let (scenario, mine) = (board(), personal());
+    let board = opened(&scenario, Some("review"), Some(&mine));
+    let id = asked(decide(&board, "/pulls/7"));
+    answered(&mine, &id, &json!({"person": "ana"}));
+    let owner = Asker {
+        signing: Signing {
+            allowed: Some(no_owner()),
+            attention_allowed: Some(signer().allowed()),
+            ..signing()
+        },
+        ..asker(None, Some(&mine))
+    };
+    let error = answer(
+        &owner,
+        &id,
+        Answer::Approve,
+        None,
+        None,
+        Some(ANSWER.to_owned()),
+    );
+    assert_eq!(code(error), Code::SigningNotApproved);
 }
 
 #[test]

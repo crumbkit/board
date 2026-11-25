@@ -636,6 +636,10 @@ fn an_answer_whose_words_the_owner_typed_in_its_session_is_heard_and_one_they_di
     let (host, _home) = with_log("Go, after the release.");
     let elsewhere = json!({"path": QUESTION, "option": "a", "words": "Go, after the release.", "session": "local_other"});
     assert_eq!(heard_of(&host, &elsewhere), Some(json!(false)));
+    let (host, _home) = with_log("yes");
+    let one_word =
+        json!({"path": QUESTION, "option": "a", "words": "yes", "session": "local_heard"});
+    assert_eq!(heard_of(&host, &one_word), Some(json!(false)));
     let (host, _home) = with_log("Go.");
     let option_text = json!({"path": QUESTION, "option": "a", "session": "local_heard"});
     assert_eq!(heard_of(&host, &option_text), Some(json!(false)));

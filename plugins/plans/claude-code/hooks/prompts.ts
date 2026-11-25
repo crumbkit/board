@@ -30,12 +30,12 @@ export async function digests(text: string): Promise<string[]> {
   return [...new Set(found)]
 }
 
-/** The lines of `log` from the last 30 days before `now`, in seconds; a line that does not read as `<seconds> <digest>` is dropped. */
+/** The lines of `log` from the last 30 days up to `now`, in seconds; a line dated after `now` or that does not read as `<seconds> <digest>` is dropped. */
 export function kept(log: string, now: number): string[] {
   const since = now - PROMPT_DAYS * DAY_SECONDS
   return log.split('\n').filter(line => {
     const [at, hex, ...rest] = line.trim().split(/\s+/)
-    return rest.length === 0 && /^[0-9a-f]{64}$/.test(hex ?? '') && Number(at) >= since
+    return rest.length === 0 && /^[0-9a-f]{64}$/.test(hex ?? '') && Number(at) >= since && Number(at) <= now
   })
 }
 

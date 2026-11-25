@@ -12,8 +12,8 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use super::{
-    ANSWERED, Asker, EFFECT_TYPE, EffectError, PENDING, SEEN, Signing, approved_by, config_path,
-    configured, file_missing, hold, read_held, root, seen, verified,
+    ANSWERED, Asker, EFFECT_TYPE, EffectError, PENDING, SEEN, Signing, approved_by, file_missing,
+    hold, read_held, root, seen, verified,
 };
 use crate::board::Board;
 use crate::put::{Expect, Failure, PutError, PutReport, Removal, Schemas};
@@ -236,7 +236,7 @@ pub(super) fn landed(
 /// now; either is checked before it is written. Otherwise an approval may
 /// instead name `approved`, the owner's answer that approves the effect,
 /// which is checked as [`board_model::approving`] says. A plugin may not
-/// answer. The first signature Board verifies marks signing configured.
+/// answer.
 pub fn answer(
     asker: &Asker,
     id: &str,
@@ -256,9 +256,8 @@ pub fn answer(
     let (effect, blob) = read_pending(&personal, id)?;
     let not_found = || EffectError::NotFound { id: id.to_owned() };
     let mut seen = Seen::new(id, answer, reason);
-    let mut signed_now = false;
     if answer == Answer::Approve {
-        let now = asker.signing.state(personal.config().signing.clone());
+        let now = asker.signing.state(Some(&personal));
         let what = || format!("pending effect {id}");
         match (now.need(Act::Effect), signature, approved) {
             (Need::FileMissing, ..) => return Err(file_missing(&asker.signing, id)),
@@ -273,7 +272,6 @@ pub fn answer(
             (_, Some(signature), _) => {
                 verified(&effect, asker.signing.allowed.as_deref(), &signature)?;
                 seen.signature = Some(signature);
-                signed_now = true;
             }
             (Need::Answer, None, Some(path)) => {
                 approved_by(&personal, &path, id)
@@ -290,7 +288,6 @@ pub fn answer(
             }
             (_, None, None) => {
                 seen.signature = Some(signed(asker, &personal, &effect)?);
-                signed_now = true;
             }
         }
     }
@@ -300,15 +297,10 @@ pub fn answer(
         .map_err(|_| not_found())?;
     // An effect asked again after the owner removed its answer replaces the
     // copy kept from the first answer.
-    let mut records = vec![
+    let records = vec![
         (at, json!(seen), Expect::Absent),
         (kept, json!(effect), Expect::Any),
     ];
-    // The first signature Board verifies marks signing configured, in the
-    // answer's commit.
-    if signed_now && let Some((blob, config)) = configured(&personal) {
-        records.push((config_path(), config, Expect::Blob(blob)));
-    }
     let pending = Removal {
         path: format!("/{PENDING}/{id}")
             .parse()

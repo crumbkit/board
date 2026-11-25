@@ -226,8 +226,10 @@ or `~/.local/state/board/prompts/<session>`: lines of `<unix seconds>
 last 30 days. `plugins/plans/claude-code/hooks/prompts.ts` writes that log
 from each prompt the owner submits at the terminal or through Remote
 Control; it keeps only digests, on the Mac, and never syncs them. An answer
-whose option text stands in for the owner's words is not heard. Board
-records `heard` and refuses no answer by it.
+whose option text stands in for the owner's words is not heard, and nor
+are words of one word, such as "yes", or a digest dated in the future.
+Board records `heard` and refuses no answer by it. `heard: true` in a
+record proves nothing: a check reads the prompt log again when it runs.
 
 `heard` has limits:
 

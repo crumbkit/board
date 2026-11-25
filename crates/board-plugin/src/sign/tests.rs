@@ -865,3 +865,18 @@ fn an_untrusted_signers_file_is_refused_before_it_is_read() {
         "{refused:?}"
     );
 }
+
+#[test]
+fn a_dangling_link_or_a_directory_board_cannot_search_reads_as_unreadable_and_not_missing() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let signer = Signer::new();
+    let link = signer.directory().join("dangling");
+    std::os::unix::fs::symlink(signer.directory().join("nowhere"), &link).unwrap();
+    assert_eq!(owner_listed(&link).unwrap(), Listed::Unreadable);
+    let closed = signer.directory().join("closed");
+    std::fs::create_dir(&closed).unwrap();
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let listed = owner_listed(&closed.join("allowed_signers"));
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(listed.unwrap(), Listed::Unreadable);
+}

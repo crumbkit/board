@@ -227,17 +227,17 @@ fn signing_lists_a_change_sign_off_only_while_it_is_on() {
     use board_model::{Act, Signers, Signing, SigningSetting};
     let all = SigningSetting {
         require: Some(Act::ALL.to_vec()),
-        configured: false,
+        configured: None,
     };
-    let off = Signing::new(Signers::NoOwner, all.clone());
+    let off = Signing::new(Signers::NoOwner, all.clone(), false);
     assert!(crate::gates::signing::signed_acts(&off).is_empty());
-    let on = Signing::new(Signers::Owner, all);
+    let on = Signing::new(Signers::Owner, all, false);
     assert_eq!(
         crate::gates::signing::signed_acts(&on)
             .into_iter()
             .collect::<Vec<_>>(),
         [Act::Plan, Act::Data, Act::Mockup]
     );
-    let default = Signing::new(Signers::Owner, SigningSetting::default());
+    let default = Signing::new(Signers::Owner, SigningSetting::default(), false);
     assert!(crate::gates::signing::signed_acts(&default).is_empty());
 }

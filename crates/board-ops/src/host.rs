@@ -291,7 +291,11 @@ pub trait Host {
     /// signing on with the default setting, so an answer approves none of
     /// the acts it lists.
     fn signing(&self) -> Signing {
-        Signing::new(board_model::Signers::Owner, SigningSetting::default())
+        Signing::new(
+            board_model::Signers::Owner,
+            SigningSetting::default(),
+            false,
+        )
     }
     /// Board's allowed signers file, as signing's state line names it.
     fn signers_file(&self) -> String {
@@ -630,19 +634,13 @@ impl Host for Hosted<'_> {
     )]
     fn sign_order(&self, order: &Order) -> Result<String, SignOrderError> {
         let root = self.board.repository().path();
-        let signature = crate::effects::sign_order(&self.plugins.signing, root, order)?;
-        if let Some(personal) = self.personal() {
-            crate::effects::mark_configured(&personal);
-        }
-        Ok(signature)
+        crate::effects::sign_order(&self.plugins.signing, root, order)
     }
 
     fn signing(&self) -> Signing {
-        let setting = (self.personal()).map_or_else(
-            || self.board.config().signing.clone(),
-            |personal| personal.config().signing.clone(),
-        );
-        self.plugins.signing.state(setting)
+        // With no personal board, the default setting: never the called
+        // board's own, which others may commit to.
+        self.plugins.signing.state(self.personal().as_ref())
     }
 
     fn signers_file(&self) -> String {

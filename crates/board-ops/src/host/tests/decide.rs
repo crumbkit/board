@@ -177,7 +177,7 @@ fn a_built_ins_decide_checks_an_approval_against_the_allowed_signers_and_without
     };
     let id = ask(true).unwrap_err().1.unwrap();
     owner.answer(&id, Answer::Approve);
-    // The approval's signature marked signing configured, so a decide with
+    // The board now holds a signed approval, so signing is configured and a decide with
     // no allowed signers file is refused until the file is back.
     let (code, _) = ask(false).unwrap_err();
     assert_eq!(code, "board::signing::file_missing");

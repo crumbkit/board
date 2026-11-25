@@ -372,14 +372,21 @@ pub enum Listed {
     NoOwner,
     /// A line names `owner` among its principals.
     Owner,
+    /// Whether a file is there cannot be told: the path is a link to
+    /// nothing, or a directory on the way cannot be searched.
+    Unreadable,
 }
 
 /// Whether the allowed signers file `file` has a line whose principals
 /// name `owner` exactly. A file Board does not trust is refused, as
-/// `verify` refuses it, before it is read.
+/// `verify` refuses it, before it is read. A link to nothing, or a path
+/// whose directories cannot be searched, is [`Listed::Unreadable`].
 pub fn owner_listed(file: &Path) -> Result<Listed, SignError> {
-    if !file.exists() {
-        return Ok(Listed::Missing);
+    match file.try_exists() {
+        Ok(true) => {}
+        Ok(false) if file.symlink_metadata().is_ok() => return Ok(Listed::Unreadable),
+        Ok(false) => return Ok(Listed::Missing),
+        Err(_) => return Ok(Listed::Unreadable),
     }
     let text = read_signers(file)?;
     let owner = (text.lines().filter_map(Entry::parse)).any(|entry| {

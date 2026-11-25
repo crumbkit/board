@@ -1,9 +1,10 @@
 //! Which of the owner's acts need a Touch ID signature, and which take an
 //! answer in chat (docs/architecture/writes/signing.md, Optional signing).
 //!
-//! Signing is on when Board's allowed signers file has an `owner` line, and
-//! stays on once Board has verified a signature, which it records as
-//! `signing.configured` in the personal board's `.board/board.json`. With
+//! Signing is on when Board's allowed signers file, or the attention one,
+//! has an `owner` line, and stays on once the personal board holds a signed
+//! approval or order, unless the owner's signed edit sets
+//! `signing.configured` false in its `.board/board.json`. With
 //! signing on, an act the setting's `require` lists needs Touch ID and any
 //! other act takes an answer. With signing off, every act takes an answer.
 
@@ -63,10 +64,12 @@ pub struct SigningSetting {
     /// when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub require: Option<Vec<Act>>,
-    /// Whether Board has verified one of the owner's signatures. Once it
-    /// has, a missing allowed signers file refuses the listed acts.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub configured: bool,
+    /// Whether signing is configured, so that a missing allowed signers
+    /// file refuses the listed acts. Left out, the personal board decides:
+    /// it is configured once it holds a signed approval or order. Only the
+    /// owner's signed edit sets it false, which turns signing off again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configured: Option<bool>,
 }
 
 impl SigningSetting {
@@ -95,6 +98,9 @@ pub enum Signers {
     NoOwner,
     /// A line names `owner`.
     Owner,
+    /// Whether a file is there cannot be told, such as for a link to
+    /// nothing or a directory Board cannot search.
+    Unreadable,
 }
 
 /// Whether signing is on.
@@ -130,10 +136,14 @@ pub struct Signing {
 }
 
 impl Signing {
-    /// The state `signers` and `setting` give.
-    pub fn new(signers: Signers, setting: SigningSetting) -> Self {
-        let state = match (setting.configured, signers) {
-            (true, Signers::Missing) => SigningState::FileMissing,
+    /// The state `signers` and `setting` give, where `held` says whether
+    /// the personal board holds a signed approval or order.
+    pub fn new(signers: Signers, setting: SigningSetting, held: bool) -> Self {
+        let configured = setting.configured.unwrap_or(held);
+        let state = match (configured, signers) {
+            // Board cannot tell whether a file is there, so it refuses as
+            // if one it verified against were gone.
+            (_, Signers::Unreadable) | (true, Signers::Missing) => SigningState::FileMissing,
             (true, _) => SigningState::Configured,
             (false, Signers::Owner) => SigningState::On,
             (false, _) => SigningState::Off,
@@ -194,17 +204,29 @@ impl Signing {
 /// The id of the option an answer chooses to approve an act.
 pub const APPROVE_OPTION: &str = "approve";
 
-/// What Board read of an answer that approves an act. Both fields are
-/// recorded and neither decides: the check that an agent's answer carries
-/// words the owner typed reports `heard` and refuses nothing.
+/// What Board read of an answer that approves an act. None of it decides
+/// yet: the check that an agent's answer carries words the owner typed,
+/// [`Approving::heard`], refuses nothing while it runs silent.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Approving {
     /// The owner's surface that wrote the answer, such as
     /// `plans/pane-answer`, when one did.
     pub surface: Option<String>,
-    /// Whether the answer's words are a prompt the owner typed in the
-    /// session that wrote it, when that was checked.
-    pub heard: Option<bool>,
+    /// The session the answer names in `by.session`, whose prompt log
+    /// says whether the owner typed its words.
+    pub session: Option<String>,
+    /// The answer's words.
+    pub words: String,
+}
+
+impl Approving {
+    /// Whether the answer's words are a prompt the owner typed, as `log`,
+    /// the prompt log of [`Approving::session`] read at the check, says.
+    /// The answer's own `heard` field is never read: whoever wrote the
+    /// answer chose it.
+    pub fn heard(&self, log: Option<&str>, now: std::time::SystemTime) -> bool {
+        log.is_some_and(|log| heard_in(log, &self.words, now))
+    }
 }
 
 /// Whether `answer`, a `plans/answer/v1`, approves the act on `target`,
@@ -251,7 +273,8 @@ pub fn approving(
     }
     Ok(Approving {
         surface: text(answer, "written_by"),
-        heard: answer.get("heard").and_then(serde_json::Value::as_bool),
+        session: answer.get("by").and_then(|by| text(by, "session")),
+        words: text(answer, "words").unwrap_or_default(),
     })
 }
 
@@ -275,19 +298,28 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     })
 }
 
+/// The fewest words an answer's words hold to be heard, so that a word
+/// as common as "yes" typed anywhere in the session does not count.
+const HEARD_WORDS: usize = 2;
+
 /// Whether `log`, a session's prompt log of lines `<unix seconds>
 /// <digest>`, holds the digest of `words` from the last [`PROMPT_DAYS`]
-/// days before `now`. A line that does not read so is passed over.
+/// days up to `now`. Words of fewer than `HEARD_WORDS` words are never
+/// heard, and a line dated after `now` or that does not read so is passed
+/// over.
 pub fn heard_in(log: &str, words: &str, now: std::time::SystemTime) -> bool {
+    if words.split_whitespace().count() < HEARD_WORDS {
+        return false;
+    }
     let digest = prompt_digest(words);
-    let since = now
+    let now = now
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs())
-        .saturating_sub(PROMPT_DAYS * 24 * 60 * 60);
+        .map_or(0, |elapsed| elapsed.as_secs());
+    let since = now.saturating_sub(PROMPT_DAYS * 24 * 60 * 60);
     log.lines().any(|line| {
         let mut parts = line.split_whitespace();
         let at = parts.next().and_then(|at| at.parse::<u64>().ok());
-        at.is_some_and(|at| at >= since) && parts.next() == Some(digest.as_str())
+        at.is_some_and(|at| (since..=now).contains(&at)) && parts.next() == Some(digest.as_str())
     })
 }
 
