@@ -9,14 +9,12 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::board;
-use crate::change::{attached, current, kind_of, pull_of, read, referenced};
-use crate::diff::{edited, outside};
+use crate::change::{attached, kind_of, pull_of, read, referenced};
 use crate::flow::of_change;
 use crate::gates::{
     Observed, REPORT_TYPE, RUN_TYPE, objects, ran_on, reviewed_head, same_commit, sections,
 };
-use crate::phases::{PathInput, after_review, fixes, plan_file, plan_text};
-use crate::records::ChangeRecord;
+use crate::phases::{PathInput, after_review, fixes, plan_file, plan_text, reviewed};
 use crate::{PLUGIN, to_value};
 
 /// Severities in the order a report's findings are counted.
@@ -333,7 +331,13 @@ pub(crate) fn body(observed: &Observed, closes: &[String]) -> String {
             "## Work in progress\n\nIt moved into build past the WIP limit: {reason}"
         ));
     }
-    if !observed.outside.is_empty() {
+    if let Some(unread) = &observed.diff_unread {
+        parts.push(format!(
+            "## {ADDED}\n\nThe change's diff could not be listed, so the files it adds to its \
+             plan's paths are not known: {}. Fix that and run `board changes pr` again.",
+            one_line(Some(&Value::from(unread.as_str())))
+        ));
+    } else if !observed.outside.is_empty() {
         let added: Vec<String> = observed
             .outside
             .iter()
@@ -382,20 +386,6 @@ fn evidence(observed: &Observed) -> Vec<String> {
     lines
 }
 
-/// The files the change's diff edits that no path of its plan matches,
-/// none when it has no head or plan paths or git cannot list the diff,
-/// which the review gate's `paths` check reports.
-fn added(host: &dyn Host, change: &ChangeRecord) -> Result<Vec<String>, PluginError> {
-    let (_, _, planned) = current(host, change)?;
-    let Some(head) = change.head.as_deref().filter(|_| !planned.is_empty()) else {
-        return Ok(Vec::new());
-    };
-    match edited(host, &change.mount, head)? {
-        Ok(files) => outside(host, &files, &planned),
-        Err(_) => Ok(Vec::new()),
-    }
-}
-
 /// The pages of the GitHub issues among `tickets`, which the body closes.
 fn issue_urls(host: &dyn Host, tickets: &[String]) -> Result<Vec<String>, PluginError> {
     let found = referenced(host, tickets)?;
@@ -436,7 +426,7 @@ pub(crate) fn pr(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     observed.cited = cited;
     observed.plan = plan;
     observed.plan_file = plan_file;
-    observed.outside = added(host, &observed.change)?;
+    reviewed(host, &mut observed)?;
     if let Some(flow) = of_change(host, &path, &observed.change)? {
         let checks = flow.phases.iter().flat_map(|phase| &phase.checks);
         observed.after_review = after_review(host, &observed, checks)?;

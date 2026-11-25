@@ -392,10 +392,7 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
                     (Status::Missing, format!("{detail}{unanchored}"))
                 }
                 (Some(detail), None) => (Status::Missing, detail),
-                (None, _) if each.kind.known() == Some(&CheckKind::Paths) => {
-                    (Status::Pass, paths_added(observed))
-                }
-                (None, _) => (Status::Pass, kinds::passed(observed, each, &values)),
+                (None, _) => (Status::Pass, paths::passed(observed, each, &values)),
             };
             let (code, actor, said) = if left_out.is_empty() {
                 let (code, said) = (code_of(observed, &plan, each), remedy::of(each, &values));
@@ -551,7 +548,7 @@ fn evaluate(
         CheckKind::Field => kinds::field_missing(observed, each),
         CheckKind::Records => kinds::records_missing(observed, each),
         CheckKind::Run => run_missing(observed, each.scope.unwrap_or(Scope::Full)),
-        CheckKind::Paths => paths_missing(observed),
+        CheckKind::Paths => paths::missing(observed),
         CheckKind::Tasks => tasks_missing(observed),
         CheckKind::Understood => kinds::understood_missing(observed, each),
         CheckKind::Mockups => match each.part {
@@ -758,31 +755,6 @@ fn run_missing(observed: &Observed, scope: Scope) -> Option<String> {
     (!passed).then(|| format!("no attached run of {suite} on {head} is full, clean and passing"))
 }
 
-fn paths_missing(observed: &Observed) -> Option<String> {
-    if observed.planned.is_empty() {
-        return Some(
-            "the change's plan declares no paths, so every edited file is outside them; write the \
-             plan again with `board changes plan` and its paths"
-                .to_owned(),
-        );
-    }
-    observed.diff_unread.clone()
-}
-
-/// What a passing `paths` check says: the files the change's diff edits
-/// that no planned path matches, which the change adds to its plan's
-/// paths without writing the plan again; empty when there are none.
-fn paths_added(observed: &Observed) -> String {
-    if observed.outside.is_empty() {
-        return String::new();
-    }
-    format!(
-        "the change adds the files its diff edits outside the plan's paths to them: {}; their \
-         rules were not in the brief, and `board changes pr` lists them in the pull request body",
-        observed.outside.join(", ")
-    )
-}
-
 /// The head commit a report covers: the right side of its `base..head`
 /// range.
 pub(crate) fn reviewed_head(report: &Map<String, Value>) -> Option<Value> {
@@ -794,6 +766,7 @@ pub(crate) fn reviewed_head(report: &Map<String, Value>) -> Option<Value> {
 pub(crate) mod design;
 pub(crate) use design::{mockups, ux_missing};
 pub(crate) mod kinds;
+mod paths;
 pub(crate) mod remedy;
 
 #[cfg(test)]

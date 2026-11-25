@@ -1185,6 +1185,40 @@ fn review_refuses_an_obligation_on_the_planned_paths_while_the_controls_plugin_i
     assert_eq!(refused["fields"]["missing"], json!(["obligations-settled"]));
 }
 
+/// A change in review, passing every other review check, whose diff edits
+/// /repos/x/docs/b.md outside its planned paths, with an obligation control
+/// on `covered` only.
+fn adding_a_file_under_an_obligation(board: &Changes, covered: &str) {
+    let (base, head) = board.edited(&[("src/a.rs", "a\n"), ("docs/b.md", "b\n")]);
+    board.change_at(
+        "changes/t.json",
+        "review",
+        &json!({"head": head, "records": ["/r/1"]}),
+    );
+    board.write("r/1.json", &approving(&head, &base));
+    board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
+    let owed = json!({
+        "$type": "controls/control/v1",
+        "kind": "obligation",
+        "requirement": "Sweep the docs.",
+        "purpose": "p",
+        "paths": [covered],
+    });
+    board.write("controls/x/docs.json", &owed.to_string());
+}
+
+#[test]
+fn review_refuses_an_obligation_on_a_file_the_change_adds_to_its_plans_paths() {
+    let board = Changes::new();
+    adding_a_file_under_an_obligation(&board, "repos/x/docs/**");
+    let refused = board.refusal("advance", &path());
+    assert_eq!(refused["code"], "changes::gate::unmet");
+    assert_eq!(refused["fields"]["missing"], json!(["obligations-settled"]));
+    let unrelated = Changes::new();
+    adding_a_file_under_an_obligation(&unrelated, "repos/x/other/**");
+    assert_eq!(advanced(&unrelated), "land");
+}
+
 #[test]
 fn review_finds_no_obligations_while_the_controls_plugin_is_not_enabled() {
     let board = Changes::enabling(&["changes"]);

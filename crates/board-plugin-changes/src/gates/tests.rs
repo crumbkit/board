@@ -664,9 +664,9 @@ fn the_review_gate_passes_a_diff_outside_the_planned_paths_and_names_the_files_i
         outside.check("paths"),
         (
             "pass",
-            "the change adds the files its diff edits outside the plan's paths to them: \
-             /repos/x/b.rs, /repos/x/c.rs; their rules were not in the brief, and `board \
-             changes pr` lists them in the pull request body"
+            "these files are outside the plan's paths, and the change adds them to its paths \
+             without a new plan: /repos/x/b.rs, /repos/x/c.rs. Their rules were not in the \
+             review brief. `board changes pr` lists them in the pull request body."
                 .to_owned()
         )
     );

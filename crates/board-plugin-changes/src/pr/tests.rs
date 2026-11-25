@@ -151,7 +151,8 @@ fn the_review_line_names_the_commits_accepted_after_the_report() {
 }
 
 /// The files the change's diff edits outside the plan's paths are listed
-/// under their own heading, which is left out when there are none.
+/// under their own heading, which is left out when there are none and says
+/// why when the diff could not be listed.
 #[test]
 fn the_body_lists_the_files_the_change_added_to_its_plans_paths() {
     let change = crate::change::from_value(json!({
@@ -172,6 +173,16 @@ fn the_body_lists_the_files_the_change_added_to_its_plans_paths() {
             "## Files added to the plan's paths\n\nThe change edits these files, which no path \
              in its plan named when the plan was written:\n\n- `/repos/x/b.rs`\n- \
              `/repos/x/c'd.md`\n\n## Evidence"
+        ),
+        "{text}"
+    );
+    observed.diff_unread = Some("`git diff` failed in /r:\n bad object".to_owned());
+    let text = body(&observed, &[]);
+    assert!(
+        text.contains(
+            "## Files added to the plan's paths\n\nThe change's diff could not be listed, so the \
+             files it adds to its plan's paths are not known: `git diff` failed in /r: bad \
+             object. Fix that and run `board changes pr` again.\n\n## Evidence"
         ),
         "{text}"
     );

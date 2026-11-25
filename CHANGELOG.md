@@ -3,13 +3,19 @@
 ## Unreleased
 
 - The review gate's `paths` check passes when the change's diff edits files
-  that no path of its plan matches. Its detail names them as files the
-  change adds to its plan's paths, and `changes pr` lists them in the pull
-  request body under "Files added to the plan's paths", so an agent no longer
-  writes its plan again to add a file it needs. The check still refuses
-  with `changes::paths::outside_plan` when the plan has no paths or git
-  cannot list the diff, and the `ui-paths` and `data-paths` checks still
-  read every edited file.
+  that no path of its plan matches. Its detail says that these files are
+  outside the plan's paths and that the change adds them to its paths
+  without a new plan, and names them. `changes pr` lists them in the pull
+  request body under "Files added to the plan's paths", or says there that
+  the diff could not be listed and why. An agent no longer writes its plan
+  again to add a file it needs. The check still refuses with
+  `changes::paths::outside_plan` when the plan has no paths or git cannot
+  list the diff. The `ui-paths` and `data-paths` checks still read every
+  edited file, and the review gate's obligations count the obligations on
+  the added files as well as on the planned paths. A change in flight keeps
+  the review instruction of the flow version it stored, which still says
+  the gate refuses such a file; run `board changes reflow --path <change>
+  --flow development` to take up the new instruction.
 
 - In the plan phase, `board changes next` and `board changes advance` ask
   the rules plugin for the rules on the plan's paths once, where they asked
