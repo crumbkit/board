@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.3 (2026-11-25)
+
 - `board rules report --path <path>` prints one `rules/report/v1` document
   of every rule, group and compliance suite that reaches a repository, for
   its CI to upload: each rule's result, each group's rolled-up state, each
