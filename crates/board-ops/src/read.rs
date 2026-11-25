@@ -93,13 +93,17 @@ impl Board {
     /// Resolves `path`, following pointers, and lists the directory there
     /// one level deep, without following pointers inside it. A path that
     /// ends at a file lists that file. Each entry has the kind and status
-    /// `check` gives it, from the index kept under `cache`.
+    /// `check` gives it, from the index kept under `cache`. Like `check`, it
+    /// reads the kept rows of each mounted source wholly in its scope
+    /// instead of deciding that source again. An `ls` of the root is
+    /// unscoped, so it reads the working tree's kept decision too.
     pub fn ls(&self, path: &LogicalPath, cache: Option<&Path>) -> Result<LsReport, ReadError> {
         let location = self.locate(path)?;
         let display = display(&location, path);
+        let scope = (display != LogicalPath::root()).then_some(&display);
         let index = self.index(cache).map_err(CheckError::from);
         let snapshot = index
-            .and_then(|index| self.snapshot(index, Some(&display), Need::Report))
+            .and_then(|index| self.snapshot(index, scope, Need::Check))
             .map_err(|source| ReadError::Check { source })?;
         let checked: HashMap<(&Source, &str), (Kind, Status)> = snapshot
             .report
