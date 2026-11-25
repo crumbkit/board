@@ -44,16 +44,17 @@ pub(crate) fn find(
 }
 
 /// Writes `crossing` at its path, replacing the crossing `prior` names only
-/// if it is still the one there.
+/// if it is still the one there, and with no prior only if nothing is.
 pub(crate) fn write(
     host: &dyn Host,
     crossing: &CrossingRecord,
     prior: Option<&str>,
 ) -> Result<(), PluginError> {
-    let mut line = json!({"path": path(&crossing.digest), "record": crossing});
-    if let Some(blob) = prior {
-        line["expect"] = json!(blob);
-    }
+    let line = json!({
+        "path": path(&crossing.digest),
+        "expect": prior.unwrap_or("none"),
+        "record": crossing,
+    });
     host.put(&[line])
         .map(|_| ())
         .map_err(|error| refused("put --batch", &error.refusal()))

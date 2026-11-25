@@ -1,19 +1,58 @@
-//! The line that writes a flow's version takes no expect, so two starts
-//! that both find the version missing both succeed: the version's path
-//! names its content, and the second writes the same bytes the first did.
+//! The line that writes a flow's version expects nothing at its path, the
+//! answer `blob_at` read. Of two starts that both find the version
+//! missing, the second is refused as stale and writes nothing, and its
+//! rerun finds the version and writes no version line.
 
-use board_ops::{Host, Limit, QueryError, QueryReport, Settings};
+use std::cell::RefCell;
+
+use board_model::ObjectId;
+use board_ops::{Host, Limit, PutError, PutReport, QueryError, QueryReport, Settings};
+use serde_json::{Value, json};
 
 use crate::flow::{development, version_line, version_path};
 
-/// A host that holds nothing: every query answers with no rows.
-struct Lacking(Settings);
+/// The blob another writer stores at the version.
+const THEIRS: &str = "1111111111111111111111111111111111111111";
+
+/// A host that holds at most the version, as `THEIRS`, and applies each
+/// put line's expect as Board does under its put lock: a line whose expect
+/// the held blob does not match refuses the whole batch as stale.
+struct Lacking {
+    settings: Settings,
+    /// The blob at the version, if any.
+    held: RefCell<Option<String>>,
+    /// Whether another writer stores the version just before the next put.
+    racing: RefCell<bool>,
+    /// The batches that landed.
+    landed: RefCell<Vec<Vec<Value>>>,
+}
+
+impl Lacking {
+    fn new(racing: bool) -> Self {
+        Self {
+            settings: Settings {
+                now: std::time::SystemTime::UNIX_EPOCH,
+                day_start: None,
+                utc_offset: 0,
+                caller: None,
+                environment: board_ops::Variables::default(),
+                cache_home: None,
+            },
+            held: RefCell::new(None),
+            racing: RefCell::new(racing),
+            landed: RefCell::default(),
+        }
+    }
+}
 
 impl Host for Lacking {
     fn query(&self, _sql: &str, _limit: Limit) -> Result<QueryReport, QueryError> {
+        let rows = (self.held.borrow().iter())
+            .map(|blob| vec![json!(blob)])
+            .collect();
         Ok(QueryReport {
             columns: vec!["blob".into()],
-            rows: Vec::new(),
+            rows,
             truncated: false,
             over_budget: false,
             memory: None,
@@ -37,11 +76,32 @@ impl Host for Lacking {
         unreachable!("version_line reads no files")
     }
 
-    fn put(
-        &self,
-        _lines: &[serde_json::Value],
-    ) -> Result<board_ops::PutReport, board_ops::PutError> {
-        unreachable!("version_line writes nothing")
+    fn put(&self, lines: &[Value]) -> Result<PutReport, PutError> {
+        if self.racing.replace(false) {
+            *self.held.borrow_mut() = Some(THEIRS.to_owned());
+        }
+        for line in lines {
+            let held = self.held.borrow().clone();
+            let matches = match line["expect"].as_str() {
+                None => true,
+                Some("none") => held.is_none(),
+                Some(blob) => held.as_deref() == Some(blob),
+            };
+            if !matches {
+                return Err(PutError::Stale {
+                    path: line["path"].as_str().unwrap().parse().unwrap(),
+                    found: held.as_deref().and_then(ObjectId::from_hex),
+                });
+            }
+        }
+        *self.held.borrow_mut() = Some("2222222222222222222222222222222222222222".to_owned());
+        self.landed.borrow_mut().push(lines.to_vec());
+        Ok(PutReport {
+            writes: Vec::new(),
+            removed: Vec::new(),
+            absent: Vec::new(),
+            commit: None,
+        })
     }
 
     fn call(
@@ -85,25 +145,45 @@ impl Host for Lacking {
     }
 
     fn settings(&self) -> &Settings {
-        &self.0
+        &self.settings
     }
 }
 
 #[test]
-fn the_line_that_writes_a_missing_version_takes_no_expect() {
-    let host = Lacking(Settings {
-        now: std::time::SystemTime::UNIX_EPOCH,
-        day_start: None,
-        utc_offset: 0,
-        caller: None,
-        environment: board_ops::Variables::default(),
-        cache_home: None,
-    });
+fn the_line_that_writes_a_missing_version_expects_nothing_there() {
+    let host = Lacking::new(false);
     let flow = development();
     let (at, line) = version_line(&host, &flow).unwrap();
     assert_eq!(at, version_path(&flow));
     let line = line.expect("a board that lacks the version gets a line");
     assert_eq!(line["path"], at.as_str());
-    assert_eq!(line.get("expect"), None, "{line}");
+    assert_eq!(line["expect"], "none", "{line}");
     assert_eq!(line["record"], serde_json::to_value(&flow).unwrap());
+    crate::board::put(&host, &[line]).unwrap();
+    assert_eq!(
+        host.landed.borrow().len(),
+        1,
+        "with no other writer it lands"
+    );
+}
+
+#[test]
+fn a_version_another_writer_stores_first_makes_the_put_stale_and_the_rerun_writes_no_line() {
+    let host = Lacking::new(true);
+    let flow = development();
+    let (_, line) = version_line(&host, &flow).unwrap();
+    let refused = crate::board::put(&host, &[line.unwrap()]).unwrap_err();
+    assert_eq!(
+        refused.fields["code"], "board::put::stale",
+        "{}",
+        refused.message
+    );
+    assert!(host.landed.borrow().is_empty(), "nothing is written");
+    assert_eq!(
+        host.held.borrow().as_deref(),
+        Some(THEIRS),
+        "theirs is kept"
+    );
+    let (_, again) = version_line(&host, &flow).unwrap();
+    assert_eq!(again, None, "the rerun finds the version");
 }

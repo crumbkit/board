@@ -201,10 +201,11 @@ pub(crate) fn version_path(flow: &Flow) -> String {
 /// The path of `flow`'s version, and the `put` line that writes it when
 /// the board does not hold it yet.
 ///
-/// The line takes no expect. The path names the flow's content, so when
-/// another writer stores the version between this read and the write, as
-/// two concurrent starts do, the line writes the same record over it and
-/// succeeds.
+/// The line expects nothing at the path, as `blob_at` read. When another
+/// writer stores the version between this read and the write, as two
+/// concurrent starts do, Board refuses the second as `board::put::stale`
+/// and writes none of its batch; a rerun finds the version and writes no
+/// version line.
 pub(crate) fn version_line(
     host: &dyn Host,
     flow: &Flow,
@@ -214,10 +215,10 @@ pub(crate) fn version_line(
     Ok((at, line))
 }
 
-/// The `put` line that writes `flow` as its version at `at`, with no
-/// expect, as `version_line` says.
+/// The `put` line that writes `flow` as its version at `at`, which
+/// `blob_at` found empty, expecting nothing there, as `version_line` says.
 pub(crate) fn version_write(at: &str, flow: &Flow) -> Value {
-    json!({"path": at, "record": flow})
+    json!({"path": at, "expect": "none", "record": flow})
 }
 
 /// The flow the change at `path` follows: the version its `flow` names,

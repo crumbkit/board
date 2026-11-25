@@ -250,3 +250,168 @@ fn every_input_property_carries_a_sentence() {
         assert_eq!(input["additionalProperties"], false);
     }
 }
+
+/// The blob another writer's crossing gets.
+const THEIRS: &str = "1111111111111111111111111111111111111111";
+
+/// A host whose board holds nothing a query finds, and which applies each
+/// put line's expect as Board does under its put lock: a line whose expect
+/// the held blob does not match refuses the whole batch as stale.
+#[derive(Default)]
+struct Racing {
+    /// The path another writer stores just before the next put.
+    first: std::cell::RefCell<Option<String>>,
+    /// Each path and the blob it holds.
+    held: std::cell::RefCell<std::collections::BTreeMap<String, String>>,
+    landed: std::cell::RefCell<Vec<Vec<Value>>>,
+}
+
+impl Host for Racing {
+    fn query(
+        &self,
+        _sql: &str,
+        _limit: board_ops::Limit,
+    ) -> Result<board_ops::QueryReport, board_ops::QueryError> {
+        Ok(board_ops::QueryReport {
+            columns: vec!["body".into(), "blob".into()],
+            rows: Vec::new(),
+            truncated: false,
+            over_budget: false,
+            memory: None,
+        })
+    }
+
+    fn refs(
+        &self,
+        _paths: &[board_model::LogicalPath],
+        _absent: board_ops::Absent,
+        _fields: &[String],
+    ) -> Result<Vec<Result<board_ops::RefsReport, board_ops::RefsError>>, board_ops::RefsError>
+    {
+        unreachable!("a crossing's write resolves no paths")
+    }
+
+    fn get_each(
+        &self,
+        _paths: &[board_model::LogicalPath],
+    ) -> Result<Vec<Result<board_ops::GetReport, board_ops::ReadError>>, board_ops::ReadError> {
+        unreachable!("a crossing's write reads no files")
+    }
+
+    fn put(&self, lines: &[Value]) -> Result<board_ops::PutReport, board_ops::PutError> {
+        if let Some(path) = self.first.borrow_mut().take() {
+            self.held.borrow_mut().insert(path, THEIRS.to_owned());
+        }
+        for line in lines {
+            let path = line["path"].as_str().unwrap();
+            let held = self.held.borrow().get(path).cloned();
+            let matches = match line["expect"].as_str() {
+                None => true,
+                Some("none") => held.is_none(),
+                Some(blob) => held.as_deref() == Some(blob),
+            };
+            if !matches {
+                return Err(board_ops::PutError::Stale {
+                    path: path.parse().unwrap(),
+                    found: held.as_deref().and_then(board_model::ObjectId::from_hex),
+                });
+            }
+        }
+        for line in lines {
+            let path = line["path"].as_str().unwrap().to_owned();
+            let blob = "2222222222222222222222222222222222222222".to_owned();
+            self.held.borrow_mut().insert(path, blob);
+        }
+        self.landed.borrow_mut().push(lines.to_vec());
+        Ok(board_ops::PutReport {
+            writes: Vec::new(),
+            removed: Vec::new(),
+            absent: Vec::new(),
+            commit: None,
+        })
+    }
+
+    fn call(
+        &self,
+        _target: &board_plugin::Target,
+        _input: &Value,
+    ) -> Result<board_plugin::CallReport, Box<Refusal>> {
+        unreachable!("a crossing's write calls no plugin")
+    }
+
+    fn board(&self, _elsewhere: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>> {
+        unreachable!("a crossing's write opens no other board")
+    }
+
+    fn decide(
+        &self,
+        _op: &str,
+        _path: &board_model::LogicalPath,
+        _shown: Option<&board_ops::Shown>,
+    ) -> Result<board_ops::DecideReport, Box<Refusal>> {
+        unreachable!("a crossing's write asks the owner nothing")
+    }
+
+    fn sync(
+        &self,
+        _: bool,
+        _: std::time::Duration,
+    ) -> Result<board_ops::Synced, board_ops::SyncError> {
+        unreachable!("a crossing's write syncs nothing")
+    }
+
+    fn mount_update(
+        &self,
+        _: &board_model::LogicalPath,
+        _: std::time::Duration,
+    ) -> Result<board_ops::MountUpdateReport, board_ops::MountError> {
+        unreachable!("a crossing's write updates no mount")
+    }
+
+    fn settings(&self) -> &board_ops::Settings {
+        unreachable!("a crossing's write reads no settings")
+    }
+}
+
+/// A crossing that passed, of a digest `crossing::find` finds none of.
+fn new_crossing() -> CrossingRecord {
+    serde_json::from_value(json!({
+        "$type": "boundary/crossing/v1",
+        "digest": format!("sha256:{}", "ab".repeat(32)),
+        "action": "github.pr-create",
+        "to": "github:octo/board",
+        "boundaries": [],
+        "verdicts": [],
+    }))
+    .unwrap()
+}
+
+#[test]
+fn a_new_crossing_is_written_expecting_nothing_where_find_found_none() {
+    let host = Racing::default();
+    let crossing = new_crossing();
+    assert!(crossing::find(&host, &crossing.digest).unwrap().is_none());
+    crossing::write(&host, &crossing, None).unwrap();
+    let landed = host.landed.borrow();
+    assert_eq!(landed[0][0]["path"], crossing::path(&crossing.digest));
+    assert_eq!(landed[0][0]["expect"], "none", "{}", landed[0][0]);
+}
+
+#[test]
+fn a_crossing_another_check_writes_first_makes_the_write_stale_and_keeps_theirs() {
+    let host = Racing::default();
+    let crossing = new_crossing();
+    let at = crossing::path(&crossing.digest);
+    *host.first.borrow_mut() = Some(at.clone());
+    let refused = crossing::write(&host, &crossing, None).unwrap_err();
+    assert_eq!(
+        refused.fields["code"], "board::put::stale",
+        "{}",
+        refused.message
+    );
+    assert!(host.landed.borrow().is_empty(), "nothing is written");
+    assert_eq!(
+        host.held.borrow().get(&at).map(String::as_str),
+        Some(THEIRS)
+    );
+}
