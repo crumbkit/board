@@ -212,10 +212,29 @@ nothing. Two
 repos that could each hold it are refused with `tasks::repo::ambiguous`. A
 caller inside a git repository whose origin git does not give is refused with
 `tasks::repo::origin_unread`, since the task may belong to a work repo; pass
-`--remote` or `--repo`, such as `--repo /` for the board itself. The board's
+`--remote` or `--repo`. The board's
 own repository is the exception: a caller in a board with no origin is routed
 as one outside any repository, so the board takes the task when it lists no
 personal repo. A repository nested inside the board is not the board's own.
+The hints of `origin_unread` and `ambiguous` give a full command for each
+repo that could take the task, the personal notes repo first.
+
+A task a person should see off this Mac goes to the personal notes repo,
+which `add` pushes. `add` never pushes the board's own tree, so a task in
+`/tasks/` stays on this Mac unless something else pushes the board. `--repo /`
+is for tasks that belong with the board, such as queue items, and needs
+`--reason <text>`. Without one it is refused with
+`tasks::repo::reason_needed`, which names the personal notes repo and its
+remote when the board has one. The reason is printed in `about` and stored
+nowhere. A task routed to `/` because no notes repo covers the remote and the
+board lists no personal repo needs no reason.
+
+`add` returns the task as the other writes do, with three more fields.
+`about` is one sentence that says which repo took the task and whether it
+left this Mac, or why the push failed. `remote` is the remote the task's repo
+pushes to, `owner/name` for GitHub, or null for the board's own tree.
+`leaves_this_mac` is true when the call pushed the task to that remote. It
+cannot see a later push by anything else.
 
 `claim`, `done`, `defer --until`, `drop` and `reviewed` take the task's
 `--path` in the board, such as `/repos/personal/tasks/call-the-bank.md`. The path is not

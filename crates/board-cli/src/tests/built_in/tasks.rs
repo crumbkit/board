@@ -12,6 +12,7 @@ use std::path::PathBuf;
 
 use super::*;
 
+mod added;
 mod available;
 mod migrate;
 mod owner;

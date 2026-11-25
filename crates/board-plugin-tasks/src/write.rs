@@ -29,8 +29,11 @@ use crate::task::model;
 use crate::tree::{Forest, descendants};
 use crate::{PLUGIN, caller_origin, hinted, refusal, writer};
 
+mod added;
 mod inputs;
 
+pub(crate) use added::Added;
+use added::Route;
 pub(crate) use inputs::{
     AddInput, DeferInput, DoneInput, MigrateInput, MoveInput, RefInput, TaskPath,
 };
@@ -106,12 +109,15 @@ fn dumped(value: &Value) -> String {
 /// remote routes to.
 pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let given: AddInput = PluginError::read_input(PLUGIN, "add", input)?;
+    let found = listed(host, PLUGIN)?;
     let remote = match &given.remote {
         Some(remote) => Some(remote.clone()),
-        None => origin(host, given.repo.as_deref())?,
+        None => origin(host, &given, &found)?,
     };
-    let found = listed(host, PLUGIN)?;
-    let repo = routed(&found, given.repo.as_deref(), remote.as_deref())?;
+    let repo = routed(&found, &given, remote.as_deref())?;
+    if given.repo.is_some() && repo.root == "/" && given.reason.is_none() {
+        return Err(added::reason_needed(host, &found, &given.title));
+    }
     let day = day(host);
     // A project task stays v2 until `board projects migrate` moves it, and
     // a repo that holds only the v2 schema takes v2 until it gains v3's.
@@ -181,21 +187,25 @@ pub(crate) fn add(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         .collect();
     let (commit, unpushed) = landed(writer, &repo, commit)?;
     let conflicts = writer.conflicts_at(&repo, &[&path]);
-    Ok(json!(written(
-        &repo,
-        &path,
-        &record,
-        (commit, synced, unpushed),
-        conflicts
-    )))
+    let written = written(&repo, &path, &record, (commit, synced, unpushed), conflicts);
+    let route = match given.repo {
+        Some(_) => Route::Named,
+        None => Route::Routed(remote.as_deref()),
+    };
+    let reason = given.reason.as_deref();
+    Ok(json!(added::added(host, &repo, written, route, reason)))
 }
 
 /// The caller's origin to route a new task by, unless `repo` names its
 /// repo; refused when git gave none. A caller inside a git repository whose
 /// origin git did not give, other than the board's own, may be in a work
 /// repository, so the task is not written to the personal repo.
-fn origin(host: &dyn Host, repo: Option<&str>) -> Result<Option<String>, PluginError> {
-    if repo.is_some() {
+fn origin(
+    host: &dyn Host,
+    given: &AddInput,
+    found: &[Listed],
+) -> Result<Option<String>, PluginError> {
+    if given.repo.is_some() {
         return Ok(None);
     }
     match caller_origin(host) {
@@ -208,8 +218,7 @@ fn origin(host: &dyn Host, repo: Option<&str>) -> Result<Option<String>, PluginE
                 "tasks::repo::origin_unread",
                 why,
                 [("origin_unread", json!(unread))],
-                "run it again with `--repo /` to keep the task in this board, or with \
-                 `--remote <owner/name>` for the repository it belongs to",
+                &added::unread_hint(host, found, &given.title),
             ))
         }
         (remote, None) => Ok(remote),
@@ -623,7 +632,8 @@ fn checked(
 /// The repo a new task goes to: the one named; else the one covering the
 /// remote; else the personal one; else `/`. Two repos covering the remote,
 /// or two personal ones, are refused, since a task must not cross a silo.
-fn routed(found: &[Listed], name: Option<&str>, remote: Option<&str>) -> Result<Repo, PluginError> {
+fn routed(found: &[Listed], given: &AddInput, remote: Option<&str>) -> Result<Repo, PluginError> {
+    let name = given.repo.as_deref();
     let clone_of = |at: &str| {
         (at != "/")
             .then(|| found.iter().find(|listed| listed.root == at))
@@ -663,10 +673,11 @@ fn routed(found: &[Listed], name: Option<&str>, remote: Option<&str>) -> Result<
             "{} could each hold the task, so none was written; name one with --repo",
             candidates.join(", ")
         );
-        return Err(refusal(
+        return Err(hinted(
             "tasks::repo::ambiguous",
             why,
             [("candidates", json!(candidates))],
+            &added::ambiguous_hint(&candidates, &given.title),
         ));
     }
     let at = candidates

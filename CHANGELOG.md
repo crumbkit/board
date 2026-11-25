@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `tasks add` says where the task went. Its output gains `about`, one
+  sentence naming the repo that took the task and whether it left this Mac,
+  `remote`, the remote that repo pushes to, and `leaves_this_mac`, true when
+  the call pushed it. `--repo /` now needs `--reason`, and is refused without
+  one with `tasks::repo::reason_needed`, which names the personal notes repo.
+  The hints of `tasks::repo::origin_unread` and `tasks::repo::ambiguous` give
+  a full command for each repo that could take the task. A script that
+  passes `--repo /` must add `--reason`.
+
 - A `plans/question/v1` whose `blocks` names a `tasks/task/v3`, and an
   `artifacts/artifact/v1` whose `subject` names one, are no longer degraded
   with `board::ref::wrong_type`. Run `board plugin enable plans` and

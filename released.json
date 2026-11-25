@@ -14420,6 +14420,11 @@
           "string"
         ]
       },
+      "input.reason": {
+        "type": [
+          "string"
+        ]
+      },
       "input.refs": {
         "type": [
           "array"
@@ -14461,17 +14466,25 @@
         ],
         "requires": [
           [
+            "about",
             "commit",
             "conflicts",
             "defer",
+            "leaves_this_mac",
             "owner",
             "path",
+            "remote",
             "repo",
             "reviewed",
             "status",
             "unpushed",
             "unsynced"
           ]
+        ]
+      },
+      "output.about": {
+        "type": [
+          "string"
         ]
       },
       "output.commit": {
@@ -14494,6 +14507,11 @@
         "type": [
           "null",
           "string"
+        ]
+      },
+      "output.leaves_this_mac": {
+        "type": [
+          "boolean"
         ]
       },
       "output.owner": {
@@ -14524,6 +14542,12 @@
       },
       "output.path": {
         "type": [
+          "string"
+        ]
+      },
+      "output.remote": {
+        "type": [
+          "null",
           "string"
         ]
       },
@@ -17263,6 +17287,7 @@
     "tasks::repo::not_pushed",
     "tasks::repo::not_synced",
     "tasks::repo::origin_unread",
+    "tasks::repo::reason_needed",
     "tasks::repo::schema_stale",
     "tasks::repo::sync_timeout",
     "tasks::task::busy",
