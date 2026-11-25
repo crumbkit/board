@@ -527,8 +527,11 @@ of `changes` still fails `review`.
   `command`, `pull_request` and `unreadable`. It never opens the pull request, never runs
   `gh` or git, and makes no model calls. See "The pull request body".
 
-- `plan` takes `{path, text, uses, paths, answers}` as JSON on stdin, since `uses`
-  and `paths` are lists: `board changes plan` with the JSON piped in.
+- `plan` takes `{path, text, uses, paths, answers}` as JSON on stdin:
+  `board changes plan` with the JSON piped in. It also takes `path`, `text`,
+  `uses` and `paths` as flags, with `--uses` and `--paths` repeated once for
+  each item, but a call with a flag reads nothing on stdin, so a plan that
+  needs `considered`, `owed` or `answers` goes on stdin whole.
   A missing `uses` is an empty list. `answers` holds the plan's typed
   answers, `{"ux": "none" | "mockups", "data": "none" | "stored",
   "lifecycle": "none" | "record"}`, which the plan record keeps and a

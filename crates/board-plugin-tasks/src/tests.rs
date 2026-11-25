@@ -187,6 +187,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "add.kind",
         "add.parent",
         "add.refs",
+        "add.reason",
         "add.remote",
         "add.repeat",
         "add.repo",
@@ -256,9 +257,16 @@ fn every_output_property_is_required_so_a_null_is_never_left_out() {
         "unpushed",
         "conflicts"
     ]);
-    for name in ["add", "claim", "done", "defer", "drop", "reviewed"] {
+    for name in ["claim", "done", "defer", "drop", "reviewed"] {
         assert_eq!(required(name), written, "{name}");
     }
+    let mut added: Vec<Value> = written.as_array().unwrap().clone();
+    added.extend([json!("about"), json!("remote"), json!("leaves_this_mac")]);
+    let mut shown: Vec<Value> = required("add").as_array().unwrap().clone();
+    let key = |value: &Value| value.as_str().unwrap().to_owned();
+    added.sort_by_key(key);
+    shown.sort_by_key(key);
+    assert_eq!(shown, added);
     assert_eq!(
         required("move"),
         json!([

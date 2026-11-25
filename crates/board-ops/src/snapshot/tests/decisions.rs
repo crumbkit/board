@@ -221,25 +221,63 @@ fn a_relative_nested_mount_read_from_a_moved_repository_is_decided_again() {
     assert_eq!(kept(&scenario, cache.path()), 1);
 }
 
+/// A project whose bytes no other file in these libraries holds, so its
+/// blob can be taken from a repository alone.
+const LACKED: &str = r#"{"$type":  "lr/project/v1"}"#;
+
 #[test]
-fn a_mounted_source_with_a_file_that_cannot_be_read_is_never_kept_and_its_twin_is() {
-    for (missing, expected) in [(true, 0), (false, 1)] {
-        let library = Scenario::new();
-        let mut items: Vec<(&[u8], Item<'_>)> = vec![(b"p.json", Item::File("{}"))];
-        if missing {
-            items.push((b"q.json", Item::MissingBlob));
-        }
-        let commit = library.commit_items(&items);
-        let scenario = board();
-        scenario.write("vendor.json", Item::File(&mount(&library.path(), commit)));
-        let cache = tempfile::tempdir().unwrap();
-        kept(&scenario, cache.path());
-        assert_eq!(
-            kept(&scenario, cache.path()),
-            expected,
-            "missing: {missing}"
-        );
-    }
+fn a_mounted_source_whose_repository_lacks_a_blob_is_kept_until_the_blob_arrives() {
+    let (library, commit) = library(&[("projects/q.json", LACKED)]);
+    let blob = library.blob(LACKED);
+    library.write(&object(blob), Item::Deleted);
+    let scenario = board();
+    scenario.write("vendor.json", Item::File(&mount(&library.path(), commit)));
+    let cache = tempfile::tempdir().unwrap();
+    assert_eq!(
+        kept(&scenario, cache.path()),
+        0,
+        "a cold index keeps nothing"
+    );
+    assert_eq!(
+        kept(&scenario, cache.path()),
+        1,
+        "the lacking source is kept"
+    );
+    let warm = query_as(&scenario, cache.path(), BUILD);
+    assert_eq!(
+        (warm.kept, warm.walked, warm.decided),
+        (1, 0, 0),
+        "nor walked"
+    );
+    let unreadable = Some("board::repo::unreadable".to_owned());
+    assert_eq!(
+        code(&scenario, cache.path(), "projects/q.json"),
+        (1, unreadable)
+    );
+    // The blob arrives as a loose object, as a small fetch writes it.
+    assert_eq!(library.blob(LACKED), blob);
+    let arrived = code(&scenario, cache.path(), "projects/q.json");
+    assert_eq!(
+        arrived,
+        (0, None),
+        "its store changed, so it is decided again"
+    );
+    assert_eq!(code(&scenario, cache.path(), "projects/q.json"), (1, None));
+}
+
+/// How many mounted sources a warm query of `scenario` through the index
+/// in `cache` kept, and the code of the mounted entry at the physical
+/// `path`. Unlike [`kept`], it does not compare with a cold query, as the
+/// index keeps the trees it read with no size for a blob it lacked.
+fn code(scenario: &Scenario, cache: &Path, path: &str) -> (usize, Option<String>) {
+    let mut board = open(scenario);
+    board.built_by(BUILD);
+    let root = board.repository().path().to_path_buf();
+    let warm = filled(&board, Index::open(Some(cache), &root).unwrap());
+    let sql = format!("SELECT code FROM entries WHERE source <> 'worktree' AND path = '{path}'");
+    let rows = warm.view.query(&sql, 1, None).unwrap().rows;
+    let code = rows[0][0].as_str().map(str::to_owned);
+    (warm.report.work.kept, code)
 }
 
 #[test]
@@ -266,7 +304,8 @@ fn a_mounted_source_whose_names_share_a_path_is_never_kept_and_its_twin_with_one
 
 #[test]
 fn a_source_whose_reference_reaches_a_blob_that_cannot_be_read_is_never_kept_and_its_twin_is() {
-    for (missing, expected) in [(true, 0), (false, 2)] {
+    // The inner source, which lacks the blob, is kept either way.
+    for (missing, expected) in [(true, 1), (false, 2)] {
         let inner = Scenario::new();
         let p = if missing {
             Item::MissingBlob
@@ -288,6 +327,44 @@ fn a_source_whose_reference_reaches_a_blob_that_cannot_be_read_is_never_kept_and
             "missing: {missing}"
         );
     }
+}
+
+#[test]
+fn a_mounted_source_with_a_blob_it_holds_but_cannot_read_is_never_kept_and_its_twin_is() {
+    use std::os::unix::fs::PermissionsExt;
+    for (sealed, expected) in [(true, 0), (false, 1)] {
+        let (library, commit) = library(&[("projects/q.json", LACKED)]);
+        let loose = library.workdir().join(object(library.blob(LACKED)));
+        if sealed {
+            // The store holds the blob, but reading it fails, as an I/O
+            // error would.
+            let unreadable = std::fs::Permissions::from_mode(0o000);
+            std::fs::set_permissions(&loose, unreadable).unwrap();
+        }
+        let scenario = board();
+        scenario.write("vendor.json", Item::File(&mount(&library.path(), commit)));
+        let cache = tempfile::tempdir().unwrap();
+        kept(&scenario, cache.path());
+        let warm = query_as(&scenario, cache.path(), BUILD);
+        assert_eq!(warm.kept, expected, "sealed: {sealed}");
+        assert_eq!(warm.walked, 1 - expected, "sealed: {sealed}");
+    }
+}
+
+#[test]
+fn a_mounted_source_whose_repository_has_alternates_and_lacks_a_blob_is_never_kept() {
+    let (library, commit) = library(&[("projects/q.json", LACKED)]);
+    let blob = library.blob(LACKED);
+    library.write(&object(blob), Item::Deleted);
+    let elsewhere = Scenario::new();
+    let objects = elsewhere.workdir().join(".git/objects");
+    let alternates = format!("{}\n", objects.display());
+    library.write(".git/objects/info/alternates", Item::File(&alternates));
+    let scenario = board();
+    scenario.write("vendor.json", Item::File(&mount(&library.path(), commit)));
+    let cache = tempfile::tempdir().unwrap();
+    kept(&scenario, cache.path());
+    assert_eq!(kept(&scenario, cache.path()), 0);
 }
 
 #[test]
