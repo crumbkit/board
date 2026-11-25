@@ -47,17 +47,18 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   requirement. A rule with no checker is marked described. The pane ends by saying that editing a file adds a reminder
   for each rule on that file the session was not told about. A failed
   check shows the button in red with its code, such as `Rules:
-<<<<<<< HEAD
-  rules::rule::degraded`.
+  rules::rule::degraded`. While a first check is still running, the button
+  shows `Rules …`.
 - **Ready to land button**, from `board-plans`: `Ready to land <n>`, in
   green, the changes `board --json call changes.ready` lists. Each is built
   and reviewed and waits only on a check from the owner, or is done and
   still owes him a recheck. With none, no button is drawn. It reads beside
   each refresh without holding it, one read at a time, for up to 20
-  seconds. On a board with no changes plugin, or one whose plugin has no `ready` capability, there is no button
-  and no error, and the mod stops asking until it loads again. A failed read
-  keeps the last count and turns the button red: `Ready to land <n>: the last
-  read failed`, with `<n>` 0 when no read has worked.
+  seconds. On a board with no changes plugin, or one whose plugin has no
+  `ready` capability, there is no button and no error, and the mod stops
+  asking until it loads again. A failed read keeps the last count and
+  turns the button red: `Ready to land <n>: the last read failed`, with
+  `<n>` 0 when no read has worked.
   The button opens the Ready to land pane. The pane lists the changes oldest
   first with the failing ones last. Each row gives the pull request, how long
   it has been ready and the kind of check (Recheck, Data sign-off, Deviation
@@ -78,12 +79,6 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   holds `at`, `change`, `pull`, `head`, `reason` and `session`. Lines older
   than 30 days are dropped on each write. A file that cannot be written
   records nothing, and the debug log says why.
-||||||| c9212ec1
-  rules::rule::degraded`.
-=======
-  rules::rule::degraded`. While a first check is still running, the button
-  shows `Rules …`.
->>>>>>> origin/main
 - **Waiting button**, from `board-plans`: `Waiting <total> · <blocking>
   blocking` from `board --json call plans.waiting`, or `Waiting <total>`
   when nothing blocks. On a Board whose plans plugin has no `waiting`
