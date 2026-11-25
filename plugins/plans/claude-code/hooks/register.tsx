@@ -3,7 +3,7 @@ import type { EngineInterface, PluginOptions, Register, RenderElement } from 'cl
 
 import type { Open, Question, Ready, Unread, Waiting } from '../types'
 import { SLOT, drawsInto, joinBand, keepOneBand } from './band'
-import { failingLabel, failingMode, keptLines, kindLabel, parseReady, pullRef, readyBadge, readyFor, stateText, transitions } from './ready'
+import { failingLabel, failingMode, failingPart, keptLines, kindLabel, parseReady, pullRef, readyBadge, readyFor, stateText, transitions, waitingLess, waitsOnFailing } from './ready'
 import { begin, countCallsForList, end, isDue, REFRESH_MS, schedule, tickIsDue } from './refresh'
 import type { Counted, Schedule } from './refresh'
 import { answerText, approvalText, approvedChange, blocking, countBadge, failure, parseAnswered, parseApproved, parseOpen, parseRows, parseWaiting, plain, project, refused, report, REPORT_LIMIT, REPORT_SQL, WRITTEN_BY } from './plans'
@@ -314,8 +314,10 @@ export const register: Register = (on, options) => {
     }
     if (e.props.hasSurvey || !drawsInto(e.plugin)) return below
     // plans.waiting counts the open questions; when it has not answered, the button counts plans.open's.
-    const badge = countBadge(await read($, waiting), await read($, open), await read($, failed))
-    const landing = readyBadge(await read($, ready), await read($, readyFailed), mode)
+    // Waiting leaves out the questions Ready to land counts, so a check is counted once.
+    const landed = await read($, ready)
+    const badge = countBadge(waitingLess(await read($, waiting), landed, mode), await read($, open), await read($, failed))
+    const landing = readyBadge(landed, await read($, readyFailed), mode)
     const { Box, Button, Text } = $.ui.resolve(e)
     const parts: RenderElement[] = []
     if (landing !== null) {
@@ -356,34 +358,41 @@ export const register: Register = (on, options) => {
       )
     if (found === null || found.changes.length === 0) return problem ?? <Text dimColor>No change is ready to land.</Text>
     const shown = mode === 'shown'
-    const failing = shown ? found.changes.filter(c => c.failing !== null).length : 0
+    const failing = shown ? found.changes.filter(c => c.failing !== null) : []
+    const red = failingPart(failing)
     const more = found.total - found.changes.length
     return (
       <Box flexDirection="column">
         {problem}
         <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginBottom={1}>
-          <Text weight="semibold">Ready to land · {found.total - failing}</Text>
-          {failing === 0 ? null : <Text color="red">· {failing} failing</Text>}
+          <Text weight="semibold">Ready to land · {found.total - failing.length}</Text>
+          {red === null ? null : <Text color="red">{red}</Text>}
           <Button key="ask-all" label="Ask these now (/ask)" variant="primary" onPress={ask} />
         </Box>
         {found.changes.map(c => {
-          const red = shown && c.failing !== null ? c.failing : null
-          const meta = [pullRef(c.pull), readyFor(c.days), kindLabel(c.kind)].filter(part => part !== null).join(' · ')
+          const why = shown ? c.failing : null
+          const pull = pullRef(c.pull)
+          const age = readyFor(c.days)
           return (
             <Box key={c.path} flexDirection="column" marginBottom={1}>
-              <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
-                <Text dimColor>{meta}</Text>
-                {red === null ? null : <Text color="red">· {failingLabel(red)}</Text>}
+              <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+                {pull === null ? null : <Text key="pull" dimColor>{pull}</Text>}
+                {age === null ? null : <Text key="age" dimColor>{age}</Text>}
+                <Text key="kind" inverse> {kindLabel(c.kind)} </Text>
+                {why === null ? null : <Text key="failing" color="red" inverse> {failingLabel(why)} </Text>}
               </Box>
               <Text weight="semibold">{c.title}</Text>
-              <Text>Waits on: {plain(c.waits_on)}</Text>
-              {red === null ? (
+              <Text>Waits on: {plain(why === null ? c.waits_on : waitsOnFailing(c.waits_on, why))}</Text>
+              {why === null ? (
                 <Box flexDirection="row" columnGap={1}>
                   <Text dimColor>Clears it:</Text>
                   <Button key={`${c.path}#ask`} label="Answer in /ask" onPress={ask} />
                 </Box>
               ) : (
-                <Text dimColor>To see why: board changes next --path {c.path}</Text>
+                <Box flexDirection="row" columnGap={1}>
+                  <Text dimColor>To see why:</Text>
+                  <Text>board changes next --path {c.path}</Text>
+                </Box>
               )}
             </Box>
           )
@@ -414,16 +423,10 @@ export const register: Register = (on, options) => {
       )
     if (found === null || found.questions.length === 0) return problem ?? <Text dimColor>No open questions.</Text>
     const more = found.total - found.questions.length
-    // The questions that block a change ready to land come first, under their own heading.
-    const landing = new Set((await read($, ready))?.changes.flatMap(c => c.questions) ?? [])
-    const first = found.questions.filter(q => landing.has(q.path))
-    const rest = found.questions.filter(q => !landing.has(q.path))
-    const heading = (text: string) => (first.length === 0 ? null : <Text key={`heading:${text}`} weight="semibold">{text}</Text>)
     return (
       <Box flexDirection="column">
         {problem}
-        {heading('Ready to land')}
-        {[...first, ...(rest.length === 0 ? [] : [null]), ...rest].map(q => q === null ? heading('Other questions') : (
+        {found.questions.map(q => (
           <Box key={q.path} flexDirection="column" marginBottom={1}>
             <Text dimColor>
               {project(q.path)} · {age(q.asked, now)}

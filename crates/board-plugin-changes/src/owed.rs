@@ -3,8 +3,6 @@
 //! missing, such as the rechecks of a data understanding check, which the
 //! owner is asked after the merge.
 
-use std::collections::BTreeSet;
-
 use board_ops::{Host, PluginError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -120,13 +118,8 @@ pub(crate) fn owed_of(observed: &Observed) -> Option<Owed> {
 }
 
 /// Each change done in the last [`OWED_DAYS`] days that owes a check,
-/// newest touch first, and how many done changes Board does not read. With
-/// `only`, a change at any other path is passed over before its gate is
-/// read.
-pub(crate) fn owing(
-    host: &dyn Host,
-    only: Option<&BTreeSet<String>>,
-) -> Result<(Vec<Owed>, usize), PluginError> {
+/// newest touch first, and how many done changes Board does not read.
+pub(crate) fn owing(host: &dyn Host) -> Result<(Vec<Owed>, usize), PluginError> {
     let since = today(host).plus(-OWED_DAYS).to_string();
     let sql = format!(
         "SELECT logical, code, body FROM records WHERE type IN ({}) AND \
@@ -142,9 +135,6 @@ pub(crate) fn owing(
             unreadable += 1;
             continue;
         };
-        if only.is_some_and(|only| !only.contains(path)) {
-            continue;
-        }
         let Some(mut flow) = of_change(host, path, &change)? else {
             continue;
         };
@@ -166,7 +156,7 @@ pub(crate) fn owing(
 
 pub(crate) fn owed(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input { limit } = PluginError::read_input(PLUGIN, "owed", input)?;
-    let (mut changes, unreadable) = owing(host, None)?;
+    let (mut changes, unreadable) = owing(host)?;
     let total = changes.len();
     changes.truncate(limit);
     Ok(to_value(Output {

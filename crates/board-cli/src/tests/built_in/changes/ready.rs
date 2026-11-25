@@ -1,12 +1,12 @@
-//! `changes.ready` through the real index, and `plans.waiting` leaving out
-//! the questions it counts: which changes wait only on the owner, the kind
-//! of check each waits on, their order, and why one is failing.
+//! `changes.ready` through the real index: which changes wait only on the
+//! owner, the kind of check each waits on, their order, and why one is
+//! failing.
 
 use super::rechecks::{TESTED, built};
 use super::*;
 
 /// The fixture board with the plans plugin enabled too, so questions
-/// validate and `plans.waiting` runs.
+/// validate.
 fn with_plans() -> Changes {
     Changes::enabling(&["changes", "rules", "plans"])
 }
@@ -73,6 +73,7 @@ fn a_land_change_an_open_question_blocks_is_ready_until_an_answer_names_the_ques
                 "questions": [question],
                 "days": 2,
                 "failing": null,
+                "done": false,
             }],
             "total": 1,
             "truncated": false,
@@ -138,6 +139,20 @@ fn a_change_missing_only_its_rechecks_is_a_recheck_row_in_land_and_once_done() {
     assert_eq!(row(&board), expected);
     board.call("advance", &json!({"path": "/changes/t"}));
     assert_eq!(row(&board), expected);
+}
+
+/// The owner's rechecks apply only when the plan answers that the change
+/// stores data, so a change whose plan answers `none` is no recheck row in
+/// land or once done.
+#[test]
+fn a_change_whose_plan_stores_no_data_owes_no_recheck_in_land_or_once_done() {
+    let board = built(&[Some("first-point")]);
+    let mut plan = board.read("changes/t/plans/1.json");
+    plan["answers"]["data"] = json!("none");
+    board.write("changes/t/plans/1.json", &plan.to_string());
+    assert_eq!(ready_paths(&board, &json!({})), Vec::<String>::new());
+    board.call("advance", &json!({"path": "/changes/t"}));
+    assert_eq!(ready_paths(&board, &json!({})), Vec::<String>::new());
 }
 
 /// Rows come oldest first and failing ones last. A head that conflicts
@@ -226,9 +241,11 @@ fn a_ready_change_whose_newest_run_failed_or_whose_review_is_of_another_commit_i
     assert_eq!(failing(&[&passed, &failed]), json!("ci_failed"));
     let newer = run("3", "pass", "2026-11-25T10:00:00Z");
     assert_eq!(failing(&[&passed, &failed, &newer]), Value::Null);
+    assert_eq!(failing(&[&newer, "/reviews/base/report"]), json!("stale"));
+    // A report of the head covers it, in whichever order the reports sort.
     assert_eq!(
         failing(&[&newer, "/reviews/head/report", "/reviews/base/report"]),
-        json!("stale")
+        Value::Null
     );
     assert_eq!(
         failing(&[&newer, "/reviews/base/report", "/reviews/head/report"]),
@@ -236,20 +253,26 @@ fn a_ready_change_whose_newest_run_failed_or_whose_review_is_of_another_commit_i
     );
 }
 
-/// `plans.waiting` leaves out a question that blocks a ready change and
-/// says how many it left out; while that change is not ready, it counts the
-/// question as before.
+/// When git cannot say whether the head merges, the change is not marked
+/// failing, even with a review of another commit, and a warning names it.
 #[test]
-fn plans_waiting_leaves_out_the_questions_of_a_ready_change_and_counts_them_as_ready() {
+fn a_ready_change_whose_merge_check_git_cannot_answer_is_not_failing_and_warns() {
     let board = with_plans();
-    landing(&board, "t", 0, false, &json!({}));
+    let (base, _) = board.edited(&[("notes.md", "work\n")]);
+    board.write(
+        "reviews/base/report.json",
+        &report(&base, "approve", &base, &json!({})),
+    );
+    let absent = "0123456789abcdef0123456789abcdef01234567";
+    landing(
+        &board,
+        "t",
+        0,
+        true,
+        &json!({"head": absent, "records": ["/reviews/base/report"]}),
+    );
     asking(&board, "q", "/changes/t");
-    asking(&board, "r", "/changes/elsewhere");
-    let waiting = |board: &Changes| {
-        let output = &board.json(&["call", "plans.waiting"])["data"]["output"];
-        (output["total"].clone(), output["ready"].clone())
-    };
-    assert_eq!(waiting(&board), (json!(2), json!(0)));
-    landing(&board, "t", 0, true, &json!({}));
-    assert_eq!(waiting(&board), (json!(1), json!(1)));
+    let output = board.call_stdin("ready", &json!({}));
+    assert_eq!(output["changes"][0]["failing"], Value::Null, "{output}");
+    assert_eq!(output["warnings"][0]["code"], "changes::ready::merge_unread");
 }

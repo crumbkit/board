@@ -90,7 +90,7 @@ pub(crate) struct Output {
 
 /// The warning that done changes still owe checks, when any does.
 fn owed_warning(host: &dyn Host) -> Result<Option<Warning>, PluginError> {
-    let (owed, _) = owing(host, None)?;
+    let (owed, _) = owing(host)?;
     if owed.is_empty() {
         return Ok(None);
     }

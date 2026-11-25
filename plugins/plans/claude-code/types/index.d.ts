@@ -52,6 +52,8 @@ export type ReadyChange = {
   /** The days since the change was last touched. */
   days: number | null
   failing: Failing | null
+  /** Whether the change is done and owes only a recheck; absent from a board older than this field. */
+  done?: boolean
 }
 
 /** What `changes.ready` answered: the changes it listed and how many there are in all. */

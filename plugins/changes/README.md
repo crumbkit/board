@@ -1388,23 +1388,32 @@ that list is not empty.
 listed when it stands in its flow's last phase, every missing check there
 that blocks is the owner's, and the owner has something to do: a missing
 check of his, or an open question whose `blocks` names the change and that no
-answer names. A done change that `changes.owed` lists with a check of the
-owner's is listed too. Each row has the change's `path`, `title`, newest
-`pull`, `head`, its `kind`, the `check` it waits on (null when only a question
-holds it), `waits_on`, what that check or question asks, the `questions`
-that block it, the `days` since it was touched, and `failing`. `kind` is
+answer names. A change done in the last 14 days that still misses a check
+of the owner's in its last phase that does not block is listed too, as
+`changes.owed` would list it. To stay cheap, `changes.ready` reads the gate
+only of a change an open question blocks, or one with a check of the
+owner's in its last phase that can apply: a check whose `when` names a
+`route` or `answers` that the change and its plan record do not give is
+passed over before any gate is read. Each row has the change's `path`,
+`title`, newest `pull`, `head`, its `kind`, the `check` it waits on (null
+when only a question holds it), `waits_on`, what that check or question
+asks, the `questions` that block it, the `days` since it was touched,
+`failing`, and `done`, true for a done change that owes a recheck. `kind` is
 `recheck` for an understanding check that does not block, `data-sign-off`
 for one that does, `deviation` for a `mockups` check, and `land-choice` for
-any other check or a question alone. `failing` is `ci_failed` when the newest
+any other check or a question alone. Only a flow whose last phase has such
+checks gives `data-sign-off` or `deviation`; the shipped development flow
+gives `recheck` and `land-choice`. `failing` is `ci_failed` when the newest
 attached run at the head failed, `conflict` when `git merge-tree
 --write-tree` of the head against the branch the mount follows reports a
-conflict, `stale` when the newest attached review covers another commit,
-and null otherwise. A branch that is only behind is not failing. A merge
-check that git cannot answer within 5 seconds leaves `failing` null and adds
-a `changes::ready::merge_unread` warning naming the change. Rows come oldest
-first, with the failing ones last. `failing false` runs no merge check and
-leaves every `failing` null. `questions` takes question paths and lists only
-the changes those questions block; `plans.waiting` calls it that way.
+conflict, `stale` when reviews are attached and none covers the head, and
+null otherwise. A branch that is only behind is not failing. A merge check
+that git cannot answer within 2 seconds, or that would start after the
+read's merge checks have spent 2 seconds in all, leaves `failing` null and
+adds a `changes::ready::merge_unread` warning naming the change. Rows come
+oldest first, with the failing ones last. `failing false` runs no merge
+check and leaves every `failing` null. `questions` takes question paths and
+lists only the changes those questions block.
 
 A change in flight keeps the flow version it stored; `changes reflow --path
 <change> --flow development` takes up these gates. A board that wants the

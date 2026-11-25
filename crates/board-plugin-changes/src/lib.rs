@@ -200,7 +200,7 @@ const CAPABILITIES: [Capability; 24] = [
             `owed` lists with a check of the owner's; each with its pull request, the kind of \
             check it waits on, its open questions, the days since it was touched and why it is \
             failing: its newest CI run at its head failed, its head conflicts with the branch its \
-            mount follows, or its newest review covers another commit.",
+            mount follows, or no attached review covers its head.",
         run: ready::ready,
         input: input::<ready::Input>,
         output: output::<ready::Output>,

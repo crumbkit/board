@@ -3,7 +3,7 @@
 // the red failing part is silent. Pure functions, so the tests can pin every
 // word.
 
-import type { Failing, Ready, ReadyChange, ReadyKind } from '../types'
+import type { Failing, Ready, ReadyChange, ReadyKind, Waiting } from '../types'
 import { failure } from './plans'
 
 /** Whether the red failing part is drawn: `silent` until a later change sets the option to `shown`. */
@@ -42,20 +42,47 @@ export function parseReady(exitCode: number, stdout: string, stderr: string): { 
 /** Failure codes the button does not report: no personal board. */
 const QUIET = ['board::config::not_found']
 
+/** The changes the red part counts: none while it is silent, else the failing ones. */
+const failingOf = (ready: Ready, mode: FailingMode) => (mode === 'shown' ? ready.changes.filter(c => c.failing !== null) : [])
+
+/**
+ * The red part for `failing` changes: `· N stale` when every one is failing
+ * only because its review no longer matches its head, else `· N failing`.
+ * Null when none is.
+ */
+export function failingPart(failing: readonly ReadyChange[]): string | null {
+  if (failing.length === 0) return null
+  const word = failing.every(c => c.failing === 'stale') ? 'stale' : 'failing'
+  return `· ${failing.length} ${word}`
+}
+
 /**
  * The Ready to land button: its label, the red part that says how many are
  * failing (only when `mode` is `shown`), and whether the last read failed.
- * While the red part is silent, failing changes count in N. Null when
- * nothing is ready and the last read did not fail loudly.
+ * While the red part is silent, failing changes count in N. A failed read
+ * keeps the last count, 0 when none was read. Null when nothing is ready and
+ * the last read did not fail loudly.
  */
 export function readyBadge(ready: Ready | null, why: string | null, mode: FailingMode): { label: string; failing: string | null; problem: boolean } | null {
   const loud = why !== null && !QUIET.some(code => why.startsWith(code))
-  if (ready === null) return loud ? { label: 'Ready to land could not be read', failing: null, problem: true } : null
-  const failing = mode === 'shown' ? ready.changes.filter(c => c.failing !== null).length : 0
-  const count = ready.total - failing
+  const failing = ready === null ? [] : failingOf(ready, mode)
+  const count = (ready?.total ?? 0) - failing.length
   if (loud) return { label: `Ready to land ${count}: the last read failed`, failing: null, problem: true }
-  if (ready.total === 0) return null
-  return { label: `Ready to land ${count}`, failing: failing === 0 ? null : `· ${failing} failing`, problem: false }
+  if (ready === null || ready.total === 0) return null
+  return { label: `Ready to land ${count}`, failing: failingPart(failing), problem: false }
+}
+
+/**
+ * What Waiting counts once the questions Ready to land counts are left out,
+ * so a check is counted once: each question of a change the button counts
+ * leaves `total`, and also `blocking` when its change is still going.
+ */
+export function waitingLess(waiting: Waiting | null, ready: Ready | null, mode: FailingMode): Waiting | null {
+  if (waiting === null || ready === null) return waiting
+  const counted = ready.changes.filter(c => mode === 'silent' || c.failing === null)
+  const all = new Set(counted.flatMap(c => c.questions))
+  const going = new Set(counted.filter(c => !c.done).flatMap(c => c.questions))
+  return { total: Math.max(0, waiting.total - all.size), blocking: Math.max(0, waiting.blocking - going.size) }
 }
 
 const KINDS: Record<ReadyKind, string> = {
@@ -72,6 +99,21 @@ const FAILINGS: Record<Failing, string> = { ci_failed: 'CI failed', conflict: 'C
 
 /** The red tag a failing row draws. */
 export const failingLabel = (failing: Failing) => FAILINGS[failing] ?? failing
+
+const WHY: Record<Failing, string> = {
+  ci_failed: 'Its CI failed, and the orchestrator is fixing it first. Nothing is asked of you until CI passes.',
+  conflict: 'Its branch no longer merges cleanly into main, and the orchestrator is fixing it first. Nothing is asked of you until it merges cleanly.',
+  stale: 'Its review no longer matches its head commit, and the orchestrator has it reviewed again first. Nothing is asked of you until the review covers the head.',
+}
+
+/** What a failing row's `Waits on:` says after the check: why it fails and that nothing is asked until it is fixed. */
+export const failingWhy = (failing: Failing) => WHY[failing] ?? ''
+
+/** A failing row's `Waits on:` text: the check, then why it fails. */
+export function waitsOnFailing(waitsOn: string, failing: Failing): string {
+  const said = waitsOn.trim().replace(/[;:,]+$/, '')
+  return `${said}${/[.?!]$/.test(said) ? '' : '.'} ${failingWhy(failing)}`
+}
 
 /** A pull request record's path as `owner/repo#number`; the path itself when it is not a GitHub pull record. */
 export function pullRef(path: string | null): string | null {

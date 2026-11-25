@@ -10,28 +10,37 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
-use board_ops::{Host, PluginError};
+use board_ops::{Host, PluginError, literal};
+use board_plugin::shape::Record;
 use board_repos::Date;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::board::{readable, rows, text};
-use crate::change::{attached, change_types, parsed, referenced_in_walk, today};
-use crate::diff::{conflicts, mounted};
-use crate::flow::{self, Actor, Flows, Kind as CheckKind, of_change};
-use crate::gates::{
-    Check, REPORT_TYPE, RUN_TYPE, Status, gate, objects, ran_on, reviewed_head, same_commit,
+use crate::board::{body, get_text, readable, rows, text};
+use crate::change::{
+    attached, change_types, kind_of as kind_at, parsed, plan_at, referenced, referenced_in_walk,
+    today,
 };
-use crate::owed::{Owed, owing};
-use crate::phases::observe_in;
-use crate::records::{ChangeRecord, is_final};
+use crate::diff::{conflicts, mounted};
+use crate::flow::{self, Actor, Kind as CheckKind, of_change};
+use crate::gates::{
+    Check, Observed, REPORT_TYPE, RUN_TYPE, Read as ReadKind, Status, gate, objects, ran_on, reads,
+    reviewed_head, same_commit,
+};
+use crate::owed::{OWED_DAYS, Owed, owed_of};
+use crate::phases::{observe_in, plan_file};
+use crate::plan::Answers;
+use crate::records::{ChangeRecord, DONE, DROPPED, PlanRecord, Route};
 use crate::{PLUGIN, Warning, to_value};
 
 /// The default `limit` (STANDARDS 23).
 const READY_LIMIT: usize = 100;
 /// How long the merge check of one change may take.
-const MERGE_DEADLINE: Duration = Duration::from_secs(5);
+const MERGE_DEADLINE: Duration = Duration::from_secs(1);
+/// How long the merge checks of one read may take in all, well inside the
+/// 5 seconds the board-plans mod gives the whole read.
+const MERGE_TOTAL: Duration = Duration::from_secs(1);
 
 /// The changes ready to land.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -79,8 +88,8 @@ pub(crate) enum ReadyKind {
 }
 
 /// Why a ready change is failing: the newest CI run at its head failed,
-/// its head conflicts with the branch its mount follows, or its newest
-/// review covers another commit.
+/// its head conflicts with the branch its mount follows, or reviews are
+/// attached and none covers its head.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Failing {
@@ -96,6 +105,7 @@ pub(crate) enum Failing {
 /// says what that check or question asks. `questions` lists the open
 /// questions whose `blocks` names the change. `days` counts the days since
 /// the change was last touched, null when it records no `touched` day.
+/// `done` says whether the change is done and owes only a recheck.
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct Ready {
     path: String,
@@ -108,6 +118,7 @@ pub(crate) struct Ready {
     questions: Vec<String>,
     days: Option<i64>,
     failing: Option<Failing>,
+    done: bool,
 }
 
 /// The changes ready to land, oldest first, with the failing ones last.
@@ -193,12 +204,33 @@ fn days_since(host: &dyn Host, touched: Option<&str>) -> Option<i64> {
     Some(today(host).days() - touched.days())
 }
 
+/// What the merge checks of one read may still spend: each change's check
+/// gets the time left, at most [`MERGE_DEADLINE`], and none runs once the
+/// read's merge checks have spent [`MERGE_TOTAL`] from the first.
+#[derive(Default)]
+struct MergeBudget {
+    until: std::cell::Cell<Option<std::time::Instant>>,
+}
+
+impl MergeBudget {
+    /// The time the next merge check may take, or none when it is spent.
+    fn next(&self) -> Option<Duration> {
+        let now = std::time::Instant::now();
+        let until = self.until.get().unwrap_or(now + MERGE_TOTAL);
+        self.until.set(Some(until));
+        let left = until.saturating_duration_since(now);
+        (!left.is_zero()).then(|| left.min(MERGE_DEADLINE))
+    }
+}
+
 /// Why the change at `path` is failing, or none, and a warning when git
-/// could not say whether its head merges.
+/// could not say whether its head merges. A change whose merge check git
+/// cannot answer is not marked failing.
 fn failing_of(
     host: &dyn Host,
     path: &str,
     change: &ChangeRecord,
+    budget: &MergeBudget,
 ) -> Result<(Option<Failing>, Option<Warning>), PluginError> {
     let Some(head) = change.head.as_deref() else {
         return Ok((None, None));
@@ -218,24 +250,33 @@ fn failing_of(
     if failed {
         return Ok((Some(Failing::CiFailed), None));
     }
-    let merged = match mounted(host, &change.mount)? {
-        Ok(at) => conflicts(host, &at, head, MERGE_DEADLINE),
-        Err(why) => Err(why),
+    let merged = match (mounted(host, &change.mount)?, budget.next()) {
+        (Ok(at), Some(deadline)) => conflicts(host, &at, head, deadline),
+        (Ok(_), None) => Err(format!(
+            "the merge checks of this read spent their {} second",
+            MERGE_TOTAL.as_secs()
+        )),
+        (Err(why), _) => Err(why),
     };
-    let warning = match merged {
+    match merged {
         Ok(true) => return Ok((Some(Failing::Conflict), None)),
-        Ok(false) => None,
-        Err(why) => Some(Warning {
-            code: "changes::ready::merge_unread",
-            detail: format!(
-                "whether {path} merges cleanly is not known, so it is not marked failing: {why}"
-            ),
-        }),
-    };
-    let stale = (records.of_type(REPORT_TYPE))
-        .last()
-        .is_some_and(|(_, report)| !same_commit(reviewed_head(report).as_ref(), head));
-    Ok((stale.then_some(Failing::Stale), warning))
+        Ok(false) => {}
+        Err(why) => {
+            let warning = Warning {
+                code: "changes::ready::merge_unread",
+                detail: format!(
+                    "whether {path} merges cleanly is not known, so it is not marked failing: {why}"
+                ),
+            };
+            return Ok((None, Some(warning)));
+        }
+    }
+    // Reports are kept by path, so none is the newest; the review is stale
+    // only when no attached report covers the head.
+    let mut reports = records.of_type(REPORT_TYPE).peekable();
+    let stale = reports.peek().is_some()
+        && !reports.any(|(_, report)| same_commit(reviewed_head(report).as_ref(), head));
+    Ok((stale.then_some(Failing::Stale), None))
 }
 
 /// The row of a change in the last phase of its flow, when it waits only
@@ -244,13 +285,11 @@ fn ready_in_land(
     host: &dyn Host,
     path: &str,
     change: &ChangeRecord,
+    (flow, phase): (flow::Flow, &flow::Phase),
     asked: &[Asked],
-    failing: bool,
+    failing: Option<&MergeBudget>,
 ) -> Result<(Option<Ready>, Option<Warning>), PluginError> {
-    let Some(read) = of_change(host, path, change)? else {
-        return Ok((None, None));
-    };
-    let observed = observe_in(host, path, change, Some(read))?;
+    let observed = observe_in(host, path, change, Some(flow))?;
     let checks = gate(&observed);
     let blocked = (checks.iter()).any(|each| each.blocking() && each.actor != Actor::Owner);
     let owners: Vec<&Check> = (checks.iter())
@@ -259,9 +298,6 @@ fn ready_in_land(
     if blocked || (owners.is_empty() && asked.is_empty()) {
         return Ok((None, None));
     }
-    let phase = (observed.flow.as_ref())
-        .and_then(|flow| flow.phase(&change.phase))
-        .expect("the change stands in its flow's last phase, which its caller found");
     let first = owners.iter().find(|each| each.blocks).or(owners.first());
     let (kind, check, waits_on) = match first {
         Some(each) => (
@@ -271,10 +307,9 @@ fn ready_in_land(
         ),
         None => (ReadyKind::LandChoice, None, asked[0].question.clone()),
     };
-    let (failing, warning) = if failing {
-        failing_of(host, path, change)?
-    } else {
-        (None, None)
+    let (failing, warning) = match failing {
+        Some(budget) => failing_of(host, path, change, budget)?,
+        None => (None, None),
     };
     let row = Ready {
         path: path.to_owned(),
@@ -287,6 +322,7 @@ fn ready_in_land(
         questions: asked.iter().map(|each| each.path.clone()).collect(),
         days: days_since(host, change.touched.as_deref()),
         failing,
+        done: false,
     };
     Ok((Some(row), warning))
 }
@@ -305,7 +341,127 @@ fn recheck(host: &dyn Host, owed: Owed, asked: &[Asked]) -> Option<Ready> {
         waits_on: first.detail,
         questions: asked.iter().map(|each| each.path.clone()).collect(),
         failing: None,
+        done: true,
     })
+}
+
+/// Whether the owner's check `each` may apply to a change whose plan gives
+/// `answers` and whose route is `route`. Only the conditions the change
+/// record and its plan record answer are read; any other condition is
+/// taken to hold, so the gate decides it.
+fn may_apply(each: &flow::Check, answers: Answers, route: Option<Route>) -> bool {
+    let Some(when) = &each.when else {
+        return true;
+    };
+    if let Some(routes) = &when.route
+        && !route.is_some_and(|route| routes.contains(&route))
+    {
+        return false;
+    }
+    if let Some(wanted) = when.answers
+        && !answers.meet(wanted)
+    {
+        return false;
+    }
+    // `answers_not` holds only when the plan gives each answer it names.
+    let given = |wanted: Answers| {
+        (wanted.ux.is_none() || answers.ux == wanted.ux)
+            && (wanted.data.is_none() || answers.data == wanted.data)
+            && (wanted.lifecycle.is_none() || answers.lifecycle == wanted.lifecycle)
+    };
+    !when.answers_not.is_some_and(given)
+}
+
+/// What the gate of a done change's owed checks in `flow` reads. When
+/// those checks read only the change's references and plan, as an
+/// understanding check does, only those are read, which leaves out the
+/// board's own location that `observe_in` resolves and only a remedy names;
+/// otherwise `observe_in` reads them.
+fn observe_owed(
+    host: &dyn Host,
+    path: &str,
+    change: &ChangeRecord,
+    flow: flow::Flow,
+) -> Result<Observed, PluginError> {
+    let wanted = reads(
+        (flow.phase(&change.phase)).map_or(&[], |phase| phase.checks.as_slice()),
+    );
+    if !(wanted.iter()).all(|read| matches!(read, ReadKind::References | ReadKind::Plan)) {
+        return observe_in(host, path, change, Some(flow));
+    }
+    let cited = attached(host, path)?;
+    let records = referenced(host, &cited)?;
+    let mut found = Observed::new(path, change.clone(), kind_at(host, path)?, records);
+    found.flow = Some(flow);
+    found.cited = cited;
+    if wanted.contains(&ReadKind::Plan) {
+        found.plan_file = plan_file(host, change)?;
+        found.plan = match &found.plan_file {
+            Some(file) => get_text(host, file)?,
+            None => None,
+        };
+        let named = (change.plan.as_deref().map(|plan| plan_at(host, plan))).transpose()?;
+        if let Some((record, _)) = named.flatten() {
+            found.answers = record.answers.unwrap_or_default();
+        }
+    }
+    Ok(found)
+}
+
+/// Whether the check is the owner's.
+fn owners(each: &flow::Check) -> bool {
+    each.actor == Some(Actor::Owner)
+}
+
+/// A copy of `flow`, which the gate takes by value.
+fn copied(flow: &flow::Flow) -> Option<flow::Flow> {
+    serde_json::from_value(serde_json::to_value(flow).ok()?).ok()
+}
+
+/// The flows the walk reads, each read once in one query for every flow
+/// path the changes name.
+#[derive(Default)]
+struct Read(BTreeMap<String, Option<flow::Flow>>);
+
+impl Read {
+    /// Reads at once the flows at `paths`; a path that holds no flow Board
+    /// reads is kept as none.
+    fn load(&mut self, host: &dyn Host, paths: &BTreeSet<String>) -> Result<(), PluginError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let listed: Vec<String> = paths.iter().map(|each| literal(each)).collect();
+        let sql = format!(
+            "SELECT e.logical, e.type, e.code, b.body FROM entries AS e LEFT JOIN bodies AS b \
+             ON b.blob = e.blob WHERE e.logical IN ({})",
+            listed.join(", ")
+        );
+        for row in rows(host, &sql)? {
+            let Some(path) = text(row.first()) else {
+                continue;
+            };
+            let flow = (text(row.get(1)) == Some(flow::Flow::TYPE) && readable(row.get(2)))
+                .then(|| serde_json::from_value(Value::Object(body(row.get(3)))).ok())
+                .flatten();
+            self.0.insert(path.to_owned(), flow);
+        }
+        for path in paths {
+            self.0.entry(path.clone()).or_insert(None);
+        }
+        Ok(())
+    }
+
+    /// The flow the change at `path` follows, or none when it follows none
+    /// or Board cannot read it.
+    fn of(&mut self, host: &dyn Host, path: &str, change: &ChangeRecord) -> Option<flow::Flow> {
+        let read = || of_change(host, path, change).ok().flatten();
+        match change.flow.as_ref().filter(|_| !change.v1) {
+            Some(copy) => (self.0.entry(copy.clone()).or_insert_with(read))
+                .as_ref()
+                .and_then(copied),
+            None => read(),
+        }
+    }
 }
 
 pub(crate) fn ready(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
@@ -322,36 +478,87 @@ pub(crate) fn ready(host: &dyn Host, input: &Value) -> Result<Value, PluginError
             .collect()
     });
     let asked_of = |path: &str| asked.get(path).map_or(&[][..], Vec::as_slice);
+    // Each change that is still going, and each done in the last OWED_DAYS
+    // days, with its plan's answers, so a change no check of the owner's
+    // can apply to is passed over before its gate is read.
+    let since = today(host).plus(-OWED_DAYS).to_string();
     let sql = format!(
-        "SELECT logical, code, body FROM records WHERE type IN ({}) ORDER BY logical",
-        change_types()
+        "SELECT c.logical, c.code, c.body, (SELECT json_extract(p.body, '$.answers') FROM records p \
+         WHERE p.logical = json_extract(c.body, '$.plan') AND p.type = {plan} LIMIT 1) \
+         FROM records c WHERE c.type IN ({types}) AND (json_extract(c.body, '$.phase') \
+         NOT IN ('{DONE}', '{DROPPED}') OR (json_extract(c.body, '$.phase') = '{DONE}' AND \
+         json_extract(c.body, '$.touched') >= '{since}')) ORDER BY c.logical",
+        plan = literal(PlanRecord::TYPE),
+        types = change_types(),
     );
     let mut found = Vec::new();
     let mut warnings = Vec::new();
     let mut unreadable = 0;
-    let mut flows = Flows::default();
-    for row in rows(host, &sql)? {
+    let mut flows = Read::default();
+    let budget = failing.then(MergeBudget::default);
+    let listed = rows(host, &sql)?;
+    let named: BTreeSet<String> = (listed.iter())
+        .filter_map(|row| parsed(row.get(2)))
+        .filter(|change| !change.v1)
+        .filter_map(|change| change.flow)
+        .collect();
+    flows.load(host, &named)?;
+    for row in listed {
         let change = (readable(row.get(1))).then(|| parsed(row.get(2))).flatten();
-        let (Some(path), Some(change)) = (text(row.first()), change) else {
+        let (Some(path), Some(mut change)) = (text(row.first()), change) else {
             unreadable += 1;
             continue;
         };
-        if is_final(&change.phase) || only.as_ref().is_some_and(|only| !only.contains(path)) {
+        if change.phase == DROPPED || only.as_ref().is_some_and(|only| !only.contains(path)) {
             continue;
         }
-        let last =
-            (flows.of_change(host, path, &change)).and_then(|flow| flow.phases.last().cloned());
-        if last.as_deref() != Some(change.phase.as_str()) {
+        let answers: Answers = (text(row.get(3)))
+            .and_then(|answers| serde_json::from_str(answers).ok())
+            .unwrap_or_default();
+        let questions = asked_of(path);
+        let Some(mut flow) = flows.of(host, path, &change) else {
+            continue;
+        };
+        let applies = |each: &flow::Check| owners(each) && may_apply(each, answers, change.route);
+        let done = change.phase == DONE;
+        let Some(last) = flow.phases.last_mut() else {
+            continue;
+        };
+        if done {
+            // Only the owner's checks that do not block are read, so a done
+            // change's diff and pull request are not.
+            last.checks
+                .retain(|each| each.blocks == Some(false) && applies(each));
+            if last.checks.is_empty() {
+                continue;
+            }
+            change.phase.clone_from(&last.name);
+            let observed = observe_owed(host, path, &change, flow)?;
+            found.extend(owed_of(&observed).and_then(|owed| recheck(host, owed, questions)));
             continue;
         }
-        let (row, warning) = ready_in_land(host, path, &change, asked_of(path), failing)?;
+        if last.name != change.phase
+            || (questions.is_empty() && !last.checks.iter().any(applies))
+        {
+            continue;
+        }
+        // The gate takes the flow; its copy names the kinds of the checks.
+        let Some(copy) = copied(&flow) else {
+            continue;
+        };
+        let Some(last) = copy.phases.last() else {
+            continue;
+        };
+        let (row, warning) = ready_in_land(
+            host,
+            path,
+            &change,
+            (flow, last),
+            questions,
+            budget.as_ref(),
+        )?;
         found.extend(row);
         warnings.extend(warning);
-    }
-    let (owed, _) = owing(host, only.as_ref())?;
-    for each in owed {
-        let questions = asked_of(&each.path);
-        found.extend(recheck(host, each, questions));
     }
     found.sort_by(|a, b| {
         let key = |row: &Ready| {

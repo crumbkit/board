@@ -54,17 +54,20 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   plugin, or one whose plugin has no `ready` capability, there is no button
   and no error, and the mod stops asking until it loads again. A failed read
   keeps the last count and turns the button red: `Ready to land <n>: the last
-  read failed`, or `Ready to land could not be read` when none has worked.
+  read failed`, with `<n>` 0 when no read has worked.
   The button opens the Ready to land pane. The pane lists the changes oldest
   first with the failing ones last. Each row gives the pull request, how long
-  it has been ready, the kind of check (Recheck, Data sign-off, Deviation or
-  Land choice), the title and what the check asks. An **Answer in /ask**
-  button follows, and **Ask these now (/ask)** heads the pane. Both run /ask.
+  it has been ready and the kind of check (Recheck, Data sign-off, Deviation
+  or Land choice) as a tag, then the title and what the check asks. An
+  **Answer in /ask** button follows, and **Ask these now (/ask)** heads the
+  pane. Both run /ask.
   The mod's `failing` option says whether a failing change is drawn in red:
   `silent`, the default, or `shown`. With `shown`, the button adds `· <m>
-  failing` in red and leaves those changes out of `<n>`, and a failing row
-  is tagged in red and names `board changes next --path <change>` in place
-  of the /ask button. While the option is `silent`, failing changes count in
+  failing` in red, or `· <m> stale` when each of them fails only because its
+  review no longer covers its head, and leaves those changes out of `<n>`. A
+  failing row has a red tag with the reason, says why after what it waits on
+  and that nothing is asked until it is fixed, and names `board changes next
+  --path <change>` in place of the /ask button. While the option is `silent`, failing changes count in
   `<n>`, and the mod appends a line to
   `$XDG_STATE_HOME/board/ready-failing.jsonl`, by default
   `~/.local/state/board/ready-failing.jsonl`. It does so each time a listed
@@ -82,9 +85,8 @@ band draws nothing. While a survey holds the band, no mod draws in it.
   button turns red and reads `<count>: the last read failed`, or `Questions
   could not be read` when none has worked. The pane says why only for a
   failed `plans.open`; a failed `plans.waiting` is in the debug log.
-  `plans.waiting` leaves out the questions that block a change Ready to land
-  counts, so a check is counted once. The pane lists those questions first,
-  under a Ready to land heading.
+  The button leaves out the questions that block a change Ready to land
+  counts, so a check is counted once; `plans.waiting` itself counts them.
 - **Effects button**, from `board-effects`: `Effects <n>`, with `+` when
   Board listed only the first. It opens the pending effects pane. A failed
   read shows it in red, as `Effects could not be read`, or `Effects <n>: the

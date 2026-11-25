@@ -889,16 +889,25 @@ test('with the failing option shown the button and the pane draw the failing cha
   expect((await shown.findAll({ type: 'Text' })).map(t => t.text)).toEqual([
     'Ready to land · 1',
     '· 1 failing',
-    'crumbkit/board#288 · ready 1d · Recheck',
+    'crumbkit/board#288',
+    'ready 1d',
+    ' Recheck ',
     'The t change',
     'Waits on: your recheck of two reworded statements',
     'Clears it:',
-    'crumbkit/board#288 · ready 2d · Data sign-off',
-    '· CI failed',
+    'crumbkit/board#288',
+    'ready 2d',
+    ' Data sign-off ',
+    ' CI failed ',
     'The u change',
-    'Waits on: your recheck of two reworded statements',
-    'To see why: board changes next --path /changes/u',
+    'Waits on: your recheck of two reworded statements. Its CI failed, and the orchestrator is fixing it first. Nothing is asked of you until CI passes.',
+    'To see why:',
+    'board changes next --path /changes/u',
   ])
+  // The kind is a tag and the failing reason a red one.
+  expect((await shown.find({ type: 'Text', text: ' Data sign-off ' }))?.props?.inverse).toBe(true)
+  const red = (await shown.find({ type: 'Text', text: ' CI failed ' }))?.props
+  expect([red?.inverse, red?.color]).toEqual([true, 'red'])
 })
 
 test('a failed read keeps the last count and says the last read failed', async ($, on) => {
@@ -923,7 +932,9 @@ test('the pane lists each change with its pull request, age, kind and check, and
   const shown = await $.ui.mount({ ...pane('ready'), surface: 'desktop' })
   expect((await shown.findAll({ type: 'Text' })).map(t => t.text)).toEqual([
     'Ready to land · 1',
-    'crumbkit/board#288 · ready today · Land choice',
+    'crumbkit/board#288',
+    'ready today',
+    ' Land choice ',
     'The t change',
     'Waits on: Land it now or after #297?',
     'Clears it:',
@@ -953,17 +964,17 @@ test('each read records a change that starts or stops failing in the state file,
   expect(lines().map(l => [l.change, l.reason])).toEqual([['/changes/u', 'conflict'], ['/changes/u', null]])
 })
 
-test('the questions pane puts the questions of a change ready to land first, under their own heading', async ($, on) => {
+test('Waiting leaves out the questions Ready to land counts, so a check is counted once, and its pane is drawn as before', async ($, on) => {
   mock.clock(on, { now: NOW })
-  engine(on, { ready: readyOf([landing('t', { questions: [COUNT.path] })]) })
+  engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(11, 8) }), ready: readyOf([landing('t', { questions: [COUNT.path] })]) })
   await start($)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await band.find({ key: 'waiting' }))?.text).toBe('Waiting 10 · 7 blocking')
   const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
   expect((await ui.findAll({ type: 'Text' })).map(t => t.text)).toEqual([
-    'Ready to land',
-    'core · 1h',
-    'How many users have a blank email?',
-    'Other questions',
     'home · 15h · blocks home#201',
     'Merge home#201?',
+    'core · 1h',
+    'How many users have a blank email?',
   ])
 })

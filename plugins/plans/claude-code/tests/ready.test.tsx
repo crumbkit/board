@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { ReadyChange } from '../types'
-import { failingLabel, failingMode, keptLines, KEPT_MS, kindLabel, parseReady, pullRef, readyBadge, readyFor, stateText, transitions } from '../hooks/ready'
+import { failingLabel, failingMode, failingPart, keptLines, KEPT_MS, kindLabel, parseReady, pullRef, readyBadge, readyFor, stateText, transitions, waitingLess, waitsOnFailing } from '../hooks/ready'
 
 // These prove the words the Ready to land button and pane draw from what
 // changes.ready answers, and the lines the silent week records. Which
@@ -54,8 +54,46 @@ test('a failed read keeps the last count with the Waiting wording, and a board w
   const ready = { changes: [change('t'), change('u'), change('v')], total: 3 }
   const why = 'board::query::timeout the query ran longer than 1s'
   expect(readyBadge(ready, why, 'silent')).toEqual({ label: 'Ready to land 3: the last read failed', failing: null, problem: true })
-  expect(readyBadge(null, why, 'silent')).toEqual({ label: 'Ready to land could not be read', failing: null, problem: true })
+  // With no read that worked, the count is 0, in the same words.
+  expect(readyBadge(null, why, 'silent')).toEqual({ label: 'Ready to land 0: the last read failed', failing: null, problem: true })
   expect(readyBadge(null, 'board::config::not_found no personal board', 'silent')).toBeNull()
+})
+
+test('the red part says stale when each failing change only has a stale review, and failing otherwise', () => {
+  expect(failingPart([])).toBeNull()
+  expect(failingPart([change('t', { failing: 'stale' })])).toBe('· 1 stale')
+  expect(failingPart([change('t', { failing: 'stale' }), change('u', { failing: 'ci_failed' })])).toBe('· 2 failing')
+  const ready = { changes: [change('t'), change('u', { failing: 'stale' })], total: 2 }
+  expect(readyBadge(ready, null, 'shown')).toEqual({ label: 'Ready to land 1', failing: '· 1 stale', problem: false })
+})
+
+test('a failing row says why after the check it waits on, and that nothing is asked until it is fixed', () => {
+  expect(waitsOnFailing('your review', 'stale')).toBe(
+    'your review. Its review no longer matches its head commit, and the orchestrator has it reviewed again first. Nothing is asked of you until the review covers the head.',
+  )
+  expect(waitsOnFailing('your data sign-off.', 'ci_failed')).toBe(
+    'your data sign-off. Its CI failed, and the orchestrator is fixing it first. Nothing is asked of you until CI passes.',
+  )
+  expect(waitsOnFailing('Land it?', 'conflict')).toBe(
+    'Land it? Its branch no longer merges cleanly into main, and the orchestrator is fixing it first. Nothing is asked of you until it merges cleanly.',
+  )
+})
+
+test('Waiting leaves out the questions of each change Ready to land counts, and the blocking ones of a change still going', () => {
+  const waiting = { total: 5, blocking: 3 }
+  const ready = {
+    changes: [
+      change('t', { questions: ['/q/a', '/q/b'] }),
+      change('u', { questions: ['/q/c'], done: true }),
+      change('v', { questions: ['/q/d'], failing: 'conflict' }),
+    ],
+    total: 3,
+  }
+  expect(waitingLess(waiting, ready, 'silent')).toEqual({ total: 1, blocking: 0 })
+  // Shown, the failing change is left out of Ready to land, so Waiting keeps its question.
+  expect(waitingLess(waiting, ready, 'shown')).toEqual({ total: 2, blocking: 1 })
+  expect(waitingLess(waiting, null, 'silent')).toBe(waiting)
+  expect(waitingLess(null, ready, 'silent')).toBeNull()
 })
 
 test('only the option shown draws the red part', () => {

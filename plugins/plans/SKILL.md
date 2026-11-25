@@ -75,9 +75,7 @@ in. `<project>` names what the record concerns, such as the repository
        board -C <board> plans open --path /projects/<project>
 
    `board -C <board> plans waiting` gives their count and one line to end a
-   reply with. It leaves out the questions that block a change ready to
-   land, which `board -C <board> changes ready` lists, and counts them as
-   `ready`.
+   reply with.
 
 3. When the owner answers in chat, record the answer with the option they
    chose and their words verbatim:
