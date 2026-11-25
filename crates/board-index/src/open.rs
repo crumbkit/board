@@ -113,6 +113,7 @@ impl Index {
     fn file(cache: &Path, root: &Path, reset: bool, wait: Duration) -> Result<Self, Failure> {
         let file = location(cache, root);
         directory(&file, reset).map_err(|_| Failure::Unusable)?;
+        crate::mark::mark(&cache.join("board"));
         let mut connection = Connection::open(&file).map_err(|error| failure(&error))?;
         let created = prepare(&mut connection, wait).map_err(|error| match error {
             Prepared::Sql(error) => failure(&error),

@@ -35,6 +35,7 @@ pub struct Timings {
 pub fn append_timing(cache: &Path, line: &[u8], digest: &Summarise) -> io::Result<()> {
     let directory = cache.join("board");
     std::fs::create_dir_all(&directory)?;
+    crate::mark::mark(&directory);
     let log = directory.join("timings.jsonl");
     if length(&log).saturating_add(line.len() as u64) > TIMING_LOG_BYTES {
         rotate(&directory, &log, line.len() as u64, digest)?;
