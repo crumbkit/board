@@ -739,10 +739,7 @@ impl Host for Hosted<'_> {
     }
 
     fn known_boards(&self) -> Vec<PathBuf> {
-        self.plugins
-            .known
-            .map(KnownBoards::boards)
-            .unwrap_or_default()
+        self.plugins.known.map_or_default(KnownBoards::boards)
     }
 
     #[expect(

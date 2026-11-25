@@ -289,8 +289,7 @@ impl Repository {
         fs::create_dir_all(&directory).map_err(io(&directory))?;
         let name = target
             .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
+            .map_or_default(|name| name.to_string_lossy().into_owned());
         let temporary = directory.join(format!(".{name}.board-tmp"));
         let written = write_temporary(&temporary, &target, bytes)
             .and_then(|()| fs::rename(&temporary, &target));

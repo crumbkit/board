@@ -91,8 +91,7 @@ pub fn installed(plugins: &Path) -> Result<Vec<Installed>, DiscoveryError> {
         let directory = entry.map_err(unreadable)?.path();
         let name = directory
             .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
+            .map_or_default(|name| name.to_string_lossy().into_owned());
         let parsed = read_bounded(&directory.join(MANIFEST_FILE))
             .ok_or(ManifestError::Missing)
             .and_then(|bytes| Manifest::parse(&name, &bytes));

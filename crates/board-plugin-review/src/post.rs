@@ -124,10 +124,7 @@ pub(crate) fn comment(path: &str, pr: &str, report: &ReportRecord) -> String {
         String::new(),
     ];
     for finding in &report.findings {
-        let line = finding
-            .line
-            .map(|line| format!(":{line}"))
-            .unwrap_or_default();
+        let line = finding.line.map_or_default(|line| format!(":{line}"));
         let place = format!("{}{line}", finding.file.as_deref().unwrap_or_default());
         let place = if place.is_empty() {
             place

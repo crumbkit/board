@@ -97,8 +97,7 @@ pub(crate) fn allowed(
     .filter(Ran::ok);
     let urls: Vec<&str> = urls
         .as_ref()
-        .map(|ran| ran.stdout.lines().filter(|line| !line.is_empty()).collect())
-        .unwrap_or_default();
+        .map_or_default(|ran| ran.stdout.lines().filter(|line| !line.is_empty()).collect());
     let allowed: Vec<String> = origins.iter().map(|origin| normalised(origin)).collect();
     let refused: Vec<String> = (urls.iter())
         .map(|url| normalised(url))

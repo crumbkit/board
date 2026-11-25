@@ -315,12 +315,11 @@ fn version_of(board: &Changes, path: &str) -> String {
 
 /// The files under `folder`, from the board's root, by name.
 fn files_in(board: &Changes, folder: &str) -> Vec<String> {
-    let mut names: Vec<String> = std::fs::read_dir(board.root().join(folder))
-        .map(|read| {
+    let mut names: Vec<String> =
+        std::fs::read_dir(board.root().join(folder)).map_or_default(|read| {
             read.map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
                 .collect()
-        })
-        .unwrap_or_default();
+        });
     names.sort();
     names
 }

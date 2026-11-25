@@ -188,8 +188,7 @@ fn read(arguments: &[OsString], context: &Context) -> (Option<External>, Option<
         .try_get_many::<OsString>("directories")
         .ok()
         .flatten())
-    .map(|values| values.cloned().collect())
-    .unwrap_or_default();
+    .map_or_default(|values| values.cloned().collect());
     let personal = matches.get_flag("personal");
     let first = matches.subcommand();
     if first.is_some_and(|(word, _)| word != HELP && commands.iter().any(|c| c == word)) {
@@ -230,8 +229,7 @@ pub(crate) fn first_word(arguments: &[OsString]) -> Option<(usize, Vec<OsString>
 /// and those words.
 fn placed(arguments: &[OsString], words: &ArgMatches) -> Option<(usize, Vec<OsString>)> {
     let rest: Vec<OsString> = (words.try_get_many::<OsString>("").ok().flatten())
-        .map(|values| values.cloned().collect())
-        .unwrap_or_default();
+        .map_or_default(|values| values.cloned().collect());
     Some((arguments.len().checked_sub(rest.len() + 1)?, rest))
 }
 

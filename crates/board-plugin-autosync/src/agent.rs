@@ -157,8 +157,7 @@ pub(crate) fn install(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     let variables = &host.settings().environment;
     let path = variables
         .get("PATH")
-        .map(|path| path.to_string_lossy().into_owned())
-        .unwrap_or_default();
+        .map_or_default(|path| path.to_string_lossy().into_owned());
     let board = std::env::current_exe()
         .map_or_else(|_| "board".to_owned(), |board| board.display().to_string());
     let file = plist(&home);
