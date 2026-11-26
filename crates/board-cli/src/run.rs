@@ -8,7 +8,7 @@ use board_model::{
     Refusal,
 };
 pub(crate) use board_ops::entered;
-use board_ops::{Board, Bulk, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins, PutError};
+use board_ops::{Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins, PutError};
 use board_plugin::{Limits, Target};
 
 mod checkout;
@@ -17,6 +17,7 @@ mod lookup;
 mod mount;
 mod remove;
 mod repo;
+mod reread;
 mod search;
 mod syncing;
 mod uri;
@@ -46,6 +47,7 @@ use crate::values::{duration, expect, var};
 use crate::{effects, graft};
 use mount::MountCommand;
 use repo::RepoCommand;
+use reread::{ask, reread};
 
 const ROOT_EXAMPLES: &str = "\
 Start here:
@@ -578,58 +580,6 @@ fn describe(
         }
         _ => unreachable!("run passes only commands and schemas"),
     }
-}
-
-/// The output of a refused command line that Board reads again: one that
-/// gives too many paths, starts with an alias, guesses a word or a flag's
-/// spelling, or makes a known mistake.
-fn reread(
-    arguments: &[OsString],
-    context: &Context,
-    stdin: &mut dyn Stdin,
-    ran: &mut Ran,
-    refused: &crumbkit::Refused,
-) -> Option<Output> {
-    if let Some(output) = render::too_many_paths(refused) {
-        return Some(output);
-    }
-    let Some(resolved) = crate::alias::after(arguments, context, refused) else {
-        if let Some(meant) = crate::guessed::meant(arguments, refused) {
-            return Some(run(meant, context, stdin, ran));
-        }
-        return crate::mistaken::hinted(arguments, refused);
-    };
-    Some(match resolved {
-        Ok(called) => run(called, context, stdin, ran),
-        Err(refusal) => {
-            let printer = Printer {
-                view: refused.run().clone(),
-            };
-            render::refused(printer, *refusal)
-        }
-    })
-}
-
-/// Lets `board` ask the owner to admit what `command` writes, and marks a
-/// `put --bulk` as a bulk commit, refusing a reason a trailer cannot hold.
-/// Only a plugin's decide writes in the personal board.
-fn ask(board: &mut Board, context: &Context, command: &Command) -> Result<(), Box<Refusal>> {
-    if let Command::Put(Putting {
-        bulk: Some(reason), ..
-    }) = command
-    {
-        board.mark_bulk(Bulk::new(reason).map_err(|error| Box::new(error.refusal()))?);
-    }
-    let personal = match command {
-        Command::Put(_)
-        | Command::Rm(_)
-        | Command::Mount(MountCommand::Add { .. })
-        | Command::Repo(_) => false,
-        Command::Decide(_) => context.environment.plugin.is_some(),
-        _ => return Ok(()),
-    };
-    board.ask_as(effects::asker(context, personal)?);
-    Ok(())
 }
 
 /// Runs `command` against `board`, reading each path it is given from
