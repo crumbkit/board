@@ -117,9 +117,9 @@ help-budget/command: board get
   Cost: Each read of the page can cost 300 bytes more than the default, about 75 tokens.
 
 help-budget/command: board put
-  Budget: 1620 bytes, where the default is 1200 bytes.
-  Reason: put has seven options of its own (--new, --var, --expect, --batch, --bulk, --file and --wait), and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes. Its page also ends with the Effects: line and a global flags line that names --no-input.
-  Cost: Each read of the page can cost 420 bytes more than the default, about 105 tokens.
+  Budget: 1710 bytes, where the default is 1200 bytes.
+  Reason: put has eight options of its own (--new, --var, --expect, --batch, --bulk, --file, --wait and --strict), and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes. Its page also ends with the Effects: line and a global flags line that names --no-input.
+  Cost: Each read of the page can cost 510 bytes more than the default, about 128 tokens.
 
 help-budget/command: board refs
   Budget: 2000 bytes, where the default is 1200 bytes.

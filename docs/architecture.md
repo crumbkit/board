@@ -239,10 +239,11 @@ tables and views, how a refresh decides what to redo, and `board query` and
 `board put <path>` reads one JSON record from stdin, then:
 
 1. takes `board.lock` in the worktree's git directory, trying every 20
-   milliseconds for 5 seconds, or for as long as `--wait` says, and then refusing with `board::put::locked`. It first takes `board.flock` and clears the lock files `board-locks` names. Concurrent puts each land in their own commit. The steps below
+   milliseconds for 5 seconds, or for as long as `--wait` says, then refusing with `board::put::locked`. It first takes `board.flock` and clears the lock files `board-locks` names. Concurrent puts each land in their own commit. The steps below
    run under the lock, so a record is checked against the board it is written
    to;
-2. checks it with the codes `check` uses: size and strict parse, `$type`,
+2. fills and drops fields ([records/fills.md](architecture/records/fills.md))
+   and checks it with the codes `check` uses: size and strict parse, `$type`,
    schema, validity, and that references parse. A reference need not resolve.
    Input that is not one JSON object with a `$type` is `board::put::invalid`.
    `board/mount/v1`, `board/repo/v1`, `board/repo/v2`, `board/config/v1` and `board/attachment/v1` are checked
@@ -279,7 +280,7 @@ says.
 
 `board put --new <folder>/` writes a record at a new name, in its type's
 folder when no folder is given, as
-[architecture/paths/writes.md](architecture/paths/writes.md) says under New names.
+[architecture/paths/writes.md](architecture/paths/writes.md) says.
 
 `board put --batch` reads at most 10,000 JSON Lines of `{path, expect,
 record}`, `{path, expect, text}`, `{path, expect, remove}` or `{new, record}`, where `text` is written as a file, then

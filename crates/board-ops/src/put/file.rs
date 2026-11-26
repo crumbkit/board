@@ -8,7 +8,7 @@ use board_tree::{LOCK_WAIT, Lock, Resolver, WriteError};
 use board_validate::Reference;
 use serde_json::Value;
 
-use super::{Expect, Failure, Prepared, PutError, PutReport, Refused, Schemas};
+use super::{Expect, Failure, Mends, Prepared, PutError, PutReport, Refused, Schemas};
 use crate::board::Board;
 use crate::effects::{Change, Shape};
 use crate::verdict::Admitted;
@@ -143,6 +143,7 @@ impl Board {
             canonical: bytes.to_vec(),
             target,
             admitted,
+            mends: Mends::default(),
         })
     }
 

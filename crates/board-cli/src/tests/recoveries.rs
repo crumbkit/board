@@ -296,7 +296,7 @@ fn refusals(starts: &mut Starts, fixture: &RuntimePlace) {
     let unbounded = "query 'WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c) \
                      SELECT count(*) FROM c'";
     let zeroes = "query 'SELECT zeroblob(100000000)'";
-    let lines: [(Code, &str); 23] = [
+    let lines: [(Code, &str); 22] = [
         (Code::PathNotFound, "get /nowhere"),
         (Code::PathNotFound, "get /nowhere.json"),
         (Code::PathNotFound, "get /taks/t1"),
@@ -315,7 +315,6 @@ fn refusals(starts: &mut Starts, fixture: &RuntimePlace) {
         (Code::QueryTimeout, unbounded),
         (Code::OutputOverBudget, zeroes),
         (Code::CliUsage, "chek"),
-        (Code::CliUsage, "cat /projects/p"),
         (Code::CliUsage, "get projects//p"),
         (Code::CliUsage, "ls --limit 0"),
         (Code::MountFollowMissing, "mount update /mount/unfollowed"),

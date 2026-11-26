@@ -1150,10 +1150,12 @@ obligations on the planned paths and on each added file, with `*`, `?` and
 `[` in the file's name escaped so the name matches only itself, so an
 obligation on an added file blocks the check as one on a planned path does,
 and its detail then says the obligations apply to the plan's paths or to the
-files the change adds to them. The passing detail names at most ten added
-files and counts the rest. A
-plan with no paths, or a diff git cannot list, fails the check with
-`changes::paths::outside_plan`.
+files the change adds to them. It asks for the added files 100 to a call.
+When the change has a head and git cannot list its diff, the `obligations`
+check fails with `changes::gate::unmet` and git's reason. The `paths`
+check's passing detail names at most ten added files and counts the rest.
+A plan with no paths, or a diff git cannot list, fails the `paths` check
+with `changes::paths::outside_plan`.
 
 Commits match when one is a prefix of the other and both have at least 7
 digits.

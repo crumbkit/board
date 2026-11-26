@@ -64,6 +64,12 @@ pub trait Plugin: Sync {
     fn renamed_types(&self) -> &'static [(&'static str, &'static str)] {
         &[]
     }
+    /// The fields of its types that a command-line `board put` fills when
+    /// the caller leaves them out (docs/architecture/writes.md, Fills and
+    /// drops).
+    fn fills(&self) -> &'static [crate::Fill] {
+        &[]
+    }
 }
 
 /// What Board offers a built-in plugin while it runs a capability.

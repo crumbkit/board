@@ -16,6 +16,13 @@ pub struct PutReport {
     pub absent: Vec<String>,
     /// The commit the put made, or `null` when it made none.
     pub commit: Option<String>,
+    /// Each field a command-line put dropped because the record's type
+    /// does not name it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dropped: Vec<Dropped>,
+    /// Each field a command-line put filled because the record left it out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub filled: Vec<Filled>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub removed: Vec<Removed>,
     pub writes: Vec<Write>,
@@ -50,6 +57,28 @@ pub struct Degraded {
     pub failures: u64,
     pub pointer: Option<String>,
     pub reason: String,
+}
+
+/// A field a put filled: the logical path of the record, the field's JSON
+/// pointer, and in a batch the line that held the record.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Filled {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u64>,
+    pub path: String,
+    pub pointer: String,
+}
+
+/// A field a put dropped: the logical path of the record, the field's JSON
+/// pointer, the pointer of the field the type names one edit away from it
+/// or `null`, and in a batch the line that held the record.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Dropped {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u64>,
+    pub near: Option<String>,
+    pub path: String,
+    pub pointer: String,
 }
 
 /// One file a put removed, and the blob it held.

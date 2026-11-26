@@ -8,10 +8,47 @@
   whose decision it does not hold. The answers are the same as before. The
   index format moves to 30, so the first run after the upgrade builds a new
   index from scratch.
+- `board plans decide --project <project> --decision <text> --why <text>
+  --session <local_ id>` records a `plans/decision/v1` under the project's
+  decisions folder and prints its path. It fills in `$type`, `decided` and
+  `by`, takes `--person`, `--program`, a bare `--review` and repeated
+  `--alternatives`, `--refs` and `--urls`, and refuses a call that names
+  neither a session nor a person with `plans::decide::no_author`. When the
+  project held nothing before, it still writes the decision and warns with
+  the three nearest project names. The plans skill now records decisions
+  with it in place of a hand-built record and `put --new`.
+
+- `board put`, `put --new` and `put --batch` fill a field Board knows when
+  the record leaves it out: a question's or a decision's `by`, from
+  `BOARD_SESSION` or a `local_` Claude Code session id, its `asked` or
+  `decided` time, a question's `status` of `open`, and a review report's
+  `patch_ids`, from its `range` in the directory the put runs in. They also
+  drop a field the schema does not name, at any depth, with one warning on
+  stderr per field that names a known field one edit away, such as
+  `/alternatives`. A field one edit from a field the record lacks is
+  refused with a hint to rename it, and a fill that could not run prints
+  why. `--json` lists both in `filled` and `dropped`, and `--strict`
+  refuses as before. A plugin's write through its host fills and drops
+  nothing.
+- Board runs the command an agent meant for a few common guesses that
+  clap refused: `board cat` and `board show` run `get`, `board list` runs
+  `ls` and `board schema` runs `schemas`; a long flag given with hyphens
+  for underscores, or the reverse, such as `--task-repo` or `--dry-run`,
+  runs with the flag's own spelling; and `--path` given to `get`, `ls`,
+  `check`, `log`, `refs`, `uri` or `mount update`, such as
+  `board get --path /a`, is read as the path. `board cat` used to be refused with a hint to run `get`.
 - The rules plugin's README lists each code `board rules report` can put
   in `refused`, says which are warnings that leave every row as it is, and
   says that `rules::report::run_commit_unnamed` also covers a malformed
   `versions.commit` and a run Board cannot read.
+- `board schemas show` prints the schema each built-in plugin ships for its
+  record types, such as `rules/report/v1`, as `board plugin enable` writes
+  it, in any directory and whether or not a board enables the plugin.
+  `board schemas list` does not list them.
+- An `obligations` check on a change with a head fails, with git's reason,
+  when git cannot list the change's diff. Before, it passed on the plan's
+  paths alone. It asks `rules.for-paths` about the files a change adds 100
+  to a call, so a large diff no longer sends them all at once.
 
 ## 0.1.3 (2026-11-25)
 
