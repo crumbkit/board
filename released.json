@@ -355,6 +355,15 @@
       "data.put",
       "data.put.absent",
       "data.put.commit",
+      "data.put.dropped",
+      "data.put.dropped[].line",
+      "data.put.dropped[].near",
+      "data.put.dropped[].path",
+      "data.put.dropped[].pointer",
+      "data.put.filled",
+      "data.put.filled[].line",
+      "data.put.filled[].path",
+      "data.put.filled[].pointer",
       "data.put.removed",
       "data.put.removed[].blob",
       "data.put.removed[].path",
@@ -1143,6 +1152,15 @@
       "data",
       "data.absent",
       "data.commit",
+      "data.dropped",
+      "data.dropped[].line",
+      "data.dropped[].near",
+      "data.dropped[].path",
+      "data.dropped[].pointer",
+      "data.filled",
+      "data.filled[].line",
+      "data.filled[].path",
+      "data.filled[].pointer",
       "data.kept",
       "data.kept[].records",
       "data.kept[].schema",
@@ -1305,6 +1323,15 @@
       "data",
       "data.absent",
       "data.commit",
+      "data.dropped",
+      "data.dropped[].line",
+      "data.dropped[].near",
+      "data.dropped[].path",
+      "data.dropped[].pointer",
+      "data.filled",
+      "data.filled[].line",
+      "data.filled[].path",
+      "data.filled[].pointer",
       "data.removed",
       "data.removed[].blob",
       "data.removed[].path",
@@ -10748,6 +10775,127 @@
         ]
       }
     },
+    "plans.decide": {
+      "input": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "decision",
+            "project",
+            "why"
+          ]
+        ]
+      },
+      "input.alternatives": {
+        "type": [
+          "array"
+        ]
+      },
+      "input.alternatives[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.decision": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.person": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.program": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.project": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.refs": {
+        "type": [
+          "array"
+        ]
+      },
+      "input.refs[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.review": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "input.session": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.urls": {
+        "type": [
+          "array"
+        ]
+      },
+      "input.urls[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.why": {
+        "type": [
+          "string"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "line",
+            "path"
+          ]
+        ]
+      },
+      "output.line": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.warning": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "code",
+            "message"
+          ]
+        ]
+      },
+      "output.warning.code": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.warning.message": {
+        "type": [
+          "string"
+        ]
+      }
+    },
     "plans.migrate": {
       "input": {
         "type": [
@@ -18134,6 +18282,8 @@
     "plans::board::refused",
     "plans::call::bad_input",
     "plans::call::unknown_capability",
+    "plans::decide::new_project",
+    "plans::decide::no_author",
     "plans::migrate::over_budget",
     "plans::migrate::unread",
     "plans::stale::no_session",

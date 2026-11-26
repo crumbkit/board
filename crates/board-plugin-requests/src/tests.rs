@@ -10,7 +10,7 @@ use serde_json::json;
 use super::*;
 
 /// A host that answers every query with no rows.
-struct Empty(Settings);
+pub(crate) struct Empty(Settings);
 
 impl Host for Empty {
     fn query(&self, _sql: &str, _limit: Limit) -> Result<QueryReport, QueryError> {
@@ -90,7 +90,7 @@ impl Host for Empty {
     }
 }
 
-fn empty() -> Empty {
+pub(crate) fn empty() -> Empty {
     Empty(Settings {
         now: std::time::SystemTime::UNIX_EPOCH,
         day_start: None,
@@ -102,7 +102,7 @@ fn empty() -> Empty {
 }
 
 #[test]
-fn the_manifest_parses_as_board_reads_a_built_in_one_and_offers_thread() {
+fn the_manifest_parses_as_board_reads_a_built_in_one_and_offers_thread_and_threads() {
     let manifest = Requests.manifest();
     assert_eq!(
         (manifest.name.as_str(), manifest.version.as_str()),
@@ -111,10 +111,10 @@ fn the_manifest_parses_as_board_reads_a_built_in_one_and_offers_thread() {
     assert_eq!(manifest.run, Vec::<String>::new());
     let types: Vec<&str> = manifest.types.iter().map(RecordType::as_str).collect();
     assert_eq!(types, ["requests/reply/v1"]);
-    let [thread] = &manifest.capabilities[..] else {
-        panic!("{:?}", manifest.capabilities)
-    };
-    assert_eq!(thread.name.as_str(), "thread");
+    let names: Vec<&str> = (manifest.capabilities.iter())
+        .map(|capability| capability.name.as_str())
+        .collect();
+    assert_eq!(names, ["thread", "threads"]);
 }
 
 /// The committed schema file of each record type the plugin ships is
@@ -167,6 +167,10 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_thread_reaches_its_own_
     let other: CapabilityName = "other".parse().unwrap();
     let refused = Requests.call(&empty(), &other, json!({})).unwrap_err();
     assert_eq!(refused.code, "requests::call::unknown_capability");
+    assert_eq!(
+        refused.message,
+        "requests offers no capability other; it offers thread and threads"
+    );
     let thread: CapabilityName = "thread".parse().unwrap();
     let answered = Requests.call(&empty(), &thread, json!({"effect": "a".repeat(64)}));
     assert_eq!(answered.unwrap_err().code, "requests::effect::not_found");
