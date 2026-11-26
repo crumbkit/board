@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use super::{Act, Need, Signers, Signing, SigningSetting, SigningState};
+use super::{Act, Edit, Need, Signers, Signing, SigningSetting, SigningState};
 
 const FILE: &str = "/Users/ana/signers";
 
@@ -97,8 +97,20 @@ fn with_signing_off_every_act_takes_an_answer() {
         for act in Act::ALL {
             assert_eq!(off.need(act), Need::Answer, "{act:?}");
         }
-        assert_eq!(off.need_to_edit(), Need::Answer);
+        assert_eq!(off.need_to_edit(Edit::Require), Need::Answer);
     }
+}
+
+#[test]
+fn an_edit_of_configured_needs_a_signature_even_with_signing_off_and_one_of_require_an_answer() {
+    for signers in [Signers::Missing, Signers::NoOwner] {
+        let off = signing(signers, SigningSetting::default());
+        assert_eq!(off.need_to_edit(Edit::Configured), Need::Signature);
+        assert_eq!(off.need_to_edit(Edit::Require), Need::Answer);
+    }
+    let on = signing(Signers::Owner, SigningSetting::default());
+    assert_eq!(on.need_to_edit(Edit::Configured), Need::Signature);
+    assert_eq!(on.need_to_edit(Edit::Require), Need::Signature);
 }
 
 #[test]
@@ -121,16 +133,16 @@ fn with_signing_on_a_listed_act_needs_a_signature_and_an_unlisted_one_an_answer(
 fn an_edit_of_the_setting_needs_a_signature_whenever_signing_is_on() {
     let unlisted = setting(Some(&[]), false);
     assert_eq!(
-        signing(Signers::Owner, unlisted.clone()).need_to_edit(),
+        signing(Signers::Owner, unlisted.clone()).need_to_edit(Edit::Require),
         Need::Signature
     );
     let configured = setting(Some(&[]), true);
     assert_eq!(
-        signing(Signers::NoOwner, configured.clone()).need_to_edit(),
+        signing(Signers::NoOwner, configured.clone()).need_to_edit(Edit::Require),
         Need::Signature
     );
     assert_eq!(
-        signing(Signers::Missing, configured).need_to_edit(),
+        signing(Signers::Missing, configured).need_to_edit(Edit::Configured),
         Need::FileMissing
     );
 }
@@ -294,4 +306,19 @@ fn the_prompt_digest_is_the_sha256_the_board_plans_mod_logs() {
         super::prompt_digest("abc"),
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
+}
+
+#[test]
+fn a_setting_digest_names_the_new_setting_so_an_answer_to_one_edit_does_not_approve_another() {
+    let short = super::setting_digest(Some(&json!({"require": []})));
+    assert!(
+        short.starts_with("sha256:") && short.len() == 7 + 64,
+        "{short}"
+    );
+    assert_eq!(short, super::setting_digest(Some(&json!({"require": []}))));
+    assert_ne!(
+        short,
+        super::setting_digest(Some(&json!({"require": ["plan"]})))
+    );
+    assert_ne!(short, super::setting_digest(None));
 }

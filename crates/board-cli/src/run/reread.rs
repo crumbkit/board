@@ -76,6 +76,10 @@ pub(super) fn ask(
         Command::Decide(_) => context.environment.plugin.is_some(),
         _ => return Ok(()),
     };
-    board.ask_as(effects::asker(context, personal)?);
+    let mut asker = effects::asker(context, personal)?;
+    if let Command::Put(Putting { approved, .. }) = command {
+        asker.approved.clone_from(approved);
+    }
+    board.ask_as(asker);
     Ok(())
 }

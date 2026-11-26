@@ -5,9 +5,9 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use board_model::{
-    Act, Answer, Code, EFFECT_TYPE, EFFECT_TYPES, Effect, Fields, LogicalPath, MAX_DECIDE_BYTES,
-    MAX_RECORD_BYTES, Need, ObjectId, PUT_OP, PathError, PluginName, RM_OP, Refusal, SEEN_TYPE,
-    Seen, Signers, SigningSetting, canonical_json, parse_json,
+    Act, Answer, Code, EFFECT_TYPE, EFFECT_TYPES, Edit, Effect, Fields, LogicalPath,
+    MAX_DECIDE_BYTES, MAX_RECORD_BYTES, Need, ObjectId, PUT_OP, PathError, PluginName, RM_OP,
+    Refusal, SEEN_TYPE, Seen, Signers, SigningSetting, SigningState, canonical_json, parse_json,
 };
 use board_plugin::Listed;
 use board_tree::{GitError, Removes, Target, Working, WriteError};
@@ -33,6 +33,10 @@ pub struct Asker {
     /// signature (docs/architecture/writes/effects.md). `board put` sets
     /// it; Board's own writes of pending effects and answers do not.
     pub sign_owner_writes: bool,
+    /// `board put --approved`: the path of the owner's `plans/answer/v1`,
+    /// in the board the put writes, that approves an edit of `signing`
+    /// while signing is off.
+    pub approved: Option<String>,
 }
 
 /// How the owner signs an approval, and the keys a signature must verify
@@ -580,7 +584,7 @@ impl Board {
         };
         let landing = (target.path.as_str(), on_disk.as_str(), &path);
         if self.unsigns(&change, &on_disk)
-            && self.asker.signing_now()?.need_to_edit() != Need::Answer
+            && self.asker.signing_now()?.need_to_edit(Edit::Require) != Need::Answer
         {
             return Err(EffectError::FromPlugin {
                 plugin: plugin.clone(),
@@ -621,16 +625,17 @@ impl Board {
             owner_signs(&target.path, &on_disk) || removes_config(&change, &target.path, &on_disk);
         // Removing or unsigning a signed record could turn signing off, so
         // it needs what an edit of signing needs.
-        let edit =
-            self.edits_signing(&change, &target.path, &on_disk) || self.unsigns(&change, &on_disk);
-        if !write && !edit {
+        let setting = self.edits_signing(&change, &target.path, &on_disk);
+        let edit = (setting.as_ref().map(|(edit, _)| *edit))
+            .or_else(|| self.unsigns(&change, &on_disk).then_some(Edit::Require));
+        if !write && edit.is_none() {
             return Ok(());
         }
         let landed = landed(&on_disk, change.shape(&on_disk));
         let now = self.asker.signing_now()?;
         let need = [
             write.then(|| now.need(Act::OwnerWrite)),
-            edit.then(|| now.need_to_edit()),
+            edit.map(|edit| now.need_to_edit(edit)),
         ]
         .into_iter()
         .flatten()
@@ -639,7 +644,22 @@ impl Board {
             Need::Signature => 1,
             Need::FileMissing => 2,
         });
+        let unsigned = |why: String| EffectError::OwnerUnsigned {
+            op: change.op(),
+            path: landed.clone(),
+            why,
+        };
         match need {
+            // Only an edit of `configured` needs a signature with signing
+            // off, and no signature can be checked then.
+            Some(Need::Signature) if now.state == SigningState::Off => {
+                return Err(unsigned(
+                    "signing is off, so no signature can be checked, and an edit of \
+                     `signing.configured` needs one; the owner adds their key to the allowed \
+                     signers file first"
+                        .to_owned(),
+                ));
+            }
             Some(Need::Signature) => {}
             Some(Need::FileMissing) => {
                 return Err(EffectError::FileMissing {
@@ -647,13 +667,14 @@ impl Board {
                     file: self.asker.signing.file(),
                 });
             }
-            Some(Need::Answer) | None => return Ok(()),
+            Some(Need::Answer) => {
+                if let Some((Edit::Require, setting)) = &setting {
+                    self.approves_edit(setting.as_ref(), &landed)?;
+                }
+                return Ok(());
+            }
+            None => return Ok(()),
         }
-        let unsigned = |why: String| EffectError::OwnerUnsigned {
-            op: change.op(),
-            path: landed.clone(),
-            why,
-        };
         let (mut record, mut text) = (None, None);
         if let Change::Put(canonical, admitted, shape) = change {
             if shape == Shape::File {
@@ -699,24 +720,60 @@ impl Board {
         }
     }
 
-    /// Whether `change`, to the file given as `given` that lands at
-    /// `on_disk`, changes `signing` in this board's config: a put whose
-    /// `signing` differs from the one the working tree holds, or the
-    /// config's removal while it holds one.
-    fn edits_signing(&self, change: &Change<'_>, given: &str, on_disk: &str) -> bool {
+    /// The edit `change`, to the file given as `given` that lands at
+    /// `on_disk`, makes of `signing` in this board's config, and the
+    /// setting it leaves: a put whose `signing` differs from the one the
+    /// working tree holds, or the config's removal while it holds one. It
+    /// edits `configured` when that field differs, and `require` otherwise.
+    fn edits_signing(
+        &self,
+        change: &Change<'_>,
+        given: &str,
+        on_disk: &str,
+    ) -> Option<(Edit, Option<Value>)> {
         let config = [given, on_disk]
             .iter()
             .any(|file| file.eq_ignore_ascii_case(".board/board.json"));
         if !config {
-            return false;
+            return None;
         }
         let current = crate::board::config_file(self.repositories())
             .ok()
             .and_then(|(_, value, _)| value.get("signing").cloned());
-        match change {
-            Change::Put(_, admitted, _) => admitted.value.get("signing") != current.as_ref(),
-            Change::Remove(_) => current.is_some(),
+        let next = match change {
+            Change::Put(_, admitted, _) => admitted.value.get("signing").cloned(),
+            Change::Remove(_) => None,
+        };
+        if next == current {
+            return None;
         }
+        let configured = |setting: &Option<Value>| {
+            (setting.as_ref()).and_then(|setting| setting.get("configured").cloned())
+        };
+        let edit = if configured(&next) == configured(&current) {
+            Edit::Require
+        } else {
+            Edit::Configured
+        };
+        Some((edit, next))
+    }
+
+    /// Refuses unless the answer `board put --approved` names, in this
+    /// board, approves the edit that leaves `signing` as `setting`: its
+    /// question names [`board_model::setting_digest`] of it.
+    fn approves_edit(&self, setting: Option<&Value>, landed: &str) -> Result<(), EffectError> {
+        let digest = board_model::setting_digest(setting);
+        let what = format!("the owner's edit of signing in {landed}");
+        let Some(approved) = &self.asker.approved else {
+            return Err(EffectError::NotApproved {
+                what,
+                why: format!(
+                    "signing is off, so an edit of `signing.require` names the owner's answer \
+                     with --approved, to a question that names {digest}"
+                ),
+            });
+        };
+        approved_by(self, approved, &digest).map_err(|why| EffectError::NotApproved { what, why })
     }
 }
 

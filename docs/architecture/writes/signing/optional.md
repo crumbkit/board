@@ -33,10 +33,18 @@ a signature:
   `signing` needs: the owner's signature, whatever `require` lists. A
   plugin may not do it.
 - An edit of `signing` needs a signature whenever signing is on, whatever
-  `require` lists. A plugin never writes `.board/`.
-- `board orders pinned` and `board orders signers` give the state in their
-  `signing` line, such as `Signing is off: every act takes an answer in
-  chat.` No band shows it.
+  `require` lists. An edit of `signing.configured` needs one with signing
+  off too, so it is refused then. With signing off, an edit of `require`
+  needs `board put --approved <answer>`: the owner's answer to a question
+  that names `board_model::setting_digest` of the new `signing`, which the
+  refusal without it gives. A plugin never writes `.board/`.
+- A personal board the known boards file names but that does not open reads
+  as signing configured with the file missing, so a listed act is refused.
+- `board orders pinned` and `board orders signers` start with the state
+  line, such as `Signing is off: every act takes an answer in chat.` As
+  text, `pinned` then gives a row per order, those left out first, and
+  `signers` a comment naming the file and the file's lines, with paths
+  under the home directory written from `~/`. No band shows it.
 
 ## Effects and owner's writes
 

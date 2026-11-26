@@ -138,6 +138,12 @@ impl KnownBoards {
             .ok_or_else(|| Box::new(self.no_personal(unnamed)))
     }
 
+    /// Whether the file names a personal board, whether or not one is
+    /// there.
+    pub(crate) fn names_personal(&self) -> bool {
+        self.known.personal.is_some()
+    }
+
     /// The root of the personal board the file names, if it names one,
     /// refused unless a board's root is there.
     fn named(&self, home: Option<&Path>) -> Result<Option<PathBuf>, Box<Refusal>> {
@@ -191,6 +197,7 @@ pub fn asker(
         home,
         signing,
         sign_owner_writes: true,
+        approved: None,
     })
 }
 

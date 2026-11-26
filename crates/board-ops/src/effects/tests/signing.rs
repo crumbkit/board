@@ -395,19 +395,105 @@ fn an_edit_of_signing_needs_touch_id_while_signing_is_on_even_when_owners_writes
 }
 
 #[test]
-fn with_signing_off_an_edit_of_signing_needs_no_signature() {
+fn with_signing_off_an_edit_of_require_needs_an_approving_answer_that_names_the_new_setting() {
     let mine = personal();
-    let writing = owning(&mine, off(&mine));
-    put(
-        &writing,
+    let require = json!({"require": ["plan"]});
+    let bare = put(
+        &owning(&mine, off(&mine)),
         "/.board/board",
-        &config_with(&json!({"require": ["plan"]})),
+        &config_with(&require),
+    );
+    assert_eq!(bare.unwrap_err().code(), Code::SigningNotApproved);
+    assert_eq!(read(&mine, ".board/board.json")["signing"], Value::Null);
+    answered(
+        &mine,
+        &board_model::setting_digest(Some(&json!({"require": []}))),
+        &json!({"person": "ana"}),
+    );
+    let approving = Asker {
+        approved: Some(ANSWER.to_owned()),
+        ..off(&mine)
+    };
+    let other = put(
+        &owning(&mine, approving.clone()),
+        "/.board/board",
+        &config_with(&require),
+    );
+    assert_eq!(other.unwrap_err().code(), Code::SigningNotApproved);
+    answered(
+        &mine,
+        &board_model::setting_digest(Some(&require)),
+        &json!({"person": "ana"}),
+    );
+    put(
+        &owning(&mine, approving),
+        "/.board/board",
+        &config_with(&require),
     )
     .unwrap();
-    assert_eq!(
-        read(&mine, ".board/board.json")["signing"],
-        json!({"require": ["plan"]})
+    assert_eq!(read(&mine, ".board/board.json")["signing"], require);
+}
+
+#[test]
+fn with_signing_off_an_edit_of_configured_is_refused_even_with_an_approving_answer() {
+    let mine = personal();
+    let configured = json!({"configured": false});
+    answered(
+        &mine,
+        &board_model::setting_digest(Some(&configured)),
+        &json!({"person": "ana"}),
     );
+    let approving = Asker {
+        approved: Some(ANSWER.to_owned()),
+        ..off(&mine)
+    };
+    let error = put(
+        &owning(&mine, approving),
+        "/.board/board",
+        &config_with(&configured),
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), Code::SettingsUnsigned, "{error}");
+    assert!(error.to_string().contains("signing is off"), "{error}");
+    assert_eq!(read(&mine, ".board/board.json")["signing"], Value::Null);
+}
+
+#[test]
+fn configured_false_written_while_off_cannot_keep_signing_off_once_the_owner_signs_and_loses_the_file()
+ {
+    let (scenario, mine) = (board(), personal());
+    let configured = json!({"configured": false});
+    let error = put(
+        &owning(&mine, off(&mine)),
+        "/.board/board",
+        &config_with(&configured),
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), Code::SettingsUnsigned, "{error}");
+    // The owner adds their line and signs approvals, then the file goes.
+    let board = opened(&scenario, Some("review"), Some(&mine));
+    let first = asked(decide(&board, "/pulls/7"));
+    let second = asked(decide(&board, "/pulls/8"));
+    answer(
+        &asker(None, Some(&mine)),
+        &first,
+        Answer::Approve,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    answered(&mine, &second, &json!({"person": "ana"}));
+    let error = answer(
+        &missing(&mine),
+        &second,
+        Answer::Approve,
+        None,
+        None,
+        Some(ANSWER.to_owned()),
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), Code::SigningFileMissing, "{error}");
 }
 
 #[test]

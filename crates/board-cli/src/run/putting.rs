@@ -54,6 +54,13 @@ pub(crate) struct Putting {
     /// writes a board/attachment/v1 record.
     #[arg(long, conflicts_with = "batch")]
     pub(crate) file: bool,
+    /// The owner's answer approving an edit of `signing` while signing is off.
+    ///
+    /// A plans/answer/v1 whose question names the `sha256:` digest that the put's refusal without
+    /// it gives. With signing on, an edit of `signing` in .board/board.json needs Touch ID, and an
+    /// edit of `signing.configured` always does.
+    #[arg(long, value_name = "ANSWER", conflicts_with = "batch")]
+    pub(crate) approved: Option<String>,
     /// How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h.
     #[arg(long, value_name = "DURATION", value_parser = duration, default_value = "5s")]
     pub(crate) wait: Duration,

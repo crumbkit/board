@@ -103,6 +103,26 @@ pub enum Signers {
     Unreadable,
 }
 
+/// What an edit of the `signing` setting changes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Edit {
+    /// `require` alone, or a signed record removed or unsigned.
+    Require,
+    /// `configured`, which says whether a missing allowed signers file
+    /// refuses the listed acts.
+    Configured,
+}
+
+/// What a question names to approve, in chat, an edit that leaves `signing`
+/// as `setting`: `sha256:` and the hex SHA-256 of its canonical JSON, or of
+/// `null` for an edit that removes it, so an answer approves that setting
+/// alone.
+pub fn setting_digest(setting: Option<&serde_json::Value>) -> String {
+    let null = serde_json::Value::Null;
+    let canonical = crate::canonical_json(setting.unwrap_or(&null));
+    format!("sha256:{}", sha256_hex(canonical.as_str().as_bytes()))
+}
+
 /// Whether signing is on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SigningState {
@@ -162,14 +182,17 @@ impl Signing {
         }
     }
 
-    /// What an edit of the `signing` setting needs: a signature whenever
+    /// What `edit` of the `signing` setting needs: a signature whenever
     /// signing is on, whatever `require` lists, so no unsigned edit turns
-    /// signing off.
-    pub fn need_to_edit(&self) -> Need {
-        match self.state {
-            SigningState::Off => Need::Answer,
-            SigningState::On | SigningState::Configured => Need::Signature,
-            SigningState::FileMissing => Need::FileMissing,
+    /// signing off. With signing off, an edit of `configured` still needs a
+    /// signature, so it is refused, since an unsigned `configured` false
+    /// would keep signing off after the owner signs; an edit of `require`
+    /// takes an answer.
+    pub fn need_to_edit(&self, edit: Edit) -> Need {
+        match (self.state, edit) {
+            (SigningState::Off, Edit::Require) => Need::Answer,
+            (SigningState::Off | SigningState::On | SigningState::Configured, _) => Need::Signature,
+            (SigningState::FileMissing, _) => Need::FileMissing,
         }
     }
 
