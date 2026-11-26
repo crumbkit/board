@@ -5,12 +5,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
+use board_model::Act;
 use regex::Regex;
 use serde_json::{Map, Value};
 
 use super::kinds::{ANSWER_TYPE, names_whole, owner_choices};
 use super::{
-    NO_HEAD, Observed, objects, owner_answered, pattern, same_commit, signed_decisions, strings,
+    Approval, NO_HEAD, Observed, objects, owner_answered, pattern, same_commit, signed_decisions,
+    strings,
 };
 use crate::plan::answers::Ux;
 
@@ -92,6 +94,14 @@ pub(crate) fn ux_missing(observed: &Observed, found: &BTreeMap<String, String>) 
     if let Some(unnamed) = items.iter().find(|item| named_in(item).is_none()) {
         return Some(format!(
             "this item of the Mockups list names no artifact by URL or board path: {unnamed}"
+        ));
+    }
+    if observed.needs_signature(Act::Mockup) && observed.approval != Approval::Signed {
+        return Some(format!(
+            "signing lists mockups, so only the owner's Touch ID approval of changes.approve for \
+             the current plan agrees them; a decision or an answer does not; run `board changes \
+             approve --path {}`",
+            observed.path
         ));
     }
     let agreed = named_by_decisions(observed);

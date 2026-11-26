@@ -80,6 +80,7 @@ fn an_answer_is_one_put_of_the_new_answer_and_the_question_unchanged() {
             "choice": "b",
             "words": "Stay.",
             "answered": "2026-11-04T22:50:00Z",
+            "heard": false,
         })
     );
     assert_eq!(host.asked.take(), [(question_sql(QUESTION), Limit::ALL)]);
@@ -95,6 +96,7 @@ fn an_answer_is_one_put_of_the_new_answer_and_the_question_unchanged() {
                 "answered": "2026-11-04T22:50:00Z",
                 "by": {"session": "local_0c"},
                 "written_by": "board-app/phone",
+                "heard": false,
             }}),
             json!({"path": QUESTION, "expect": BLOB, "record": unchanged}),
         ]]
@@ -589,4 +591,62 @@ fn a_mounted_question_blocking_a_change_is_not_attached_and_its_root_twin_is() {
         assert_eq!(host.calls.borrow().len(), usize::from(attached), "{path}");
         assert_eq!(host.puts.borrow().len(), 1, "{path}");
     }
+}
+
+/// A host at [`now`] whose `HOME` holds a prompt log for `local_heard`
+/// with the digest of `prompt`, logged a day before, as the board-plans
+/// mod logs it.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test writes the log the board-plans mod writes"
+)]
+fn with_log(prompt: &str) -> (Answering, tempfile::TempDir) {
+    let home = tempfile::tempdir().unwrap();
+    let directory = home.path().join(".local/state/board/prompts");
+    std::fs::create_dir_all(&directory).unwrap();
+    let logged = now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        - 86_400;
+    let line = format!("{logged} {}\n", board_model::prompt_digest(prompt));
+    std::fs::write(directory.join("local_heard"), line).unwrap();
+    let mut host = at_now(rows("plans/question/v1", &json!({}), &[]));
+    host.settings.environment = board_ops::Variables(vec![(
+        "HOME".to_owned(),
+        home.path().as_os_str().to_owned(),
+    )]);
+    (host, home)
+}
+
+fn heard_of(host: &Answering, input: &Value) -> Option<Value> {
+    answer(host, input).unwrap();
+    host.puts.take()[0][0]["record"].get("heard").cloned()
+}
+
+#[test]
+fn an_answer_whose_words_the_owner_typed_in_its_session_is_heard_and_one_they_did_not_is_not() {
+    let (host, _home) = with_log("Go, after the release.");
+    let typed = json!({"path": QUESTION, "option": "a", "words": "Go, after the release.", "session": "local_heard"});
+    assert_eq!(heard_of(&host, &typed), Some(json!(true)));
+    let (host, _home) = with_log("Go, after the release.");
+    let other =
+        json!({"path": QUESTION, "option": "a", "words": "Go now.", "session": "local_heard"});
+    assert_eq!(heard_of(&host, &other), Some(json!(false)));
+    let (host, _home) = with_log("Go, after the release.");
+    let elsewhere = json!({"path": QUESTION, "option": "a", "words": "Go, after the release.", "session": "local_other"});
+    assert_eq!(heard_of(&host, &elsewhere), Some(json!(false)));
+    let (host, _home) = with_log("yes");
+    let one_word =
+        json!({"path": QUESTION, "option": "a", "words": "yes", "session": "local_heard"});
+    assert_eq!(heard_of(&host, &one_word), Some(json!(false)));
+    let (host, _home) = with_log("Go.");
+    let option_text = json!({"path": QUESTION, "option": "a", "session": "local_heard"});
+    assert_eq!(heard_of(&host, &option_text), Some(json!(false)));
+    let (host, _home) = with_log("Go, after the release.");
+    let climbing = json!({"path": QUESTION, "option": "a", "words": "Go, after the release.", "session": "../local_heard"});
+    assert!(answer(&host, &climbing).is_err() || heard_of(&host, &climbing) == Some(json!(false)));
+    let (host, _home) = with_log("Go, after the release.");
+    let sessionless = json!({"path": QUESTION, "option": "a", "words": "Go, after the release."});
+    assert_eq!(heard_of(&host, &sessionless), None);
 }

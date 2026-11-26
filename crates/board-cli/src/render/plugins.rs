@@ -318,17 +318,16 @@ fn env(capability: &Capability) -> Option<Vec<String>> {
     })
 }
 
-/// `call`: the output as canonical JSON, and as `data` with `--json`.
-pub(crate) fn call(printer: Printer, report: &CallReport) -> Output {
+/// `call`: as text, the plugin's `text` of the output, or else its
+/// canonical JSON; as `data` with `--json`.
+pub(crate) fn call(printer: Printer, report: &CallReport, text: Option<String>) -> Output {
     let value = json!({
         "plugin": report.plugin,
         "capability": report.capability,
         "output": report.output,
     });
-    let answer = Prose::new(Said::new(
-        value,
-        canonical_json(&report.output).as_str().to_owned(),
-    ));
+    let text = text.unwrap_or_else(|| canonical_json(&report.output).as_str().to_owned());
+    let answer = Prose::new(Said::new(value, text));
     let warnings = (report.warnings.iter())
         .map(|line| Note::Always(format!("warning: {line}")))
         .collect();

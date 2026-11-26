@@ -5,6 +5,8 @@ export type Request = { path: string }
 export type Order = {
   path: string
   signer: string
+  /** `signed by owner`, or `approved in chat, not signed`; absent from a Board before optional signing. */
+  approval?: string
   order: string
   expires: string
   context: string

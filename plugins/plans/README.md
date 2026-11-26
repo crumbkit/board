@@ -237,6 +237,33 @@ which must still hold the blob the call read. It returns the answer's path,
 the question's path, `choice` (`none` when no option was chosen), `words`
 and `answered`.
 
+With `--session`, the answer records `heard`: whether `--words` are a
+prompt the owner typed in that session, or a line of one. `plans.answer`
+reads the session's prompt log at `$XDG_STATE_HOME/board/prompts/<session>`,
+or `~/.local/state/board/prompts/<session>`: lines of `<unix seconds>
+<sha256>`, the SHA-256 of a prompt or of one of its lines, trimmed, from the
+last 30 days. `plugins/plans/claude-code/hooks/prompts.ts` writes that log
+from each prompt the owner submits at the terminal or through Remote
+Control; it keeps only digests, on the Mac, and never syncs them. An answer
+whose option text stands in for the owner's words is not heard, and nor
+are words of one word, such as "yes", or a digest dated in the future.
+Board records `heard` and refuses no answer by it. `heard: true` in a
+record proves nothing: a check reads the prompt log again when it runs.
+
+`heard` has limits:
+
+- An agent with a shell can append a digest to the log, write an answer
+  with `--person`, or pass `--written_by plans/pane-answer`.
+- Codex and other harnesses have no prompt hook, so their answers are not
+  heard; the owner answers through the questions pane, Board.app or /ask in
+  Claude Code.
+- A prompt the owner pasted from an agent counts as typed.
+
+An answer approves an act that signing lets take an answer only when it
+names `by.person`, chooses the option `approve`, and was recorded after its
+question, whose text names what it approves
+(docs/architecture/writes/signing.md, Optional signing).
+
 When the question's `blocks` names a change, read from the root of the
 question's own board, the answer then calls `changes.attach --ref <answer>`
 on that change, so the change's plan keeps the answer. The output's

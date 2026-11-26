@@ -116,8 +116,8 @@ the capability will write. They exclude each other.
 
 ## `board answer`
 
-`board answer <id> approve|refuse [--reason <text>] [--signature <file>]`
-writes the seen record and moves the pending effect to
+`board answer <id> approve|refuse [--reason <text>] [--signature <file>]
+[--approved <answer>]` writes the seen record and moves the pending effect to
 `/effects/answered/<id>`, in one commit.
 
 - The records under `/effects/pending/` are the open effects. Those under
@@ -141,9 +141,10 @@ writes the seen record and moves the pending effect to
 
 ## Signed approvals
 
-The owner signs every approval;
-[signing.md](signing.md) says what is signed, by which program, and how
-Board checks it.
+While signing lists effects, the owner signs every approval; otherwise an
+approval may name the owner's answer with `--approved`
+([signing/optional.md](signing/optional.md)). [signing.md](signing.md) says
+what is signed and how Board checks it.
 
 - A missing, declined or bad signature is refused with
   `board::settings::unsigned`, whose `effect` field is the id. Nothing is
@@ -159,14 +160,15 @@ Board checks it.
 ### The owner's own writes
 
 `board put`, `put --file` and `put --batch` without `BOARD_PLUGIN` need the
-owner's signature for a file under `effects/`, so an agent in the owner's
+owner's signature for a file under `effects/`, while signing lists
+`owner-write`, so an agent in the owner's
 shell cannot write or remove a pending effect or an answer with a plain
 put. The check applies in every board, because the known boards file is the
 caller's to choose. It matches the working-tree path in any ASCII case. A
 first directory that is not ASCII also needs a signature, because a file
 system may fold it to `effects`. The owner's `rm` of `.board/board.json`
 also needs a signature, because the board does not open without it. A put
-of it does not.
+of it does not, unless it edits `signing` while signing is on.
 
 - The put runs the signer on the statement `Effect::owner_write`
   ([signing.md](signing.md)).

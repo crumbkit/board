@@ -79,6 +79,10 @@
       "$ref": "#/$defs/Evidence",
       "description": "Where the owner gave the answer."
     },
+    "heard": {
+      "description": "Whether `words` are a prompt the owner typed, or a line of one, in\nthe session that wrote the answer, as the prompt log the board-plans\nmod keeps on the owner's Mac says; absent when no session was named.\nBoard records it and decides nothing by it yet.",
+      "type": "boolean"
+    },
     "question": {
       "description": "The question this answers.",
       "format": "board-ref",

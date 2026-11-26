@@ -71,7 +71,7 @@
       "shape": "e7ae7df03994121c9377b408ed2a59da941c7bb3"
     },
     "crates/board-plugin-orders/types/attention/order/v1.schema.json": {
-      "shape": "e248b8f20cd20b242e8de485ed94346e95e8cb21"
+      "shape": "53f2ebf4f0dd7cea0513faa8acb55376e1cebec3"
     },
     "crates/board-plugin-params/types/params/heuristic/v1.schema.json": {
       "shape": "b02036bc31b5ef1a8ed95b58a9509870465deb82"
@@ -89,7 +89,7 @@
       "shape": "ea308437a88edac6e407d13de868fb6ac65b3355"
     },
     "crates/board-plugin-plans/types/plans/answer/v1.schema.json": {
-      "shape": "1995b417c841e8596b4a07f4a98aa6a09de5ec03"
+      "shape": "ae8af129a759af72d368e1b70cdab53a0fbf1538"
     },
     "crates/board-plugin-plans/types/plans/decision/v1.schema.json": {
       "shape": "9eb1f61239c159427108a8387886a77a719a3c05",
@@ -9790,7 +9790,8 @@
         "requires": [
           [
             "left_out",
-            "orders"
+            "orders",
+            "signing"
           ]
         ]
       },
@@ -9837,6 +9838,7 @@
         ],
         "requires": [
           [
+            "approval",
             "context",
             "context_text",
             "expires",
@@ -9844,6 +9846,11 @@
             "path",
             "signer"
           ]
+        ]
+      },
+      "output.orders[].approval": {
+        "type": [
+          "string"
         ]
       },
       "output.orders[].context": {
@@ -9875,6 +9882,11 @@
         "type": [
           "string"
         ]
+      },
+      "output.signing": {
+        "type": [
+          "string"
+        ]
       }
     },
     "orders.sign": {
@@ -9886,6 +9898,11 @@
           [
             "path"
           ]
+        ]
+      },
+      "input.approved": {
+        "type": [
+          "string"
         ]
       },
       "input.path": {
@@ -9925,6 +9942,7 @@
             "duplicates",
             "file",
             "left_out",
+            "signing",
             "text"
           ]
         ]
@@ -10044,6 +10062,11 @@
           "already_admitted"
         ]
       },
+      "output.signing": {
+        "type": [
+          "string"
+        ]
+      },
       "output.text": {
         "type": [
           "string"
@@ -10072,6 +10095,7 @@
         ],
         "requires": [
           [
+            "approval",
             "context",
             "context_text",
             "expires",
@@ -10079,6 +10103,11 @@
             "path",
             "signer"
           ]
+        ]
+      },
+      "output.approval": {
+        "type": [
+          "string"
         ]
       },
       "output.context": {
@@ -10640,6 +10669,11 @@
       "output.choice": {
         "type": [
           "string"
+        ]
+      },
+      "output.heard": {
+        "type": [
+          "boolean"
         ]
       },
       "output.question": {
@@ -17987,6 +18021,8 @@
     "board::settings::not_found",
     "board::settings::refused",
     "board::settings::unsigned",
+    "board::signing::file_missing",
+    "board::signing::not_approved",
     "board::skills::not_board",
     "board::skills::write_failed",
     "board::symlink::dangling",
@@ -18202,6 +18238,7 @@
     "orders::order::expired",
     "orders::order::invalid",
     "orders::order::not_an_order",
+    "orders::order::not_approved",
     "orders::order::unsigned",
     "orders::pinned::over_budget",
     "orders::repo::invalid_record",

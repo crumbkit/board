@@ -55,6 +55,18 @@ pub struct Order {
 }
 
 impl Order {
+    /// `sha256:` and the hex SHA-256 of the order's statement, which a
+    /// question that asks the owner to approve the order in chat names, so
+    /// that the answer approves this text and no edit of it.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the digest is of the statement the order module builds"
+    )]
+    pub fn digest(&self) -> String {
+        let hex = crate::signing::sha256_hex(self.statement().as_bytes());
+        format!("sha256:{hex}")
+    }
+
     /// The statement the owner signs, byte for byte the one board-attention
     /// built: the type, the expiry, whether it is pinned, the order and its
     /// context, each labelled. The order and the context text are copied as

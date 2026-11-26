@@ -21,6 +21,10 @@ pub struct OrderRecord {
     pub pinned: bool,
     /// The owner's signature of the order's statement; none on a draft.
     pub signature: Option<String>,
+    /// The owner's `plans/answer/v1` that approved the order in chat, by
+    /// its logical path, which counts only where signing takes an answer
+    /// for orders.
+    pub approved: Option<String>,
 }
 
 /// The schema of the order record, as the Python plugin generated it with
@@ -36,7 +40,9 @@ pub(crate) fn record_schema() -> Value {
          non-binding context from the conversation that produced it.\n`signature` is the \
          owner's SSH signature, in the `{ORDER_TYPE}`\nnamespace, of the order's statement, \
          which holds the order, its expiry,\nwhether it is pinned, and the context's text. An \
-         order without one is a draft."
+         order without one is a draft.\n`approved` references the owner's answer that \
+         approved the order in chat, which counts only where signing takes an answer for \
+         orders."
     );
     json!({
         "additionalProperties": false,
@@ -48,6 +54,7 @@ pub(crate) fn record_schema() -> Value {
             "order": {"minLength": 1, "title": "Order", "type": "string"},
             "pinned": {"title": "Pinned", "type": "boolean"},
             "signature": {"title": "Signature", "type": "string"},
+            "approved": {"format": "board-ref", "title": "Approved", "type": "string"},
         },
         "required": ["$type", "order", "context", "expires"],
         "title": "OrderRecord",

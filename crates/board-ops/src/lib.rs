@@ -54,6 +54,7 @@ pub use crate::index::{RefreshError, Refreshed};
 pub use crate::init::{InitError, InitReport, PERSONAL_PLUGINS, init};
 pub use crate::known::{
     KnownBoards, MountsAt, Naming, Prefix, asker, entered, open, open_at, unopened, uri_of,
+    writing_asker,
 };
 pub use crate::mount::{MountError, MountUpdateReport};
 pub use crate::plugins::{

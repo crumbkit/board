@@ -49,7 +49,8 @@ pub(super) fn reread(
 /// Lets `board` ask the owner to admit what `command` writes, marks a
 /// `put --bulk` as a bulk commit, refusing a reason a trailer cannot hold,
 /// and makes a put without `--strict` fill and drop fields.
-/// Only a plugin's decide writes in the personal board.
+/// Only a plugin's decide writes in the personal board, but every write
+/// reads its signing setting and signed records.
 pub(super) fn ask(
     board: &mut Board,
     context: &Context,
@@ -68,14 +69,17 @@ pub(super) fn ask(
     {
         board.mend(mending(context));
     }
-    let personal = match command {
+    let mut asker = match command {
         Command::Put(_)
         | Command::Rm(_)
         | Command::Mount(MountCommand::Add { .. })
-        | Command::Repo(_) => false,
-        Command::Decide(_) => context.environment.plugin.is_some(),
+        | Command::Repo(_) => effects::writing_asker(context)?,
+        Command::Decide(_) => effects::asker(context, context.environment.plugin.is_some())?,
         _ => return Ok(()),
     };
-    board.ask_as(effects::asker(context, personal)?);
+    if let Command::Put(Putting { approved, .. }) = command {
+        asker.approved.clone_from(approved);
+    }
+    board.ask_as(asker);
     Ok(())
 }

@@ -138,9 +138,15 @@ impl KnownBoards {
             .ok_or_else(|| Box::new(self.no_personal(unnamed)))
     }
 
+    /// Whether the file names a personal board, whether or not one is
+    /// there.
+    pub(crate) fn names_personal(&self) -> bool {
+        self.known.personal.is_some()
+    }
+
     /// The root of the personal board the file names, if it names one,
     /// refused unless a board's root is there.
-    fn named(&self, home: Option<&Path>) -> Result<Option<PathBuf>, Box<Refusal>> {
+    pub(crate) fn named(&self, home: Option<&Path>) -> Result<Option<PathBuf>, Box<Refusal>> {
         let file = self.file.as_deref();
         let Some(root) = self.known.personal.as_ref().map(|root| against(file, root)) else {
             return Ok(None);
@@ -175,9 +181,37 @@ impl KnownBoards {
     }
 }
 
+/// Who asks for a put or a removal: `plugin`, and the personal board
+/// `known` names, whose setting and signed records say what signing needs.
+/// The personal board is resolved and opened only when a write that signing
+/// governs reads signing's state. When `known` was not read, or names a
+/// directory that is not a board's root, the refusal waits until then, so
+/// every other write goes ahead.
+pub fn writing_asker(
+    plugin: Option<PluginName>,
+    known: Result<KnownBoards, Box<Refusal>>,
+    home: Option<PathBuf>,
+    signing: Signing,
+) -> Asker {
+    let (known, unopened) = match known {
+        Ok(known) => (Some(known), None),
+        Err(refusal) => (None, Some(refusal)),
+    };
+    Asker {
+        plugin,
+        personal: None,
+        home,
+        signing,
+        sign_owner_writes: true,
+        approved: None,
+        unopened,
+        known,
+    }
+}
+
 /// Who asks for an effect: `plugin`, and the personal board `personal`
 /// names when the run writes there, refused unless a board's root is there.
-/// `Some(known)` means this run writes to the personal board; a put passes `None`.
+/// `Some(known)` means this run writes to the personal board.
 pub fn asker(
     plugin: Option<PluginName>,
     personal: Option<&KnownBoards>,
@@ -191,6 +225,9 @@ pub fn asker(
         home,
         signing,
         sign_owner_writes: true,
+        approved: None,
+        unopened: None,
+        known: None,
     })
 }
 

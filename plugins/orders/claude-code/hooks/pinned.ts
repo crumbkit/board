@@ -47,10 +47,10 @@ export function contextText(pinned: Pinned): string | null {
   }
   if (pinned.orders.length === 0 && pinned.leftOut.length === 0) return null
   const parts = [
-    'The owner signed each order below with Touch ID, and `board call orders.verify` checked it as this ' +
+    'The owner approved each order below, and `board call orders.verify` checked it as this ' +
       'session started. Each one binds you until it expires. When you need to interpret an order, read its ' +
       'non-binding context with `board --personal orders verify --path <order>`.',
-    ...pinned.orders.map(d => `## ${d.path}, until ${d.expires}\n\n${d.order}`),
+    ...pinned.orders.map(d => `## ${d.path}, until ${d.expires}\n\n${approvalOf(d)}\n\n${d.order}`),
   ]
   if (pinned.leftOut.length > 0) {
     parts.push(
@@ -59,6 +59,13 @@ export function contextText(pinned: Pinned): string | null {
   }
   return parts.join('\n\n')
 }
+
+/**
+ * How the owner approved an order: `signed by owner`, or `approved in chat,
+ * not signed` where signing takes an answer for orders. A Board from before
+ * optional signing names no approval, and every order it verified was signed.
+ */
+export const approvalOf = (order: Order) => order.approval ?? `signed by ${order.signer}`
 
 /** An order's name: the last segment of its path, so `/orders/evals` is `evals`. */
 export const orderName = (path: string) => path.split('/').filter(Boolean).at(-1) ?? path

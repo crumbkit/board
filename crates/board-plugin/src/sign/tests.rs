@@ -11,8 +11,8 @@ use board_scenario::signer::Signer;
 use std::time::Duration;
 
 use super::{
-    CANCELLED, Duplicate, LeftOutReason, LineChange, SignError, Signers, Verb, merged_signers,
-    sign, signers, verify,
+    CANCELLED, Duplicate, LeftOutReason, LineChange, Listed, SignError, Signers, Verb,
+    merged_signers, owner_listed, sign, signers, verify,
 };
 
 const STATEMENT: &str = "board/approve/v1\neffect: 1\n";
@@ -834,4 +834,49 @@ fn an_attention_line_for_a_key_board_already_admits_in_orders_is_reported() {
         signers.left_out[0].key.as_deref(),
         Some("ecdsa-sha2-nistp256 AAAA")
     );
+}
+
+#[test]
+fn the_owner_is_listed_only_when_a_line_names_the_owner() {
+    let signer = Signer::new();
+    assert_eq!(owner_listed(&signer.allowed()).unwrap(), Listed::Owner);
+    signer.write("others", Item::File("ana ssh-ed25519 AAAA\n# owner\n\n"));
+    let others = signer.directory().join("others");
+    assert_eq!(owner_listed(&others).unwrap(), Listed::NoOwner);
+    signer.write(
+        "several",
+        Item::File("ana,owner namespaces=\"board/approve/v1\" ssh-ed25519 AAAA\n"),
+    );
+    let several = signer.directory().join("several");
+    assert_eq!(owner_listed(&several).unwrap(), Listed::Owner);
+    let missing = signer.directory().join("missing");
+    assert_eq!(owner_listed(&missing).unwrap(), Listed::Missing);
+}
+
+#[test]
+fn an_untrusted_signers_file_is_refused_before_it_is_read() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let signer = Signer::new();
+    let file = signer.allowed();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o664)).unwrap();
+    let refused = owner_listed(&file);
+    assert!(
+        matches!(refused, Err(SignError::Untrusted { .. })),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn a_dangling_link_or_a_directory_board_cannot_search_reads_as_unreadable_and_not_missing() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let signer = Signer::new();
+    let link = signer.directory().join("dangling");
+    std::os::unix::fs::symlink(signer.directory().join("nowhere"), &link).unwrap();
+    assert_eq!(owner_listed(&link).unwrap(), Listed::Unreadable);
+    let closed = signer.directory().join("closed");
+    std::fs::create_dir(&closed).unwrap();
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let listed = owner_listed(&closed.join("allowed_signers"));
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(listed.unwrap(), Listed::Unreadable);
 }

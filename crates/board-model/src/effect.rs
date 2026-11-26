@@ -231,8 +231,9 @@ fn show_content(statement: &mut String, record: Option<&Value>, text: Option<&st
 /// A `board/seen/v1` record: the owner's answer to an effect. `effect` is
 /// `/effects/answered/<id>`, the path that keeps the answered effect, which
 /// Board.app's list of answered requests reads. An approval carries
-/// `signature`, the owner's SSH signature
-/// over [`Effect::approval`].
+/// `signature`, the owner's SSH signature over [`Effect::approval`], or,
+/// when signing does not require one for effects, `approved`, the answer
+/// that approved it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Seen {
@@ -244,6 +245,11 @@ pub struct Seen {
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
+    /// The `plans/answer/v1` that approved the effect in chat, by its
+    /// logical path in the personal board, when signing does not require a
+    /// signature for effects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approved: Option<String>,
 }
 
 impl Seen {
@@ -279,6 +285,7 @@ impl Seen {
             answer,
             reason,
             signature: None,
+            approved: None,
         }
     }
 }

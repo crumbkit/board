@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
-use board_model::Refusal;
+use board_model::{Act, Refusal};
 use board_plugin::shape::Open;
 use regex::Regex;
 use schemars::JsonSchema;
@@ -135,6 +135,8 @@ pub(crate) struct Observed {
     pub(crate) held: BTreeSet<String>,
     /// The owner's Touch ID approval of `changes.approve` for the change.
     pub(crate) approval: Approval,
+    /// The sign-offs signing lists now, for which only [`Approval::Signed`] counts.
+    pub(crate) signed: BTreeSet<Act>,
     /// For each commit an attached record covers that is not the change's
     /// head, as the record names it: the commits after it to the head,
     /// when each edits only paths a check's `unchanged_by` allows or
@@ -185,6 +187,7 @@ impl Observed {
             on_planned_unread: None,
             held: BTreeSet::new(),
             approval: Approval::None,
+            signed: BTreeSet::new(),
             after_review: BTreeMap::new(),
         }
     }
@@ -285,6 +288,8 @@ pub(crate) enum Read {
     PlannedRules,
     Approval,
     AfterReview,
+    /// Which of the owner's sign-offs need a Touch ID approval.
+    Signing,
 }
 
 /// What `checks` read, by their kinds. A waivable check reads the
@@ -319,15 +324,13 @@ pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
         }
         let needs: &[Read] = match kind {
             CheckKind::Sections | CheckKind::Considered => &[Read::Plan],
-            CheckKind::Mockups => &[Read::Plan, Read::References],
+            CheckKind::Mockups => &[Read::Plan, Read::References, Read::Signing],
             CheckKind::Records if kinds::answers_count(each) => {
-                &[Read::Plan, Read::References, Read::Approval]
+                &[Read::Plan, Read::References, Read::Approval, Read::Signing]
             }
+            CheckKind::Understood => &[Read::References, Read::Signing],
             CheckKind::Records if refs => &[Read::Plan, Read::References],
-            CheckKind::Understood
-            | CheckKind::Records
-            | CheckKind::Tasks
-            | CheckKind::FlowValid => &[Read::References],
+            CheckKind::Records | CheckKind::Tasks | CheckKind::FlowValid => &[Read::References],
             CheckKind::Exists => &[Read::References, Read::Exists],
             CheckKind::Run => &[Read::Suite, Read::References],
             CheckKind::Paths => &[Read::Diff],
@@ -756,6 +759,7 @@ pub(crate) use design::{mockups, ux_missing};
 pub(crate) mod kinds;
 mod paths;
 pub(crate) mod remedy;
+pub(crate) mod signing;
 mod when;
 pub(crate) use when::fails_unread;
 use when::{off_route, unanswered};

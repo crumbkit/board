@@ -74,6 +74,7 @@ fn an_order_the_owner_signs_verifies_and_is_listed_once_pinned() {
     let verified = json!({
         "path": "/orders/push",
         "signer": "owner",
+        "approval": "signed by owner",
         "order": "Do not push to main.",
         "expires": "2999-12-31",
         "context": "/orders/push.md",
@@ -85,7 +86,11 @@ fn an_order_the_owner_signs_verifies_and_is_listed_once_pinned() {
     );
     assert_eq!(
         pinned(&personal),
-        json!({"orders": [verified], "left_out": []})
+        json!({
+            "signing": "Signing is on: orders, effects and owner's writes need Touch ID.",
+            "orders": [verified],
+            "left_out": []
+        })
     );
 }
 
@@ -312,9 +317,20 @@ fn an_owner_who_asks_for_changes_declines_with_their_words_and_one_who_signs_sig
 /// attention file and `plugins` as the directory of installed plugins.
 fn run_with(
     personal: &Personal,
+    files: (PathBuf, PathBuf),
+    plugins: Option<PathBuf>,
+    arguments: &[&str],
+) -> Output {
+    run_reading(personal, files, plugins, arguments, "")
+}
+
+/// [`run_with`], with `stdin` as the standard input.
+fn run_reading(
+    personal: &Personal,
     (board, attention): (PathBuf, PathBuf),
     plugins: Option<PathBuf>,
     arguments: &[&str],
+    stdin: &str,
 ) -> Output {
     let context = Context {
         start: personal.board.workdir().to_path_buf(),
@@ -339,7 +355,12 @@ fn run_with(
     let arguments = std::iter::once(BINARY_NAME)
         .chain(arguments.iter().copied())
         .map(OsString::from);
-    run(arguments, &context, &mut &b""[..], &mut Ran::default())
+    run(
+        arguments,
+        &context,
+        &mut stdin.as_bytes(),
+        &mut Ran::default(),
+    )
 }
 
 const VERIFY: [&str; 5] = ["--json", "call", "orders.verify", "--path", "/orders/push"];
@@ -636,7 +657,10 @@ fn pinned_lists_no_order_of_a_mounted_board_and_lists_the_same_order_in_its_own_
         "{}",
         text(&found.stdout)
     );
-    assert_eq!(pinned(&personal), json!({"orders": [], "left_out": []}));
+    assert_eq!(
+        (&pinned(&personal)["orders"], &pinned(&personal)["left_out"]),
+        (&json!([]), &json!([]))
+    );
     personal.write("orders/push.json", &order);
     personal.write("orders/push.md", CONTEXT);
     assert_eq!(pinned(&personal)["left_out"][0]["path"], "/orders/push");
@@ -675,4 +699,402 @@ fn pinned_leaves_out_an_order_past_32_kib_of_pinned_text_and_lists_both_orders_t
             );
         }
     }
+}
+
+/// A signers file with no `owner` line, so signing is off.
+fn no_owner(personal: &Personal) -> PathBuf {
+    let file = personal.signer.directory().join("no_owner");
+    personal
+        .signer
+        .write("no_owner", Item::File("ana ssh-ed25519 AAAA\n"));
+    file
+}
+
+/// Sets `signing` in the personal board's config to `setting`.
+fn set_signing(personal: &Personal, setting: &Value) {
+    let mut config = personal.record("/.board/board").unwrap();
+    config["signing"] = setting.clone();
+    personal.write(".board/board.json", &config.to_string());
+}
+
+/// Writes the owner's answer choosing `approve` in a question that names
+/// `digest`, asked before it, and returns the answer's path. It was
+/// answered a minute ago, so it is recent enough to approve an edit of
+/// signing.
+fn approving_answer(personal: &Personal, digest: &str) -> &'static str {
+    let ago = |seconds: u64| {
+        board_model::utc(std::time::SystemTime::now() - std::time::Duration::from_secs(seconds))
+    };
+    let question = json!({
+        "$type": "plans/question/v1",
+        "question": format!("Approve the order /orders/push at {digest}?"),
+        "asked": ago(120),
+        "by": {"session": "local_1"},
+        "status": "open",
+        "options": [{"id": "approve", "text": "Approve"}, {"id": "refuse", "text": "Refuse"}],
+    });
+    let answer = json!({
+        "$type": "plans/answer/v1",
+        "question": "/projects/p/questions/q",
+        "choice": "approve",
+        "words": "yes",
+        "answered": ago(60),
+        "by": {"person": "ana"},
+    });
+    personal.write("projects/p/questions/q.json", &question.to_string());
+    personal.write("projects/p/answers/q.json", &answer.to_string());
+    "/projects/p/answers/q"
+}
+
+/// The digest an unsigned order's refusal names, for its question.
+fn digest_of(personal: &Personal) -> String {
+    let ran = call(personal, "verify", "/orders/push");
+    assert_eq!(refused(&ran), "orders::order::unsigned");
+    json(&ran)["fields"]["digest"].as_str().unwrap().to_owned()
+}
+
+fn signing_files(personal: &Personal, board: PathBuf) -> (PathBuf, PathBuf) {
+    let attention = personal.signer.directory().join("no_attention");
+    (board, attention)
+}
+
+#[test]
+fn an_order_approved_in_chat_verifies_only_where_signing_takes_an_answer_and_says_not_signed() {
+    let personal = personal();
+    draft(&personal, "push", &json!({"pinned": true}), CONTEXT);
+    let digest = digest_of(&personal);
+    let answer = approving_answer(&personal, &digest);
+    let mut stored = personal.record("/orders/push").unwrap();
+    stored["approved"] = json!(answer);
+    personal.write("orders/push.json", &stored.to_string());
+    let off = signing_files(&personal, no_owner(&personal));
+    let ran = run_with(&personal, off.clone(), None, &VERIFY);
+    assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
+    let verified = json(&ran)["data"]["output"].clone();
+    assert_eq!(verified["approval"], "approved in chat, not signed");
+    let ran = run_with(
+        &personal,
+        off.clone(),
+        None,
+        &["--json", "call", "orders.pinned"],
+    );
+    let listed = json(&ran)["data"]["output"].clone();
+    assert_eq!(
+        listed["signing"],
+        "Signing is off: every act takes an answer in chat."
+    );
+    assert_eq!(
+        listed["orders"][0]["approval"],
+        "approved in chat, not signed"
+    );
+    assert_eq!(
+        refused(&call(&personal, "verify", "/orders/push")),
+        "orders::order::unsigned"
+    );
+    set_signing(&personal, &json!({"require": ["effect"]}));
+    admitted(&call(&personal, "verify", "/orders/push"));
+    personal.write("orders/push.md", "an edited context.\n");
+    let ran = run_with(&personal, off, None, &VERIFY);
+    assert_eq!(refused(&ran), "orders::order::not_approved");
+}
+
+#[test]
+fn an_order_approved_by_an_answer_with_no_person_does_not_verify_with_signing_off() {
+    let personal = personal();
+    draft(&personal, "push", &json!({}), CONTEXT);
+    let digest = digest_of(&personal);
+    let answer = approving_answer(&personal, &digest);
+    let mut unnamed = personal.record(answer).unwrap();
+    unnamed["by"] = json!({"session": "local_1"});
+    personal.write("projects/p/answers/q.json", &unnamed.to_string());
+    let mut stored = personal.record("/orders/push").unwrap();
+    stored["approved"] = json!(answer);
+    personal.write("orders/push.json", &stored.to_string());
+    let off = signing_files(&personal, no_owner(&personal));
+    assert_eq!(
+        refused(&run_with(&personal, off, None, &VERIFY)),
+        "orders::order::not_approved"
+    );
+}
+
+#[test]
+fn sign_with_an_approving_answer_records_it_where_signing_takes_an_answer_and_is_refused_where_orders_need_touch_id()
+ {
+    let personal = personal();
+    draft(&personal, "push", &json!({}), CONTEXT);
+    let digest = digest_of(&personal);
+    let answer = approving_answer(&personal, &digest);
+    let sign = [
+        "--json",
+        "call",
+        "orders.sign",
+        "--path",
+        "/orders/push",
+        "--approved",
+        answer,
+    ];
+    assert_eq!(refused(&personal.run(&sign)), "orders::order::unsigned");
+    assert_eq!(
+        personal.record("/orders/push").unwrap().get("approved"),
+        None
+    );
+    let off = signing_files(&personal, no_owner(&personal));
+    let ran = run_with(&personal, off.clone(), None, &sign);
+    assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
+    let stored = personal.record("/orders/push").unwrap();
+    assert_eq!(
+        (stored.get("signature"), &stored["approved"]),
+        (None, &json!(answer))
+    );
+    assert_eq!(
+        json(&run_with(&personal, off, None, &VERIFY))["data"]["output"]["approval"],
+        "approved in chat, not signed"
+    );
+}
+
+#[test]
+fn pinned_and_signers_start_with_the_signing_state_for_off_on_and_a_shortened_list() {
+    let personal = personal();
+    let line = |files: Option<(PathBuf, PathBuf)>, capability: &str| {
+        let arguments = ["--json", "call", capability];
+        let ran = match files {
+            Some(files) => run_with(&personal, files, None, &arguments),
+            None => personal.run(&arguments),
+        };
+        assert_eq!(ran.code, 0, "{}{}", text(&ran.stdout), text(&ran.stderr));
+        json(&ran)["data"]["output"]["signing"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let off = signing_files(&personal, no_owner(&personal));
+    assert_eq!(
+        line(Some(off.clone()), "orders.pinned"),
+        "Signing is off: every act takes an answer in chat."
+    );
+    assert_eq!(
+        line(Some(off.clone()), "orders.signers"),
+        format!("Signing is off: {} has no owner line.", off.0.display())
+    );
+    let on = "Signing is on: orders, effects and owner's writes need Touch ID.";
+    assert_eq!(line(None, "orders.pinned"), on);
+    assert_eq!(line(None, "orders.signers"), on);
+    set_signing(&personal, &json!({"require": ["order", "plan"]}));
+    assert_eq!(
+        line(None, "orders.pinned"),
+        "Signing is on: orders and plans need Touch ID."
+    );
+    assert_eq!(
+        line(None, "orders.signers"),
+        "Signing is on: orders and plans need Touch ID."
+    );
+}
+
+#[test]
+fn pinned_and_signers_as_text_start_with_the_signing_line_and_list_orders_and_lines_as_rows() {
+    let personal = personal();
+    draft(&personal, "push", &json!({"pinned": true}), CONTEXT);
+    signed(&personal, "push");
+    let ran = personal.run(&["orders", "pinned"]);
+    assert_eq!(ran.code, 0, "{}{}", text(&ran.stdout), text(&ran.stderr));
+    assert_eq!(
+        text(&ran.stdout),
+        "Signing is on: orders, effects and owner's writes need Touch ID.\n\
+         \n\
+         ok /orders/push  signed by owner  expires 2999-12-31\n"
+    );
+    let ran = personal.run(&["orders", "signers"]);
+    assert_eq!(ran.code, 0, "{}{}", text(&ran.stdout), text(&ran.stderr));
+    let printed = text(&ran.stdout);
+    let file = admitted(&personal.run(&["--json", "call", "orders.signers"]))["file"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut lines = printed.lines();
+    assert_eq!(
+        lines.next(),
+        Some("Signing is on: orders, effects and owner's writes need Touch ID.")
+    );
+    assert_eq!(
+        lines.next(),
+        Some(format!("# {file}").as_str()),
+        "{printed}"
+    );
+    assert!(
+        lines.next().is_some_and(|line| line.starts_with("owner ")),
+        "{printed}"
+    );
+}
+
+#[test]
+fn with_signing_off_a_put_that_edits_require_needs_an_approving_answer_and_one_of_configured_is_refused()
+ {
+    let personal = personal();
+    let off = signing_files(&personal, no_owner(&personal));
+    let mut config = personal.record("/.board/board").unwrap();
+    config["signing"] = json!({"require": ["plan"]});
+    let put = |config: &Value, approved: Option<&str>| {
+        let mut arguments = vec!["--json", "put", "/.board/board"];
+        arguments.extend(
+            approved
+                .map(|answer| ["--approved", answer])
+                .into_iter()
+                .flatten(),
+        );
+        run_reading(
+            &personal,
+            off.clone(),
+            None,
+            &arguments,
+            &config.to_string(),
+        )
+    };
+    let bare = put(&config, None);
+    assert_eq!(refused(&bare), "board::signing::not_approved");
+    let digest = board_model::setting_digest(None, Some(&config["signing"]));
+    assert!(
+        json(&bare)["message"].as_str().unwrap().contains(&digest),
+        "{}",
+        text(&bare.stdout)
+    );
+    let answer = approving_answer(&personal, &digest);
+    let ran = put(&config, Some(answer));
+    assert_eq!(ran.code, 0, "{}{}", text(&ran.stdout), text(&ran.stderr));
+    assert_eq!(
+        personal.record("/.board/board").unwrap()["signing"],
+        config["signing"]
+    );
+    let from = config["signing"].clone();
+    config["signing"] = json!({"configured": false});
+    let answer = approving_answer(
+        &personal,
+        &board_model::setting_digest(Some(&from), Some(&config["signing"])),
+    );
+    assert_eq!(
+        refused(&put(&config, Some(answer))),
+        "board::settings::unsigned"
+    );
+}
+
+/// A pending effect's id, for a seen record the tests write by hand.
+const SEEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+/// `board --json put <path> [--approved <answer>]` in the personal board
+/// with `files` as the allowed signers files and `body` on stdin.
+fn put_with(
+    personal: &Personal,
+    files: (PathBuf, PathBuf),
+    path: &str,
+    body: &Value,
+    approved: Option<&str>,
+) -> Output {
+    let mut arguments = vec!["--json", "put", path];
+    arguments.extend(
+        approved
+            .map(|answer| ["--approved", answer])
+            .into_iter()
+            .flatten(),
+    );
+    run_reading(personal, files, None, &arguments, &body.to_string())
+}
+
+/// With a signed seen record in the personal board and the allowed signers
+/// file gone, `board put` of the config with a new `require` and an
+/// approving answer, a put under `effects/` and a removal there are all
+/// refused as `file_missing`; with the file there, the same edit needs the
+/// owner's signature.
+#[test]
+fn with_a_signed_seen_record_and_the_signers_file_gone_an_edit_of_require_or_a_write_under_effects_is_file_missing_and_with_the_file_it_needs_a_signature()
+ {
+    let personal = personal();
+    let seen = json!({"$type": board_model::SEEN_TYPE, "signature": "signed"});
+    personal.write(&format!("effects/seen/{SEEN}.json"), &seen.to_string());
+    let gone = signing_files(&personal, personal.signer.directory().join("gone"));
+    let mut config = personal.record("/.board/board").unwrap();
+    config["signing"] = json!({"require": []});
+    let answer = approving_answer(
+        &personal,
+        &board_model::setting_digest(None, Some(&config["signing"])),
+    );
+    let ran = put_with(
+        &personal,
+        gone.clone(),
+        "/.board/board",
+        &config,
+        Some(answer),
+    );
+    assert_eq!(refused(&ran), "board::signing::file_missing");
+    assert_eq!(
+        personal.record("/.board/board").unwrap().get("signing"),
+        None
+    );
+    let order = json!({"$type": ORDER_TYPE, "order": "Do not push to main.", "context": "/orders/push.md", "expires": "2999-12-31"});
+    let ran = put_with(&personal, gone.clone(), "/effects/seen/s", &order, None);
+    assert_eq!(refused(&ran), "board::signing::file_missing");
+    let removed = format!("/effects/seen/{SEEN}");
+    let ran = run_with(&personal, gone.clone(), None, &["--json", "rm", &removed]);
+    assert_eq!(refused(&ran), "board::signing::file_missing");
+    assert!(personal.record(&removed).is_some());
+    let ran = put_with(&personal, gone, "/orders/other", &order, None);
+    assert_eq!(ran.code, 0, "{}{}", text(&ran.stdout), text(&ran.stderr));
+    signer(&personal, "#!/bin/sh\nprintf 'Not now.\\n'\nexit 3\n");
+    let present = signing_files(&personal, personal.signer.allowed());
+    let ran = put_with(&personal, present, "/.board/board", &config, Some(answer));
+    assert_eq!(refused(&ran), "board::settings::unsigned");
+    assert_eq!(
+        personal.record("/.board/board").unwrap().get("signing"),
+        None
+    );
+}
+
+/// A known boards file that names a directory that is not a board refuses
+/// only a write that reads signing's state, and leaves other puts alone.
+#[test]
+fn a_personal_board_that_does_not_open_refuses_a_write_under_effects_and_not_a_put_elsewhere() {
+    let personal = personal();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let known = json!({"personal": elsewhere.path()}).to_string();
+    personal.xdg.write("board/config.json", Item::File(&known));
+    let files = signing_files(&personal, no_owner(&personal));
+    let order = json!({"$type": ORDER_TYPE, "order": "Do not push to main.", "context": "/orders/push.md", "expires": "2999-12-31"});
+    let ran = put_with(&personal, files.clone(), "/orders/push", &order, None);
+    assert_eq!(ran.code, 0, "{}{}", text(&ran.stdout), text(&ran.stderr));
+    let ran = put_with(&personal, files, "/effects/seen/s", &order, None);
+    assert_eq!(refused(&ran), "board::config::not_found");
+    assert!(personal.record("/effects/seen/s").is_none());
+}
+
+/// A known boards file that names a second, empty board as the personal
+/// one does not turn signing off for the board being written: with a
+/// signed seen record there and the allowed signers file gone, an edit of
+/// `require` and a put under `effects/` are refused as `file_missing`, and
+/// a put elsewhere goes ahead.
+#[test]
+fn a_known_boards_file_naming_an_empty_board_keeps_the_written_boards_signed_record_refusing_a_missing_signers_file()
+ {
+    let (personal, decoy) = (personal(), personal());
+    let known = json!({"personal": decoy.board.workdir()}).to_string();
+    personal.xdg.write("board/config.json", Item::File(&known));
+    let seen = json!({"$type": board_model::SEEN_TYPE, "signature": "signed"});
+    personal.write(&format!("effects/seen/{SEEN}.json"), &seen.to_string());
+    let gone = signing_files(&personal, personal.signer.directory().join("gone"));
+    let mut config = personal.record("/.board/board").unwrap();
+    config["signing"] = json!({"require": []});
+    let answer = approving_answer(
+        &personal,
+        &board_model::setting_digest(None, Some(&config["signing"])),
+    );
+    let ran = put_with(
+        &personal,
+        gone.clone(),
+        "/.board/board",
+        &config,
+        Some(answer),
+    );
+    assert_eq!(refused(&ran), "board::signing::file_missing");
+    let order = json!({"$type": ORDER_TYPE, "order": "Do not push to main.", "context": "/orders/push.md", "expires": "2999-12-31"});
+    let ran = put_with(&personal, gone.clone(), "/effects/seen/s", &order, None);
+    assert_eq!(refused(&ran), "board::signing::file_missing");
+    let ran = put_with(&personal, gone, "/orders/other", &order, None);
+    assert_eq!(ran.code, 0, "{}{}", text(&ran.stdout), text(&ran.stderr));
 }

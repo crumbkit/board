@@ -268,15 +268,15 @@
     {
       "rule": "help-budget/command",
       "applies_to": "board put",
-      "reason": "put has eight options of its own (--new, --var, --expect, --batch, --bulk, --file, --wait and --strict), and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes. Its page also ends with the Effects: line and a global flags line that names --no-input.",
+      "reason": "put has nine options of its own (--new, --var, --expect, --batch, --bulk, --file, --approved, --wait and --strict), and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes, and that --approved names the owner's answer to an edit of signing while signing is off. Its page also ends with the Effects: line and a global flags line that names --no-input.",
       "costs": [
-        "Each read of the page can cost 510 bytes more than the default, about 128 tokens."
+        "Each read of the page can cost 630 bytes more than the default, about 158 tokens."
       ],
       "budget": {
-        "bytes": 1710,
+        "bytes": 1830,
         "default": 1200,
-        "extra_bytes": 510,
-        "extra_tokens": 128
+        "extra_bytes": 630,
+        "extra_tokens": 158
       }
     },
     {
@@ -324,15 +324,15 @@
     {
       "rule": "help-budget/command",
       "applies_to": "board answer",
-      "reason": "answer says on one page how an approval is signed and checked, its Effects: line says that it is destructive, and its global flags line names --no-input, which a program adds to every run.",
+      "reason": "answer says on one page how an approval is signed and checked, and how --approved names the owner's answer where signing takes one in place of a signature, its Effects: line says that it is destructive, and its global flags line names --no-input, which a program adds to every run.",
       "costs": [
-        "Each read of the page can cost 60 bytes more than the default, about 15 tokens."
+        "Each read of the page can cost 300 bytes more than the default, about 75 tokens."
       ],
       "budget": {
-        "bytes": 1260,
+        "bytes": 1500,
         "default": 1200,
-        "extra_bytes": 60,
-        "extra_tokens": 15
+        "extra_bytes": 300,
+        "extra_tokens": 75
       }
     },
     {

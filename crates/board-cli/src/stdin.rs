@@ -174,7 +174,13 @@ pub(crate) fn call(
     }
     plugins.known = Some(&known);
     match board.call(target, &input, &plugins) {
-        Ok(report) => render::call(printer, &report),
+        Ok(report) => {
+            let home = context.home.as_deref();
+            let text = (context.built_in.0.iter())
+                .find(|plugin| plugin.manifest().name == report.plugin)
+                .and_then(|plugin| plugin.text(&report.capability, &report.output, home));
+            render::call(printer, &report, text)
+        }
         Err(error) => {
             let mut refusal = error.refusal();
             if let Input::Ignored(stdin, Some(why)) = stdin

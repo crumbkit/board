@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's recovery and twin checks cannot provoke through the
 /// `board` command line, why, and where each is tested instead. The checks
 /// provoke every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 28] = [
+pub const NOT_REPRODUCED: [(Code, &str); 30] = [
     (
         Code::AttachmentMissing,
         "the store must lose an object between the put and the fetch; \
@@ -115,6 +115,18 @@ pub const NOT_REPRODUCED: [(Code, &str); 28] = [
          board-cli/src/tests/aliases.rs runs a former name and the plugin's own name",
     ),
     (
+        Code::SigningFileMissing,
+        "a run takes Board's allowed signers file from the passwd home, the developer's, \
+         so whether it is missing is not the test's to choose; \
+         board-ops/src/effects/tests/signing.rs removes one",
+    ),
+    (
+        Code::SigningNotApproved,
+        "a run takes Board's allowed signers file from the passwd home, the developer's, \
+         so whether signing is off is not the test's to choose; \
+         board-ops/src/effects/tests/signing.rs turns it off",
+    ),
+    (
         Code::CacheUnmarked,
         "a run prints it as a warning and refuses nothing; board-cli/src/tests.rs \
          runs ls under an unwritable cache root and a writable one",
@@ -140,7 +152,7 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 95] = [
+pub const NOT_CHECKED: [(Code, &str); 97] = [
     (
         Code::RepoLocalRemote,
         "only repo add gives it, to a remote that names a local path; a record's remote is checked as board::repo::invalid",
@@ -260,6 +272,8 @@ pub const NOT_CHECKED: [(Code, &str); 95] = [
     (Code::SettingsNotFound, SETTINGS),
     (Code::SettingsNoPersonal, SETTINGS),
     (Code::SettingsUnsigned, SETTINGS),
+    (Code::SigningFileMissing, SETTINGS),
+    (Code::SigningNotApproved, SETTINGS),
     (Code::PutHeadMoved, PUT),
     (Code::PutFailed, PUT),
     (Code::PluginNotInstalled, PLUGIN),

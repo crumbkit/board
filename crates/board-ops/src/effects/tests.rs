@@ -191,11 +191,11 @@ fn an_approved_effect_admits_the_same_decide_and_a_refused_one_is_refused_naming
     let plugin = opened(&scenario, Some("review"), Some(&mine));
     let owner = asker(None, Some(&mine));
     let approved = asked(decide(&plugin, "/pulls/7"));
-    answer(&owner, &approved, Answer::Approve, None, None).unwrap();
+    answer(&owner, &approved, Answer::Approve, None, None, None).unwrap();
     let report = decide(&plugin, "/pulls/7").unwrap();
     assert_eq!(report.effect.as_deref(), Some(approved.as_str()));
     let refused = asked(decide(&plugin, "/pulls/8"));
-    answer(&owner, &refused, Answer::Refuse, None, None).unwrap();
+    answer(&owner, &refused, Answer::Refuse, None, None, None).unwrap();
     let error = decide(&plugin, "/pulls/8").unwrap_err();
     assert_eq!(error.code(), Code::SettingsRefused);
     assert_eq!(error.fields().effect.as_deref(), Some(refused.as_str()));
@@ -321,7 +321,7 @@ fn an_approval_of_shown_text_admits_only_that_text_and_moved_to_other_text_is_re
     let plugin = opened(&scenario, Some("review"), Some(&mine));
     let owner = asker(None, Some(&mine));
     let a = asked(decide_with(&plugin, "/pulls/7", &text("a")));
-    answer(&owner, &a, Answer::Approve, None, None).unwrap();
+    answer(&owner, &a, Answer::Approve, None, None, None).unwrap();
     let report = decide_with(&plugin, "/pulls/7", &text("a")).unwrap();
     assert_eq!(report.effect.as_deref(), Some(a.as_str()));
     let b = asked(decide_with(&plugin, "/pulls/7", &text("b")));
@@ -349,7 +349,7 @@ fn an_approval_of_a_shown_record_admits_it_and_its_digest_is_that_of_its_canonic
     assert_eq!(shown.record, Some(json!({"a": 2, "b": 1})));
     let canonical = canonical_json(shown.record.as_ref().unwrap());
     assert_eq!(shown.digest, Some(Digest::of(canonical.as_bytes())));
-    answer(&owner, &id, Answer::Approve, None, None).unwrap();
+    answer(&owner, &id, Answer::Approve, None, None, None).unwrap();
     let report = decide_with(&plugin, "/pulls/7", &record).unwrap();
     assert_eq!(report.effect, Some(id.clone()));
     // Its canonical JSON as text has the same id, so the record's approval
@@ -410,12 +410,12 @@ fn an_answer_to_a_pending_effect_that_shows_a_record_and_text_without_a_digest_i
     let mut both = effect.clone().showing(Some(record.clone()), None);
     (both.text, both.digest) = (Some("t".to_owned()), None);
     pending(&mine, &both.id(), &both);
-    let refused = answer(&owner, &both.id(), Answer::Approve, None, None).unwrap_err();
+    let refused = answer(&owner, &both.id(), Answer::Approve, None, None, None).unwrap_err();
     assert_eq!(refused.code(), Code::SettingsNotFound);
     assert!(refused.to_string().contains("its digest"), "{refused}");
     let alone = effect.showing(Some(record), None);
     pending(&mine, &alone.id(), &alone);
-    answer(&owner, &alone.id(), Answer::Approve, None, None).unwrap();
+    answer(&owner, &alone.id(), Answer::Approve, None, None, None).unwrap();
 }
 
 #[test]
@@ -475,12 +475,12 @@ fn an_answer_to_a_pending_effect_that_shows_text_without_its_digest_is_refused_a
     let mut bare = effect.clone().showing(None, Some("t".to_owned()));
     bare.digest = None;
     pending(&mine, &bare.id(), &bare);
-    let refused = answer(&owner, &bare.id(), Answer::Approve, None, None).unwrap_err();
+    let refused = answer(&owner, &bare.id(), Answer::Approve, None, None, None).unwrap_err();
     assert_eq!(refused.code(), Code::SettingsNotFound);
     assert!(refused.to_string().contains("its digest"), "{refused}");
     let digested = effect.showing(None, Some("t".to_owned()));
     pending(&mine, &digested.id(), &digested);
-    answer(&owner, &digested.id(), Answer::Approve, None, None).unwrap();
+    answer(&owner, &digested.id(), Answer::Approve, None, None, None).unwrap();
 }
 
 #[test]
@@ -687,7 +687,7 @@ fn an_answer_moves_its_pending_effect_to_answered_in_the_commit_that_writes_the_
     let asked_bytes = std::fs::read(mine.workdir().join(pending(&answered))).unwrap();
     let before = mine.head().unwrap();
     let owner = asker(None, Some(&mine));
-    let report = answer(&owner, &answered, Answer::Approve, None, None).unwrap();
+    let report = answer(&owner, &answered, Answer::Approve, None, None, None).unwrap();
     let head = mine.head().unwrap();
     assert_eq!(report.put.commit, Some(head.id));
     assert_eq!(head.parents, [before.id]);
@@ -719,7 +719,7 @@ fn an_effect_asked_again_after_its_answer_is_removed_replaces_the_answered_copy_
     let board = opened(&scenario, Some("review"), Some(&mine));
     let owner = asker(None, Some(&mine));
     let id = asked(decide(&board, "/pulls/7"));
-    answer(&owner, &id, Answer::Refuse, None, None).unwrap();
+    answer(&owner, &id, Answer::Refuse, None, None, None).unwrap();
     let kept = format!("effects/answered/{id}.json");
     let mut first = read(&mine, &kept);
     first["asked"] = json!("1970-01-01T00:00:00.000000Z");
@@ -727,7 +727,7 @@ fn an_effect_asked_again_after_its_answer_is_removed_replaces_the_answered_copy_
         .write(&format!("effects/seen/{id}.json"), Item::Deleted);
     assert_eq!(asked(decide(&board, "/pulls/7")), id);
     let again = read(&mine, &format!("effects/pending/{id}.json"));
-    answer(&owner, &id, Answer::Refuse, None, None).unwrap();
+    answer(&owner, &id, Answer::Refuse, None, None, None).unwrap();
     assert_eq!(read(&mine, &kept), again);
     assert_ne!(again, first);
 }
@@ -744,9 +744,10 @@ fn a_second_answer_to_the_same_effect_is_refused_as_not_found_and_the_first_is_a
         Answer::Refuse,
         Some("not now".to_owned()),
         None,
+        None,
     )
     .unwrap();
-    let again = answer(&owner, &id, Answer::Approve, None, None);
+    let again = answer(&owner, &id, Answer::Approve, None, None, None);
     assert_eq!(code(again), Code::SettingsNotFound);
     let seen = read(&mine, &format!("effects/seen/{id}.json"));
     assert_eq!(
@@ -768,11 +769,11 @@ fn a_hold_after_the_owner_answers_writes_no_pending_effect_and_a_hold_before_wri
     let text = std::fs::read_to_string(mine.workdir().join(&file)).unwrap();
     let effect = Effect::from_value(&serde_json::from_str(&text).unwrap()).unwrap();
     let personal = Board::open(mine.workdir(), None).unwrap();
-    answer(&owner, &id, Answer::Refuse, None, None).unwrap();
+    answer(&owner, &id, Answer::Refuse, None, None, None).unwrap();
     hold(&personal, &effect).unwrap();
     assert!(!exists(&mine, &file));
     mine.write(&file, Item::File(&text));
-    let again = answer(&owner, &id, Answer::Approve, None, None);
+    let again = answer(&owner, &id, Answer::Approve, None, None, None);
     assert_eq!(code(again), Code::PutStale);
     assert_eq!(
         read(&mine, &format!("effects/seen/{id}.json"))["answer"],
@@ -794,7 +795,7 @@ fn answering_from_a_plugin_without_a_personal_board_or_for_an_unknown_or_malform
     let board = opened(&scenario, Some("review"), Some(&mine));
     let id = asked(decide(&board, "/pulls/7"));
     let owner = asker(None, Some(&mine));
-    let approve = |asker: &Asker, id: &str| answer(asker, id, Answer::Approve, None, None);
+    let approve = |asker: &Asker, id: &str| answer(asker, id, Answer::Approve, None, None, None);
     let plugin = asker(Some("review"), Some(&mine));
     assert_eq!(code(approve(&plugin, &id)), Code::SettingsFromPlugin);
     assert_eq!(
@@ -822,7 +823,7 @@ fn an_answer_to_a_pending_effect_that_is_not_the_one_its_id_names_is_refused_and
  {
     let mine = personal();
     let owner = asker(None, Some(&mine));
-    let approve = |id: &str| answer(&owner, id, Answer::Approve, None, None);
+    let approve = |id: &str| answer(&owner, id, Answer::Approve, None, None, None);
     let mut effect = Effect::new(
         "/b".to_owned(),
         "tasks".parse().unwrap(),
@@ -944,23 +945,41 @@ fn approving_with_no_signer_is_refused_as_unsigned_and_writes_nothing_and_refusi
     let (scenario, mine) = (board(), personal());
     let board = opened(&scenario, Some("review"), Some(&mine));
     let unsigned_owner = Asker {
-        signing: Signing::default(),
+        signing: Signing {
+            signer: None,
+            ..signing()
+        },
         ..asker(None, Some(&mine))
     };
     let id = asked(decide(&board, "/pulls/7"));
     assert_eq!(
-        named(answer(&unsigned_owner, &id, Answer::Approve, None, None)),
+        named(answer(
+            &unsigned_owner,
+            &id,
+            Answer::Approve,
+            None,
+            None,
+            None
+        )),
         (Code::SettingsUnsigned, Some(id.clone()))
     );
     assert!(exists(&mine, &format!("effects/pending/{id}.json")));
     assert!(!exists(&mine, &format!("effects/seen/{id}.json")));
-    answer(&asker(None, Some(&mine)), &id, Answer::Approve, None, None).unwrap();
+    answer(
+        &asker(None, Some(&mine)),
+        &id,
+        Answer::Approve,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
     let seen = read(&mine, &format!("effects/seen/{id}.json"));
     let signature = seen["signature"].as_str().unwrap();
     let armor = signer().sign(&format!("{APPROVAL_HEADER}\n"));
     assert_eq!(signature.lines().next(), armor.lines().next());
     let refused = asked(decide(&board, "/pulls/8"));
-    answer(&unsigned_owner, &refused, Answer::Refuse, None, None).unwrap();
+    answer(&unsigned_owner, &refused, Answer::Refuse, None, None, None).unwrap();
     let seen = read(&mine, &format!("effects/seen/{refused}.json"));
     assert_eq!(
         (seen["answer"].as_str(), seen.get("signature")),
@@ -980,11 +999,19 @@ fn approving_when_the_owner_declines_to_sign_is_refused_as_unsigned_with_their_f
     let mut declining = asker(None, Some(&mine));
     declining.signing.signer = Some(tools.workdir().join("decline").into_os_string());
     let id = asked(decide(&board, "/pulls/7"));
-    let error = answer(&declining, &id, Answer::Approve, None, None).unwrap_err();
+    let error = answer(&declining, &id, Answer::Approve, None, None, None).unwrap_err();
     assert_eq!(error.code(), Code::SettingsUnsigned);
     assert!(error.to_string().contains("wrong path"), "{error}");
     assert!(!exists(&mine, &format!("effects/seen/{id}.json")));
-    answer(&asker(None, Some(&mine)), &id, Answer::Approve, None, None).unwrap();
+    answer(
+        &asker(None, Some(&mine)),
+        &id,
+        Answer::Approve,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
     assert!(exists(&mine, &format!("effects/seen/{id}.json")));
 }
 
@@ -1001,8 +1028,16 @@ fn an_approval_with_a_signature_by_another_key_or_in_the_write_namespace_is_refu
     let approval = pending_effect(&mine, &id).approval();
     let mut no_signer = asker(None, Some(&mine));
     no_signer.signing.signer = None;
-    let approve =
-        |signature: String| answer(&no_signer, &id, Answer::Approve, None, Some(signature));
+    let approve = |signature: String| {
+        answer(
+            &no_signer,
+            &id,
+            Answer::Approve,
+            None,
+            Some(signature),
+            None,
+        )
+    };
     let unsigned = (Code::SettingsUnsigned, Some(id.clone()));
     assert_eq!(named(approve(Signer::new().sign(&approval))), unsigned);
     let written = signer().sign_in(WRITE_HEADER, &approval);
@@ -1140,7 +1175,7 @@ fn boards_own_writes_of_a_pending_effect_an_answer_and_an_answered_effect_need_n
     let mut owner = asker(None, Some(&mine));
     owner.sign_owner_writes = true;
     owner.signing.signer = Some(decline.into_os_string());
-    answer(&owner, &id, Answer::Refuse, None, None).unwrap();
+    answer(&owner, &id, Answer::Refuse, None, None, None).unwrap();
     assert!(exists(&mine, &format!("effects/seen/{id}.json")));
     assert!(exists(&mine, &format!("effects/answered/{id}.json")));
 }
@@ -1349,3 +1384,5 @@ fn a_lookup_through_a_mount_writes_nothing_in_either_board_and_a_decide_through_
     let id = asked(decide(&plugin, "/m/notes/y"));
     assert!(exists(&mine, &format!("effects/pending/{id}.json")));
 }
+
+mod signing;

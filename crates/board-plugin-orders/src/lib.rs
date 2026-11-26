@@ -10,6 +10,7 @@ mod pinned;
 pub mod records;
 mod sign;
 mod signers;
+mod text;
 mod verify;
 
 use board_model::{CapabilityName, ORDER_TYPE, RecordType, Refusal};
@@ -58,6 +59,15 @@ impl Plugin for Orders {
                 hint: None,
             }),
         }
+    }
+
+    fn text(
+        &self,
+        capability: &CapabilityName,
+        output: &Value,
+        home: Option<&std::path::Path>,
+    ) -> Option<String> {
+        text::text(capability.as_str(), output, home)
     }
 }
 

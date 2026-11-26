@@ -20,6 +20,7 @@ serde_json.workspace = true
 board-scenario.workspace = true
 bolero.workspace = true
 proptest.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

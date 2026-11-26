@@ -2,6 +2,7 @@
 //! `rule-paths`, `planned-rule-paths`, `flow-valid` and `exists` check
 //! kinds.
 
+use board_model::Act;
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 
@@ -490,9 +491,10 @@ pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option
             .collect::<BTreeSet<_>>())
         .len(),
     };
-    // The owner's Touch ID approval of the current plan counts once.
+    // The owner's Touch ID approval counts once, and alone while signing lists plans.
     let approved = answers_count(each) && observed.approval == Approval::Signed;
-    let count = count + usize::from(approved);
+    let only_signed = answers_count(each) && observed.needs_signature(Act::Plan);
+    let count = usize::from(approved) + if only_signed { 0 } else { count };
     let min = each.min.map_or(1, |min| min as usize);
     (count < min).then(|| {
         let detail =
@@ -507,6 +509,9 @@ pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option
                 ),
                 Approval::None | Approval::Signed => String::new(),
             };
+            if only_signed {
+                return super::signing::plan_unsigned(path, &unread);
+            }
             format!(
                 "{detail}, nor a {ANSWER_TYPE} from the owner (one that names `by.person`, or was \
                  written through the owner's questions pane, Board.app or /ask) whose chosen \
@@ -643,7 +648,12 @@ pub(super) fn understood_missing(observed: &Observed, each: &flow::Check) -> Opt
                 && (understood.iter()).any(|(path, _)| names_whole(text, path))
         })
     };
-    if !signed && !answered() {
+    if subject == Subject::Data
+        && let Some(refused) = super::signing::data_unsigned(observed, !understood.is_empty())
+    {
+        return Some(refused);
+    }
+    if !signed && !answered() && !observed.needs_signature(Act::Data) {
         return Some(format!(
             "no attached plans/decision/v1 the owner signed with by.person references an \
              attached {UNDERSTANDING_TYPE} of this change's {}, nor does an attached answer \

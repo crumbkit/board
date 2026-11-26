@@ -78,7 +78,7 @@ fn shown(file: &Path, what: &str, stdin: &mut dyn Read) -> Result<Vec<u8>, Box<R
 pub(crate) struct Answering {
     /// The pending effect's id, 64 hex digits.
     id: String,
-    /// approve admits it, after the owner signs it with Touch ID; refuse refuses it.
+    /// approve admits it, with Touch ID or --approved; refuse refuses it.
     answer: Answer,
     /// Why, kept in the seen record.
     #[arg(long)]
@@ -86,6 +86,9 @@ pub(crate) struct Answering {
     /// A signature made elsewhere: this file, or - for stdin.
     #[arg(long, value_name = "FILE")]
     signature: Option<PathBuf>,
+    /// The owner's answer that approves it, where signing takes one.
+    #[arg(long, value_name = "PATH", conflicts_with = "signature")]
+    approved: Option<String>,
 }
 
 /// `board answer`, which needs no board but the personal one.
@@ -97,7 +100,11 @@ pub(crate) fn answer(
     stdin: &mut dyn Read,
 ) -> Output {
     // An approval without --signature waits for Touch ID, which is a question.
-    if no_input && answering.answer == Answer::Approve && answering.signature.is_none() {
+    if no_input
+        && answering.answer == Answer::Approve
+        && answering.signature.is_none()
+        && answering.approved.is_none()
+    {
         let message = "approve without --signature waits for the owner's Touch ID, and --no-input asks for no wait";
         let hint = "sign the approval elsewhere and pass it with --signature <FILE>, or answer without --no-input to sign with Touch ID";
         return render::refused(printer, plain(Code::CliUsage, &message).with_hint(hint));
@@ -118,13 +125,19 @@ fn answered(
         answer,
         reason,
         signature,
+        approved,
     } = answering;
     let given = signature.is_some();
     let signature = (signature.as_deref())
         .map(|file| supplied(answer, file, stdin))
         .transpose()?;
     let asker = asker(context, true)?;
-    board_ops::answer(&asker, &id, answer, reason, signature).map_err(|error| {
+    if approved.is_some() && answer == Answer::Refuse {
+        let message = "--approved was given with refuse, and a refusal names no answer";
+        let hint = "drop --approved to refuse, or answer approve";
+        return Err(Box::new(plain(Code::CliUsage, &message).with_hint(hint)));
+    }
+    board_ops::answer(&asker, &id, answer, reason, signature, approved).map_err(|error| {
         let refused = error.refusal();
         match error.code() {
             Code::SettingsUnsigned if given => Box::new(refused.with_hint(unverified())),
@@ -212,6 +225,18 @@ pub(crate) fn asker(context: &Context, personal: bool) -> Result<Asker, Box<Refu
         context.home.clone(),
         signing(context),
     )
+}
+
+/// Who asks for a put or a removal, with the personal board the known
+/// boards file names. A known boards file that cannot be read, or names no
+/// board's root, refuses only a write that signing governs.
+pub(crate) fn writing_asker(context: &Context) -> Result<Asker, Box<Refusal>> {
+    Ok(board_ops::writing_asker(
+        plugin(context)?,
+        context.known(),
+        context.home.clone(),
+        signing(context),
+    ))
 }
 
 /// How the owner signs an approval or an order, and the allowed signers

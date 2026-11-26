@@ -46,6 +46,23 @@ owner's personal board, the `personal` entry in
 - `pinned` (optional): whether every agent session starts with the order.
 - `signature` (optional): the owner's SSH signature of the statement. A
   draft has none. Only `sign` writes it.
+- `approved` (optional): the owner's `plans/answer/v1` that approved the
+  order in chat, by its path. It counts only where signing takes an answer
+  for orders: with signing off, or with `order` left out of `signing.require`
+  in the personal board's config. `sign --approved <answer>` writes it.
+
+## Approving in chat
+
+Where signing takes an answer for orders, the owner approves a draft in
+chat. The unsigned order's refusal, `orders::order::unsigned`, names the
+order's digest in its `digest` field. Ask the owner a `plans/question/v1`
+whose text names that digest, with an option `approve`, then run
+`board --personal orders sign --path /orders/<name> --approved <answer>`.
+The order then verifies as `approved in chat, not signed`, and an edit of
+its text, expiry, pinning or context voids the approval. `verify` and
+`pinned` give `approval`, `signed by owner` or `approved in chat, not
+signed`, and `pinned` and `signers` give `signing`, one line saying whether
+signing is on.
 
 ## The statement
 

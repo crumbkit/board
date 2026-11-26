@@ -150,6 +150,11 @@ pub struct AnswerRecord {
     /// agent or a person wrote it.
     #[schemars(regex(pattern = r"^[a-z0-9-]+/[a-z0-9-]+$"))]
     pub written_by: Option<String>,
+    /// Whether `words` are a prompt the owner typed, or a line of one, in
+    /// the session that wrote the answer, as the prompt log the board-plans
+    /// mod keeps on the owner's Mac says; absent when no session was named.
+    /// Board records it and decides nothing by it yet.
+    pub heard: Option<bool>,
 }
 
 impl Record for AnswerRecord {
