@@ -2,12 +2,19 @@
 
 ## Unreleased
 
+## 0.1.4 (2026-11-26)
+
 - A warm `board refs`, and each plugin call that asks `host.refs`, reads the
   references of each source the index keeps a decision for, with where they
   resolved, from a new `resolutions` table, and decides only the sources
   whose decision it does not hold. The answers are the same as before. The
   index format moves to 30, so the first run after the upgrade builds a new
   index from scratch.
+- `board changes open` and `board changes owed` choose which recently done
+  changes may still owe a check from their flows and plan answers, read in
+  a few queries, and observe only the changes left. On a board with about
+  600 changes done in the last 14 days, `changes open` takes about 2.6 s in
+  place of 84 s. The output is the same as before.
 - `board plans decide --project <project> --decision <text> --why <text>
   --session <local_ id>` records a `plans/decision/v1` under the project's
   decisions folder and prints its path. It fills in `$type`, `decided` and
@@ -17,7 +24,6 @@
   project held nothing before, it still writes the decision and warns with
   the three nearest project names. The plans skill now records decisions
   with it in place of a hand-built record and `put --new`.
-
 - `board put`, `put --new` and `put --batch` fill a field Board knows when
   the record leaves it out: a question's or a decision's `by`, from
   `BOARD_SESSION` or a `local_` Claude Code session id, its `asked` or
@@ -36,7 +42,8 @@
   for underscores, or the reverse, such as `--task-repo` or `--dry-run`,
   runs with the flag's own spelling; and `--path` given to `get`, `ls`,
   `check`, `log`, `refs`, `uri` or `mount update`, such as
-  `board get --path /a`, is read as the path. `board cat` used to be refused with a hint to run `get`.
+  `board get --path /a`, is read as the path. `board cat` used to be
+  refused with a hint to run `get`.
 - The rules plugin's README lists each code `board rules report` can put
   in `refused`, says which are warnings that leave every row as it is, and
   says that `rules::report::run_commit_unnamed` also covers a malformed
