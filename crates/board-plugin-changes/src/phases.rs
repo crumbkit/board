@@ -34,7 +34,7 @@ mod reflow;
 use moves::latest_reason;
 pub(crate) use moves::{ReopenInput, pause, reopen, resume};
 pub(crate) use observe::{
-    Known, after_review, board_root, fixes, observe, observe_known, reviewed,
+    Known, after_review, board_root, fixes, observe, observe_in, observe_known, reviewed,
 };
 pub(crate) use reflow::{ReflowInput, Reflowed, reflow};
 
