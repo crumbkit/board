@@ -254,9 +254,10 @@ UNION SELECT blob FROM main.worktree WHERE blob IS NOT NULL;
 ";
 
 /// What one run decides about each entry, the view agents query, and each
-/// fact table filtered to what the current entries reach. `resolved` is
-/// every entry: each reached source's rows the index keeps, in source
-/// order, then `fresh`, the rows decided this run and not kept. All live on
+/// fact table filtered to what the current entries reach. `held` is each
+/// reached source's rows the index keeps, and `resolved` is every entry:
+/// `held` in source order, then `fresh`, the rows decided this run and not
+/// kept. All live on
 /// the connection that made them. An unqualified name finds a temporary
 /// view before a table, so a query sees the same rows warm as cold. A body shows only while an entry holds its
 /// blob as a record: the cache keeps it after the same bytes move to a path
@@ -291,10 +292,13 @@ CREATE INDEX IF NOT EXISTS temp.fresh_blob ON fresh (blob, role);
 CREATE INDEX IF NOT EXISTS temp.reached_key ON reached (key);
 DELETE FROM temp.fresh;
 ANALYZE temp.reached;
+CREATE TEMP VIEW IF NOT EXISTS held AS
+SELECT r.source, d.path, d.logical, d.blob, d.size, d.role, d.schema, d.kind, d.code, d.change
+FROM temp.reached AS r JOIN main.decided AS d ON d.key = r.key;
 CREATE TEMP VIEW IF NOT EXISTS resolved AS
-SELECT r.source, d.path, d.logical, d.blob, d.size, d.role, d.schema, d.kind, d.code,
+SELECT d.source, d.path, d.logical, d.blob, d.size, d.role, d.schema, d.kind, d.code,
     coalesce(d.change, 'committed') AS change
-FROM temp.reached AS r JOIN main.decided AS d ON d.key = r.key
+FROM temp.held AS d
 UNION ALL
 SELECT * FROM temp.fresh;
 CREATE TEMP VIEW IF NOT EXISTS decided AS
@@ -306,7 +310,7 @@ CREATE TEMP VIEW IF NOT EXISTS pointers AS
 SELECT * FROM main.pointers WHERE scan IN (SELECT scan FROM temp.reached);
 CREATE TEMP VIEW IF NOT EXISTS entries AS
 SELECT
-    r.source,
+    d.source,
     d.path,
     d.logical,
     d.blob,
@@ -318,7 +322,7 @@ SELECT
     coalesce(d.change, 'committed') AS change,
     d.role,
     d.schema
-FROM temp.reached AS r JOIN main.decided AS d ON d.key = r.key
+FROM temp.held AS d
 LEFT JOIN main.blobs AS b ON b.blob = d.blob AND b.role = d.role
 UNION ALL
 SELECT
@@ -338,13 +342,11 @@ FROM temp.fresh AS f
 LEFT JOIN main.blobs AS b ON b.blob = f.blob AND b.role = f.role;
 CREATE TEMP VIEW IF NOT EXISTS blobs AS
 SELECT * FROM main.blobs AS o
-WHERE EXISTS (SELECT 1 FROM main.decided AS d JOIN temp.reached AS r ON r.key = d.key
-              WHERE d.blob = o.blob AND d.role = o.role)
+WHERE EXISTS (SELECT 1 FROM temp.held AS d WHERE d.blob = o.blob AND d.role = o.role)
    OR EXISTS (SELECT 1 FROM temp.fresh AS f WHERE f.blob = o.blob AND f.role = o.role);
 CREATE TEMP VIEW IF NOT EXISTS bodies AS
 SELECT * FROM main.bodies AS o
-WHERE EXISTS (SELECT 1 FROM main.decided AS d JOIN temp.reached AS r ON r.key = d.key
-              WHERE d.blob = o.blob AND d.kind = 'record')
+WHERE EXISTS (SELECT 1 FROM temp.held AS d WHERE d.blob = o.blob AND d.kind = 'record')
    OR EXISTS (SELECT 1 FROM temp.fresh AS f WHERE f.blob = o.blob AND f.kind = 'record');
 CREATE TEMP VIEW IF NOT EXISTS records AS
 SELECT e.source, e.path, e.logical, e.blob, e.type, e.status, e.code, b.body
@@ -353,18 +355,15 @@ LEFT JOIN main.bodies AS b ON b.blob = e.blob
 WHERE e.kind = 'record';
 CREATE TEMP VIEW IF NOT EXISTS validations AS
 SELECT * FROM main.validations AS o
-WHERE EXISTS (SELECT 1 FROM main.decided AS d JOIN temp.reached AS r ON r.key = d.key
-              WHERE d.blob = o.record AND d.schema = o.schema)
+WHERE EXISTS (SELECT 1 FROM temp.held AS d WHERE d.blob = o.record AND d.schema = o.schema)
    OR EXISTS (SELECT 1 FROM temp.fresh AS f WHERE f.blob = o.record AND f.schema = o.schema);
 CREATE TEMP VIEW IF NOT EXISTS refs AS
 SELECT * FROM main.refs AS o
-WHERE EXISTS (SELECT 1 FROM main.decided AS d JOIN temp.reached AS r ON r.key = d.key
-              WHERE d.blob = o.record AND d.schema = o.schema)
+WHERE EXISTS (SELECT 1 FROM temp.held AS d WHERE d.blob = o.record AND d.schema = o.schema)
    OR EXISTS (SELECT 1 FROM temp.fresh AS f WHERE f.blob = o.record AND f.schema = o.schema);
 CREATE TEMP VIEW IF NOT EXISTS links AS
 SELECT * FROM main.links AS o
-WHERE EXISTS (SELECT 1 FROM main.decided AS d JOIN temp.reached AS r ON r.key = d.key
-              WHERE d.blob = o.blob AND d.role = 'markdown')
+WHERE EXISTS (SELECT 1 FROM temp.held AS d WHERE d.blob = o.blob AND d.role = 'markdown')
    OR EXISTS (SELECT 1 FROM temp.fresh AS f WHERE f.blob = o.blob AND f.role = 'markdown');
 CREATE TEMP VIEW IF NOT EXISTS trees AS
 WITH RECURSIVE reached (tree) AS (
