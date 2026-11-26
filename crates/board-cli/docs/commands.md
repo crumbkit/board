@@ -686,11 +686,13 @@ Effects: read-only, closed-world.
 
 ## `board schemas show`
 
-Print the JSON Schema of each document
+Print the JSON Schema of each document.
+
+It also prints the schema of each record type a built-in plugin ships, as `board plugin enable` writes it, which `board schemas list` does not list.
 
 ### Arguments
 
-- `<ID>`: The ids of the documents that `schemas list` lists, separated by spaces. Required. Takes more than one value.
+- `<ID>`: The ids of the documents that `schemas list` lists, or of the record types the built-in plugins ship, separated by spaces. Required. Takes more than one value.
 
 ### Columns
 

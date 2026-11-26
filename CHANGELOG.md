@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- The rules plugin's README lists each code `board rules report` can put
+  in `refused`, says which are warnings that leave every row as it is, and
+  says that `rules::report::run_commit_unnamed` also covers a malformed
+  `versions.commit` and a run Board cannot read.
+- `board schemas show` prints the schema each built-in plugin ships for its
+  record types, such as `rules/report/v1`, as `board plugin enable` writes
+  it, in any directory and whether or not a board enables the plugin.
+  `board schemas list` does not list them.
 - An `obligations` check on a change with a head fails, with git's reason,
   when git cannot list the change's diff. Before, it passed on the plan's
   paths alone. It asks `rules.for-paths` about the files a change adds 100

@@ -573,7 +573,9 @@ fn describe(
     let printer = Printer { view };
     match &cli.command {
         Command::Commands(command) => crate::describe::commands(printer, &tool, command, notes),
-        Command::Schemas(command) => crate::describe::schemas(printer, &tool, command, notes),
+        Command::Schemas(command) => {
+            crate::describe::schemas(printer, &tool, command, notes, context.built_in)
+        }
         _ => unreachable!("run passes only commands and schemas"),
     }
 }
