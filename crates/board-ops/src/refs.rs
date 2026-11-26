@@ -189,7 +189,7 @@ impl Answering<'_> {
             snapshot
         } else {
             let index = self.board.index(self.cache).map_err(CheckError::from)?;
-            self.board.snapshot(index, None, Need::Report)?
+            self.board.snapshot(index, None, Need::Refs)?
         };
         let mut report = answer(&snapshot, location, path);
         if !self.fields.is_empty() {
@@ -244,8 +244,9 @@ impl Answering<'_> {
 
     /// What the record at `location`, which `target` resolved to, holds at
     /// the run's fields, with the code `snapshot` gives it. It reads only
-    /// the blob the walk listed and `snapshot` decided that code for: a file
-    /// that resolved or reads as another blob changed after the walk, and is
+    /// the blob the walk listed, or the kept decision holds for a source
+    /// not walked, and `snapshot` decided that code for: a file that
+    /// resolved or reads as another blob changed after the walk, and is
     /// `refs::target_changed`, counted as `target_changed` in the trace.
     fn fielded(
         &mut self,
@@ -268,7 +269,11 @@ impl Answering<'_> {
         let walked = (snapshot.walked.iter())
             .find(|(source, _)| *source == location.board.source)
             .and_then(|(_, entries)| entries.iter().find(|entry| entry.path == location.path))
-            .map(|entry| entry.blob);
+            .map(|entry| entry.blob)
+            .or_else(|| {
+                let at = (location.board.source.clone(), location.path.clone());
+                snapshot.kept.get(&at).copied()
+            });
         let changed = || {
             self.board.trace.borrow_mut().count("target_changed", 1);
             Code::RefsTargetChanged

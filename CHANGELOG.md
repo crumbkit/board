@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- A warm `board refs`, and each plugin call that asks `host.refs`, reads the
+  references of each source the index keeps a decision for, with where they
+  resolved, from a new `resolutions` table, and decides only the sources
+  whose decision it does not hold. The answers are the same as before. The
+  index format moves to 30, so the first run after the upgrade builds a new
+  index from scratch.
 - The rules plugin's README lists each code `board rules report` can put
   in `refused`, says which are warnings that leave every row as it is, and
   says that `rules::report::run_commit_unnamed` also covers a malformed

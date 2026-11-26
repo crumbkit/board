@@ -17,7 +17,7 @@ mod store;
 mod timing;
 mod values;
 
-pub use crate::decisions::KeptRow;
+pub use crate::decisions::{KeptReference, KeptRow, Reached};
 pub use crate::mark::{Unmarked, take_unmarked};
 pub use crate::open::{Fallback, Index, IndexError, Storage, location};
 pub use crate::query::{Budget, Rows};

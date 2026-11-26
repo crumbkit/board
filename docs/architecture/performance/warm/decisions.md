@@ -13,6 +13,11 @@ decides it. The working tree's decision is kept as [index.md](index.md) says.
   `detail` column holds, as JSON, what `check` reports beyond the row: a
   degraded entry's detail and the schema it names. The `decided` view
   leaves it out.
+- `resolutions`: each reference an entry of a kept decision makes, in
+  order, and where it resolved, under the same key, written in the same
+  transaction as its rows and pruned with them. A location in the source
+  itself keeps no source, so each run attaches the one that reached the
+  key. `refs` reads them in place of deciding the source.
 - `pointers`: the mount pointers in a mounted tree, under a key of the tree
   and the build, so a run finds a source's mounts without walking it.
 
@@ -52,7 +57,9 @@ order.
   scope. It walks and decides the other sources its scope reaches, and
   keeps what it decided, except for a source it decided only in part. A
   row that cannot be read fails the run with `board::index::failed`.
-- `refs` decides every source, and keeps what it decided.
+- `refs` reads the kept rows and references of each source whose key the
+  index holds, and checks the blob of a target there against its kept row.
+  It decides only the other sources, and keeps what it decided.
 - A scoped run decides the working tree only in part, and keeps none of it.
 - `ls` reads kept rows as `check` does: the kept rows of each mounted
   source wholly in its scope, walking only the directory it lists there.

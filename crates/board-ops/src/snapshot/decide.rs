@@ -5,17 +5,17 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
 use std::convert::Infallible;
 
-use board_index::{IndexError, Resolved, ValidationFact, Writer};
+use board_index::{IndexError, Reached, Resolved, ValidationFact, Writer};
 use board_model::{
-    BINDING_TYPE, Board, Change, Classified, Code, Content, Kind, Location, LogicalPath, Object,
-    ObjectId, REPO_TYPE, REPOSITORY_TYPE, RecordType, Repo, RepositoryRecord, Role, Source,
+    BINDING_TYPE, Board, Change, Classified, Code, Content, Digest, Kind, Location, LogicalPath,
+    Object, ObjectId, REPO_TYPE, REPOSITORY_TYPE, RecordType, Repo, RepositoryRecord, Role, Source,
     classify, parse_json,
 };
 use board_tree::{
     Contents, Entry, GitError, Mounted, Reader, Refused, Repositories, ResolveError, Status, latest,
 };
 
-use super::Facts;
+use super::{Facts, Need};
 use crate::check::{Checked, Detail, Failure, Tally, follow, unresolved};
 use crate::index::{Indexed, schema_of, schema_type};
 use crate::ui::fitted;
@@ -42,6 +42,10 @@ fn symlink(entry: &Entry, code: Code) -> Option<Detail> {
     })
 }
 
+/// The blob of each entry of a mounted source read from kept rows, by
+/// source and physical path.
+pub(crate) type Blobs = HashMap<(Source, String), Option<ObjectId>>;
+
 /// What a run decided: the report's entries and the rows of `resolved`,
 /// built together so they cannot disagree.
 #[derive(Default)]
@@ -49,20 +53,10 @@ pub(super) struct Decisions {
     pub(super) checked: Vec<Checked>,
     pub(super) resolved: Vec<Resolved>,
     pub(super) references: Vec<Referenced>,
+    /// The blob of each entry of a mounted source read from kept rows.
+    pub(super) blobs: Blobs,
     /// How many entries were decided, as against read from kept rows.
     pub(super) decided: usize,
-}
-
-/// One reference a record makes, and where it led this run.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Reached {
-    pub(crate) pointer: String,
-    /// Whether it is a Markdown link, whose `pointer` is its destination.
-    pub(crate) link: bool,
-    pub(crate) target: LogicalPath,
-    /// Where it resolved, or `None` when it dangles.
-    pub(crate) location: Option<Location>,
-    pub(crate) code: Option<Code>,
 }
 
 /// A reference, with the record that makes it.
@@ -80,6 +74,38 @@ impl Decisions {
     pub(super) fn sort_from(&mut self, start: usize) {
         self.resolved[start..].sort_by(|a, b| a.path.cmp(&b.path));
         self.checked[start..].sort_by(|a, b| a.path.cmp(&b.path));
+    }
+
+    /// Reads what the index keeps under `key` of `source`, as `need`
+    /// reports it: each row of the report and, for refs, each reference and
+    /// the blob of each entry of a mounted source.
+    pub(super) fn read_kept(
+        &mut self,
+        writer: &Writer,
+        (source, key): (&Source, &Digest),
+        need: Need,
+    ) -> Result<(), IndexError> {
+        if !need.reports_kept() {
+            return Ok(());
+        }
+        let refs = need == Need::Refs;
+        for row in writer.decision(key)? {
+            if refs && *source != Source::WorkingTree {
+                (self.blobs).insert((source.clone(), row.path.clone()), row.blob);
+            }
+            self.checked.push(crate::check::from_kept(source, row)?);
+        }
+        if refs {
+            let kept = writer.references(key, source)?.into_iter();
+            self.references
+                .extend(kept.map(|(path, logical, reached)| Referenced {
+                    source: source.clone(),
+                    path,
+                    logical,
+                    reached,
+                }));
+        }
+        Ok(())
     }
 
     /// Decides `entry` of `source`, named `logical` from the root.

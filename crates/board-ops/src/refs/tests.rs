@@ -534,6 +534,125 @@ fn refs_of_a_json_path_whose_stem_names_an_entry_hints_the_stem_and_one_whose_st
     );
 }
 
+/// The paths the kept-reference tests ask about: a working-tree record
+/// reached through a link, one that refers into the mounted library, a
+/// mounted record reached from both sides, and a mounted record and
+/// Markdown file that refer within the library, dangling in its second
+/// commit.
+const BOTH_WAYS: [&str; 6] = [
+    "/projects/p",
+    "/tasks/vendor",
+    "/vendor/projects/p",
+    "/vendor/projects/q",
+    "/vendor/tasks/t",
+    "/vendor/notes.md",
+];
+
+/// What `refs` answers for each of `texts` through the index under `cache`,
+/// without where the index was, and how many entries the run decided and
+/// how many mounted sources it read from kept rows.
+fn decided_each(
+    scenario: &Scenario,
+    texts: &[&str],
+    cache: Option<&Path>,
+) -> (Vec<RefsReport>, [usize; 2]) {
+    let paths: Vec<LogicalPath> = texts.iter().map(|text| path(text)).collect();
+    let board = open(scenario);
+    let answers = (board
+        .refs_all(&paths, Absent::Refuse, cache)
+        .unwrap()
+        .into_iter())
+    .map(|answer| RefsReport {
+        memory: None,
+        ..answer.unwrap()
+    })
+    .collect();
+    let work = board.take_trace().work;
+    let count = |name: &str| work.get(name).copied().unwrap_or_default();
+    (answers, [count("decided"), count("kept")])
+}
+
+/// [`linked`] with the library mounted and enough other files that a run
+/// after a change of a few entries decides only those again.
+fn mounted() -> (Scenario, crate::tests::Library) {
+    let scenario = linked();
+    let library = crate::tests::Library::mounted(&scenario);
+    for n in 0..100 {
+        scenario.write(&format!("notes/n{n}.md"), Item::File(&format!("# {n}\n")));
+    }
+    (scenario, library)
+}
+
+#[test]
+fn a_warm_refs_answers_as_a_cold_one_in_both_directions_and_decides_no_entry() {
+    let (scenario, _library) = mounted();
+    let cache = tempfile::tempdir().unwrap();
+    let (cold, [decided, _]) = decided_each(&scenario, &BOTH_WAYS, None);
+    assert!(decided > 0, "a cold run decides every entry");
+    let (first, _) = decided_each(&scenario, &BOTH_WAYS, Some(cache.path()));
+    assert_eq!(first, cold);
+    let (warm, work) = decided_each(&scenario, &BOTH_WAYS, Some(cache.path()));
+    assert_eq!(warm, cold);
+    assert_eq!(work, [0, 1], "the library is read from kept rows");
+    // The answers hold every kind of reference the kept rows must keep.
+    let from: Vec<(bool, bool, bool)> = (warm.iter().flat_map(|report| &report.from))
+        .map(|outgoing| {
+            let location = outgoing.location.as_ref();
+            let pointed = location.is_some_and(|location| !location.pointers.is_empty());
+            (outgoing.link, location.is_none(), pointed)
+        })
+        .collect();
+    assert!(
+        from.contains(&(true, false, false)),
+        "a Markdown link: {from:?}"
+    );
+    assert!(
+        from.contains(&(false, false, true)),
+        "through a pointer: {from:?}"
+    );
+    assert!(warm.iter().any(|report| !report.to.is_empty()));
+}
+
+#[test]
+fn after_the_mount_moves_a_warm_refs_decides_only_the_library_and_answers_as_a_cold_one() {
+    let (scenario, library) = mounted();
+    let cache = tempfile::tempdir().unwrap();
+    decided_each(&scenario, &BOTH_WAYS, Some(cache.path()));
+    library.moved(&scenario);
+    let (cold, [all, _]) = decided_each(&scenario, &BOTH_WAYS, None);
+    let (warm, [decided, kept]) = decided_each(&scenario, &BOTH_WAYS, Some(cache.path()));
+    assert_eq!(warm, cold);
+    assert!(
+        (cold.iter().flat_map(|report| &report.from)).any(|outgoing| outgoing.location.is_none()),
+        "the second commit dangles"
+    );
+    assert_eq!(kept, 0, "the library's decision is new");
+    // The working tree's mount pointer changed, so it and the task that
+    // reads through it are decided again, as is each of the library's six
+    // files.
+    assert_eq!((decided, all), (2 + 6, 6 + 110), "decided of all");
+    let (again, work) = decided_each(&scenario, &BOTH_WAYS, Some(cache.path()));
+    assert_eq!((again, work), (cold, [0, 1]));
+}
+
+#[test]
+fn after_one_working_tree_file_changes_a_warm_refs_decides_only_what_it_could_alter() {
+    let (scenario, _library) = mounted();
+    let cache = tempfile::tempdir().unwrap();
+    decided_each(&scenario, &BOTH_WAYS, Some(cache.path()));
+    decided_each(&scenario, &BOTH_WAYS, Some(cache.path()));
+    scenario.write(
+        "tasks/vendor.json",
+        Item::File(&task(r#", "see": "/vendor/projects/q""#)),
+    );
+    let (cold, _) = decided_each(&scenario, &BOTH_WAYS, None);
+    let (warm, work) = decided_each(&scenario, &BOTH_WAYS, Some(cache.path()));
+    assert_eq!(warm, cold);
+    assert_eq!(work, [1, 1], "only the changed task is decided");
+    let (again, work) = decided_each(&scenario, &BOTH_WAYS, Some(cache.path()));
+    assert_eq!((again, work), (cold, [0, 1]));
+}
+
 /// What `refs` of `text`, asking for `fields`, gives each reference the
 /// record makes: its pointer, and its target's values and code.
 fn fielded(
@@ -827,4 +946,60 @@ fn a_target_that_resolved_to_another_blob_than_the_walk_listed_is_target_changed
         )
     );
     assert_eq!(answered(false), (Some(values(&[("/title", None)])), None));
+}
+
+#[test]
+fn a_target_in_a_kept_source_has_its_values_and_one_whose_kept_blob_differs_is_target_changed() {
+    // A mounted commit cannot change, so the test gives the snapshot a kept
+    // blob other than the one the reference resolved to.
+    let answered = |differs: bool| {
+        let (scenario, _library) = mounted();
+        let cache = tempfile::tempdir().unwrap();
+        decided_each(&scenario, &["/tasks/vendor"], Some(cache.path()));
+        let board = open(&scenario);
+        let index = board.index(Some(cache.path())).unwrap();
+        let mut snapshot = board.snapshot(index, None, Need::Refs).unwrap();
+        assert_eq!(snapshot.walked.len(), 1, "the library is not walked");
+        assert!(!snapshot.kept.is_empty(), "its blobs are kept");
+        if differs {
+            for blob in snapshot.kept.values_mut() {
+                *blob = Some(board_model::ObjectId::Sha1([7; 20]));
+            }
+        }
+        board.take_trace();
+        let fields = ["/$type".to_owned()];
+        let mut answering = super::Answering {
+            board: &board,
+            view: board.repositories().snapshot().unwrap(),
+            absent: Absent::Refuse,
+            fields: &fields,
+            limit: usize::MAX,
+            cache: Some(cache.path()),
+            snapshot: Some(snapshot),
+        };
+        let report = answering.answer(&path("/tasks/vendor")).unwrap();
+        let fielded = report.from.into_iter().next().unwrap().fields;
+        (
+            fielded,
+            board.take_trace().work.get("target_changed").copied(),
+        )
+    };
+    assert_eq!(
+        answered(false),
+        (
+            Some(values(&[("/$type", Some(json!("lr/project/v1")))])),
+            None
+        )
+    );
+    assert_eq!(
+        answered(true),
+        (
+            Some(Fielded {
+                values: None,
+                code: Some(Code::RefsTargetChanged),
+            }),
+            Some(2)
+        ),
+        "both references lead into the library"
+    );
 }
