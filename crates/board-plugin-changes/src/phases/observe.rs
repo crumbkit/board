@@ -369,10 +369,11 @@ fn obligations(
         let added: Vec<String> = batch.iter().map(|file| glob_literal(file)).collect();
         rules.extend(on_plan(host, &added)?);
     }
-    let owed: BTreeSet<String> = (obligations_in(host, &rules)?.into_iter())
+    rules.sort_by(|one, other| one.rule.cmp(&other.rule));
+    rules.dedup_by(|one, other| one.rule == other.rule);
+    Ok((obligations_in(host, &rules)?.into_iter())
         .map(|each| each.rule)
-        .collect();
-    Ok(owed.into_iter().collect())
+        .collect())
 }
 
 /// The most added files one `rules.for-paths` call names.

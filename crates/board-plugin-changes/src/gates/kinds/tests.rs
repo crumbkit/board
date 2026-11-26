@@ -337,6 +337,8 @@ fn an_obligations_check_on_a_change_with_a_head_fails_when_git_cannot_list_its_d
             "changes::gate::unmet"
         )
     );
+    headed.diff_unread = None;
+    assert_eq!(first(&headed, list.clone()).status, Status::Pass);
     let mut headless = observed(&json!({}), &[]);
     headless.diff_unread = Some("the change records no head commit".to_owned());
     assert_eq!(first(&headless, list).status, Status::Pass);

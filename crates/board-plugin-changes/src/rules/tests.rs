@@ -28,14 +28,18 @@ pub(crate) const PATHS: [&str; 3] = [
 /// A board whose index holds the plan at [`PLAN`] and the obligations
 /// `owed`, whose tree holds nothing, and whose rules plugin answers
 /// `rules.for-paths` with `answer` or refuses it with that code, Board's
-/// own when it is one, counting each call by its target. With
-/// `obligations_fail`, the query for obligations passes the output budget.
+/// own when it is one, counting each call by its target and recording the
+/// paths of each `rules.for-paths` call after the one on the plan's paths.
+/// With `obligations_fail`, the query for obligations passes the output
+/// budget; with `refuse_later`, every call after the first is refused.
 pub(crate) struct Ruled {
     settings: Settings,
     answer: Result<Value, &'static str>,
     owed: Vec<&'static str>,
     obligations_fail: bool,
+    refuse_later: bool,
     pub(crate) calls: RefCell<BTreeMap<String, usize>>,
+    pub(crate) added: RefCell<Vec<Vec<String>>>,
 }
 
 impl Ruled {
@@ -52,7 +56,9 @@ impl Ruled {
             answer,
             owed: owed.to_vec(),
             obligations_fail: false,
+            refuse_later: false,
             calls: RefCell::new(BTreeMap::new()),
+            added: RefCell::new(Vec::new()),
         }
     }
 
@@ -60,6 +66,14 @@ impl Ruled {
     pub(crate) fn failing_obligations(self) -> Self {
         Self {
             obligations_fail: true,
+            ..self
+        }
+    }
+
+    /// This host, refusing every call after its first.
+    pub(crate) fn refusing_later(self) -> Self {
+        Self {
+            refuse_later: true,
             ..self
         }
     }
@@ -154,14 +168,22 @@ impl Host for Ruled {
         let named = format!("{}.{}", plugin.as_str(), capability.as_str());
         *self.calls.borrow_mut().entry(named.clone()).or_default() += 1;
         assert_eq!(named, "rules.for-paths", "a gate reading calls only rules");
-        // The plan's paths, or a batch of at most 100 files the change adds.
-        let asked = input["paths"].as_array().unwrap();
-        let added = asked.len() <= 100
-            && !asked
-                .iter()
-                .any(|path| PATHS.contains(&path.as_str().unwrap()));
-        assert!(input == &json!({"paths": PATHS}) || added, "{input}");
-        match &self.answer {
+        // The plan's paths, or files the change adds, none of them planned.
+        if input != &json!({"paths": PATHS}) {
+            let asked: Vec<String> = serde_json::from_value(input["paths"].clone()).unwrap();
+            assert!(
+                !asked.iter().any(|path| PATHS.contains(&path.as_str())),
+                "{input}"
+            );
+            self.added.borrow_mut().push(asked);
+        }
+        let later = self.refuse_later && self.calls_to(&named) > 1;
+        let answer = if later {
+            Err("rules::index::broken")
+        } else {
+            self.answer.clone()
+        };
+        match &answer {
             Ok(output) => Ok(CallReport {
                 plugin: plugin.clone(),
                 capability: capability.clone(),

@@ -8,7 +8,7 @@ use crate::flow::Flow;
 use crate::records::ChangeRecord;
 use crate::rules::tests::{PLAN, Ruled};
 
-use super::{glob_literal, obligations, observe_in};
+use super::{BATCH, glob_literal, obligations, observe_in};
 
 const CHANGE: &str = "/changes/c";
 const FOR_PATHS: &str = "rules.for-paths";
@@ -140,17 +140,26 @@ fn an_added_file_is_sent_as_a_pattern_that_matches_only_itself() {
 }
 
 #[test]
-fn added_files_are_asked_for_a_hundred_to_a_call_and_each_obligation_is_named_once() {
+fn added_files_are_asked_for_a_batch_to_a_call_and_each_obligation_is_named_once() {
     let checks = json!([obligations_check()]);
     let reading = Ruled::new(Ok(answer()), &["/controls/owed"]);
     let mut found = observe_in(&reading, CHANGE, &change(), Some(flow(&checks))).unwrap();
-    for (added, calls) in [(100, 2), (101, 3)] {
-        found.outside = (0..added)
-            .map(|at| format!("/repos/board/f{at}.rs"))
-            .collect();
+    let file = |at: usize| format!("/repos/board/[{at}].rs");
+    let sent = |at: usize| format!("/repos/board/[[]{at}].rs");
+    for added in [BATCH, BATCH + 1] {
+        found.outside = (0..added).map(file).collect();
         let host = Ruled::new(Ok(answer()), &["/controls/owed"]);
         let owed = obligations(&host, &found, &mut None).unwrap();
         assert_eq!(owed, vec!["/controls/owed".to_owned()]);
-        assert_eq!(host.calls_to(FOR_PATHS), calls, "{added} added files");
+        let mut batches: Vec<Vec<String>> = vec![(0..BATCH).map(sent).collect()];
+        if added > BATCH {
+            batches.push(vec![sent(BATCH)]);
+        }
+        assert_eq!(*host.added.borrow(), batches, "{added} added files");
+        assert_eq!(host.calls_to(FOR_PATHS), 1 + batches.len());
     }
+    let refusing = Ruled::new(Ok(answer()), &["/controls/owed"]).refusing_later();
+    let refused = obligations(&refusing, &found, &mut None).unwrap_err();
+    assert_eq!(refused.code, "changes::board::refused");
+    assert_eq!(refusing.calls_to(FOR_PATHS), 2);
 }
