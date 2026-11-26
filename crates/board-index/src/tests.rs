@@ -14,6 +14,7 @@ mod format;
 mod kept;
 mod prune;
 mod resolutions;
+mod views;
 mod worktree;
 
 const ROOT: &str = "/boards/one";

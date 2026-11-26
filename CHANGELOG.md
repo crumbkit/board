@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- A query that looks entries or records up by logical path, blob or record
+  type reads an index in place of every entry, so plugin calls that look
+  records up, such as `plans open` and `changes next`, answer faster. The
+  rows every view returns are the same as before. The index format moves to
+  31, so the first run after the upgrade builds a new index from scratch.
+
 ## 0.1.4 (2026-11-26)
 
 - A warm `board refs`, and each plugin call that asks `host.refs`, reads the
