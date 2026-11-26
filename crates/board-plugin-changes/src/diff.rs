@@ -396,7 +396,7 @@ pub(crate) fn conflicts(
         exited(host, &at.repository, &merged, deadline, &[0, 1]).map_err(|failed| failed.why)?;
     // git also exits 1 when it cannot merge a commit at all; only a conflict
     // writes the merged tree's id first.
-    let tree = out.lines().next().map(str::trim).unwrap_or_default();
+    let tree = out.lines().next().map_or_default(str::trim);
     let written = !tree.is_empty() && tree.bytes().all(|byte| byte.is_ascii_hexdigit());
     match (code, written) {
         (1, true) => Ok(true),
