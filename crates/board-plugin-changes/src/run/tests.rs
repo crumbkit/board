@@ -164,6 +164,7 @@ impl Host for Holding {
             removed: Vec::new(),
             absent: Vec::new(),
             commit: None,
+            mended: Vec::new(),
         })
     }
 

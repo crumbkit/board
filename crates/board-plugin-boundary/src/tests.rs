@@ -336,6 +336,7 @@ impl Host for Racing {
             removed: Vec::new(),
             absent: Vec::new(),
             commit: None,
+            mended: Vec::new(),
         })
     }
 
