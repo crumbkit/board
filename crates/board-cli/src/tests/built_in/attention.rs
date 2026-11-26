@@ -317,9 +317,20 @@ fn an_owner_who_asks_for_changes_declines_with_their_words_and_one_who_signs_sig
 /// attention file and `plugins` as the directory of installed plugins.
 fn run_with(
     personal: &Personal,
+    files: (PathBuf, PathBuf),
+    plugins: Option<PathBuf>,
+    arguments: &[&str],
+) -> Output {
+    run_reading(personal, files, plugins, arguments, "")
+}
+
+/// [`run_with`], with `stdin` as the standard input.
+fn run_reading(
+    personal: &Personal,
     (board, attention): (PathBuf, PathBuf),
     plugins: Option<PathBuf>,
     arguments: &[&str],
+    stdin: &str,
 ) -> Output {
     let context = Context {
         start: personal.board.workdir().to_path_buf(),
@@ -344,7 +355,12 @@ fn run_with(
     let arguments = std::iter::once(BINARY_NAME)
         .chain(arguments.iter().copied())
         .map(OsString::from);
-    run(arguments, &context, &mut &b""[..], &mut Ran::default())
+    run(
+        arguments,
+        &context,
+        &mut stdin.as_bytes(),
+        &mut Ran::default(),
+    )
 }
 
 const VERIFY: [&str; 5] = ["--json", "call", "orders.verify", "--path", "/orders/push"];
@@ -866,5 +882,90 @@ fn pinned_and_signers_start_with_the_signing_state_for_off_on_and_a_shortened_li
     assert_eq!(
         line(None, "orders.signers"),
         "Signing is on: orders and plans need Touch ID."
+    );
+}
+
+#[test]
+fn pinned_and_signers_as_text_start_with_the_signing_line_and_list_orders_and_lines_as_rows() {
+    let personal = personal();
+    draft(&personal, "push", &json!({"pinned": true}), CONTEXT);
+    signed(&personal, "push");
+    let ran = personal.run(&["orders", "pinned"]);
+    assert_eq!(ran.code, 0, "{}{}", text(&ran.stdout), text(&ran.stderr));
+    assert_eq!(
+        text(&ran.stdout),
+        "Signing is on: orders, effects and owner's writes need Touch ID.\n\
+         \n\
+         ok /orders/push  signed by owner  expires 2999-12-31\n"
+    );
+    let ran = personal.run(&["orders", "signers"]);
+    assert_eq!(ran.code, 0, "{}{}", text(&ran.stdout), text(&ran.stderr));
+    let printed = text(&ran.stdout);
+    let file = admitted(&personal.run(&["--json", "call", "orders.signers"]))["file"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut lines = printed.lines();
+    assert_eq!(
+        lines.next(),
+        Some("Signing is on: orders, effects and owner's writes need Touch ID.")
+    );
+    assert_eq!(
+        lines.next(),
+        Some(format!("# {file}").as_str()),
+        "{printed}"
+    );
+    assert!(
+        lines.next().is_some_and(|line| line.starts_with("owner ")),
+        "{printed}"
+    );
+}
+
+#[test]
+fn with_signing_off_a_put_that_edits_require_needs_an_approving_answer_and_one_of_configured_is_refused()
+ {
+    let personal = personal();
+    let off = signing_files(&personal, no_owner(&personal));
+    let mut config = personal.record("/.board/board").unwrap();
+    config["signing"] = json!({"require": ["plan"]});
+    let put = |config: &Value, approved: Option<&str>| {
+        let mut arguments = vec!["--json", "put", "/.board/board"];
+        arguments.extend(
+            approved
+                .map(|answer| ["--approved", answer])
+                .into_iter()
+                .flatten(),
+        );
+        run_reading(
+            &personal,
+            off.clone(),
+            None,
+            &arguments,
+            &config.to_string(),
+        )
+    };
+    let bare = put(&config, None);
+    assert_eq!(refused(&bare), "board::signing::not_approved");
+    let digest = board_model::setting_digest(Some(&config["signing"]));
+    assert!(
+        json(&bare)["message"].as_str().unwrap().contains(&digest),
+        "{}",
+        text(&bare.stdout)
+    );
+    let answer = approving_answer(&personal, &digest);
+    let ran = put(&config, Some(answer));
+    assert_eq!(ran.code, 0, "{}{}", text(&ran.stdout), text(&ran.stderr));
+    assert_eq!(
+        personal.record("/.board/board").unwrap()["signing"],
+        config["signing"]
+    );
+    config["signing"] = json!({"configured": false});
+    let answer = approving_answer(
+        &personal,
+        &board_model::setting_digest(Some(&config["signing"])),
+    );
+    assert_eq!(
+        refused(&put(&config, Some(answer))),
+        "board::settings::unsigned"
     );
 }

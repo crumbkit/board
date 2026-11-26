@@ -440,3 +440,104 @@ fn each_refusal_of_the_signers_read_maps_to_its_code() {
         untrusted.message
     );
 }
+
+#[test]
+fn a_signature_that_verifies_under_a_principal_other_than_owner_is_refused_and_owners_is_admitted()
+{
+    let other = verify::by_owner("/orders/synthetic", "ana").unwrap_err();
+    assert_eq!(other.code, "orders::order::bad_signature");
+    assert!(other.message.contains("ana"), "{}", other.message);
+    verify::by_owner("/orders/synthetic", board_plugin::PRINCIPAL).unwrap();
+}
+
+/// A pinned order as `verify` returns it.
+fn listed(path: &str, approval: &str, expires: &str) -> Value {
+    json!({
+        "path": path,
+        "signer": "owner",
+        "approval": approval,
+        "order": "Do not push to main.",
+        "expires": expires,
+        "context": format!("{path}.md"),
+        "context_text": "A synthetic order.\n",
+    })
+}
+
+#[test]
+fn pinned_as_text_starts_with_the_signing_line_and_gives_a_row_per_order_with_refused_ones_first() {
+    let output = json!({
+        "signing": "Signing is off: every act takes an answer in chat.",
+        "orders": [
+            listed("/orders/credentials", "signed by owner", "2027-01-28"),
+            listed("/orders/review-window", "approved in chat, not signed", "2027-02-20"),
+        ],
+        "left_out": [{
+            "path": "/orders/ceremony",
+            "code": "orders::order::unsigned",
+            "message": "/orders/ceremony has no signature",
+        }],
+    });
+    let pinned: CapabilityName = "pinned".parse().unwrap();
+    let text = Orders.text(&pinned, &output, None).unwrap();
+    assert_eq!(
+        text,
+        "Signing is off: every act takes an answer in chat.\n\
+         \n\
+         refused /orders/ceremony       orders::order::unsigned\n\
+         ok      /orders/credentials    signed by owner               expires 2027-01-28\n\
+         ok      /orders/review-window  approved in chat, not signed  expires 2027-02-20\n"
+    );
+    let none =
+        json!({"signing": "Signing is on: no act needs Touch ID.", "orders": [], "left_out": []});
+    assert_eq!(
+        Orders.text(&pinned, &none, None).unwrap(),
+        "Signing is on: no act needs Touch ID.\n\nNo order is pinned.\n"
+    );
+    let verify: CapabilityName = "verify".parse().unwrap();
+    assert_eq!(Orders.text(&verify, &output, None), None);
+}
+
+#[test]
+fn signers_as_text_starts_with_the_signing_line_then_names_the_file_under_home_and_gives_its_lines()
+{
+    let home = Path::new("/Users/ana");
+    let file = "/Users/ana/keys/signers";
+    let signers: CapabilityName = "signers".parse().unwrap();
+    let empty = json!({
+        "signing": format!("Signing is off: {file} has no owner line."),
+        "file": file,
+        "text": "",
+        "changes": [],
+        "duplicates": [],
+        "left_out": [],
+    });
+    assert_eq!(
+        Orders.text(&signers, &empty, Some(home)).unwrap(),
+        "Signing is off: ~/keys/signers has no owner line.\n\
+         # ~/keys/signers (no lines)\n"
+    );
+    let held = json!({
+        "signing": "Signing is on: orders, effects and owner's writes need Touch ID.",
+        "file": file,
+        "text": "owner ssh-ed25519 AAAA\nowner namespaces=\"board-order\" ssh-ed25519 BBBB\n",
+        "changes": [{"line": 2, "change": "added"}],
+        "duplicates": [],
+        "left_out": [{"line": 3, "key": null, "reason": "unreadable"}],
+    });
+    assert_eq!(
+        Orders.text(&signers, &held, Some(home)).unwrap(),
+        "Signing is on: orders, effects and owner's writes need Touch ID.\n\
+         # ~/keys/signers\n\
+         owner ssh-ed25519 AAAA\n\
+         owner namespaces=\"board-order\" ssh-ed25519 BBBB\n\
+         # line 2: added from the attention file, for orders alone\n\
+         # the attention file's line 3 gave nothing: it cannot be read\n"
+    );
+    assert!(
+        Orders
+            .text(&signers, &empty, Some(Path::new("/Users/an")))
+            .unwrap()
+            .contains(file),
+        "a home that is only a prefix of the file's directory is not abbreviated"
+    );
+}
