@@ -473,9 +473,7 @@ fn applies(
     let Some(when) = &each.when else {
         return Ok(true);
     };
-    if let Some(routes) = &when.route
-        && !(observed.change.route).is_some_and(|route| routes.contains(&route))
-    {
+    if off_route(when, observed.change.route) {
         return Ok(false);
     }
     for (heading, text) in when.section.iter().flatten() {
@@ -488,14 +486,7 @@ fn applies(
             return Ok(false);
         }
     }
-    if let Some(wanted) = when.answers
-        && !observed.answers.meet(wanted)
-    {
-        return Ok(false);
-    }
-    if let Some(unless) = when.answers_not
-        && hold(observed.answers, unless)
-    {
+    if unanswered(when, observed.answers) {
         return Ok(false);
     }
     if let Some(absent) = &when.absent
@@ -506,14 +497,6 @@ fn applies(
         return Ok(false);
     }
     Ok(true)
-}
-
-/// Whether the plan gives each answer `wanted` names, equal to it; an
-/// answer the plan leaves out does not hold.
-fn hold(given: Answers, wanted: Answers) -> bool {
-    (wanted.ux.is_none() || given.ux == wanted.ux)
-        && (wanted.data.is_none() || given.data == wanted.data)
-        && (wanted.lifecycle.is_none() || given.lifecycle == wanted.lifecycle)
 }
 
 /// Whether the text under the plan's `heading` matches `text`, a pattern,
@@ -777,6 +760,9 @@ pub(crate) mod kinds;
 mod paths;
 pub(crate) mod remedy;
 pub(crate) mod signing;
+mod when;
+pub(crate) use when::fails_unread;
+use when::{off_route, unanswered};
 
 #[cfg(test)]
 mod tests;

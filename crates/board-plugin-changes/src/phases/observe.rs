@@ -11,7 +11,8 @@ use serde_json::Value;
 use crate::approve::approval;
 use crate::board::{self, get_text};
 use crate::change::{
-    NOT_FOUND, attached, current, kind_of, listed, plan_at, pull_of, referenced, whole_record_at,
+    NOT_FOUND, Referenced, attached, current, kind_of, listed, plan_at, pull_of, referenced,
+    whole_record_at,
 };
 use crate::diff::{Step, accepted, after, edited, mounted, outside};
 use crate::flow::{self, Kind as CheckKind, of_change};
@@ -19,7 +20,7 @@ use crate::gates::kinds::named_rules;
 use crate::gates::remedy::{fill, unfilled, values};
 use crate::gates::{Observed, Read, objects, reads, reviewed_head, same_commit};
 use crate::lifecycle::LifecycleRecord;
-use crate::records::{ChangeRecord, FixRecord};
+use crate::records::{ChangeRecord, FixRecord, Kind, PlanRecord};
 use crate::repo::check_suite;
 use crate::rules::{Found, current as current_rule, listed_by, names, obligations_in, on_plan};
 
@@ -36,6 +37,33 @@ pub(crate) fn observe(
     observe_in(host, path, change, flow)
 }
 
+/// What a caller already read of a change that follows a flow, which
+/// [`observe_known`] takes in place of reading it again.
+///
+/// The change is observed as a build whatever its kind, a prototype
+/// included. That is sound only because its one caller, `owed::owing`,
+/// judges the change through `interpret`, which never reads the observed
+/// kind; `gate` does, so a caller that gates must not pass a `Known`.
+pub(crate) struct Known {
+    /// The plan record at the change's `plan`, or none when Board reads no
+    /// plan record there.
+    pub(crate) plan: Option<PlanRecord>,
+    /// The board's root, as [`board_root`] gives it, or none when no check
+    /// names `{board}`.
+    pub(crate) board: Option<String>,
+    /// The records attached to the change, when its checks read them.
+    pub(crate) cited: Vec<String>,
+    /// What Board reads of each of `cited`.
+    pub(crate) records: Referenced,
+}
+
+/// The board's root, or none when Board names none. It costs a `refs`
+/// call that decides the whole board.
+pub(crate) fn board_root(host: &dyn Host) -> Result<Option<String>, PluginError> {
+    Ok(board::resolve(host, "/")?
+        .map(|report| report.location.board.repository.display().to_string()))
+}
+
 /// What the gate of the change's phase in `flow` reads.
 pub(crate) fn observe_in(
     host: &dyn Host,
@@ -43,40 +71,27 @@ pub(crate) fn observe_in(
     change: &ChangeRecord,
     flow: Option<flow::Flow>,
 ) -> Result<Observed, PluginError> {
+    observe_known(host, path, change, flow, None)
+}
+
+/// [`observe_in`], with what `known` holds in place of reading it.
+pub(crate) fn observe_known(
+    host: &dyn Host,
+    path: &str,
+    change: &ChangeRecord,
+    flow: Option<flow::Flow>,
+    known: Option<Known>,
+) -> Result<Observed, PluginError> {
     let wanted = reads(
         (flow.as_ref())
             .and_then(|flow| flow.phase(&change.phase))
             .map_or(&[], |phase| phase.checks.as_slice()),
     );
-    let cited = if wanted.contains(&Read::References) {
-        attached(host, path)?
-    } else {
-        Vec::new()
+    let mut found = match known {
+        Some(known) => given(host, path, change, flow, &wanted, known)?,
+        None => unknown(host, path, change, flow, &wanted)?,
     };
-    let records = referenced(host, &cited)?;
     let mut on_planned = None;
-    let mut found = Observed::new(path, change.clone(), kind_of(host, path)?, records);
-    found.flow = flow;
-    found.cited = cited;
-    found.board = board::resolve(host, "/")?
-        .map(|report| report.location.board.repository.display().to_string());
-    if wanted.contains(&Read::Plan) {
-        found.plan_file = plan_file(host, change)?;
-        found.plan = match &found.plan_file {
-            Some(file) => get_text(host, file)?,
-            None => None,
-        };
-        let named = (change.plan.as_deref().map(|plan| plan_at(host, plan))).transpose()?;
-        if let Some((record, _)) = named.flatten() {
-            found.answers = record.answers.unwrap_or_default();
-            found.uses = record.uses;
-        }
-        (found.considered, found.owed) = listed(host, change)?;
-        found.surfaced_gone = (referenced(host, &change.surfaced)?.unreadable.into_iter())
-            .filter(|(_, code)| code == NOT_FOUND)
-            .map(|(path, _)| path)
-            .collect();
-    }
     if wanted.contains(&Read::Suite) {
         found.suite = if change.v1 {
             check_suite(host, &change.mount)?
@@ -141,6 +156,81 @@ pub(crate) fn observe_in(
     if wanted.contains(&Read::AfterReview) {
         let checks = found.checks();
         found.after_review = after_review(host, &found, checks)?;
+    }
+    Ok(found)
+}
+
+/// What the change's gate reads of the change, its attached records, the
+/// board's root and, when the checks read the plan, the plan.
+fn unknown(
+    host: &dyn Host,
+    path: &str,
+    change: &ChangeRecord,
+    flow: Option<flow::Flow>,
+    wanted: &BTreeSet<Read>,
+) -> Result<Observed, PluginError> {
+    let cited = if wanted.contains(&Read::References) {
+        attached(host, path)?
+    } else {
+        Vec::new()
+    };
+    let records = referenced(host, &cited)?;
+    let mut found = Observed::new(path, change.clone(), kind_of(host, path)?, records);
+    found.flow = flow;
+    found.cited = cited;
+    found.board = board_root(host)?;
+    if wanted.contains(&Read::Plan) {
+        found.plan_file = plan_file(host, change)?;
+        found.plan = match &found.plan_file {
+            Some(file) => get_text(host, file)?,
+            None => None,
+        };
+        let named = (change.plan.as_deref().map(|plan| plan_at(host, plan))).transpose()?;
+        if let Some((record, _)) = named.flatten() {
+            found.answers = record.answers.unwrap_or_default();
+            found.uses = record.uses;
+        }
+        (found.considered, found.owed) = listed(host, change)?;
+        found.surfaced_gone = surfaced_gone(host, change)?;
+    }
+    Ok(found)
+}
+
+/// [`unknown`], from what `known` holds. The plan's text and the change's
+/// surfaced records are read only when a check reads more of the plan than
+/// the answers its `when` names.
+fn given(
+    host: &dyn Host,
+    path: &str,
+    change: &ChangeRecord,
+    flow: Option<flow::Flow>,
+    wanted: &BTreeSet<Read>,
+    known: Known,
+) -> Result<Observed, PluginError> {
+    let mut found = Observed::new(path, change.clone(), Kind::Build, known.records);
+    found.flow = flow;
+    found.cited = known.cited;
+    found.board = known.board;
+    if !wanted.contains(&Read::Plan) {
+        return Ok(found);
+    }
+    if reads_past_answers(found.checks()) {
+        found.plan = match &known.plan {
+            Some(record) => get_text(host, &record.text)?,
+            None => None,
+        };
+        found.surfaced_gone = surfaced_gone(host, change)?;
+    }
+    if let Some(record) = known.plan {
+        found.plan_file = Some(record.text);
+        found.answers = record.answers.unwrap_or_default();
+        found.uses = record.uses;
+        found.considered = (record.considered.into_iter().flatten())
+            .flat_map(|each| each.records)
+            .collect();
+        found.owed = (record.owed.into_iter().flatten())
+            .map(|each| current_rule(&each.rule))
+            .collect();
     }
     Ok(found)
 }
@@ -381,6 +471,33 @@ fn obligations(
     Ok((obligations_in(host, &rules)?.into_iter())
         .map(|each| each.rule)
         .collect())
+}
+
+/// The change's surfaced paths that no longer reach anything.
+fn surfaced_gone(host: &dyn Host, change: &ChangeRecord) -> Result<Vec<String>, PluginError> {
+    Ok((referenced(host, &change.surfaced)?.unreadable.into_iter())
+        .filter(|(_, code)| code == NOT_FOUND)
+        .map(|(path, _)| path)
+        .collect())
+}
+
+/// Whether `checks` read the plan's text or the change's surfaced records:
+/// a `when` on the plan's sections, or a kind that reads the plan, as
+/// opposed to a `when` that reads only the plan's typed answers.
+fn reads_past_answers(checks: &[flow::Check]) -> bool {
+    checks.iter().any(|each| {
+        let sections = (each.when.as_ref())
+            .is_some_and(|when| when.section.is_some() || when.section_not.is_some());
+        sections || reads(&[whenless(each)]).contains(&Read::Plan)
+    })
+}
+
+/// `each` with no `when`.
+fn whenless(each: &flow::Check) -> flow::Check {
+    flow::Check {
+        when: None,
+        ..each.clone()
+    }
 }
 
 /// The most added files one `rules.for-paths` call names.
