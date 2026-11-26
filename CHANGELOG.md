@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Board runs the command an agent meant for a few common guesses that
+  clap refused: `board cat` and `board show` run `get`, `board list` runs
+  `ls` and `board schema` runs `schemas`; a long flag given with hyphens
+  for underscores, or the reverse, such as `--task-repo` or `--dry-run`,
+  runs with the flag's own spelling; and `--path` given to a built-in
+  command whose path is positional, such as `board get --path /a`, is read
+  as the path. `board cat` used to be refused with a hint to run `get`.
 - The rules plugin's README lists each code `board rules report` can put
   in `refused`, says which are warnings that leave every row as it is, and
   says that `rules::report::run_commit_unnamed` also covers a malformed

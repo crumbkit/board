@@ -35,6 +35,18 @@ So may each item of a list flag whose `items` have that format, and Board
 refuses such an item that holds a comma, with a hint to repeat the flag, so
 `--after /tasks/a.md,/tasks/b.md` is refused instead of sent as one path.
 
+## Guessed words
+
+Board runs the command an agent meant when clap refuses a line and only one
+command fits. A first word `cat` or `show` runs `get`, `list` runs `ls`, and
+`schema` runs `schemas`, unless an enabled plugin's name or alias is that
+word. A long flag spelled with hyphens where the flag has underscores, or the
+reverse, such as `--task-repo` for `--task_repo`, runs with the flag's own
+spelling when clap names that flag as the similar one. A `--path` given to a
+built-in command whose path is positional, such as `board get --path /a`, is
+read as that path. Words after `--` are never changed. Any other refused line
+keeps clap's refusal.
+
 ## Renamed plugins
 
 A manifest's `former_names` lists the names a plugin had before it was

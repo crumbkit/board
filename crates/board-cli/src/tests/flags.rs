@@ -915,3 +915,37 @@ fn a_closed_schema_with_a_list_flag_still_reads_its_input_on_stdin_without_a_fla
         "{help}"
     );
 }
+
+#[test]
+fn a_flag_spelled_with_the_other_separator_sends_its_property_and_no_such_flag_is_refused() {
+    let (board, data) = flagged();
+    let manifest = FLAGGED.replace(
+        r#""limit": {"type": "integer"},"#,
+        r#""limit": {"type": "integer"}, "by_date": {"type": "string"},"#,
+    );
+    data.write("plugins/tasks/plugin.json", Item::File(&manifest));
+    for (flags, expected) in [
+        (&["--by_date", "d"][..], json!({"by_date": "d"})),
+        (&["--by-date", "d"], json!({"by_date": "d"})),
+        (&["--by-date=d"], json!({"by_date": "d"})),
+        (&["--keep-late", "false"], json!({"keep-late": false})),
+        (&["--keep_late", "false"], json!({"keep-late": false})),
+        (
+            &["--by-date", "d", "--keep_late"],
+            json!({"by_date": "d", "keep-late": true}),
+        ),
+    ] {
+        for line in [&["call", "tasks.due"][..], &["tasks", "due"]] {
+            let ran = call(&board, &data, &[line, flags].concat(), "");
+            assert_eq!(ran.code, 0, "{line:?} {flags:?}: {}", text(&ran.stderr));
+            assert_eq!(sent(&data), expected, "{line:?} {flags:?}");
+        }
+    }
+    let refused = call(
+        &board,
+        &data,
+        &["--json", "call", "tasks.due", "--by-day", "d"],
+        "",
+    );
+    assert_eq!(code(&refused), "board::cli::usage");
+}
