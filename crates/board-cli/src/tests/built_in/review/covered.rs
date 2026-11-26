@@ -81,6 +81,39 @@ fn patch_ids(repo: &Repo, name: &str, base: &str, head: &str) -> Value {
 }
 
 #[test]
+fn a_put_report_whose_patch_ids_cannot_be_filled_is_refused_naming_why_and_given_ids_admit_it() {
+    let repo = Repo::new();
+    let base = repo.git(&["rev-parse", "HEAD"]);
+    let report = json!({
+        "$type": "review/report/v1",
+        "range": format!("{base}..{base}"),
+        "findings": [],
+        "verdict": "approve",
+        "by": {"person": "a-person"},
+    });
+    let output = repo.run_reading(
+        &["put", "/reviews/lacking/report"],
+        &[],
+        report.to_string().as_bytes(),
+    );
+    assert_eq!(output.code, 1, "{}", text(&output.stderr));
+    let stderr = text(&output.stderr);
+    assert!(
+        stderr.contains("board put could not fill /patch_ids: "),
+        "{stderr}"
+    );
+    let mut given = report;
+    given["patch_ids"] = json!([]);
+    let output = repo.run_reading(
+        &["put", "/reviews/given/report"],
+        &[],
+        given.to_string().as_bytes(),
+    );
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert_eq!(repo.get("/reviews/given/report")["patch_ids"], json!([]));
+}
+
+#[test]
 fn a_report_whose_range_ends_at_the_head_covers_it_past_the_commits_that_record_it() {
     let repo = Repo::new();
     let (base, head, path) = reviewed(&repo);

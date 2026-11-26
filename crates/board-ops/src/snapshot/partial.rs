@@ -9,7 +9,7 @@ use board_model::{Change, Digest, ObjectId, Source};
 use board_tree::reads::{ANY, changed};
 use board_tree::{Crossing, Entry, Listings, TreeRow};
 
-use super::{Decisions, Facts, Mounts, is_repo, listed};
+use super::{Decisions, Facts, Mounts, Need, is_repo, listed};
 use crate::board::Board;
 use crate::index::{RefreshError, Refreshed};
 
@@ -32,6 +32,8 @@ pub(super) struct Slotted {
     pub(super) kept: Option<Slot>,
     /// What the slot holds once it keeps this run's decision.
     pub(super) now: Slot,
+    /// The working tree's board, which its kept references name without it.
+    pub(super) board: board_model::Board,
 }
 
 impl Slotted {
@@ -210,11 +212,16 @@ impl Board {
                 .map(|(path, probe)| (path, probe.hex()))
                 .collect(),
         };
+        let board = board_model::Board {
+            repository: self.repository().path().to_path_buf(),
+            source: Source::WorkingTree,
+        };
         Ok(Some(Slotted {
             kept: writer.slot(&slot)?,
             slot,
             crossings,
             now,
+            board,
         }))
     }
 
@@ -350,6 +357,9 @@ impl Board {
         writer.forget(slot, gone)?;
         let details = decided.checked.iter().map(crate::check::to_kept);
         writer.put_decision(slot, decided.resolved.iter().zip(details))?;
+        let references = decided.references.iter();
+        let each = references.map(|referenced| (&referenced.path[..], &referenced.reached));
+        writer.put_references(slot, &slotted.board, each)?;
         writer.put_inputs(slot, inputs)?;
         for (path, change) in flipped {
             writer.set_change(slot, path, *change)?;
@@ -361,17 +371,21 @@ impl Board {
     }
 
     /// Replaces what `decided` reports of the working tree with every row
-    /// the slot keeps, as a check of a tree the slot holds reports it.
+    /// and reference the slot keeps, as `need` reports a tree the slot
+    /// holds, when it reports kept rows.
     pub(super) fn report_slot(
         writer: &Writer,
         slotted: &Slotted,
+        need: Need,
         decided: &mut Decisions,
     ) -> Result<(), RefreshError> {
-        decided.checked.clear();
-        for row in writer.decision(&slotted.slot)? {
-            (decided.checked).push(crate::check::from_kept(&Source::WorkingTree, row)?);
+        if !need.reports_kept() {
+            return Ok(());
         }
-        Ok(())
+        decided.checked.clear();
+        decided.references.clear();
+        let kept = (&slotted.board, &slotted.slot);
+        Ok(decided.read_kept(writer, kept, need)?)
     }
 }
 

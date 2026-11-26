@@ -35,7 +35,7 @@ use crate::index::{
 mod decide;
 mod partial;
 
-use decide::{Decide, Decisions};
+use decide::{Decide, Decisions, Keys};
 pub(crate) use decide::{Referenced, read_type};
 use partial::{Again, Heads, REMOTES, Slotted};
 
@@ -52,6 +52,9 @@ pub(crate) struct Snapshot {
     /// Every reference each checked record makes, and where it led.
     pub(crate) references: Vec<Referenced>,
     pub(crate) walked: Walked,
+    /// The key of each mounted source that was not walked because its
+    /// decision is kept, where `refs` looks up a target's kept blob.
+    pub(crate) kept: Keys,
 }
 
 /// What a snapshot is for, which decides whether it reads decisions the
@@ -61,21 +64,34 @@ pub(crate) enum Need {
     /// Views of every entry. A mounted source whose decision the index
     /// keeps is neither walked nor decided, and its kept rows fill the views.
     View,
-    /// A report, references and walk of every entry, all decided now.
+    /// A report, references and walk of every entry, all decided now, as
+    /// a warm run is compared with.
+    #[cfg(test)]
     Report,
     /// A report only. A mounted source wholly in scope whose decision the
     /// index keeps is neither walked nor decided, and its kept rows fill
     /// the report.
     Check,
+    /// A report and references of every entry. A mounted source whose
+    /// decision the index keeps is neither walked nor decided, and its kept
+    /// rows and references fill the report and the references.
+    Refs,
 }
 
 impl Need {
     /// Whether this need reads the decisions the index keeps.
     fn reads_kept(self) -> bool {
         match self {
-            Self::View | Self::Check => true,
+            Self::View | Self::Check | Self::Refs => true,
+            #[cfg(test)]
             Self::Report => false,
         }
+    }
+
+    /// Whether this need reports the rows of a decision it reads from the
+    /// index.
+    fn reports_kept(self) -> bool {
+        matches!(self, Self::Check | Self::Refs)
     }
 }
 
@@ -99,7 +115,7 @@ impl Board {
                 .resolve(&Source::WorkingTree, scope)
                 .map_err(|source| CheckError::Scope { source })?;
         }
-        let ((mut report, references, walked), wrote, writer, entries) =
+        let ((mut report, references, walked, kept), wrote, writer, entries) =
             attempt(index, |writer| self.decide(writer, scope, need))?;
         let timed = self.timed("snapshot.commit");
         let decided = writer.decide(entries)?;
@@ -128,6 +144,7 @@ impl Board {
             report,
             references,
             walked,
+            kept,
         })
     }
 
@@ -174,13 +191,14 @@ impl Board {
     }
 
     /// Decides each entry, and returns the report, the references, the
-    /// files each source's walk listed and the rows of `resolved`.
+    /// files each source's walk listed, the key of each mounted source read
+    /// from kept rows, and the rows of `resolved`.
     fn decide(
         &self,
         writer: &Writer,
         scope: Option<&LogicalPath>,
         need: Need,
-    ) -> Run<(CheckReport, Vec<Referenced>, Walked)> {
+    ) -> Run<(CheckReport, Vec<Referenced>, Walked, Keys)> {
         let Refresh {
             entries,
             listings,
@@ -213,11 +231,7 @@ impl Board {
         let validating =
             if let Some(slotted) = slotted.as_ref().filter(|_| held && need.reads_kept()) {
                 unvalidated(&kept, &mut work);
-                if need == Need::Check {
-                    for row in writer.decision(&slotted.slot)? {
-                        decided.checked.push(crate::check::from_kept(&root, row)?);
-                    }
-                }
+                decided.read_kept(writer, (&slotted.board, &slotted.slot), need)?;
                 writer.reach(&root, Some(&slotted.slot), None)?;
                 None
             } else {
@@ -246,11 +260,7 @@ impl Board {
                 let key = mounted.key.as_ref().filter(|_| mounted.kept);
                 if let Some(key) = key.filter(|_| read_kept) {
                     work.kept += 1;
-                    if need == Need::Check {
-                        for row in writer.decision(key)? {
-                            decided.checked.push(crate::check::from_kept(&source, row)?);
-                        }
-                    }
+                    decided.read_kept(writer, (&decide::board(mounted), key), need)?;
                 }
                 writer.reach(&source, key, Some(&mounted.scan))?;
                 continue;
@@ -274,7 +284,8 @@ impl Board {
             (mounts.sources.into_iter())
                 .filter_map(|mounted| Some((Source::Commit(mounted.commit), mounted.walked?.0))),
         );
-        Ok(((report, decided.references, walked), decided.resolved))
+        let found = (report, decided.references, walked, decided.keys);
+        Ok((found, decided.resolved))
     }
 
     /// The key of the working tree's decision and the mounts it may cross
@@ -289,7 +300,7 @@ impl Board {
         (entries, listings): (&[Entry], &Listings),
         head: Option<ObjectId>,
     ) -> Option<(Digest, HashSet<board_tree::Crossing>)> {
-        let head = head.map(|tree| tree.to_string()).unwrap_or_default();
+        let head = head.map_or_default(|tree| tree.to_string());
         let moved = format!("{:?}", self.repositories().moved());
         let listed = listed(entries);
         let directories = seen_directories(listings);
@@ -335,9 +346,7 @@ impl Board {
                 let gone: Vec<&str> = (only.iter().chain(&removed)).map(String::as_str).collect();
                 let kept = (&rows.inputs[..], &flipped[..]);
                 Self::keep_slot(writer, (slotted, Some(&gone)), kept, decided)?;
-                if need == Need::Check {
-                    Self::report_slot(writer, slotted, decided)?;
-                }
+                Self::report_slot(writer, slotted, need, decided)?;
             }
             return Ok(());
         }
@@ -524,6 +533,7 @@ impl Board {
         };
         let start = decided.resolved.len();
         let checked = decided.checked.len();
+        let first_reference = decided.references.len();
         for entry in entries {
             if !in_scope(scopes, &source, entry.logical.as_ref()) {
                 continue;
@@ -553,6 +563,9 @@ impl Board {
             (Some(_), Some(key)) => {
                 let details = decided.checked[checked..].iter().map(crate::check::to_kept);
                 writer.put_decision(key, rows.iter().zip(details))?;
+                let references = decided.references[first_reference..].iter();
+                let each = references.map(|referenced| (&referenced.path[..], &referenced.reached));
+                writer.put_references(key, &decide::board(mounted), each)?;
                 Some(key)
             }
             _ => None,
@@ -643,18 +656,13 @@ fn listed(entries: &[Entry]) -> Vec<u8> {
         } = entry;
         field(path);
         field(logical.as_ref().map_or("", LogicalPath::as_str));
-        field(&blob.map(|blob| blob.to_string()).unwrap_or_default());
+        field(&blob.map_or_default(|blob| blob.to_string()));
         field(match status {
             Status::Ok => "",
             Status::Degraded(code) => code.as_str(),
         });
-        field(&size.map(|size| size.to_string()).unwrap_or_default());
-        field(
-            &link
-                .as_ref()
-                .map(|link| link.blob.to_string())
-                .unwrap_or_default(),
-        );
+        field(&size.map_or_default(|size| size.to_string()));
+        field(&link.as_ref().map_or_default(|link| link.blob.to_string()));
         field(link.as_ref().map_or("", |link| link.target.as_str()));
     }
     bytes

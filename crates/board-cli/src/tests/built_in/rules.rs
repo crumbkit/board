@@ -13,6 +13,7 @@ mod for_paths;
 mod from_standards;
 mod owed_by;
 mod rename;
+mod report;
 mod scope;
 mod versions;
 
@@ -71,6 +72,8 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
         [
             ".board/types/rules/rule/v1.schema.json",
             ".board/types/rules/source/v1.schema.json",
+            ".board/types/rules/group/v1.schema.json",
+            ".board/types/rules/report/v1.schema.json",
             ".board/types/controls/control/v1.schema.json",
             ".board/types/controls/source/v1.schema.json",
         ]

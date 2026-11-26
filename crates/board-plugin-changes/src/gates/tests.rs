@@ -654,7 +654,7 @@ fn the_review_gate_reads_the_head_from_the_right_side_of_a_three_dot_range() {
 }
 
 #[test]
-fn the_review_gate_refuses_a_diff_outside_the_planned_paths_and_passes_one_inside_them() {
+fn the_review_gate_passes_a_diff_outside_the_planned_paths_and_names_the_files_it_adds() {
     let reviewed =
         || (given("review").records(vec![("/r", report(&json!({})))])).with(json!({"head": HEAD}));
     assert_eq!(reviewed().check("paths"), ("pass", String::new()));
@@ -663,14 +663,31 @@ fn the_review_gate_refuses_a_diff_outside_the_planned_paths_and_passes_one_insid
     assert_eq!(
         outside.check("paths"),
         (
-            "missing",
-            "the change's diff edits files outside the plan's paths, so their rules were not in \
-             the brief: /repos/x/b.rs, /repos/x/c.rs; add them to the paths with `board \
-             changes plan`, or revert the edit"
+            "pass",
+            "these files are outside the plan's paths, and the change adds them to its paths \
+             without a new plan: /repos/x/b.rs, /repos/x/c.rs. Their rules were not in the \
+             review brief. `board changes pr` lists them in the pull request body."
                 .to_owned()
         )
     );
-    assert_eq!(outside.code("paths"), "changes::paths::outside_plan");
+    let mut many = reviewed();
+    many.outside = vec![
+        "/repos/x/0.rs",
+        "/repos/x/1.rs",
+        "/repos/x/2.rs",
+        "/repos/x/3.rs",
+        "/repos/x/4.rs",
+        "/repos/x/5.rs",
+        "/repos/x/6.rs",
+        "/repos/x/7.rs",
+        "/repos/x/8.rs",
+        "/repos/x/9.rs",
+        "/repos/x/10.rs",
+        "/repos/x/11.rs",
+    ];
+    let detail = many.check("paths").1;
+    assert!(detail.contains("/repos/x/9.rs, and 2 more."), "{detail}");
+    assert!(!detail.contains("/repos/x/10.rs"), "{detail}");
     let mut unplanned = reviewed();
     unplanned.planned = Vec::new();
     assert_eq!(
@@ -685,6 +702,7 @@ fn the_review_gate_refuses_a_diff_outside_the_planned_paths_and_passes_one_insid
     let mut unread = reviewed();
     unread.diff_unread = Some("git failed");
     assert_eq!(unread.check("paths"), ("missing", "git failed".to_owned()));
+    assert_eq!(unread.code("paths"), "changes::paths::outside_plan");
 }
 
 #[test]
@@ -1384,6 +1402,18 @@ fn the_development_review_names_a_reviewer_with_tools_and_a_checkout_and_not_the
     let remedy = change.remedy("review");
     assert!(remedy.contains("tools and a checkout"), "{remedy}");
     assert!(!remedy.contains("board review run"), "{remedy}");
+}
+
+/// An `obligations` check reads the diff, so the obligations on a file the
+/// change adds to its plan's paths count in a phase with no `paths` check.
+#[test]
+fn an_obligations_check_reads_the_diff_with_the_plan_and_the_obligations() {
+    let check: crate::flow::Check =
+        serde_json::from_value(json!({"id": "o", "kind": "obligations"})).unwrap();
+    let read = reads(&[check]);
+    for wanted in [Read::Plan, Read::Diff, Read::Obligations] {
+        assert!(read.contains(&wanted), "{wanted:?} in {read:?}");
+    }
 }
 
 #[test]

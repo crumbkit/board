@@ -1,0 +1,14 @@
+# Dependabot opens a weekly pull request when a new stable Rust release
+# appears, which moves the channel in rust-toolchain.toml. That pull request
+# must also move the git-floor job's container image in ci.yml, because the
+# image's toolchain has to match the pin. The 7-day cooldown proposes a
+# release only once it is 7 days old, so a release that is yanked soon after
+# publication is never proposed.
+version: 2
+updates:
+  - package-ecosystem: rust-toolchain
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

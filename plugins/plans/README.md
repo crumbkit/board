@@ -7,7 +7,8 @@ the meaning of every field.
 ## Records
 
 Each schema declares its folder, so `board put --new --var project=<project>`
-names a new question or decision there. An answer takes its question's id,
+names a new question or decision there; `plans.ask` files a question and
+`plans.decide` records a decision without building the record by hand. An answer takes its question's id,
 so it is written at its path. Its schema declares its folder too, so
 `put --new` can write an answer that has no question id.
 
@@ -149,6 +150,24 @@ answered or withdrawn before the merge writes, the call is refused with
 `plans::ask::<reason>`, for the reasons `plans.withdraw` gives, and a hint
 to ask again. `plans.open` lists each question's merged sessions in
 `also_asked`.
+
+`board plans decide --project <project> --decision <text> --why <text>
+--session <local_ id>` writes a `plans/decision/v1` under
+`/projects/<project>/decisions/`, named as `put --new` names a new record.
+It fills in `$type`, `decided` with the time of the call, and `by` from
+`--session`, `--person` and `--program`. `--alternatives`, `--refs` and
+`--urls` are repeated once for each item, and `--review` given bare records
+`review: wanted`. JSON on stdin with the same property names works too. The
+output gives the `path` written and a `line` that says "Recorded <path>.".
+A call with neither `--session` nor `--person` is refused with
+`plans::decide::no_author`; a missing `--project`, `--decision` or `--why`,
+or a session that is no `local_` id, is refused with
+`board::plugin::bad_input`. A put the board refuses is reported as
+`plans::board::refused` with Board's code. When nothing was under
+`/projects/<project>` before, the decision is still written, and the output
+carries a `warning` with the code `plans::decide::new_project` that names
+the three nearest project names, so a typo shows. Each call writes a new
+decision, so a repeat writes a second one.
 
 `board plans sweep [--path /projects/<project>] [--archived <local_ id>]...
 [--apply true]` withdraws each open question below the path that no longer

@@ -1,7 +1,8 @@
 //! Refusals of mistakes agents make often, which name the command they
 //! meant (STANDARDS.md 25): Board's wording of clap's refusal of such a
 //! command line, such as `ls` given several paths, and the refusal of a put
-//! or rm path that names a folder.
+//! or rm path that names a folder. A guess that only one command fits runs
+//! that command instead (`crate::guessed`).
 
 use std::ffi::OsString;
 
@@ -15,22 +16,11 @@ use crate::render::{Printer, refused};
 use crate::report::Output;
 use crate::run::{Cli, Given, Prefix, plain, read};
 
-/// Each first word that is no command, the command meant by it, and what
-/// that command does. An alias of the word wins, because Board reads
-/// aliases first.
-const MEANT: &[(&str, &str, &str)] = &[("cat", "get", "prints the file at a path")];
-
 /// The refusal of `arguments` that names the command meant, or `None` when
 /// clap's refusal stands.
 pub(crate) fn hinted(arguments: &[OsString], refused_line: &crumbkit::Refused) -> Option<Output> {
     let error = refused_line.error()?;
     let refusal = match (error.kind(), refused_line.path()) {
-        (ErrorKind::InvalidSubcommand, []) => {
-            let Some(ContextValue::String(word)) = error.get(ContextKind::InvalidSubcommand) else {
-                return None;
-            };
-            unknown(arguments, word)?
-        }
         (ErrorKind::UnknownArgument, [put]) if put == "put" => {
             let Some(ContextValue::String(value)) = error.get(ContextKind::InvalidArg) else {
                 return None;
@@ -49,20 +39,6 @@ pub(crate) fn hinted(arguments: &[OsString], refused_line: &crumbkit::Refused) -
         view: refused_line.run().clone(),
     };
     Some(refused(printer, refusal))
-}
-
-/// The refusal of a first word in `MEANT`, whose hint runs the command meant
-/// with the same words, or its help when no word follows.
-fn unknown(arguments: &[OsString], word: &str) -> Option<Refusal> {
-    let (_, command, does) = MEANT.iter().find(|(mistake, ..)| *mistake == word)?;
-    let (at, rest) = crate::alias::first_word(arguments)?;
-    let mut line = arguments.to_vec();
-    *line.get_mut(at).filter(|given| *given == word)? = OsString::from(command);
-    if rest.is_empty() {
-        line.push("-h".into());
-    }
-    let message = format!("board has no command {word}; {command} {does}");
-    Some(usage(&message, format!("run `{}`", shown(&line)), word))
 }
 
 /// The refusal of `put` given `value`, the name of its input, after its

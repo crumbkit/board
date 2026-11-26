@@ -53,8 +53,7 @@ impl Board {
     /// Each argument line the stub `acli` was run with.
     fn acli_calls(&self) -> Vec<String> {
         std::fs::read_to_string(self.bin.workdir().join("acli.log"))
-            .map(|log| log.lines().map(str::to_owned).collect())
-            .unwrap_or_default()
+            .map_or_default(|log| log.lines().map(str::to_owned).collect())
     }
 
     /// The output of `board jira ref` with `flags`, which must answer.

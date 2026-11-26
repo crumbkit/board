@@ -12,10 +12,14 @@ board-model.workspace = true
 board-tree.workspace = true
 crumbkit-durable.workspace = true
 rusqlite.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+rustix.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

@@ -357,6 +357,89 @@ of the rename deletes them.
   in a cell, such as `<br>`, reads as a space, and an ID written as inline
   code is read without its backticks.
 
+- `board rules report --path /repos/app` prints one `rules/report/v1`
+  document of the repository mounted at `/repos/app`, for its CI to upload,
+  and writes nothing. `--path /` reports on the board's own tree. The
+  document holds:
+
+  - `repository`: its `name`, from the clone's origin or `--repository`,
+    the `commit` read, when it was `committed`, and whether a tracked file
+    is `uncommitted`.
+  - `board`: Board's `version`, and the rules board's origin and HEAD in
+    `rules_from` and `rules_commit`.
+  - `source_run`: the GitHub Actions run, from `GITHUB_REPOSITORY`,
+    `GITHUB_RUN_ID`, `GITHUB_RUN_NUMBER` and `GITHUB_SHA`, or null when
+    `GITHUB_RUN_ID` is unset. With it set and another missing or
+    malformed, it is null and `refused` holds
+    `rules::report::ci_env_invalid`.
+  - `rules`: each rule of the imposed set, the rules under `--imposed`,
+    `/rules` when left out, that reaches a file in the repository, measured
+    as `check` measures it, then each rule the mounted repository holds
+    itself, with `result` `unmeasured`. A budget is `within` or `over`, a
+    version rule `within` or `behind`, a zero rule takes its state, a rule
+    this command does not measure is `written`, and a degraded rule, an
+    invalid capture or an unreadable file is `unreadable` with its `code`.
+    File paths are from the repository's root, and `files`, `over` and
+    `behind` list at most 20, with the rest counted in `omitted`.
+  - `groups`: each `rules/group/v1` record and the state its members roll
+    up to: `failing` when one fails, `unreadable` when one is unreadable
+    and none fails, `passing` when every measured member passes, `written`
+    when none is measured, and `not_reached` when none reaches the
+    repository.
+  - `suites`: each suite of kind `compliance` whose `subjects` name the
+    repository, its newest full run of a clean revision, when it finished
+    (null when the run records no time), the commit its `versions.commit`
+    names, its failed cases with their notes, and `commits_since`, the
+    commits from the run's commit to `repository.commit`. When git cannot
+    count them, `commits_since_code` says why:
+    `rules::report::run_commit_unnamed` when the run's
+    `versions.commit` is missing or is not 7 to 40 lowercase hex digits,
+    or when Board cannot read the run,
+    `rules::report::run_commit_missing` when the clone lacks the run's
+    commit, as a shallow CI checkout does (set `fetch-depth: 0`),
+    `rules::report::run_commit_not_ancestor`, or `rules::report::no_git`.
+  - `drift`: the repository's own rules with no imposed rule of the same
+    path below the imposed root in `extra`, those whose fields differ in
+    `differs`, and the imposed rules that reach no file in `not_reached`.
+  - `refused`: each refusal and warning met, with the rules, groups or
+    suites it concerns in `rules`. A warning leaves every row as it is:
+    - `rules::report::member_unmatched`: a group member pattern matches no
+      rule.
+    - `rules::report::ci_env_invalid`: `GITHUB_RUN_ID` is set but is not
+      a whole number, or another CI variable is missing or malformed, so
+      `source_run` is null.
+
+    A refusal marks a row `unreadable` or leaves a group or suite without
+    a row:
+    - The code of a rule's `unreadable` row: Board's code for a degraded
+      rule, `rules::capture::invalid`, a file's code,
+      `rules::report::file_unreadable`, or, for a zero rule,
+      `rules::zero::run_unreadable` or the code `runs.latest` refused
+      with. The refusal names the rule, and its row carries the same code.
+    - `rules::report::group_unreadable`: Board marks a group invalid, and
+      the group has no `groups` row.
+    - `rules::report::suite_unreadable`: a suite's body does not parse, and
+      the suite has no `suites` row. The report reads every suite in the
+      board, in every mount, so such a suite shows in the report of every
+      repository, including one the suite does not name. Board indexes
+      only a file that parses as a record, so a suite file that is not
+      JSON is no record and shows in neither `suites` nor `refused`.
+
+  A zero rule's row gives in `zero.measures` each measure as the run
+  recorded it, a number, a label or a flag, or null when the run recorded
+  none.
+
+  The command exits 0 whatever the rules found. It fails with
+  `rules::report::no_repository` when the clone has no origin and no
+  `--repository` names it, and with `rules::board::refused` when Board
+  refuses a read.
+
+  A `rules/group/v1` record at `/rules/groups/<name>` names a group: a
+  `title`, a `purpose` and `members`, GLOB patterns over rule paths such
+  as `/rules/rust/*` or `/rules/*-server`. A rule may be in several
+  groups. The index skips groups, so `check` and `for-path` never list
+  one.
+
 Board refuses every call with `board::plugin::schema_differs` when the board's
 copy of either schema differs from the one the plugin ships;
 `board plugin enable rules` replaces the board's copy. When Board refuses a request the plugin makes, such as
