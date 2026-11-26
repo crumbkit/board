@@ -7,6 +7,7 @@ use board_model::Refusal;
 use board_ops::{Board, Bulk};
 
 use super::mount::MountCommand;
+use super::putting::{Checking, mending};
 use super::{Command, Putting, run};
 use crate::config::Context;
 use crate::effects;
@@ -45,8 +46,9 @@ pub(super) fn reread(
     })
 }
 
-/// Lets `board` ask the owner to admit what `command` writes, and marks a
-/// `put --bulk` as a bulk commit, refusing a reason a trailer cannot hold.
+/// Lets `board` ask the owner to admit what `command` writes, marks a
+/// `put --bulk` as a bulk commit, refusing a reason a trailer cannot hold,
+/// and makes a put without `--strict` fill and drop fields.
 /// Only a plugin's decide writes in the personal board.
 pub(super) fn ask(
     board: &mut Board,
@@ -58,6 +60,13 @@ pub(super) fn ask(
     }) = command
     {
         board.mark_bulk(Bulk::new(reason).map_err(|error| Box::new(error.refusal()))?);
+    }
+    if let Command::Put(Putting {
+        checking: Checking { strict: false },
+        ..
+    }) = command
+    {
+        board.mend(mending(context));
     }
     let personal = match command {
         Command::Put(_)

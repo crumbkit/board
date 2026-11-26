@@ -200,6 +200,11 @@ impl Repo {
     /// the stand-in agent, and `extra` among the variables Board inherited.
     /// An empty value in `extra` leaves its variable unset.
     fn run(&self, arguments: &[&str], extra: &[(&str, &str)]) -> Output {
+        self.run_reading(arguments, extra, b"")
+    }
+
+    /// [`Repo::run`] with `stdin` as its standard input.
+    fn run_reading(&self, arguments: &[&str], extra: &[(&str, &str)], stdin: &[u8]) -> Output {
         let agent = json!(["sh", self.agent_path()]).to_string();
         let mut inherited = vec![("BOARD_REVIEW_AGENT", agent.as_str())];
         for (name, value) in extra {
@@ -235,7 +240,7 @@ impl Repo {
         let arguments = std::iter::once(BINARY_NAME)
             .chain(arguments.iter().copied())
             .map(OsString::from);
-        run(arguments, &context, &mut &b""[..], &mut Ran::default())
+        run(arguments, &context, &mut &stdin[..], &mut Ran::default())
     }
 
     /// `board --json call review.<capability> <flags>`: its exit code, and

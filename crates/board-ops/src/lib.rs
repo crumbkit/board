@@ -61,8 +61,8 @@ pub use crate::plugins::{
     SchemaProblem,
 };
 pub use crate::put::{
-    Bulk, Expect, MAX_BATCH_LINES, PutError, PutReport, Refused, Removed, Removing, Unmatched,
-    Vars, Written, folder_text,
+    Bulk, Derive, Dropped, Expect, Fill, MAX_BATCH_LINES, Mended, Mending, Mends, PutError,
+    PutReport, Refused, Removed, Removing, Unmatched, Vars, With, Written, folder_text,
 };
 pub use crate::query::{DEFAULT_LIMIT, MAX_LIMIT, QueryError, QueryReport};
 pub use crate::read::{GetReport, Listed, LsReport, ReadError};

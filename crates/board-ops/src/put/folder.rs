@@ -40,21 +40,24 @@ impl Board {
     }
 
     /// The type of the record `bytes` and the folder its schema declares.
-    /// The record is checked first, so one that no put admits keeps its code.
-    /// Known cost: the put that follows checks the record and compiles its
-    /// schema again under its lock, because each name it draws takes the lock
-    /// afresh.
+    /// The record is checked first, after a command-line put's fills and
+    /// drops, as the put that follows checks it, so one that no put admits
+    /// keeps its code. Known cost: the put that follows mends and checks the
+    /// record and compiles its schema again under its lock, because each
+    /// name it draws takes the lock afresh.
     fn declared(&self, bytes: &[u8]) -> Result<(RecordType, String), PutError> {
         let unplaced = |refused| PutError::Unplaced { refused };
-        let classified = checked(bytes).map_err(unplaced)?;
+        let mut schemas = Schemas::default();
+        let applied = self.mended(&mut schemas, bytes);
+        let classified = checked(&applied.bytes).map_err(unplaced)?;
         let record_type = match &classified.content {
             Content::Record { record_type, .. } | Content::Pointer { record_type, .. } => {
                 Some(record_type.clone())
             }
             _ => None,
         };
-        let mut schemas = Schemas::default();
-        (self.admit(&mut schemas, classified)).map_err(|fault| unplaced(fault.into()))?;
+        (self.admit(&mut schemas, classified))
+            .map_err(|fault| unplaced(applied.refused(fault.into())))?;
         let record_type =
             record_type.expect("`admit` refuses every content but a record or a pointer");
         let declared = (schemas.held.get(&record_type))

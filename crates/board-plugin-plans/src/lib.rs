@@ -3,6 +3,7 @@
 mod answer;
 mod ask;
 mod decide;
+mod fill;
 mod migrate;
 mod open;
 mod question;
@@ -41,6 +42,10 @@ impl Plugin for Plans {
                 (name, schema)
             })
             .collect()
+    }
+
+    fn fills(&self) -> &'static [board_ops::Fill] {
+        &fill::FILLS
     }
 
     fn call(

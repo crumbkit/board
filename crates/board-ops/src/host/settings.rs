@@ -55,11 +55,7 @@ impl fmt::Debug for Variables {
 
 impl Settings {
     /// Runs `run` as [`super::Host::run_hiding`] says, with this environment.
-    pub(crate) fn run_hidden(
-        &self,
-        run: &Run<'_>,
-        hidden: &[&str],
-    ) -> Result<Exited, ProcessError> {
+    pub fn run_hidden(&self, run: &Run<'_>, hidden: &[&str]) -> Result<Exited, ProcessError> {
         let empty;
         let directory = if let Some(directory) = run.directory {
             directory

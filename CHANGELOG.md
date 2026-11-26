@@ -12,6 +12,18 @@
   the three nearest project names. The plans skill now records decisions
   with it in place of a hand-built record and `put --new`.
 
+- `board put`, `put --new` and `put --batch` fill a field Board knows when
+  the record leaves it out: a question's or a decision's `by`, from
+  `BOARD_SESSION` or a `local_` Claude Code session id, its `asked` or
+  `decided` time, a question's `status` of `open`, and a review report's
+  `patch_ids`, from its `range` in the directory the put runs in. They also
+  drop a field the schema does not name, at any depth, with one warning on
+  stderr per field that names a known field one edit away, such as
+  `/alternatives`. A field one edit from a field the record lacks is
+  refused with a hint to rename it, and a fill that could not run prints
+  why. `--json` lists both in `filled` and `dropped`, and `--strict`
+  refuses as before. A plugin's write through its host fills and drops
+  nothing.
 - Board runs the command an agent meant for a few common guesses that
   clap refused: `board cat` and `board show` run `get`, `board list` runs
   `ls` and `board schema` runs `schemas`; a long flag given with hyphens

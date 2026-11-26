@@ -5,6 +5,7 @@
 //! command goes through `git`.
 
 mod covered;
+mod fill;
 mod git;
 mod post;
 pub mod records;
@@ -104,6 +105,10 @@ const CAPABILITIES: [Capability; 3] = [
 ];
 
 impl Plugin for Review {
+    fn fills(&self) -> &'static [board_ops::Fill] {
+        &fill::FILLS
+    }
+
     fn manifest(&self) -> Manifest {
         Manifest::built_in(manifest()).expect(
             "the manifest is built from constants and its inputs' schemas; a test parses it",
