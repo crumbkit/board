@@ -12,6 +12,7 @@ use std::path::PathBuf;
 
 use super::*;
 
+mod added;
 mod available;
 mod migrate;
 mod owner;
@@ -325,6 +326,12 @@ impl Tasks {
             every.extend(["-C", root.as_str()]);
         }
         every.extend(arguments);
+        self.run_typed(&every, offset, start, stdin)
+    }
+
+    /// Runs `every`, a whole command line from its program name on, in
+    /// `start`, as a person types it, with nothing added.
+    fn run_typed(&self, every: &[&str], offset: i32, start: PathBuf, stdin: &str) -> Output {
         let context = Context {
             start: start.clone(),
             home: None,
@@ -349,7 +356,7 @@ impl Tasks {
         };
         let mut ran = Ran::default();
         let output = run(
-            every.into_iter().map(OsString::from),
+            every.iter().map(OsString::from),
             &context,
             &mut stdin.as_bytes(),
             &mut ran,

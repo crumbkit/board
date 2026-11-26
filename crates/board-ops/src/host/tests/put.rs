@@ -243,3 +243,46 @@ fn a_built_ins_put_under_a_board_plugin_that_names_no_plugin_is_refused_as_inval
     let output = hosted(&notes(), &line, Some("outer")).unwrap();
     assert_eq!(output["count"], json!(1));
 }
+
+/// A note whose schema names only its type and title.
+const CLOSED_NOTE_SCHEMA: &str = r#"{"type": "object", "additionalProperties": false,
+    "properties": {"$type": {"type": "string"}, "title": {"type": "string"}}}"#;
+
+/// `hosted` with no `BOARD_PLUGIN`, from a board that mends its
+/// command-line puts.
+fn hosted_by_a_mending_board(scenario: &Scenario, lines: &[Value]) -> Result<Value, Box<Refusal>> {
+    let mut board = open(scenario);
+    board.build_in(built(vec![putting(lines.to_vec())]));
+    board.mend(crate::Mending {
+        session: None,
+        settings: Settings {
+            now: UNIX_EPOCH,
+            day_start: None,
+            utc_offset: 0,
+            caller: None,
+            environment: crate::Variables::default(),
+            cache_home: None,
+        },
+    });
+    let called = call_base(&board, &Plugins::default());
+    called
+        .map(|report| report.output)
+        .map_err(|error| Box::new(error.refusal()))
+}
+
+#[test]
+fn a_built_ins_put_drops_no_field_its_type_does_not_name_though_the_command_line_put_would() {
+    let scenario = notes();
+    scenario.write(
+        ".board/types/fixture/note/v1.schema.json",
+        Item::File(CLOSED_NOTE_SCHEMA),
+    );
+    let mut extra = note("/notes/a", Some("t"));
+    extra["record"]["summary"] = json!("s");
+    let refusal = hosted_by_a_mending_board(&scenario, &[extra]).unwrap_err();
+    assert_eq!(line_codes(&refusal), ["board::record::invalid"]);
+    assert!(!exists(&scenario, "notes/a.json"));
+    let admitted = note("/notes/a", Some("t"));
+    assert!(hosted_by_a_mending_board(&scenario, &[admitted]).is_ok());
+    assert!(exists(&scenario, "notes/a.json"));
+}

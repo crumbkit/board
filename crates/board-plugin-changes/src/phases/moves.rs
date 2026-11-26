@@ -172,7 +172,7 @@ pub(crate) fn reopen(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         ));
     }
     let flow = of_change(host, &path, &change)?;
-    let names = flow.as_ref().map(Flow::names).unwrap_or_default();
+    let names = flow.as_ref().map_or_default(Flow::names);
     let build = names.iter().position(|name| name == BUILD);
     let standing = names.iter().position(|name| *name == phase);
     if !matches!((build, standing), (Some(build), Some(standing)) if build < standing) {

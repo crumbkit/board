@@ -527,8 +527,11 @@ of `changes` still fails `review`.
   `command`, `pull_request` and `unreadable`. It never opens the pull request, never runs
   `gh` or git, and makes no model calls. See "The pull request body".
 
-- `plan` takes `{path, text, uses, paths, answers}` as JSON on stdin, since `uses`
-  and `paths` are lists: `board changes plan` with the JSON piped in.
+- `plan` takes `{path, text, uses, paths, answers}` as JSON on stdin:
+  `board changes plan` with the JSON piped in. It also takes `path`, `text`,
+  `uses` and `paths` as flags, with `--uses` and `--paths` repeated once for
+  each item, but a call with a flag reads nothing on stdin, so a plan that
+  needs `considered`, `owed` or `answers` goes on stdin whole.
   A missing `uses` is an empty list. `answers` holds the plan's typed
   answers, `{"ux": "none" | "mockups", "data": "none" | "stored",
   "lifecycle": "none" | "record"}`, which the plan record keeps and a
@@ -1134,12 +1137,25 @@ gained, and a review of only the fix commits still checks every commit of
 the change. The check fails, saying why, when the change has no head,
 when nothing is at its mount, when its mount is a plain directory ("<mount>
 is not a mount"), and when git cannot give the diff. A rename counts as
-deleting one path and adding another. Each file it lists, by its path under the mount, must match one of
-the `paths` of the plan the change names with SQLite's `GLOB`. Otherwise `advance` refuses
-with `changes::paths::outside_plan` and names the files, because their
-rules were not in the brief. Update the plan's paths with `plan`, or revert
-the edit. A plan with no paths, no report on `head`, or a diff git cannot
-list also fails the check.
+deleting one path and adding another. Each file it lists, by its path under
+the mount, that no `paths` of the plan the change names matches with
+SQLite's `GLOB` is a file the change adds to its plan's paths. The check
+passes and its detail names those files, saying their rules were not in the
+brief, and `pr` lists them in the pull request body. The change does not
+write its plan again for them, and nothing about them is stored: each
+reading computes them from the diff. The `ui-paths` and `data-paths` checks
+read the same diff, so an added file those rules list still fails them.
+An `obligations` check reads the diff too, in any phase. It asks for the
+obligations on the planned paths and on each added file, with `*`, `?` and
+`[` in the file's name escaped so the name matches only itself, so an
+obligation on an added file blocks the check as one on a planned path does,
+and its detail then says the obligations apply to the plan's paths or to the
+files the change adds to them. It asks for the added files 100 to a call.
+When the change has a head and git cannot list its diff, the `obligations`
+check fails with `changes::gate::unmet` and git's reason. The `paths`
+check's passing detail names at most ten added files and counts the rest.
+A plan with no paths, or a diff git cannot list, fails the `paths` check
+with `changes::paths::outside_plan`.
 
 Commits match when one is a prefix of the other and both have at least 7
 digits.
@@ -1171,6 +1187,7 @@ broken reference of its own is still read.
 | Review | Each attached `review/report/v1`: verdict, author, range, findings by severity. |
 | Evidence | The change, the plan, and every reference with its type (`file` for a file that is not a record, `directory` for a directory), or the code that hid it. |
 | Work in progress | The change's `over_limit`, when set. |
+| Files added to the plan's paths | Each file the change's diff edits that no path of its plan matches, when there are any, as the review gate's `paths` check names them, at most 50 with a count of the rest. When the change has no head or git cannot list the diff, it says why instead. |
 | `Closes <issue>` | The `url` of each `github/issue/v1` in `tickets`. |
 
 Plan headings match without case. A plan section holds its subsections, and

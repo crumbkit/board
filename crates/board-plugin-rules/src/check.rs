@@ -11,7 +11,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use crate::index::{self, Control, File, Health};
+use crate::index::{self, Control};
 use crate::logical;
 use crate::records::{Checker, Kind, Measure, Per, ShowAt, Version};
 use crate::version;
@@ -132,30 +132,30 @@ fn hex<S: serde::Serializer>(
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Pinned {
-    rule: String,
-    requirement: String,
-    at_least: String,
-    files: Vec<String>,
-    behind: Vec<FileBehind>,
-    unreadable: Vec<Unreadable>,
-    kind: Kind,
-    show: ShowAt,
+    pub(crate) rule: String,
+    pub(crate) requirement: String,
+    pub(crate) at_least: String,
+    pub(crate) files: Vec<String>,
+    pub(crate) behind: Vec<FileBehind>,
+    pub(crate) unreadable: Vec<Unreadable>,
+    pub(crate) kind: Kind,
+    pub(crate) show: ShowAt,
     /// How to close an obligation; left out for a standing control.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>")]
-    close: Option<String>,
+    pub(crate) close: Option<String>,
     /// What left an obligation owed; left out when it names nothing.
     #[serde(skip_serializing_if = "Option::is_none")]
-    owed_by: Option<String>,
+    pub(crate) owed_by: Option<String>,
 }
 
 /// A version a file pins that is older than the rule's, and its line.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct FileBehind {
-    file: String,
-    line: usize,
-    found: String,
+pub(crate) struct FileBehind {
+    pub(crate) file: String,
+    pub(crate) line: usize,
+    pub(crate) found: String,
 }
 
 /// A budget control and what its files under the path use: all of them
@@ -164,33 +164,33 @@ struct FileBehind {
 /// could not read, which counts nothing toward `used`.
 #[derive(Serialize, JsonSchema)]
 pub(crate) struct Checked {
-    rule: String,
-    requirement: String,
-    budget: Measure,
-    max: u64,
-    used: u64,
-    files: Vec<String>,
-    unreadable: Vec<Unreadable>,
-    kind: Kind,
-    show: ShowAt,
+    pub(crate) rule: String,
+    pub(crate) requirement: String,
+    pub(crate) budget: Measure,
+    pub(crate) max: u64,
+    pub(crate) used: u64,
+    pub(crate) files: Vec<String>,
+    pub(crate) unreadable: Vec<Unreadable>,
+    pub(crate) kind: Kind,
+    pub(crate) show: ShowAt,
     /// How to close an obligation; left out for a standing control.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>")]
-    close: Option<String>,
+    pub(crate) close: Option<String>,
     /// What left an obligation owed; left out when it names nothing.
     #[serde(skip_serializing_if = "Option::is_none")]
-    owed_by: Option<String>,
+    pub(crate) owed_by: Option<String>,
     #[serde(flatten)]
-    each: Option<EachFile>,
+    pub(crate) each: Option<EachFile>,
 }
 
 /// A file a measured control reaches that Board cannot read, with Board's
 /// code for why, null when it gives none.
 #[derive(Clone, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct Unreadable {
-    file: String,
-    code: Option<String>,
+pub(crate) struct Unreadable {
+    pub(crate) file: String,
+    pub(crate) code: Option<String>,
 }
 
 impl Checked {
@@ -203,28 +203,28 @@ impl Checked {
 /// What a per-file budget adds: the file it measured as `used`, null when
 /// it has none, and every file over `max`.
 #[derive(Serialize, JsonSchema)]
-struct EachFile {
-    per: Each,
+pub(crate) struct EachFile {
+    pub(crate) per: Each,
     // `schema_of` takes null out of a field a flattened Option leaves out,
     // so this field states its null in a `oneOf`, which it keeps.
     #[schemars(schema_with = "path_or_null")]
-    largest: Option<String>,
-    over: Vec<FileUsed>,
+    pub(crate) largest: Option<String>,
+    pub(crate) over: Vec<FileUsed>,
 }
 
 /// `per` of a budget that limits each file on its own.
 #[derive(Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
-enum Each {
+pub(crate) enum Each {
     File,
 }
 
 /// What one file uses of a per-file budget.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct FileUsed {
-    file: String,
-    used: u64,
+pub(crate) struct FileUsed {
+    pub(crate) file: String,
+    pub(crate) used: u64,
 }
 
 /// A control without a budget, its patterns, and how many of its files are
@@ -291,45 +291,13 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     let scope = scope(host, path.as_deref().unwrap_or("/"))?;
     let root = scope == LogicalPath::root();
     let controls = index::controls(host)?;
-    let named: Vec<&str> = (controls.iter())
-        .filter(|(_, control)| control.applies_to.as_ref().is_some_and(|to| !to.is_empty()))
-        .map(|(logical, _)| logical.as_str())
-        .collect();
-    let mut files = referenced(host, &named)?;
-    for logical in controls.keys() {
-        files.entry(logical.clone()).or_default();
-    }
-    // The files Board's index marks degraded, by control, under the path.
-    let mut unreadable: BTreeMap<String, Vec<Unreadable>> = BTreeMap::new();
-    // Files with no display path, by control. They lie under no path but `/`.
-    let mut unnamed: BTreeMap<String, usize> = BTreeMap::new();
-    for found in index::matched(host, &scope, &controls)? {
-        let Some(reached) = files.get_mut(&found.control) else {
-            continue;
-        };
-        let (shown, inside) = match found.file {
-            File::Named(path) => {
-                let inside = under(&path, &scope);
-                let shown = path.to_string();
-                reached.insert(path);
-                (shown, inside)
-            }
-            File::Unnamed(path) => {
-                *unnamed.entry(found.control.clone()).or_default() += 1;
-                (path, root)
-            }
-        };
-        if let (Health::Degraded(code), true) = (found.health, inside) {
-            (unreadable.entry(found.control).or_default()).push(Unreadable { file: shown, code });
-        }
-    }
-    for reached in files.values_mut() {
-        reached.retain(|path| under(path, &scope));
-    }
-    // Under the root every control is listed, so one whose pattern reaches nothing shows with no files.
-    let applying: Vec<&String> = (controls.keys())
-        .filter(|logical| root || !files[*logical].is_empty())
-        .collect();
+    let Reached {
+        files,
+        unnamed,
+        unreadable,
+        applying,
+    } = reach(host, &scope, &controls)?;
+    let applying: Vec<&String> = applying.iter().collect();
     let (measured_controls, versions) =
         measure_files(host, &applying, &controls, &files, &unreadable)?;
     let zeros = zero::zeroed(host, &applying, &controls);
@@ -390,7 +358,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
 /// measured over its files under the path, which are each read once. A
 /// file the index marks degraded is not read; it and each file Board
 /// cannot read go in the control's `unreadable`.
-fn measure_files(
+pub(crate) fn measure_files(
     host: &dyn Host,
     applying: &[&String],
     controls: &BTreeMap<String, Control>,
@@ -466,7 +434,7 @@ fn texts<'a>(
 }
 
 /// The display path `path` resolves to, through any link or mount.
-fn scope(host: &dyn Host, path: &str) -> Result<LogicalPath, PluginError> {
+pub(crate) fn scope(host: &dyn Host, path: &str) -> Result<LogicalPath, PluginError> {
     if path == "/" {
         return Ok(LogicalPath::root());
     }
@@ -537,7 +505,7 @@ pub(crate) fn read(
 }
 
 /// Each mount in the board by its display path, and the commit read there.
-const MOUNTS: &str = "SELECT e.logical, m.target FROM mounts m \
+pub(crate) const MOUNTS: &str = "SELECT e.logical, m.target FROM mounts m \
     JOIN entries e ON e.source = m.source AND e.path = m.path \
     WHERE m.target IS NOT NULL AND e.logical IS NOT NULL";
 
@@ -637,7 +605,7 @@ fn pin_of(host: &dyn Host, mount: &LogicalPath) -> Option<board_model::ObjectId>
 }
 
 /// Whether `path` is `scope` or lies beneath it.
-fn under(path: &LogicalPath, scope: &LogicalPath) -> bool {
+pub(crate) fn under(path: &LogicalPath, scope: &LogicalPath) -> bool {
     let mut segments = path.segments();
     scope
         .segments()
@@ -768,6 +736,10 @@ fn degraded(broken: &[(String, Value)]) -> PluginError {
         hint: None,
     }
 }
+
+mod reach;
+
+pub(crate) use reach::{Reached, reach};
 
 #[cfg(test)]
 pub(crate) mod tests;

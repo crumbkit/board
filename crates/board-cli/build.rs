@@ -245,9 +245,7 @@ fn skills() {
         source.push_str("    ] },\n");
     }
     source.push_str("]\n");
-    let out = std::env::var_os("OUT_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_default();
+    let out = std::env::var_os("OUT_DIR").map_or_default(PathBuf::from);
     let written = out.join("skills.rs");
     if let Err(error) = std::fs::write(&written, source) {
         fail(&format!("cannot write {}: {error}", written.display()));

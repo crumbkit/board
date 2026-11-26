@@ -38,7 +38,7 @@ pub(super) fn answers_count(each: &flow::Check) -> bool {
 }
 
 /// At most [`SHOWN`] of `paths`, joined, and how many more there are.
-fn bounded(paths: &[&str]) -> String {
+pub(super) fn bounded(paths: &[&str]) -> String {
     let shown = paths
         .iter()
         .take(SHOWN)
@@ -104,19 +104,22 @@ pub(super) fn considered_missing(observed: &Observed) -> Option<String> {
     })
 }
 
-/// No obligation applies to the plan's paths, except those the plan's
-/// `owed` names. Each obligation is compared in its `/rules/` form and
-/// named where it is stored.
+/// No obligation applies to the plan's paths, except those in `owed`, each
+/// compared in its `/rules/` form and named where it is stored. A headed
+/// change whose diff git cannot list fails with git's reason.
 pub(super) fn obligations_missing(observed: &Observed) -> Option<String> {
+    if let (Some(_), Some(unread)) = (&observed.change.head, &observed.diff_unread) {
+        return Some(unread.clone());
+    }
     let left: Vec<&str> = (observed.obligations.iter().map(String::as_str))
         .filter(|rule| !observed.owed.iter().any(|owed| *owed == current(rule)))
         .collect();
-    (!left.is_empty()).then(|| {
-        format!(
-            "these obligations apply to the plan's paths: {}",
-            bounded(&left)
-        )
-    })
+    let reached = if observed.outside.is_empty() {
+        "the plan's paths"
+    } else {
+        "the plan's paths or to the files the change adds to them"
+    };
+    (!left.is_empty()).then(|| format!("these obligations apply to {reached}: {}", bounded(&left)))
 }
 
 /// The change's diff touches no path the named rules list. A rule the

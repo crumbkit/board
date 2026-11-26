@@ -27,6 +27,10 @@
     },
     "type": "object"
   },
+  "CodeName": {
+    "pattern": "^[a-z0-9-]+::[a-z0-9_]+::[a-z0-9_]+$",
+    "type": "string"
+  },
   "CommitName": {
     "pattern": "^[0-9a-f]{7,40}$",
     "type": "string"
@@ -37,6 +41,10 @@
   },
   "Digest": {
     "pattern": "^sha256:[0-9a-f]{64}$",
+    "type": "string"
+  },
+  "DottedVersion": {
+    "pattern": "^[0-9]+(\\.[0-9]+)*$",
     "type": "string"
   },
   "Glob": {

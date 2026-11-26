@@ -6,7 +6,7 @@ mod report;
 mod runs;
 
 pub use get::{Content, File};
-pub use put::{BatchLine, Degraded, Location, Pointer, PutReport, Removed, Write};
+pub use put::{BatchLine, Degraded, Dropped, Filled, Location, Pointer, PutReport, Removed, Write};
 pub use report::{
     Data, Excerpt, Failure, FieldValue, Label, Printed, Recovery, Related, Report, Severity,
 };

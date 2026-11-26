@@ -9,6 +9,7 @@ mod config;
 mod describe;
 mod effects;
 mod graft;
+mod guessed;
 mod init;
 mod mistaken;
 mod plugin;
@@ -43,5 +44,8 @@ fn main() -> ExitCode {
     report::emit(&output);
     ran.trace.add("emit", emitting);
     timing::append(started, &ran, &output, &context);
+    // Appending the timing line may fail to mark a cache root the run
+    // did not open.
+    report::emit(&report::Output::default().warned());
     ExitCode::from(output.code)
 }

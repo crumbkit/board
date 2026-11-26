@@ -12,6 +12,7 @@ mod migrate;
 mod overlap;
 pub mod records;
 mod rename;
+mod report;
 mod standards;
 mod summary;
 mod version;
@@ -24,7 +25,8 @@ use board_plugin::shape::{Record, schema_of};
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
-use records::{FORMER_SCHEMAS, RENAMED, RuleRecord, SourceRecord};
+use records::{FORMER_SCHEMAS, GroupRecord, RENAMED, RuleRecord, SourceRecord};
+use report::ReportRecord;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Rules;
@@ -46,6 +48,12 @@ impl Plugin for Rules {
         let shipped = [
             schema(RuleRecord::TYPE, schema_of::<RuleRecord>(settings())),
             schema(SourceRecord::TYPE, schema_of::<SourceRecord>(settings())),
+            schema(GroupRecord::TYPE, schema_of::<GroupRecord>(settings())),
+            // Every key of a report is present, and null means none.
+            schema(
+                ReportRecord::TYPE,
+                schema_of::<ReportRecord>(settings().for_serialize()),
+            ),
         ];
         let former = (RENAMED.iter().zip(FORMER_SCHEMAS)).map(|((old, _), text)| {
             schema(
@@ -77,10 +85,11 @@ impl Plugin for Rules {
             "evaluate" => evaluate::evaluate(host, &input),
             "from-standards" => standards::from_standards(host, &input),
             "migrate" => migrate::migrate(host, &input),
+            "report" => report::report(host, &input),
             other => Err(PluginError {
                 code: "rules::call::unknown_capability".to_owned(),
                 message: format!(
-                    "rules offers no capability {other}; it offers for-path, for-paths, check, evaluate, from-standards and migrate"
+                    "rules offers no capability {other}; it offers for-path, for-paths, check, evaluate, from-standards, migrate and report"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -104,6 +113,31 @@ const CHECK: &str = "Check the rules under a path, `/` when left out, measuring 
     is behind, a file is unreadable or a zero rule's measures are not all 0 in its suite's latest \
     run; fails when a rule is degraded or a version checker's capture is invalid.";
 
+/// The record types the plugin ships: its own, then those before the
+/// rename.
+const TYPES: [&str; 6] = [
+    RuleRecord::TYPE,
+    SourceRecord::TYPE,
+    GroupRecord::TYPE,
+    ReportRecord::TYPE,
+    RENAMED[0].0,
+    RENAMED[1].0,
+];
+
+/// What the `report` capability does, as its manifest describes it, with
+/// the commands help shows at its top.
+const REPORT: &str = "Print one rules/report/v1 document of every rule, group and compliance \
+    suite that reaches a repository: each rule's result, each group's rolled-up state, each \
+    suite's newest clean full run and the commits since it, where the repository's own rules \
+    differ from the imposed set, every refusal, and the GitHub Actions run that made it, null \
+    elsewhere. It writes nothing, and exits 0 whatever the rules found; it fails only when Board \
+    refuses a read or the repository has no name. Examples:\n\
+    board --checkout rules report --path /repos/app > rules-report.json\n\
+    board rules report --path /repos/app --repository owner/app   # clone without origin\n\
+    board rules report --path /repos/app --imposed /rules/imposed # set not at /rules\n\
+    board rules report --path /                                   # repository is its own board\n\
+    board schemas show rules/report/v1";
+
 fn manifest() -> Value {
     let settings = || SchemaSettings::draft2020_12().for_serialize();
     json!({
@@ -119,7 +153,7 @@ fn manifest() -> Value {
             file. `board -C <board> rules evaluate` checks text, such as a draft, against the checkers \
             of the rules it names before the text is written. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "governance"},
-        "types": [RuleRecord::TYPE, SourceRecord::TYPE, RENAMED[0].0, RENAMED[1].0],
+        "types": TYPES,
         "capabilities": [{
             "name": "for-path",
             "description": "The rules that apply to a path.",
@@ -200,7 +234,26 @@ fn manifest() -> Value {
                 "openWorldHint": false,
             },
             "_meta": {},
-        }],
+        }, report_capability()],
+    })
+}
+
+/// The `report` capability, as the manifest lists it.
+fn report_capability() -> Value {
+    let settings = || SchemaSettings::draft2020_12().for_serialize();
+    json!({
+        "name": "report",
+        "description": REPORT,
+        "inputSchema": schema_of::<report::Input>(SchemaSettings::draft2020_12()),
+        "outputSchema": schema_of::<ReportRecord>(settings()),
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false,
+        },
+        "_meta": {},
+        "env": report::CI_VARIABLES,
     })
 }
 
