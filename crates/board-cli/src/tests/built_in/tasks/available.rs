@@ -323,9 +323,29 @@ fn a_call_syncs_the_repos_in_scope_and_an_after_in_a_mount_resolves_in_that_moun
         .unwrap();
     assert_eq!(
         shown(&output),
+        titles_of(&["First"]),
+        "a clone fetched within the minute is read as it is"
+    );
+    fetched_long_ago(&clone);
+    let output = tasks
+        .call("available", &["--repo", "/repos/personal"])
+        .unwrap();
+    assert_eq!(
+        shown(&output),
         ["Second"],
         "the open /tasks/first.md is the board's"
     );
+}
+
+/// Dates `clone`'s last fetch an hour ago, as a call a minute or more
+/// after the last one finds it.
+fn fetched_long_ago(clone: &Path) {
+    let fetch_head = std::fs::File::options()
+        .write(true)
+        .open(clone.join(".git/FETCH_HEAD"))
+        .unwrap();
+    let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_hours(1);
+    fetch_head.set_modified(hour_ago).unwrap();
 }
 
 #[test]
