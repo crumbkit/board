@@ -233,15 +233,11 @@ fn the_body_lists_what_each_amendment_added_to_the_plan() {
         crate::amend::Amended {
             path: "/changes/t/amendments/1".to_owned(),
             from: "/changes/t/plans/1".to_owned(),
-            paths: vec!["/repos/x/a.rs".to_owned(), "/repos/x/b/**".to_owned()],
-            owed: vec![],
-            sections: vec![],
+            sections: vec![crate::amend::Section::Proves],
         },
         crate::amend::Amended {
             path: "/changes/t/amendments/2".to_owned(),
             from: "/changes/t/plans/2".to_owned(),
-            paths: vec![],
-            owed: vec!["/rules/x/owed".to_owned()],
             sections: vec![
                 crate::amend::Section::Proves,
                 crate::amend::Section::DoesNotProve,
@@ -252,10 +248,9 @@ fn the_body_lists_what_each_amendment_added_to_the_plan() {
     assert!(
         text.contains(
             "## Plan amendments\n\nThese were added to the plan after it was written, with \
-             `board changes plan-amend`:\n\n- `/changes/t/amendments/1` added the paths \
-             `/repos/x/a.rs`, `/repos/x/b/**`\n- `/changes/t/amendments/2` added the owed \
-             entries `/rules/x/owed`; the sections What the tests prove, What the tests do not \
-             prove\n\n## Evidence"
+             `board changes plan-amend`:\n\n- `/changes/t/amendments/1` filled the sections \
+             What the tests prove\n- `/changes/t/amendments/2` filled the sections What the \
+             tests prove, What the tests do not prove\n\n## Evidence"
         ),
         "{text}"
     );

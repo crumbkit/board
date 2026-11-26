@@ -1,21 +1,12 @@
 //! `changes.plan-amend`, which writes a new plan version that only adds
-//! paths, owed entries and test sections to the change's current plan, and
-//! an amendment record that names what it added.
+//! the two test sections to the change's current plan, and an amendment
+//! record that names the headings it filled.
 
 use super::*;
 
 const CHANGE: &str = "/changes/t";
 const PROVES: &str = "What the tests prove";
 const DOES_NOT_PROVE: &str = "What the tests do not prove";
-
-/// An obligation at `/controls/x/owed`, as `controls.check` would list it.
-fn owed_control(board: &Changes) {
-    let owed = json!({
-        "$type": "controls/control/v1", "kind": "obligation", "requirement": "Sweep the docs.",
-        "purpose": "p", "paths": ["repos/x/**"],
-    });
-    board.write("controls/x/owed.json", &owed.to_string());
-}
 
 /// A change in build whose plan `changes.plan` wrote with `text`, one used
 /// document, one considered record and the fixture paths: the plan's
@@ -54,69 +45,39 @@ fn amendments(board: &Changes) -> usize {
 }
 
 #[test]
-fn an_amend_adds_a_path_and_keeps_every_other_field_and_the_text_of_the_plan() {
+fn an_amend_appends_each_test_section_and_keeps_every_other_field_and_byte_of_the_plan() {
     let board = Changes::new();
     let first = planned(&board, PLAN);
     let before = at(&board, &first["path"]);
     let output = board.call(
         "plan-amend",
-        &json!({"path": CHANGE, "paths": "/repos/x/extra.rs"}),
+        &json!({"path": CHANGE, "proves": "The suite stops.", "does_not_prove": "Retries."}),
     );
     let plan = &output["path"];
     assert_ne!(plan, &first["path"]);
     assert_eq!(board.read("changes/t.json")["plan"], *plan);
+    assert_eq!(
+        text_of(&board, plan),
+        format!("{PLAN}\n## {PROVES}\n\nThe suite stops.\n\n## {DOES_NOT_PROVE}\n\nRetries.\n")
+    );
     let mut expected = before.clone();
     expected["text"] = output["text"].clone();
-    expected["paths"] = json!(["/repos/x/**", "/repos/x/extra.rs"]);
     assert_eq!(at(&board, plan), expected);
-    assert_eq!(text_of(&board, plan), PLAN);
     assert_eq!(
         at(&board, &output["amendment"]),
         json!({
             "$type": "changes/amendment/v1",
             "plan": plan,
             "from": first["path"],
-            "paths": ["/repos/x/extra.rs"],
+            "sections": [PROVES, DOES_NOT_PROVE],
         })
     );
-    assert_eq!(output["paths"], json!(["/repos/x/extra.rs"]));
+    assert_eq!(output["sections"], json!([PROVES, DOES_NOT_PROVE]));
+    assert!(output.get("paths").is_none(), "{output}");
+    assert!(output.get("owed").is_none(), "{output}");
     // The earlier plan is left as it was written.
     assert_eq!(at(&board, &first["path"]), before);
     assert_eq!(board.code(output["amendment"].as_str().unwrap()), None);
-}
-
-#[test]
-fn an_amend_adds_an_owed_entry_after_those_the_plan_holds() {
-    let board = Changes::new();
-    owed_control(&board);
-    let first = planned(&board, PLAN);
-    let owed = json!([{"rule": "/controls/x/owed", "why": "The next step does it."}]);
-    let output = board.call_stdin("plan-amend", &json!({"path": CHANGE, "owed": owed}));
-    assert_eq!(at(&board, &output["path"])["owed"], owed);
-    assert_eq!(at(&board, &output["path"])["paths"], json!(PATHS));
-    assert_eq!(text_of(&board, &output["path"]), PLAN);
-    assert_eq!(at(&board, &output["amendment"])["owed"], owed);
-    assert_eq!(at(&board, &output["amendment"])["from"], first["path"]);
-    assert_eq!(output["owed"], json!(["/controls/x/owed"]));
-}
-
-#[test]
-fn an_amend_appends_each_test_section_the_plan_lacks_under_its_own_heading() {
-    let board = Changes::new();
-    planned(&board, PLAN);
-    let output = board.call(
-        "plan-amend",
-        &json!({"path": CHANGE, "proves": "The suite stops.", "does_not_prove": "Retries."}),
-    );
-    assert_eq!(
-        text_of(&board, &output["path"]),
-        format!("{PLAN}\n## {PROVES}\n\nThe suite stops.\n\n## {DOES_NOT_PROVE}\n\nRetries.\n")
-    );
-    assert_eq!(
-        at(&board, &output["amendment"])["sections"],
-        json!([PROVES, DOES_NOT_PROVE])
-    );
-    assert_eq!(at(&board, &output["path"])["paths"], json!(PATHS));
 }
 
 #[test]
@@ -145,63 +106,58 @@ fn an_amend_fills_an_empty_test_heading_in_place_and_refuses_one_that_holds_text
 }
 
 #[test]
-fn an_amend_that_adds_nothing_new_is_refused_and_one_that_adds_a_new_path_is_written() {
+fn an_amend_with_no_test_section_is_refused_and_one_with_a_section_is_written() {
     let board = Changes::new();
     planned(&board, PLAN);
     let refused = board.refusal("plan-amend", &json!({"path": CHANGE}));
     assert_eq!(refused["code"], "changes::amend::nothing", "{refused}");
+    assert_eq!(amendments(&board), 0);
+    board.call(
+        "plan-amend",
+        &json!({"path": CHANGE, "proves": "It stops."}),
+    );
+    assert_eq!(amendments(&board), 1);
+}
+
+/// The owner's answer /projects/board/answers/20261126T1601Z-004a lets an
+/// agent add only the test sections: a path or an owed entry still needs
+/// the owner's plan resend, so `plan-amend` takes neither.
+#[test]
+fn an_amend_that_adds_a_path_or_an_owed_entry_is_refused_and_one_with_a_section_is_written() {
+    let board = Changes::new();
+    let first = planned(&board, PLAN);
     let refused = board.refusal(
         "plan-amend",
-        &json!({"path": CHANGE, "paths": "/repos/x/**"}),
+        &json!({"path": CHANGE, "paths": "/repos/x/extra.rs", "proves": "It stops."}),
     );
-    assert_eq!(refused["code"], "changes::amend::nothing", "{refused}");
-    assert_eq!(amendments(&board), 0);
-    let output = board.call_stdin(
+    assert_eq!(refused["code"], "board::cli::usage", "{refused}");
+    assert_eq!(refused["fields"]["argument"], "--paths", "{refused}");
+    let refused = board.refusal(
         "plan-amend",
-        &json!({"path": CHANGE, "paths": ["/repos/x/**", "/repos/x/new.rs"]}),
+        &json!({"path": CHANGE, "owed": "/rules/x/owed", "proves": "It stops."}),
     );
-    assert_eq!(output["paths"], json!(["/repos/x/new.rs"]));
+    assert_eq!(refused["code"], "board::cli::usage", "{refused}");
+    assert_eq!(refused["fields"]["argument"], "--owed", "{refused}");
+    assert_eq!(amendments(&board), 0);
+    assert_eq!(board.read("changes/t.json")["plan"], first["path"]);
+    let output = board.call(
+        "plan-amend",
+        &json!({"path": CHANGE, "proves": "It stops."}),
+    );
+    assert_eq!(at(&board, &output["path"])["paths"], json!(PATHS));
+    assert!(at(&board, &output["path"]).get("owed").is_none());
+    assert_eq!(amendments(&board), 1);
 }
 
 #[test]
 fn an_amend_of_a_change_with_no_plan_is_refused_and_one_with_a_plan_is_written() {
     let board = Changes::new();
     board.change_at("changes/t.json", "build", &json!({}));
-    let given = json!({"path": CHANGE, "paths": "/repos/x/a.rs"});
+    let given = json!({"path": CHANGE, "proves": "It stops."});
     let refused = board.refusal("plan-amend", &given);
     assert_eq!(refused["code"], "changes::amend::no_plan", "{refused}");
     planned(&board, PLAN);
     board.call("plan-amend", &given);
-    assert_eq!(amendments(&board), 1);
-}
-
-#[test]
-fn an_amend_with_a_path_outside_the_mount_is_refused_and_one_inside_it_is_written() {
-    let board = Changes::new();
-    planned(&board, PLAN);
-    let refused = board.refusal(
-        "plan-amend",
-        &json!({"path": CHANGE, "paths": "/repos/y/a.rs"}),
-    );
-    assert_eq!(refused["code"], "changes::plan::outside_mount", "{refused}");
-    assert_eq!(amendments(&board), 0);
-    board.call(
-        "plan-amend",
-        &json!({"path": CHANGE, "paths": "/repos/x/a.rs"}),
-    );
-    assert_eq!(amendments(&board), 1);
-}
-
-#[test]
-fn an_amend_owing_a_path_that_holds_nothing_is_refused_and_one_owing_a_rule_is_written() {
-    let board = Changes::new();
-    owed_control(&board);
-    planned(&board, PLAN);
-    let owe = |rule: &str| json!({"path": CHANGE, "owed": [{"rule": rule, "why": "Later."}]});
-    let refused = board.refusal_stdin("plan-amend", &owe("/controls/x/none"));
-    assert_eq!(refused["code"], "changes::ref::dangling", "{refused}");
-    assert_eq!(amendments(&board), 0);
-    board.call_stdin("plan-amend", &owe("/controls/x/owed"));
     assert_eq!(amendments(&board), 1);
 }
 
@@ -211,7 +167,7 @@ fn an_amend_of_a_done_change_is_refused_and_one_of_a_change_in_build_is_written(
     planned(&board, PLAN);
     let plan = board.read("changes/t.json")["plan"].clone();
     board.change_at("changes/t.json", "done", &json!({"plan": plan}));
-    let given = json!({"path": CHANGE, "paths": "/repos/x/a.rs"});
+    let given = json!({"path": CHANGE, "proves": "It stops."});
     let refused = board.refusal("plan-amend", &given);
     assert_eq!(refused["code"], "changes::phase::final", "{refused}");
     board.change_at("changes/t.json", "build", &json!({"plan": plan}));
@@ -241,23 +197,22 @@ fn an_amend_that_takes_the_text_over_3000_words_is_refused_and_one_within_it_is_
 fn next_lists_the_amendments_since_the_last_full_plan_and_none_after_a_new_one() {
     let board = Changes::new();
     let first = planned(&board, PLAN);
-    let added = board.call(
-        "plan-amend",
-        &json!({"path": CHANGE, "paths": "/repos/x/a.rs"}),
-    );
-    std::thread::sleep(std::time::Duration::from_millis(2));
-    let tested = board.call(
+    let proved = board.call(
         "plan-amend",
         &json!({"path": CHANGE, "proves": "It stops."}),
+    );
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    let unproved = board.call(
+        "plan-amend",
+        &json!({"path": CHANGE, "does_not_prove": "Retries."}),
     );
     let next = board.call("next", &json!({"path": CHANGE}));
     assert_eq!(
         next["amended"],
         json!([
-            {"path": added["amendment"], "from": first["path"], "paths": ["/repos/x/a.rs"],
-             "owed": [], "sections": []},
-            {"path": tested["amendment"], "from": added["path"], "paths": [], "owed": [],
-             "sections": [PROVES]},
+            {"path": proved["amendment"], "from": first["path"], "sections": [PROVES]},
+            {"path": unproved["amendment"], "from": proved["path"],
+             "sections": [DOES_NOT_PROVE]},
         ])
     );
     std::thread::sleep(std::time::Duration::from_millis(2));
@@ -270,22 +225,20 @@ fn next_lists_the_amendments_since_the_last_full_plan_and_none_after_a_new_one()
 }
 
 #[test]
-fn the_pull_request_body_lists_what_each_amendment_added() {
+fn the_pull_request_body_lists_the_headings_each_amendment_filled() {
     let board = Changes::new();
-    owed_control(&board);
     planned(&board, PLAN);
-    let output = board.call_stdin(
+    let output = board.call(
         "plan-amend",
-        &json!({"path": CHANGE, "paths": ["/repos/x/a.rs"], "proves": "It stops.",
-                "owed": [{"rule": "/controls/x/owed", "why": "Later."}]}),
+        &json!({"path": CHANGE, "proves": "It stops.", "does_not_prove": "Retries."}),
     );
     board.call("pr", &json!({"path": CHANGE}));
     let body = board.text("changes/t/pr.md");
     assert!(
         body.contains(&format!(
             "## Plan amendments\n\nThese were added to the plan after it was written, with \
-             `board changes plan-amend`:\n\n- `{}` added the paths `/repos/x/a.rs`; the owed \
-             entries `/controls/x/owed`; the sections {PROVES}\n",
+             `board changes plan-amend`:\n\n- `{}` filled the sections {PROVES}, \
+             {DOES_NOT_PROVE}\n",
             output["amendment"].as_str().unwrap()
         )),
         "{body}"

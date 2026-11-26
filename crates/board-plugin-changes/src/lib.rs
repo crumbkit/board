@@ -426,14 +426,13 @@ const CAPABILITIES: [Capability; 24] = [
     },
     Capability {
         name: "plan-amend",
-        description: "Write a new plan version that only adds to the change's current plan: \
-            paths, owed entries, and text under the headings What the tests prove and What the \
-            tests do not prove, given as flags with paths repeated once for each item, or as \
-            JSON on stdin, which owed needs. It copies the plan's text, uses, considered, \
-            answers, lifecycle and records unchanged, writes a changes/amendment/v1 naming what \
-            it added, which next and the pull request body list, and refuses an input that adds \
-            nothing, a heading that already holds text, a path outside the change's mount, an \
-            owed path that is no rule and a text over 3,000 words.",
+        description: "Write a new plan version that only adds text under the headings What the \
+            tests prove and What the tests do not prove of the change's current plan. It takes no \
+            paths and no owed entries, which still need the owner's resend with plan. It copies \
+            the plan's other text, uses, paths, considered, owed, answers, lifecycle and records \
+            unchanged, writes a changes/amendment/v1 naming the headings it filled, which next \
+            and the pull request body list, and refuses an input that fills no heading, a heading \
+            that already holds text and a text over 3,000 words.",
         run: amend::plan_amend,
         input: input::<amend::Input>,
         output: output::<amend::Output>,

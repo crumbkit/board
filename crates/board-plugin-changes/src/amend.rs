@@ -1,13 +1,13 @@
-//! The `plan-amend` capability: a new plan version that only adds paths,
-//! owed entries and test sections to the change's current plan, and the
-//! `changes/amendment/v1` record that names what it added, which `next` and
-//! the pull request body show the owner.
+//! The `plan-amend` capability: a new plan version that only adds text
+//! under the two test headings of the change's current plan, and the
+//! `changes/amendment/v1` record that names the headings it filled, which
+//! `next` and the pull request body show the owner.
 //!
-//! Each kind of addition is its own input field and its own function, so
-//! one kind can be dropped without touching the others.
+//! It takes no paths and no owed entries: those widen the scope the owner
+//! approved, so they still need the owner's resend through `changes plan`.
 
 use board_ops::{Host, PluginError, literal};
-use board_plugin::shape::{LogicalGlob, Record, Ref, Tag};
+use board_plugin::shape::{Record, Ref, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -16,16 +16,15 @@ use crate::board::{self, rows, text};
 use crate::change::{line, plan_at, read, touch};
 use crate::gates::{FENCES, HEADING, sections};
 use crate::phases::final_phase;
-use crate::plan::{
-    PLAN_WORDS, Planned, check_mount, check_named, plan_lines, stamp, thousands, words,
-};
-use crate::records::{Owed, PlanRecord, is_final};
+use crate::plan::{PLAN_WORDS, Planned, plan_lines, stamp, thousands, words};
+use crate::records::{PlanRecord, is_final};
 use crate::{PLUGIN, refusal, to_value};
 
-/// `changes/amendment/v1`: what one `changes.plan-amend` added to a plan.
+/// `changes/amendment/v1`: the test headings one `changes.plan-amend`
+/// filled in a plan.
 ///
 /// It lives at `/changes/<name>/amendments/<stamp>`, with the stamp of the
-/// plan it wrote. Each field it adds to is left out when it added none.
+/// plan it wrote.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(extend("x-board-folder" = "/changes/{change}/amendments/"))]
@@ -39,15 +38,8 @@ pub(crate) struct AmendmentRecord {
     /// The plan version it added to.
     #[schemars(with = "Ref<PlanRecord>")]
     pub(crate) from: String,
-    /// The files and SQLite GLOB patterns it added to the plan's paths.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[schemars(with = "Vec<LogicalGlob>")]
-    pub(crate) paths: Vec<String>,
-    /// The obligations it added to the plan's owed entries.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) owed: Vec<Owed>,
-    /// The test headings it filled in the plan's text.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// The test headings it filled in the plan's text, one or both.
+    #[schemars(length(min = 1))]
     pub(crate) sections: Vec<Section>,
 }
 
@@ -75,8 +67,8 @@ impl Section {
     }
 }
 
-/// What `changes.plan-amend` adds, as flags with `paths` repeated once for
-/// each item, or as JSON on stdin, which `owed` needs.
+/// What `changes.plan-amend` adds, as flags: text for one or both test
+/// headings, and nothing else.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "PlanAmendInput")]
@@ -87,19 +79,6 @@ pub(crate) struct Input {
         description = "The change's logical path, such as /changes/suite-timeout."
     )]
     path: String,
-    #[serde(default)]
-    #[schemars(
-        with = "Vec<LogicalGlob>",
-        description = "Files and SQLite GLOB patterns to add to the plan's paths, by logical \
-                       path under the change's mount; one the plan holds is skipped."
-    )]
-    paths: Vec<String>,
-    #[serde(default)]
-    #[schemars(
-        description = "Obligations to add to the plan's owed entries, each with why, a list \
-                       given on stdin; one whose rule the plan owes is skipped."
-    )]
-    owed: Vec<Owed>,
     #[schemars(
         regex(pattern = r"\S"),
         description = "Markdown for the plan's \"What the tests prove\" heading, refused when \
@@ -114,8 +93,8 @@ pub(crate) struct Input {
     does_not_prove: Option<String>,
 }
 
-/// The plan version written, its text, the amendment record, and what it
-/// added: paths, owed rules and headings.
+/// The plan version written, its text, the amendment record, the plan it
+/// added to, and the headings it filled.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(rename = "PlanAmendOutput")]
 pub(crate) struct Output {
@@ -123,27 +102,21 @@ pub(crate) struct Output {
     text: String,
     amendment: String,
     from: String,
-    paths: Vec<String>,
-    owed: Vec<String>,
     sections: Vec<Section>,
 }
 
 /// One amendment as `next` and the pull request body show it: its path, the
-/// plan it added to, and the paths, owed rules and headings it added.
+/// plan it added to, and the headings it filled.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub(crate) struct Amended {
     pub(crate) path: String,
     pub(crate) from: String,
-    pub(crate) paths: Vec<String>,
-    pub(crate) owed: Vec<String>,
     pub(crate) sections: Vec<Section>,
 }
 
 pub(crate) fn plan_amend(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input {
         path,
-        paths,
-        owed,
         proves,
         does_not_prove,
     } = PluginError::read_input(PLUGIN, "plan-amend", input)?;
@@ -161,19 +134,18 @@ pub(crate) fn plan_amend(host: &dyn Host, input: &Value) -> Result<Value, Plugin
     }
     let (from, plan) = current(host, &path, change.plan.as_deref())?;
     let held = board::get_text(host, &plan.text)?.unwrap_or_default();
-    let added_paths = new_paths(&path, &change.mount, &plan, paths)?;
-    let added_owed = new_owed(host, &path, &plan, owed)?;
     let given = [
         (Section::Proves, proves),
         (Section::DoesNotProve, does_not_prove),
     ];
     let (text, filled) = new_sections(&path, held, given)?;
-    if added_paths.is_empty() && added_owed.is_empty() && filled.is_empty() {
+    if filled.is_empty() {
         return Err(refusal(
             "changes::amend::nothing",
             format!(
-                "the amendment adds nothing the plan of {path} does not hold; give a new path in \
-                 `paths`, a new rule in `owed`, or text for `proves` or `does_not_prove`"
+                "the amendment adds nothing to the plan of {path}; give text for `proves` or \
+                 `does_not_prove`. To add a path or an owed entry, the owner resends the plan \
+                 with `board changes plan`"
             ),
             [("path", json!(path))],
         ));
@@ -191,28 +163,21 @@ pub(crate) fn plan_amend(host: &dyn Host, input: &Value) -> Result<Value, Plugin
         ));
     }
     let now = host.settings().now;
-    let mut all_paths = plan.paths.clone().unwrap_or_default();
-    all_paths.extend(added_paths.iter().cloned());
-    let mut all_owed = plan.owed.clone().unwrap_or_default();
-    all_owed.extend(added_owed.iter().cloned());
     let planned = Planned {
         uses: plan.uses.clone(),
-        paths: all_paths,
+        paths: plan.paths.clone().unwrap_or_default(),
         considered: plan.considered.clone().unwrap_or_default(),
-        owed: all_owed,
+        owed: plan.owed.clone().unwrap_or_default(),
         lifecycle: plan.lifecycle.clone(),
         answers: plan.answers,
     };
     let kept = plan.records.clone().filter(|records| !records.is_empty());
     let (record, mut lines) = plan_lines(now, &path, &text, planned, kept);
     let amendment = format!("{path}/amendments/{}", stamp(now));
-    let owed_rules: Vec<String> = added_owed.iter().map(|each| each.rule.clone()).collect();
     let body = AmendmentRecord {
         tag: Tag::default(),
         plan: record.clone(),
         from: from.clone(),
-        paths: added_paths.clone(),
-        owed: added_owed,
         sections: filled.clone(),
     };
     lines.push(json!({"path": amendment, "expect": "none", "record": body}));
@@ -224,8 +189,6 @@ pub(crate) fn plan_amend(host: &dyn Host, input: &Value) -> Result<Value, Plugin
         path: record,
         amendment,
         from,
-        paths: added_paths,
-        owed: owed_rules,
         sections: filled,
     }))
 }
@@ -251,47 +214,6 @@ fn current(
             [("path", json!(path))],
         )
     })
-}
-
-/// The paths of `given` the plan does not hold, each once, refusing any
-/// outside the change's mount.
-fn new_paths(
-    path: &str,
-    mount: &str,
-    plan: &PlanRecord,
-    given: Vec<String>,
-) -> Result<Vec<String>, PluginError> {
-    check_mount(path, mount, &given)?;
-    let held = plan.paths.as_deref().unwrap_or_default();
-    let mut added: Vec<String> = Vec::new();
-    for each in given {
-        if !held.contains(&each) && !added.contains(&each) {
-            added.push(each);
-        }
-    }
-    Ok(added)
-}
-
-/// The entries of `given` whose rule the plan does not owe, each rule once,
-/// refusing one that reaches nothing or is no rule.
-fn new_owed(
-    host: &dyn Host,
-    path: &str,
-    plan: &PlanRecord,
-    given: Vec<Owed>,
-) -> Result<Vec<Owed>, PluginError> {
-    let held = plan.owed.as_deref().unwrap_or_default();
-    let mut added: Vec<Owed> = Vec::new();
-    for each in given {
-        let known = |listed: &[Owed]| listed.iter().any(|owed| owed.rule == each.rule);
-        if !known(held) && !known(&added) {
-            added.push(each);
-        }
-    }
-    if !added.is_empty() {
-        check_named(host, path, &[], &[], &added)?;
-    }
-    Ok(added)
 }
 
 /// `text` with each given section's text under its heading, and the
@@ -410,8 +332,6 @@ pub(crate) fn chain(
         found.push(Amended {
             path: logical,
             from: record.from,
-            paths: record.paths,
-            owed: record.owed.into_iter().map(|each| each.rule).collect(),
             sections: record.sections,
         });
     }

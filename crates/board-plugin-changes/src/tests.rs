@@ -116,10 +116,8 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
 /// The input properties of `owed` and `ask`.
 const OWED_AND_ASK: [&str; 4] = ["owed.limit", "ask.path", "ask.project", "ask.by"];
 /// The input properties of `plan-amend`.
-const PLAN_AMEND: [&str; 5] = [
+const PLAN_AMEND: [&str; 3] = [
     "plan-amend.path",
-    "plan-amend.paths",
-    "plan-amend.owed",
     "plan-amend.proves",
     "plan-amend.does_not_prove",
 ];

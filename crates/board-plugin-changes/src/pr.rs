@@ -371,33 +371,25 @@ fn added_section(observed: &Observed) -> Option<String> {
     ))
 }
 
-/// The section that lists what each amendment since the last full plan
-/// added to it, so the owner sees additions the plan's approval did not
+/// The section that lists the test headings each amendment since the last
+/// full plan filled, so the owner sees additions the plan's approval did not
 /// cover; none when there are none.
 fn amended_section(observed: &Observed) -> Option<String> {
     if observed.amended.is_empty() {
         return None;
     }
-    let listed = |kind: &str, items: &[String]| {
-        (!items.is_empty()).then(|| {
-            let shown: Vec<String> = items.iter().map(|item| quoted_text(item)).collect();
-            format!("the {kind} {}", shown.join(", "))
-        })
-    };
     let lines: Vec<String> = (observed.amended.iter())
         .map(|each| {
-            let headings: Vec<String> = (each.sections.iter())
-                .map(|section| section.heading().to_owned())
+            let headings: Vec<&str> = each
+                .sections
+                .iter()
+                .map(|section| section.heading())
                 .collect();
-            let added: Vec<String> = [
-                listed("paths", &each.paths),
-                listed("owed entries", &each.owed),
-                (!headings.is_empty()).then(|| format!("the sections {}", headings.join(", "))),
-            ]
-            .into_iter()
-            .flatten()
-            .collect();
-            format!("{} added {}", quoted_text(&each.path), added.join("; "))
+            format!(
+                "{} filled the sections {}",
+                quoted_text(&each.path),
+                headings.join(", ")
+            )
         })
         .collect();
     Some(format!(
