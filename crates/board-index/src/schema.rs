@@ -171,8 +171,8 @@ CREATE TABLE decided (
 -- Markdown link, the `target` it names, the `location` it resolved to,
 -- without its `board` when that is the decided board itself, and the `code`
 -- it failed with. A rowid table, as `bodies` is: a WITHOUT ROWID table
--- moves a row past about 4 KiB to overflow pages, which wasted half the
--- table on the owner's board.
+-- moves a row past about 4 KiB to overflow pages, which left 30 of its
+-- 77 MB unused on the owner's board.
 CREATE TABLE resolutions (
     key TEXT NOT NULL,
     path TEXT NOT NULL,
