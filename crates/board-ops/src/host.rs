@@ -74,6 +74,19 @@ pub trait Plugin: Sync {
     fn fills(&self) -> &'static [crate::Fill] {
         &[]
     }
+    /// What `board call` prints as text for `output`, which `capability`
+    /// returned, where `home` is the caller's home directory; with none,
+    /// it prints the output's canonical JSON. `--json` always gives the
+    /// output itself.
+    fn text(
+        &self,
+        capability: &CapabilityName,
+        output: &Value,
+        home: Option<&Path>,
+    ) -> Option<String> {
+        let _ = (capability, output, home);
+        None
+    }
 }
 
 /// What Board offers a built-in plugin while it runs a capability.
@@ -645,8 +658,18 @@ impl Host for Hosted<'_> {
 
     fn signing(&self) -> Signing {
         // With no personal board, the default setting: never the called
-        // board's own, which others may commit to.
-        self.plugins.signing.state(self.personal().as_ref())
+        // board's own, which others may commit to. A personal board the
+        // known boards file names but that does not open may hold signed
+        // records, so it reads as signing configured with the file gone,
+        // as `Asker::signing_now` refuses.
+        let named = self.plugins.known.is_some_and(KnownBoards::names_personal);
+        match self.personal() {
+            None if named => Signing {
+                state: board_model::SigningState::FileMissing,
+                setting: SigningSetting::default(),
+            },
+            personal => self.plugins.signing.state(personal.as_ref()),
+        }
     }
 
     fn signers_file(&self) -> String {

@@ -239,3 +239,43 @@ fn a_decide_through_the_personal_board_asks_as_the_plugin_for_that_board_and_one
     assert_eq!(there["board"], root(&owner.personal));
     assert_eq!(here["board"], root(&scenario));
 }
+
+/// Signing's state as a built-in plugin's host reads it, with `known` and
+/// `signing`.
+fn signing_state(known: Option<&KnownBoards>, signing: Signing) -> String {
+    let scenario = scenario();
+    let mut board = open(&scenario);
+    board.build_in(built(vec![answering(
+        "outer",
+        Box::new(|host| {
+            let state = format!("{:?}", host.signing().state);
+            Ok(json!({"count": 0, "effect": state}))
+        }),
+    )]));
+    let plugins = Plugins {
+        known,
+        signing,
+        ..Plugins::default()
+    };
+    let report = board.call(&target("outer.due"), br#"{"n": 1}"#, &plugins);
+    report.unwrap().output["effect"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[test]
+fn a_personal_board_the_known_file_names_that_does_not_open_reads_as_the_signers_file_missing() {
+    let owner = Owner::new();
+    let gone = json!({"personal": owner.personal.workdir().join("gone")}).to_string();
+    let gone = KnownBoards::parse(Path::new("/known/config.json"), Ok(gone.into_bytes())).unwrap();
+    assert_eq!(
+        signing_state(Some(&gone), owner.signing(false)),
+        "FileMissing"
+    );
+    assert_eq!(
+        signing_state(Some(&owner.known()), owner.signing(false)),
+        "Off"
+    );
+    assert_eq!(signing_state(None, owner.signing(false)), "Off");
+}
