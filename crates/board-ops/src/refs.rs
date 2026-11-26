@@ -16,6 +16,9 @@ use crate::check::CheckError;
 use crate::read::{ReadError, display, join, read_at};
 use crate::snapshot::{Need, Referenced, Snapshot};
 
+mod lookup;
+use lookup::Lookup;
+
 /// One reference the record or Markdown file makes.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Outgoing {
@@ -109,6 +112,9 @@ struct Answering<'a> {
     limit: usize,
     cache: Option<&'a Path>,
     snapshot: Option<Snapshot>,
+    /// Where each object's references sit in `snapshot`, built when the
+    /// first path that resolves is answered.
+    lookup: Option<Lookup>,
 }
 
 impl Board {
@@ -172,6 +178,7 @@ impl Board {
             limit: limit.unwrap_or(usize::MAX),
             cache,
             snapshot,
+            lookup: None,
         })
     }
 }
@@ -191,16 +198,18 @@ impl Answering<'_> {
             let index = self.board.index(self.cache).map_err(CheckError::from)?;
             self.board.snapshot(index, None, Need::Refs)?
         };
-        let mut report = answer(&snapshot, location, path);
+        let lookup = (self.lookup.take()).unwrap_or_else(|| Lookup::new(&snapshot));
+        let mut report = answer(&snapshot, &lookup, location, path);
         if !self.fields.is_empty() {
             for outgoing in report.from.iter_mut().take(self.limit) {
                 if let Some(location) = &outgoing.location {
-                    let fielded = self.fielded(&snapshot, location, &outgoing.target);
+                    let fielded = self.fielded(&snapshot, &lookup, location, &outgoing.target);
                     outgoing.fields = Some(fielded);
                 }
             }
         }
         self.snapshot = Some(snapshot);
+        self.lookup = Some(lookup);
         Ok(report)
     }
 
@@ -252,24 +261,13 @@ impl Answering<'_> {
     fn fielded(
         &mut self,
         snapshot: &Snapshot,
+        lookup: &Lookup,
         location: &Location,
         target: &LogicalPath,
     ) -> Fielded {
-        let degraded = snapshot
-            .report
-            .entries
-            .iter()
-            .find_map(|entry| match entry.status {
-                Status::Degraded(code)
-                    if entry.source == location.board.source && entry.path == location.path =>
-                {
-                    Some(code)
-                }
-                _ => None,
-            });
-        let walked = (snapshot.walked.iter())
-            .find(|(source, _)| *source == location.board.source)
-            .and_then(|(_, entries)| entries.iter().find(|entry| entry.path == location.path))
+        let (source, physical) = (&location.board.source, location.path.as_str());
+        let degraded = lookup.degraded(snapshot, source, physical);
+        let walked = (lookup.walked(snapshot, source, physical))
             .map(|entry| entry.blob)
             .or_else(|| {
                 let (_, key) =
@@ -317,15 +315,16 @@ impl Answering<'_> {
 }
 
 /// The references from and to the object at `location`, which `path`
-/// resolved to, as `snapshot` decided them.
-fn answer(snapshot: &Snapshot, location: Location, path: &LogicalPath) -> RefsReport {
-    let same = |source: &Source, physical: &str| {
-        *source == location.board.source && physical == location.path
-    };
-    let from = snapshot
-        .references
-        .iter()
-        .filter(|referenced| same(&referenced.source, &referenced.path))
+/// resolved to, as `snapshot` decided them and `lookup` finds them.
+fn answer(
+    snapshot: &Snapshot,
+    lookup: &Lookup,
+    location: Location,
+    path: &LogicalPath,
+) -> RefsReport {
+    let (source, physical) = (&location.board.source, location.path.as_str());
+    let from = (lookup.from(source, physical).iter())
+        .map(|n| &snapshot.references[*n])
         .map(|referenced| Outgoing {
             pointer: referenced.reached.pointer.clone(),
             link: referenced.reached.link,
@@ -336,13 +335,8 @@ fn answer(snapshot: &Snapshot, location: Location, path: &LogicalPath) -> RefsRe
         })
         .collect();
     let mut to: BTreeMap<(String, String), Incoming> = BTreeMap::new();
-    for referenced in snapshot.references.iter().filter(|referenced| {
-        referenced
-            .reached
-            .location
-            .as_ref()
-            .is_some_and(|reached| same(&reached.board.source, &reached.path))
-    }) {
+    for n in lookup.to(source, physical) {
+        let referenced = &snapshot.references[*n];
         let Referenced {
             source,
             path,

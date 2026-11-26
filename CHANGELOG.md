@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `board tasks available` does not fetch a notes clone that was fetched
+  less than a minute ago and already holds what that fetch brought, so a
+  sweep of calls in a row fetches once. A task pushed from elsewhere in that
+  minute is listed by the first call after it. `board refs`, and each plugin
+  call that asks `host.refs`, finds each path's references by a lookup built
+  once per run in place of a scan of every reference for each path. The
+  answers are the same as before.
 - A warm `board refs`, and each plugin call that asks `host.refs`, reads the
   references of each source the index keeps a decision for, with where they
   resolved, from a new `resolutions` table, and decides only the sources

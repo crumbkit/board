@@ -88,7 +88,7 @@ impl Repository {
 
     /// Whether `commit` has `ancestor` in its history. A history that
     /// cannot be read (a pruned `ancestor`) does not.
-    fn contains(&self, commit: ObjectId, ancestor: ObjectId) -> bool {
+    pub(super) fn contains(&self, commit: ObjectId, ancestor: ObjectId) -> bool {
         let ids = (
             gix::ObjectId::try_from(commit.as_bytes()),
             gix::ObjectId::try_from(ancestor.as_bytes()),

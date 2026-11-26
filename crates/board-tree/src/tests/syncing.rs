@@ -564,3 +564,110 @@ fn a_branch_another_clone_creates_after_the_check_is_merged_on_the_next_round() 
     assert_eq!(head.parents, vec![ours, theirs]);
     assert_eq!(remote.head().unwrap().id, head.id);
 }
+
+/// How long [`Repository::sync_unless_fetched`] counts a fetch as fresh in
+/// these tests.
+const WITHIN: Duration = Duration::from_secs(60);
+
+/// A clone of a remote with one commit, synced once so its `FETCH_HEAD`
+/// is fresh, and the remote's next commit, which the clone has not fetched.
+fn fetched_then_moved() -> (Scenario, Scenario, ObjectId, ObjectId) {
+    let remote = Scenario::new();
+    let first = remote.commit(&[("a.json", "{}")]);
+    let clone = Scenario::clone_of(&remote);
+    clone
+        .open()
+        .sync(false, Deadline::after(GIT_DEADLINE), Duration::ZERO)
+        .unwrap();
+    let second = remote.commit(&[("a.json", "{}"), ("b.json", "[]")]);
+    (remote, clone, first, second)
+}
+
+fn unless_fetched(clone: &Scenario, push: bool, within: Duration) -> Synced {
+    clone
+        .open()
+        .sync_unless_fetched(push, within, Deadline::after(GIT_DEADLINE), Duration::ZERO)
+        .unwrap()
+}
+
+#[test]
+fn a_sync_within_the_window_after_a_fetch_runs_no_fetch_and_one_with_a_zero_window_fetches() {
+    let (_remote, clone, first, second) = fetched_then_moved();
+    let skipped = unless_fetched(&clone, false, WITHIN);
+    assert_eq!(
+        (skipped.fetched, skipped.old, skipped.new, skipped.attempts),
+        (first, Some(first), first, 0),
+        "{skipped:?}"
+    );
+    assert_eq!(clone.head().unwrap().id, first);
+    let synced = unless_fetched(&clone, false, Duration::ZERO);
+    assert_eq!((synced.new, synced.attempts), (second, 1), "{synced:?}");
+    assert_eq!(clone.head().unwrap().id, second);
+}
+
+#[test]
+fn a_clone_never_fetched_or_whose_last_fetch_failed_syncs_in_full() {
+    let remote = Scenario::new();
+    remote.commit(&[("a.json", "{}")]);
+    let clone = Scenario::clone_of(&remote);
+    let second = remote.commit(&[("a.json", "{}"), ("b.json", "[]")]);
+    assert!(!clone.workdir().join(".git/FETCH_HEAD").exists());
+    assert_eq!(unless_fetched(&clone, false, WITHIN).new, second);
+    // git empties FETCH_HEAD when a fetch fails or is stopped.
+    clone.write(".git/FETCH_HEAD", Item::Fresh(""));
+    let third = remote.commit(&[("a.json", "{}"), ("b.json", "[]"), ("c.json", "[]")]);
+    assert_eq!(unless_fetched(&clone, false, WITHIN).new, third);
+}
+
+/// `FETCH_HEAD` rewritten with the same bytes and dated an hour ago, or
+/// an hour ahead when `ahead`, as [`Item::File`] and [`Item::Ahead`] date
+/// a file.
+fn redated(clone: &Scenario, ahead: bool) {
+    let path = clone.workdir().join(".git/FETCH_HEAD");
+    let text = std::fs::read_to_string(path).unwrap();
+    let item = if ahead {
+        Item::Ahead(&text)
+    } else {
+        Item::File(&text)
+    };
+    clone.write(".git/FETCH_HEAD", item);
+}
+
+#[test]
+fn a_fetch_older_than_the_window_or_dated_ahead_syncs_in_full_and_a_younger_one_is_skipped() {
+    let (remote, clone, first, second) = fetched_then_moved();
+    assert_eq!(unless_fetched(&clone, false, WITHIN).new, first);
+    redated(&clone, false);
+    assert_eq!(unless_fetched(&clone, false, WITHIN).new, second);
+    let third = remote.commit(&[("a.json", "{}"), ("b.json", "[]"), ("c.json", "[]")]);
+    redated(&clone, true);
+    assert_eq!(unless_fetched(&clone, false, WITHIN).new, third);
+}
+
+#[test]
+fn a_fetched_commit_head_lacks_is_integrated_within_the_window_and_one_it_holds_is_not_fetched_again()
+ {
+    let (remote, clone, first, _) = fetched_then_moved();
+    // A fetch by another program leaves the tracking ref ahead of HEAD.
+    let repository = clone.open();
+    let upstream = repository.upstream().unwrap();
+    let deadline = Deadline::after(GIT_DEADLINE);
+    crate::transport::fetch(clone.workdir(), &upstream, &repository.ssh(), deadline).unwrap();
+    let third = remote.commit(&[("a.json", "{}"), ("b.json", "[]"), ("c.json", "[]")]);
+    let synced = unless_fetched(&clone, false, WITHIN);
+    assert_eq!(
+        (synced.old, synced.new, synced.attempts),
+        (Some(first), third, 1),
+        "{synced:?}"
+    );
+    remote.commit(&[("d.json", "[]")]);
+    assert_eq!(unless_fetched(&clone, false, WITHIN).new, third);
+}
+
+#[test]
+fn a_sync_that_pushes_always_fetches_and_one_that_does_not_skips_within_the_window() {
+    let (_remote, clone, first, second) = fetched_then_moved();
+    assert_eq!(unless_fetched(&clone, false, WITHIN).new, first);
+    let pushed = unless_fetched(&clone, true, WITHIN);
+    assert_eq!((pushed.new, pushed.attempts), (second, 1), "{pushed:?}");
+}
