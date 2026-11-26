@@ -4,6 +4,7 @@
 //! is ever fetched.
 
 mod references;
+mod unexpected;
 
 use board_model::{Code, DISPLAY_NAME, Fields, RecordType};
 use jsonschema::{
@@ -12,6 +13,7 @@ use jsonschema::{
 use serde_json::Value;
 
 pub use crate::references::Reference;
+pub use crate::unexpected::Unexpected;
 
 /// The only draft Board reads.
 const DRAFT_2020_12: &str = "https://json-schema.org/draft/2020-12/schema";

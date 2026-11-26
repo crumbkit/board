@@ -69,6 +69,16 @@ impl<R> Default for Tag<R> {
     }
 }
 
+// By hand, since a derive would ask `R: Clone` of a record type that a tag
+// only names.
+impl<R> Clone for Tag<R> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<R> Copy for Tag<R> {}
+
 impl<R: Record> Serialize for Tag<R> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(R::TYPE)
@@ -396,6 +406,18 @@ patterned! {
     SessionId = "^local_[0-9a-f-]+$"
 }
 
+/// Whether `text` is a [`SessionId`]: `local_`, then one or more lowercase
+/// hex digits and `-`, as its pattern says.
+#[must_use]
+pub fn session_id(text: &str) -> bool {
+    text.strip_prefix("local_").is_some_and(|id| {
+        !id.is_empty()
+            && id
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f' | b'-'))
+    })
+}
+
 patterned! {
     /// A lowercase name of letters and digits in words joined by `-`, such
     /// as `claude-code`.
@@ -418,6 +440,20 @@ patterned! {
     /// A git commit named by its id or by at least 7 of its leading
     /// lowercase hex digits, as `git rev-parse --short` abbreviates it.
     CommitName = "^[0-9a-f]{7,40}$"
+}
+
+patterned! {
+    /// A code Board or a plugin gives for why it refused or degraded
+    /// something: the owner, an area and a reason joined by `::`, such as
+    /// `board::ref::dangling` or `rules::rule::degraded`. The owner is
+    /// `board` or a plugin's name; the area and reason are snake case.
+    CodeName = "^[a-z0-9-]+::[a-z0-9_]+::[a-z0-9_]+$"
+}
+
+patterned! {
+    /// A version as numbers separated by dots, such as `1.99.1` or
+    /// `0.1`, with no prefix or suffix.
+    DottedVersion = "^[0-9]+(\\.[0-9]+)*$"
 }
 
 patterned! {
@@ -542,11 +578,7 @@ impl Actor {
             return None;
         }
         let session = (text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-')))
-            .find(|word| {
-                word.strip_prefix("local_").is_some_and(|id| {
-                    !id.is_empty() && id.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f' | '-'))
-                })
-            })
+            .find(|word| session_id(word))
             .map(|session| session.trim_end_matches('-'));
         let words: Vec<String> = (text.split(|c: char| !c.is_ascii_alphanumeric()))
             .map(str::to_ascii_lowercase)
@@ -615,8 +647,10 @@ pub fn registry() -> Map<String, Value> {
     let mut generator = SchemaGenerator::default();
     Map::from_iter([
         object::<Actor>(),
+        entry::<CodeName>(&mut generator),
         entry::<CommitName>(&mut generator),
         entry::<Date>(&mut generator),
+        entry::<DottedVersion>(&mut generator),
         entry::<Glob>(&mut generator),
         entry::<LogicalGlob>(&mut generator),
         entry::<ObjectId>(&mut generator),

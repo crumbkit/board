@@ -2,7 +2,7 @@
 //! records attached to its plans, its current plan and the day of the last
 //! sync.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 
 use board_model::parse_json;
@@ -58,6 +58,19 @@ impl Referenced {
         (self.records.iter())
             .find(|(each, _)| each == path)
             .map(|(_, found)| found)
+    }
+
+    /// The part of these records that `refs` name, in their order, each
+    /// once, as [`referenced`] reads `refs` alone when these came from a
+    /// read of every reference in `refs`.
+    pub(crate) fn only(&self, refs: &[String]) -> Self {
+        in_order(refs, |each| {
+            self.get(each).ok_or_else(|| {
+                let code = (self.unreadable.iter())
+                    .find_map(|(seen, code)| (seen == each).then_some(code.as_str()));
+                (code, self.unreadable_types.get(each))
+            })
+        })
     }
 
     /// The referenced records of `record_type`, by path, in the order the
@@ -269,21 +282,55 @@ fn from_body<R: serde::de::DeserializeOwned>(value: Option<&Value>) -> Option<R>
 /// The records attached to the change at `path`: those each of its plans
 /// lists in `records`, oldest plan first, each once.
 pub fn attached(host: &dyn Host, path: &str) -> Result<Vec<String>, PluginError> {
-    let prefix = format!("{path}/plans/");
+    Ok(attached_each(host, &[path])?
+        .remove(path)
+        .unwrap_or_default())
+}
+
+/// The records attached to each change at `paths`, by path, as [`attached`]
+/// gives them for one, in one query. A change with no plan that lists a
+/// record has no entry.
+pub(crate) fn attached_each(
+    host: &dyn Host,
+    paths: &[&str],
+) -> Result<HashMap<String, Vec<String>>, PluginError> {
+    let prefixes: Vec<(&str, String)> = (paths.iter())
+        .map(|path| (*path, format!("{path}/plans/")))
+        .collect();
+    let mut found: HashMap<String, Vec<String>> = HashMap::new();
+    if prefixes.is_empty() {
+        return Ok(found);
+    }
+    let under: Vec<String> = (prefixes.iter())
+        .map(|(_, prefix)| {
+            format!(
+                "substr(logical, 1, {}) = {}",
+                prefix.chars().count(),
+                literal(prefix)
+            )
+        })
+        .collect();
     let sql = format!(
-        "SELECT body FROM records WHERE type = {} AND substr(logical, 1, {}) = {} AND ({}) \
-         ORDER BY logical",
+        "SELECT logical, body FROM records WHERE type = {} AND ({}) AND ({}) ORDER BY logical",
         literal(PlanRecord::TYPE),
-        prefix.chars().count(),
-        literal(&prefix),
-        sound()
+        sound(),
+        under.join(" OR ")
     );
-    let mut found: Vec<String> = Vec::new();
     for row in rows(host, &sql)? {
-        let plan: Option<PlanRecord> = from_body(row.first());
-        for each in plan.and_then(|plan| plan.records).unwrap_or_default() {
-            if !found.contains(&each) {
-                found.push(each);
+        let Some(logical) = text(row.first()) else {
+            continue;
+        };
+        let plan: Option<PlanRecord> = from_body(row.get(1));
+        let records = plan.and_then(|plan| plan.records).unwrap_or_default();
+        for (path, prefix) in &prefixes {
+            if !logical.starts_with(prefix.as_str()) || records.is_empty() {
+                continue;
+            }
+            let listed = found.entry((*path).to_owned()).or_default();
+            for each in &records {
+                if !listed.contains(each) {
+                    listed.push(each.clone());
+                }
             }
         }
     }
@@ -296,17 +343,39 @@ pub(crate) fn plan_at(
     host: &dyn Host,
     path: &str,
 ) -> Result<Option<(PlanRecord, String)>, PluginError> {
+    // The query reads only `path`, so its one entry is the plan there.
+    Ok(plans_at(host, &[path])?.into_values().next())
+}
+
+/// The plan record at each of `paths` and its blob, by path, as [`plan_at`]
+/// gives one, in one query. A path with no valid plan has no entry.
+pub(crate) fn plans_at(
+    host: &dyn Host,
+    paths: &[&str],
+) -> Result<HashMap<String, (PlanRecord, String)>, PluginError> {
+    let listed: Vec<String> = paths.iter().map(|path| literal(path)).collect();
+    if listed.is_empty() {
+        return Ok(HashMap::new());
+    }
     let sql = format!(
-        "SELECT blob, body FROM records WHERE logical = {} AND type = {} AND ({})",
-        literal(path),
+        "SELECT logical, body, blob FROM records WHERE type = {} AND ({}) AND logical IN ({})",
         literal(PlanRecord::TYPE),
-        sound()
+        sound(),
+        listed.join(", ")
     );
-    let found = rows(host, &sql)?;
-    Ok(found.first().and_then(|row| {
-        let record = from_body(row.get(1))?;
-        Some((record, text(row.first()).unwrap_or_default().to_owned()))
-    }))
+    let mut first: HashMap<String, Option<(PlanRecord, String)>> = HashMap::new();
+    for row in rows(host, &sql)? {
+        let Some(path) = text(row.first()) else {
+            continue;
+        };
+        first.entry(path.to_owned()).or_insert_with(|| {
+            let record = from_body(row.get(1))?;
+            Some((record, text(row.get(2)).unwrap_or_default().to_owned()))
+        });
+    }
+    Ok((first.into_iter())
+        .filter_map(|(path, plan)| Some((path, plan?)))
+        .collect())
 }
 
 /// A pull request as its github/pull/v1 record names it: owner, repository,
@@ -513,6 +582,20 @@ fn gathered(
             }
         }
     }
+    Ok(in_order(refs, |each| {
+        records
+            .get(each)
+            .ok_or_else(|| (codes.get(each).map(String::as_str), types.get(each)))
+    }))
+}
+
+/// `refs` in their order, each once, with what `lookup` gives of each: the
+/// record Board reads, or else the code that says why it is left out, which
+/// is [`NOT_FOUND`] when there is none, and its type when it has one.
+fn in_order<'a>(
+    refs: &[String],
+    lookup: impl Fn(&str) -> Result<&'a Found, (Option<&'a str>, Option<&'a String>)>,
+) -> Referenced {
     let mut found = Referenced::default();
     for each in refs {
         if found.records.iter().any(|(seen, _)| seen == each)
@@ -520,17 +603,19 @@ fn gathered(
         {
             continue;
         }
-        if let Some(record) = records.get(each) {
-            found.records.push((each.clone(), record.clone()));
-        } else {
-            let code = codes.get(each).map_or(NOT_FOUND, String::as_str);
-            found.unreadable.push((each.clone(), code.to_owned()));
-            if let Some(kind) = types.get(each) {
-                found.unreadable_types.insert(each.clone(), kind.clone());
+        match lookup(each) {
+            Ok(record) => found.records.push((each.clone(), record.clone())),
+            Err((code, kind)) => {
+                found
+                    .unreadable
+                    .push((each.clone(), code.unwrap_or(NOT_FOUND).to_owned()));
+                if let Some(kind) = kind {
+                    found.unreadable_types.insert(each.clone(), kind.clone());
+                }
             }
         }
     }
-    Ok(found)
+    found
 }
 
 /// The UTC day the last writing sync ran, and, when that is before today or

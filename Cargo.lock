@@ -117,7 +117,7 @@ dependencies = [
 
 [[package]]
 name = "board-cli"
-version = "0.1.1"
+version = "0.1.3"
 dependencies = [
  "board-model",
  "board-ops",
@@ -152,6 +152,8 @@ dependencies = [
  "crumbkit-durable",
  "proptest",
  "rusqlite",
+ "rustix",
+ "serde",
  "serde_json",
  "sha2",
  "tempfile",
@@ -454,6 +456,7 @@ dependencies = [
  "board-ops",
  "board-plugin",
  "board-plugin-changes",
+ "board-scenario",
  "schemars",
  "serde",
  "serde_json",

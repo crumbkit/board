@@ -39,15 +39,14 @@ in.
 3. Write the report, a `review/report/v1`, whenever a review ran outside
    `review.run`, including one that found nothing:
 
-       echo '{"$type": "review/report/v1", "brief": "/reviews/<id>/brief", "range": "<base>..<head>", "patch_ids": ["<patch id>"], "findings": [{"severity": "high", "text": "<what is wrong>", "file": "<path>", "line": 12}], "verdict": "changes", "by": {"program": "claude-code"}}' | board -C <board> put /reviews/<id>/report
+       echo '{"$type": "review/report/v1", "brief": "/reviews/<id>/brief", "range": "<base>..<head>", "findings": [{"severity": "high", "text": "<what is wrong>", "file": "<path>", "line": 12}], "verdict": "changes", "by": {"program": "claude-code"}}' | board -C <board> put /reviews/<id>/report
 
    Each finding has `severity` (`high`, `medium` or `low`) and `text`, and
    `file` and `line` when it is about one place. `verdict` is `approve`,
-   `changes` or `comment`. `by` names the reviewer. `patch_ids` lists the
-   patch id of each commit in the range that has one, oldest first. Run
-   this in the repository to print them:
-
-       for c in $(git rev-list --reverse <base>..<head>); do GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git diff-tree -p --no-renames --no-ext-diff --no-textconv --full-index "$c" | GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git patch-id --verbatim | cut -d' ' -f1; done
+   `changes` or `comment`. `by` names the reviewer. Run the put in the
+   repository that holds the range's commits, with full commit ids in
+   `range`: `board put` fills `patch_ids`, the patch id of each commit in
+   the range that has one, oldest first, as `review.run` records them.
 
 4. When the review belongs to a change, attach the report:
 

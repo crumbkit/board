@@ -59,13 +59,17 @@ fn at_path(host: &dyn Host, path: &str) -> Result<Option<Flow>, PluginError> {
         literal(path)
     );
     let found = rows(host, &sql)?;
-    let Some(row) = found.first() else {
-        return Ok(None);
-    };
+    found.first().map(|row| flow_in(path, row)).transpose()
+}
+
+/// The flow a row of `entries` joined to its body holds, its type, code
+/// and body in order, at `path`. Anything that is not a flow Board reads is
+/// `changes::flow::unreadable`.
+fn flow_in(path: &str, row: &[Value]) -> Result<Flow, PluginError> {
     let flow = (text(row.first()) == Some(Flow::TYPE) && readable(row.get(1)))
         .then(|| serde_json::from_value(Value::Object(body(row.get(2)))).ok())
         .flatten();
-    flow.map(Some).ok_or_else(|| {
+    flow.ok_or_else(|| {
         refusal(
             "changes::flow::unreadable",
             format!(
@@ -75,6 +79,35 @@ fn at_path(host: &dyn Host, path: &str) -> Result<Option<Flow>, PluginError> {
             [("path", json!(path))],
         )
     })
+}
+
+/// The flow at each of `paths` that holds something, by path, read in one
+/// query, as [`at_path`] reads one.
+pub(crate) fn at_paths<'a>(
+    host: &dyn Host,
+    paths: impl IntoIterator<Item = &'a str>,
+) -> Result<HashMap<String, Result<Flow, PluginError>>, PluginError> {
+    let listed: Vec<String> = paths.into_iter().map(literal).collect();
+    let mut found = HashMap::new();
+    if listed.is_empty() {
+        return Ok(found);
+    }
+    let sql = format!(
+        "SELECT e.logical, e.type, e.code, b.body FROM entries AS e LEFT JOIN bodies AS b ON \
+         b.blob = e.blob WHERE e.logical IN ({})",
+        listed.join(", ")
+    );
+    for row in rows(host, &sql)? {
+        let Some((path, row)) = row.split_first() else {
+            continue;
+        };
+        if let Some(path) = text(Some(path)) {
+            found
+                .entry(path.to_owned())
+                .or_insert_with(|| flow_in(path, row));
+        }
+    }
+    Ok(found)
 }
 
 /// The flow called `name`: the board's own at `/flows/<name>`, else the
@@ -237,16 +270,22 @@ pub(crate) fn of_change(
     let Some(copy) = &change.flow else {
         return Ok(None);
     };
-    at_path(host, copy)?.map(Some).ok_or_else(|| {
-        refusal(
-            "changes::flow::unreadable",
-            format!(
-                "the change at {path} names its flow at {copy}, and nothing is there; restore it \
-                 with `board changes reflow --path {path} --flow {DEFAULT}`"
-            ),
-            [("path", json!(copy))],
-        )
-    })
+    at_path(host, copy)?
+        .map(Some)
+        .ok_or_else(|| gone(path, copy))
+}
+
+/// `changes::flow::unreadable` for the change at `path`, whose flow at
+/// `copy` holds nothing.
+pub(crate) fn gone(path: &str, copy: &str) -> PluginError {
+    refusal(
+        "changes::flow::unreadable",
+        format!(
+            "the change at {path} names its flow at {copy}, and nothing is there; restore it with \
+             `board changes reflow --path {path} --flow {DEFAULT}`"
+        ),
+        [("path", json!(copy))],
+    )
 }
 
 /// The flow of each change a walk lists, read once for each flow path

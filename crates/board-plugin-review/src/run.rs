@@ -125,14 +125,12 @@ pub(crate) fn run(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
         // A base that moved on after the branch point would show its own
         // commits as reverted.
         let base = repository.merge_base(&repository.commit(base)?, &head)?;
-        let commits = repository.commits(&base, &head)?;
-        let ids = repository.patch_ids(&commits)?;
+        let kept = repository.covered(&base, &head)?;
         let shown = format!(
             "Range: {base}..{head}\n\n## Diff\n\n{}",
             repository.diff(&base, &head)?
         );
-        let kept = (commits.iter()).filter_map(|commit| ids.get(commit).cloned());
-        covered = Some((format!("{base}..{head}"), kept.collect::<Vec<_>>()));
+        covered = Some((format!("{base}..{head}"), kept));
         prompt(
             &path,
             &brief,

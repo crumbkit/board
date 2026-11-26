@@ -170,6 +170,7 @@ impl Board {
             canonical: canonical.to_vec(),
             target,
             admitted,
+            mends: crate::Mends::default(),
         };
         self.write_all(lock, &[prepared], &[], message)
             .map_err(|failure| match failure {

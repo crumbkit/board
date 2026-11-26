@@ -206,3 +206,41 @@ fn a_note_left_on_the_thread_before_a_run_is_not_printed_by_it_and_the_runs_own_
     let put = undated(scenario.workdir(), &["put", "/notes/b.md"], b"hi\n");
     assert_eq!(text(&put.stderr).matches("warning: ").count(), 1);
 }
+
+#[test]
+fn a_put_that_could_not_make_a_fill_warns_why_and_one_that_made_every_fill_does_not() {
+    let mended = |unfilled: Vec<String>| board_ops::PutReport {
+        writes: Vec::new(),
+        removed: Vec::new(),
+        absent: Vec::new(),
+        commit: None,
+        mended: vec![board_ops::Mended {
+            path: "/reviews/r/report".parse().unwrap(),
+            mends: board_ops::Mends {
+                line: Some(2),
+                filled: Vec::new(),
+                dropped: Vec::new(),
+                unfilled,
+            },
+        }],
+    };
+    let why = "/patch_ids: 'c' names no commit in /checkout".to_owned();
+    let output = render::put(
+        Printer::of(false, 1 << 20, &["put"]),
+        &mended(vec![why]),
+        None,
+    );
+    assert!(
+        text(&output.stderr).contains(
+            "warning: line 2, /reviews/r/report: could not fill /patch_ids: 'c' names no commit in /checkout"
+        ),
+        "{}",
+        text(&output.stderr)
+    );
+    let output = render::put(
+        Printer::of(false, 1 << 20, &["put"]),
+        &mended(Vec::new()),
+        None,
+    );
+    assert!(!text(&output.stderr).contains("could not fill"));
+}

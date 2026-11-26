@@ -26,24 +26,24 @@ const RUN_UNREADABLE: &str = "rules::zero::run_unreadable";
 /// `unreadable`, and is left out otherwise.
 #[derive(Serialize, JsonSchema)]
 pub(crate) struct Zeroed {
-    rule: String,
-    requirement: String,
-    suite: String,
-    run: Option<String>,
-    age_s: Option<u64>,
-    measures: Vec<Measured>,
-    state: State,
+    pub(crate) rule: String,
+    pub(crate) requirement: String,
+    pub(crate) suite: String,
+    pub(crate) run: Option<String>,
+    pub(crate) age_s: Option<u64>,
+    pub(crate) measures: Vec<Measured>,
+    pub(crate) state: State,
     #[serde(skip_serializing_if = "Option::is_none")]
-    code: Option<String>,
-    kind: Kind,
-    show: ShowAt,
+    pub(crate) code: Option<String>,
+    pub(crate) kind: Kind,
+    pub(crate) show: ShowAt,
     /// How to close an obligation; left out for a standing control.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<Prose>")]
-    close: Option<String>,
+    pub(crate) close: Option<String>,
     /// What left an obligation owed; left out when it names nothing.
     #[serde(skip_serializing_if = "Option::is_none")]
-    owed_by: Option<String>,
+    pub(crate) owed_by: Option<String>,
 }
 
 impl Zeroed {
@@ -58,8 +58,8 @@ impl Zeroed {
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Measured {
-    name: String,
-    value: Option<Value>,
+    pub(crate) name: String,
+    pub(crate) value: Option<Value>,
 }
 
 // A zero rule's state. No doc comment, which would describe the inlined

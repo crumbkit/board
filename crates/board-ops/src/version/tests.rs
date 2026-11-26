@@ -531,3 +531,14 @@ fn a_put_through_a_mount_whose_config_is_invalid_is_refused_as_invalid() {
     let error = put_through(&root, "0.0.0", None).unwrap_err();
     assert_eq!(error.code(), Code::ConfigInvalid, "{error}");
 }
+
+#[test]
+fn the_running_release_is_three_numbers_without_a_suffix() {
+    let release = super::running_release();
+    let parts: Vec<&str> = release.split('.').collect();
+    assert_eq!(parts.len(), 3, "{release}");
+    assert!(
+        parts.iter().all(|part| part.parse::<u64>().is_ok()),
+        "{release}"
+    );
+}
