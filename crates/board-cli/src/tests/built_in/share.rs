@@ -421,8 +421,7 @@ fn a_shared_path_holding_other_uncommitted_bytes_is_refused_naming_it_and_admitt
 }
 
 #[test]
-fn the_documented_command_line_runs_with_flags_named_after_the_input_and_a_dashed_flag_is_refused()
-{
+fn the_documented_command_line_runs_with_flags_named_after_the_input_and_either_separator() {
     let boards = boards();
     boards.standard();
     let before = boards.head().id;
@@ -446,19 +445,18 @@ fn the_documented_command_line_runs_with_flags_named_after_the_input_and_a_dashe
         json(&bare)["data"]["output"]["next"],
         boards.next("share to --path /evals/x --to /team --yes --local_attachments")
     );
-    for wrong in ["--local-attachments", "--allow_uncopied"] {
-        let dashed = [&call[..], &[wrong]].concat();
-        let arguments: Vec<&str> = ["--json", "call", "share.to"]
-            .into_iter()
-            .chain(yes(&dashed))
-            .collect();
-        let refused = boards.personal.run(&arguments);
-        assert_eq!(
-            (refused.code, json(&refused)["code"].clone()),
-            (2, json!("board::cli::usage")),
-            "{wrong}"
-        );
-    }
+    let respelled = [&call[..], &["--local-attachments", "--allow_uncopied"]].concat();
+    assert_eq!(boards.preview(&respelled), preview);
+    let unknown = [&call[..], &["--local-attachment"]].concat();
+    let arguments: Vec<&str> = ["--json", "call", "share.to"]
+        .into_iter()
+        .chain(yes(&unknown))
+        .collect();
+    let refused = boards.personal.run(&arguments);
+    assert_eq!(
+        (refused.code, json(&refused)["code"].clone()),
+        (2, json!("board::cli::usage"))
+    );
     assert_eq!(boards.head().id, before);
     let arguments: Vec<&str> = ["--json", "share", "to"]
         .into_iter()

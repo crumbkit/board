@@ -9,6 +9,7 @@ mod directories;
 mod mark;
 mod open;
 mod query;
+mod resolutions;
 mod schema;
 mod server;
 mod slots;
@@ -21,6 +22,7 @@ pub use crate::decisions::KeptRow;
 pub use crate::mark::{Unmarked, take_unmarked};
 pub use crate::open::{Fallback, Index, IndexError, Storage, location};
 pub use crate::query::{Budget, Rows};
+pub use crate::resolutions::{KeptReferences, Reached};
 pub use crate::schema::INDEX_VERSION;
 pub use crate::server::{
     empty_directory, read_server, remove_opener, remove_server, server_file, write_opener,

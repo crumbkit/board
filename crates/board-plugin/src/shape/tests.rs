@@ -840,3 +840,18 @@ fn a_dotted_version_of_numbers_is_admitted_and_one_with_a_suffix_or_an_empty_par
         schema.validate(&version(admitted)).unwrap();
     }
 }
+
+#[test]
+fn a_session_id_is_local_then_lowercase_hex_and_dashes() {
+    for (text, admitted) in [
+        ("local_84ccdcef-4c52", true),
+        ("local_9", true),
+        ("local_", false),
+        ("Local_9", false),
+        ("local_9G", false),
+        ("cse_9ba4", false),
+        ("bogus", false),
+    ] {
+        assert_eq!(session_id(text), admitted, "{text}");
+    }
+}

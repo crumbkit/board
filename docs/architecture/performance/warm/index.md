@@ -161,20 +161,20 @@ alter, and the states of each.
 
 | From | Event | To | Owner |
 | --- | --- | --- | --- |
-| absent | a run decides the whole tree and the rows may be kept | holds the key, rows and inputs | board-ops snapshot |
-| holds key K | a run computes K | rows read; nothing written | board-ops snapshot |
-| holds key K | a run computes K2, and at most one entry in 20 is decided | changed rows and inputs replaced; holds K2; a prune counted | board-ops snapshot |
-| holds key K | a run computes K2, and the frame differs or more is decided | every row and input replaced; holds K2; a prune counted | board-ops snapshot |
+| absent | a run decides the whole tree and the rows may be kept | holds the key, rows, references and inputs | board-ops snapshot |
+| holds key K | a run computes K | rows read, and for `refs` references; nothing written | board-ops snapshot |
+| holds key K | a run computes K2, and at most one entry in 20 is decided | changed rows, references and inputs replaced; holds K2; a prune counted | board-ops snapshot |
+| holds key K | a run computes K2, and the frame differs or more is decided | every row, reference and input replaced; holds K2; a prune counted | board-ops snapshot |
 | holds key K | the new rows may not be kept | the slot keeps key K, its rows and its inputs; no prune counted | board-ops snapshot |
-| holds key K | `refs`, or a scoped run | not read and not written | board-ops snapshot |
-| any | a prune in a run that did not reach the slot | slot, rows and inputs deleted | board-index prune |
+| holds key K | a scoped run | not read and not written | board-ops snapshot |
+| any | a prune in a run that did not reach the slot | slot, rows, references and inputs deleted | board-index prune |
 
 ## Crash points
 
 - A run that dies during the walk has written nothing. The next run lists
   the directories whose stat changed and decides again under the new key.
 - The listings, the working-tree rows, the facts, the probes, the pointer
-  lists, the slot with its rows and inputs, and the prune count commit in
+  lists, the slot with its rows, references and inputs, and the prune count commit in
   one SQLite transaction. A run that dies or fills the disk while
   writing rolls all of them back, and the next run finds the old state.
 - A directory changed while it is listed has a stat, read before the

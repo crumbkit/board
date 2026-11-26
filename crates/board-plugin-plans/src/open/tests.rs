@@ -87,6 +87,7 @@ impl Host for Answering {
                 removed: Vec::new(),
                 absent: Vec::new(),
                 commit: None,
+                mended: Vec::new(),
             });
         };
         let text = (lines.iter().map(Value::to_string))

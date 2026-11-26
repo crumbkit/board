@@ -5,11 +5,11 @@
 use std::fmt;
 use std::fmt::Write as _;
 
-use board_model::{Code, Fields, Location, LogicalPath, Mount, Refusal};
+use board_model::{Code, Fields, Location, LogicalPath, Refusal};
 use board_ops::MAX_LIMIT;
 use board_ops::{
     Budget, CheckReport, Checked, Detail, EnableReport, Fallback, Listed, LsReport,
-    MountUpdateReport, PutReport, QueryReport, source_name,
+    MountUpdateReport, QueryReport, source_name,
 };
 use board_tree::{Status, Synced};
 use clap::error::{ContextKind, ContextValue, ErrorKind};
@@ -29,6 +29,7 @@ mod kit;
 mod log;
 mod page;
 mod plugins;
+mod put;
 mod refs;
 mod ui;
 
@@ -37,6 +38,8 @@ pub(crate) use get::{GET_HELP, get};
 pub(crate) use log::{LOG_HELP, log};
 use page::Shown;
 pub(crate) use plugins::{CALL_REPORT, call, plugin_find, plugin_list};
+pub(crate) use put::{mount_add, put};
+use put::{put_data, put_text};
 pub(crate) use refs::{REFS_HELP, refs};
 pub(crate) use ui::{serve, ui_kinds, ui_open, ui_template};
 
@@ -276,101 +279,6 @@ const CHECK: Document<Listing<Flagged, Said>> = Document::new(
     "The degraded entries, or with --healthy every entry, and how many were checked.",
 )
 .when_empty("no entry is degraded");
-
-/// `put`: as text, one line per write naming its display path and new
-/// blob, and the commit when one was made. A write left degraded gets a
-/// note on stderr in either format, and `note` follows as text.
-pub(crate) fn put(printer: Printer, report: &PutReport, note: Option<String>) -> Output {
-    put_as(printer, report, put_text(report), note)
-}
-
-/// `mount add`: put's report, whose text names the mount's repository,
-/// the ref it follows and the commit it is read at, then the commit the
-/// put made, when it made one.
-pub(crate) fn mount_add(printer: Printer, mount: &Mount, report: &PutReport) -> Output {
-    let path = report
-        .writes
-        .first()
-        .map(|written| written.display.to_string());
-    let mut text = format!(
-        "mounted {}: {}, following {}, at {}\n",
-        path.unwrap_or_default(),
-        mount.repo,
-        mount.follow,
-        mount.commit
-    );
-    if let Some(commit) = report.commit {
-        let _ = writeln!(text, "commit {commit}");
-    }
-    put_as(printer, report, text, None)
-}
-
-/// Put's report as `text`, with a note on stderr for each write left
-/// degraded or mounting a temporary directory, then `note` as text.
-fn put_as(printer: Printer, report: &PutReport, text: String, note: Option<String>) -> Output {
-    let notes = (report.writes.iter()).filter_map(|written| {
-        let (code, detail) = written.degraded.as_ref()?;
-        let (display, why) = (&written.display, detail_text(detail));
-        let note = format!("note: {display} is written but degraded: {code} {display}{why}");
-        Some(Note::Always(note))
-    });
-    let temporary = (report.writes.iter()).filter_map(|written| {
-        let repo = written.temporary.as_ref()?;
-        Some(Note::Always(format!(
-            "note: {} mounts the repository {repo}, which is under a temporary directory; \
-             the mount stops working when that directory goes, so keep the clone elsewhere",
-            written.display
-        )))
-    });
-    let answer = said(json!(put_data(report)), text);
-    let notes = notes.chain(temporary).chain(note.map(Note::Text));
-    printer.noted(PUT, answer, notes.collect())
-}
-
-fn put_text(report: &PutReport) -> String {
-    let mut text = String::new();
-    for written in &report.writes {
-        let _ = writeln!(text, "wrote {} {}", written.display, written.blob);
-    }
-    for removed in &report.removed {
-        let _ = writeln!(text, "removed {} {}", removed.path, removed.blob);
-    }
-    for absent in &report.absent {
-        let _ = writeln!(text, "absent {absent}");
-    }
-    if let Some(commit) = report.commit {
-        let _ = writeln!(text, "committed {commit}");
-    }
-    text
-}
-
-/// What a put wrote and its commit, as `put --json` and `plugin enable
-/// --json` say it.
-fn put_data(report: &PutReport) -> board_types::PutReport {
-    let write = |written: &board_ops::Written| board_types::Write {
-        blob: written.blob.to_string(),
-        degraded: (written.degraded.as_ref()).map(|(code, detail)| board_types::Degraded {
-            code: code.as_str().to_owned(),
-            failures: detail.failures,
-            pointer: detail.pointer.clone(),
-            reason: detail.reason.clone(),
-        }),
-        display: written.display.to_string(),
-        location: location(&written.location, &written.display.to_string()),
-        previous: written.previous.map(|blob| blob.to_string()),
-    };
-    board_types::PutReport {
-        absent: report.absent.iter().map(ToString::to_string).collect(),
-        commit: report.commit.map(|commit| commit.to_string()),
-        removed: (report.removed.iter())
-            .map(|removed| board_types::Removed {
-                blob: removed.blob.to_string(),
-                path: removed.path.to_string(),
-            })
-            .collect(),
-        writes: report.writes.iter().map(write).collect(),
-    }
-}
 
 /// `plugin enable`: what it wrote, as `put` says it, or that nothing was
 /// needed, with a note for each schema it replaced, removed or kept.

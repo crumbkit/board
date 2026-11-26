@@ -137,6 +137,7 @@ impl Board {
                 pointer: false,
                 references: Vec::new(),
             },
+            mends: crate::Mends::default(),
         })
     }
 }

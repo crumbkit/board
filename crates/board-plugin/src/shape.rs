@@ -406,6 +406,18 @@ patterned! {
     SessionId = "^local_[0-9a-f-]+$"
 }
 
+/// Whether `text` is a [`SessionId`]: `local_`, then one or more lowercase
+/// hex digits and `-`, as its pattern says.
+#[must_use]
+pub fn session_id(text: &str) -> bool {
+    text.strip_prefix("local_").is_some_and(|id| {
+        !id.is_empty()
+            && id
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f' | b'-'))
+    })
+}
+
 patterned! {
     /// A lowercase name of letters and digits in words joined by `-`, such
     /// as `claude-code`.
@@ -566,11 +578,7 @@ impl Actor {
             return None;
         }
         let session = (text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-')))
-            .find(|word| {
-                word.strip_prefix("local_").is_some_and(|id| {
-                    !id.is_empty() && id.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f' | '-'))
-                })
-            })
+            .find(|word| session_id(word))
             .map(|session| session.trim_end_matches('-'));
         let words: Vec<String> = (text.split(|c: char| !c.is_ascii_alphanumeric()))
             .map(str::to_ascii_lowercase)

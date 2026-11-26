@@ -153,10 +153,11 @@ fn viewed(view: &View) -> Vec<Checked> {
 /// Every table and view an agent can name, read whole. `state` leaves out
 /// when the last refresh began, which is a time, and the index's size after
 /// its last prune.
-const EVERY_TABLE: [&str; 15] = [
+const EVERY_TABLE: [&str; 16] = [
     "SELECT * FROM entries ORDER BY source, path",
     "SELECT * FROM entries",
     "SELECT * FROM decided ORDER BY key, path",
+    "SELECT * FROM resolutions ORDER BY key, path",
     "SELECT * FROM pointers ORDER BY scan, path",
     "SELECT * FROM records ORDER BY source, path",
     "SELECT * FROM bodies ORDER BY blob",
@@ -218,10 +219,11 @@ fn prune(index: Index) -> usize {
 
 /// Decides `scenario` through an index `warm` opens and through a cold one,
 /// first for views, as a query does, then for a report alone, as a check
-/// does, then for a report and references, as refs does, and requires them to agree: the
-/// same entries in the same order, with their detail, the same references,
-/// views that show those entries, and every table alike. Returns what the
-/// warm index reported for refs.
+/// does, then for a report and references, as refs does from kept rows and
+/// with every entry decided, and requires them to agree: the same entries
+/// in the same order, with their detail, the same references, views that
+/// show those entries, and every table alike. Returns what the warm index
+/// reported with every entry decided.
 fn agrees(scenario: &Scenario, warm: &dyn Fn() -> Index) -> Result<CheckReport, TestCaseError> {
     let board = open(scenario);
     let cold = || Index::open(None, board.repository().path()).unwrap();
@@ -230,10 +232,21 @@ fn agrees(scenario: &Scenario, warm: &dyn Fn() -> Index) -> Result<CheckReport, 
         let snapshot = board.snapshot(index, None, Need::Check).unwrap();
         snapshot.report.entries
     });
+    let refs = [warm(), cold()].map(|index| {
+        let snapshot = board.snapshot(index, None, Need::Refs).unwrap();
+        (
+            snapshot.report.entries,
+            sorted_references(snapshot.references),
+        )
+    });
     let [warm, cold] = [warm(), cold()].map(|index| {
         let snapshot = board.snapshot(index, None, Need::Report).unwrap();
         (snapshot.report, snapshot.references)
     });
+    for (entries, references) in &refs {
+        prop_assert_eq!(entries, &cold.0.entries);
+        prop_assert_eq!(references, &sorted_references(cold.1.clone()));
+    }
     for (view, report) in [(&warm_view.view, &warm.0), (&cold_view.view, &cold.0)] {
         prop_assert_eq!(viewed(view), sorted(report.entries.clone()));
     }
@@ -253,6 +266,18 @@ fn agrees(scenario: &Scenario, warm: &dyn Fn() -> Index) -> Result<CheckReport, 
         );
     }
     Ok(warm)
+}
+
+/// `references` by source and path, each path's in the order its record
+/// makes them, as refs reads them.
+fn sorted_references(mut references: Vec<Referenced>) -> Vec<Referenced> {
+    references.sort_by_key(|referenced| {
+        (
+            board_index::source_name(&referenced.source),
+            referenced.path.clone(),
+        )
+    });
+    references
 }
 
 /// Checks the mounted library, and only its tasks, of `scenario` through
