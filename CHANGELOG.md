@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- A warm `board refs`, and each plugin call that asks `host.refs`, reads the
+  references of each source the index keeps a decision for, with where they
+  resolved, from a new `resolutions` table, and decides only the sources
+  whose decision it does not hold. The answers are the same as before. The
+  index format moves to 30, so the first run after the upgrade builds a new
+  index from scratch.
 - `board plans decide --project <project> --decision <text> --why <text>
   --session <local_ id>` records a `plans/decision/v1` under the project's
   decisions folder and prints its path. It fills in `$type`, `decided` and

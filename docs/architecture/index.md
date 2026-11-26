@@ -28,6 +28,7 @@ it can see is gone.
 | `pointers` | a mounted tree's mount pointers | scan key, path |
 | `directories` | each directory's stat and items as a walk listed them ([performance/warm/index.md](performance/warm/index.md)) | path |
 | `decided` | a source's entries as decided ([performance/warm/decisions.md](performance/warm/decisions.md)) | decision key or slot, path |
+| `resolutions` | the references a kept decision's entry makes, in order, and where each resolved | decision key or slot, path |
 | `probes` | what opening a mounted repository found ([performance/warm/index.md](performance/warm/index.md)) | stamp |
 | `slots`, `inputs` | the working tree's kept decision, and what each entry read | slot; slot, path |
 | `state` | index format, and when the last refresh that hashed or recorded a file began | key |
@@ -120,21 +121,5 @@ printed, is under 64 MiB, always the first, and names every later path in the
 `left_out` of one `board::output::over_budget` failure; the library's `Board.refs` asks
 for those again.
 
-`--field <pointer>`, repeated, reads the target of each reference shown,
-within the limit, where refs resolved it, through links and mounts. A
-reference that resolves to nothing gets nothing. Each other `from` gains
-`values`: in the order asked, each JSON pointer with its `value`, or with
-`absent: true` when the record has nothing there. `target_code` is the code
-check gives the target, or get's code when it is not a record; a target
-that is not a record has no `values`. As text, the line gains
-` target=<code>`, or ` target=-` for a healthy record, before the values;
-each value is ` <pointer>=<value>`, the pointer a JSON string and the value
-compact JSON or `absent`, so a pointer or value holding ` target=` cannot be
-mistaken for the code. The check snapshot decides where a target is and its
-code, and `refs` reads exactly the blob the walk listed and that code was
-decided for. A target that resolved to another blob, or whose file changed
-after the check, has `refs::target_changed` and no `values`, and the run counts it as `target_changed` in the timing log; run
-`refs` again. `get` instead reads a file that changed during its run as it
-is now, with the blob of the bytes it read. A pointer that is not RFC
-6901 refuses the run as `board::cli::usage`. `tasks.available` asks for `/status`
-and `/$type` this way to tell which waits are over.
+`--field <pointer>`, repeated, reads each target's values
+([index/fields.md](index/fields.md)).
