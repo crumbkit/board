@@ -34,20 +34,39 @@ A built-in plugin call takes at most one snapshot of each kind. Its queries
 share one View snapshot, and its `refs` share one Report snapshot, which
 decides every mount and so never answers a query. A capability the call
 calls in the same board whose `readOnlyHint` is true keeps both and reads
-through them, and the snapshots it takes count in the call's trace. A call
-into another board, through `--personal` or `-C`, keeps its own. The call
-drops both when the board's `HEAD` moves, and before it puts, syncs, updates
-a mount, decides, calls a capability without `readOnlyHint: true`, or runs a
-process in the board's own working tree. A process that runs elsewhere, such
-as `git diff` in a mounted clone or one in a new temporary directory, keeps
-both, because a snapshot reads each mount at the commit its mount record
-names, and the `HEAD` check catches any commit the process makes to the
-board. In a board whose `commit_on_put` is false, a put leaves `HEAD` where
-it was, so there every process, and every installed plugin's capability,
-drops both. A kept View that another
+through them, and the snapshots it takes count in the call's trace. A host
+the call opens on the same board, through `--personal` or `-C`, shares
+both; a call into another board keeps its own. A call keeps them across
+another session's commits until a refresh of the shared index or its own
+effects move them, and the two always show one board. They are not
+isolated from the index: any process that refreshes it at a newer tree
+rewrites the slot the View reads, so the View is retaken at the newest
+`HEAD` and the held Report is dropped with it. Keeping them is safe because
+every record a plugin call writes after reading it carries the blob it
+read as its `expect`, so Board refuses a write over a newer record as
+`board::put::stale`. A schema line takes no
+`expect`, because a batch writes a schema only where the board lacks it.
+The call drops both before it puts, syncs, updates a mount, decides, calls
+a capability without `readOnlyHint: true`, or runs a process in the
+board's own working tree. A process that runs elsewhere, such as `git
+diff` in a mounted clone or one in a new temporary directory, keeps both,
+because a snapshot reads each mount at the commit its mount record names.
+Before such a process, or a read-only installed plugin's capability, the
+call reads `HEAD`; the next read compares `HEAD` with it once and drops
+both if it moved, which catches a `board put` either made. Both snapshots
+are taken lazily, so before one is taken while the other is held, the call
+compares `HEAD` once and drops the held one if it moved, and both show one
+board. A host the call opens on another board that writes back through a
+mount into this board does not drop them. In a board whose
+`commit_on_put` is false, a put leaves `HEAD` where it was, so there every
+process, and every installed plugin's capability, drops both, and every
+read compares `HEAD`. A kept View that another
 process prunes under (index.md) is dropped, and the query runs on a fresh
-one within the same three tries. A call does not see an uncommitted edit
-that another process makes after its first read; the next call does.
+one within the same three tries. A call may not see another session's
+commit or uncommitted edit made after its first read; the next call does.
+With one commit every 2 s on a copy of a real board, a plan-phase `changes
+next` took 92 to 127 s and 47 to 54 snapshots when every commit dropped
+them, against 6.0 s and 2 snapshots alone.
 
 The generated board commits its records in one commit, so git's index and
 HEAD hold them as a real board's do; a put pays for both, and a put into a

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- A built-in plugin call keeps the board snapshots it took across other
+  sessions' commits, until a refresh of the shared index or its own effects
+  move them, so a plan-phase `changes next` no longer takes a new snapshot
+  after each foreign commit. Its two snapshots always show one board. It
+  still takes new ones after its own
+  put, sync, mount update or decide, a nested call that may write, a process
+  in the board's tree, and a process or read-only installed plugin during
+  which HEAD moved, and before it takes its second snapshot when HEAD
+  moved since the first. A host a call opens on the same board shares its
+  snapshots. Each record a plugin call writes after reading it now carries
+  the blob it read as its expect: the flow version that `changes start`,
+  `reflow`, `migrate` and `changes run --sandbox` write, a boundary
+  crossing, which expects whatever its path holds, valid or not, and the
+  task autosync rewrites. When another writer stores that path first, the
+  call fails with
+  `board::put::stale` and writes nothing, and a rerun reads the newer
+  record. Of two concurrent starts of one flow version, the second is now
+  refused as stale.
+
 ## 0.1.4 (2026-11-26)
 
 - A warm `board refs`, and each plugin call that asks `host.refs`, reads the

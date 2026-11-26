@@ -481,3 +481,207 @@ fn a_wholes_decisions_are_asked_about_once_each_and_its_change_records_and_their
         "{asked:?}"
     );
 }
+
+/// A host over a real Board in `board`'s working tree that writes through
+/// `board put`, where another writer may put `first` just before the next
+/// put.
+struct Racing {
+    board: board_scenario::Scenario,
+    first: std::cell::RefCell<Option<Value>>,
+    settings: board_ops::Settings,
+}
+
+impl Racing {
+    fn open(&self) -> board_ops::Board {
+        board_ops::Board::open(self.board.workdir(), None).unwrap()
+    }
+
+    fn put_line(&self, line: &Value) -> Result<board_ops::PutReport, board_ops::PutError> {
+        self.open().put_batch(&mut line.to_string().as_bytes())
+    }
+}
+
+impl Host for Racing {
+    fn query(
+        &self,
+        sql: &str,
+        _limit: board_ops::Limit,
+    ) -> Result<board_ops::QueryReport, board_ops::QueryError> {
+        self.open().query(sql, usize::MAX, None, None)
+    }
+
+    fn refs(
+        &self,
+        paths: &[board_model::LogicalPath],
+        absent: board_ops::Absent,
+        fields: &[String],
+    ) -> Result<Vec<Result<board_ops::RefsReport, board_ops::RefsError>>, board_ops::RefsError>
+    {
+        Ok(self
+            .open()
+            .refs(paths, absent, fields, None, None)?
+            .collect())
+    }
+
+    fn get_each(
+        &self,
+        paths: &[board_model::LogicalPath],
+    ) -> Result<Vec<Result<board_ops::GetReport, board_ops::ReadError>>, board_ops::ReadError> {
+        Ok(self.open().get_each(paths)?.collect())
+    }
+
+    fn put(&self, lines: &[Value]) -> Result<board_ops::PutReport, board_ops::PutError> {
+        if let Some(line) = self.first.borrow_mut().take() {
+            self.put_line(&line).unwrap();
+        }
+        let batch: Vec<String> = lines.iter().map(Value::to_string).collect();
+        self.open().put_batch(&mut batch.join("\n").as_bytes())
+    }
+
+    fn call(
+        &self,
+        _target: &board_plugin::Target,
+        _input: &Value,
+    ) -> Result<board_plugin::CallReport, Box<board_model::Refusal>> {
+        panic!("share calls no plugin")
+    }
+
+    fn board(
+        &self,
+        _elsewhere: &board_ops::Elsewhere,
+    ) -> Result<Box<dyn Host + '_>, Box<board_model::Refusal>> {
+        panic!("share opens no other board")
+    }
+
+    fn decide(
+        &self,
+        _op: &str,
+        _path: &board_model::LogicalPath,
+        _shown: Option<&board_ops::Shown>,
+    ) -> Result<board_ops::DecideReport, Box<board_model::Refusal>> {
+        panic!("share asks the owner nothing")
+    }
+
+    fn sync(
+        &self,
+        _: bool,
+        _: std::time::Duration,
+    ) -> Result<board_ops::Synced, board_ops::SyncError> {
+        unreachable!("share syncs nothing")
+    }
+
+    fn mount_update(
+        &self,
+        _: &board_model::LogicalPath,
+        _: std::time::Duration,
+    ) -> Result<board_ops::MountUpdateReport, board_ops::MountError> {
+        unreachable!("share updates no mount")
+    }
+
+    fn settings(&self) -> &board_ops::Settings {
+        &self.settings
+    }
+}
+
+/// The schema of the note `/notes/a` the source board holds.
+const NOTE_SCHEMA: &str = r#"{"type": "object"}"#;
+
+/// A board holding the note `/notes/a` of a type of its own, which mounts
+/// at `/team` an empty team board that commits its puts, and the team
+/// board.
+fn note_and_team() -> (Racing, board_scenario::Scenario) {
+    use board_scenario::{Item, Scenario};
+    let team = Scenario::new();
+    let config = r#"{"$type": "board/config/v1", "commit_on_put": true}"#;
+    team.write(".board/board.json", Item::File(config));
+    let first = team.commit(&[(".board/board.json", config)]);
+    team.track(first).identified();
+    let board = Scenario::board();
+    // A put through the mount moves its pin, which commits in this board too.
+    board.identified();
+    let mount = format!(
+        r#"{{"$type": "board/mount/v1", "repo": "{}", "follow": "main", "commit": "{first}"}}"#,
+        team.path()
+    );
+    board
+        .write(
+            ".board/types/lr/note/v1.schema.json",
+            Item::File(NOTE_SCHEMA),
+        )
+        .write("notes/a.json", Item::File(r#"{"$type": "lr/note/v1"}"#))
+        .write("team.json", Item::File(&mount));
+    let host = Racing {
+        board,
+        first: std::cell::RefCell::default(),
+        settings: board_ops::Settings {
+            now: std::time::SystemTime::UNIX_EPOCH,
+            day_start: None,
+            utc_offset: 0,
+            caller: None,
+            environment: board_ops::Variables::default(),
+            cache_home: None,
+        },
+    };
+    (host, team)
+}
+
+/// Shares `/notes/a` into `/team`, writing.
+fn shared(host: &Racing) -> Result<Value, PluginError> {
+    to::share_to(
+        host,
+        &json!({"path": "/notes/a", "to": "/team", "yes": true}),
+    )
+}
+
+#[test]
+fn a_schema_the_destination_lacks_is_written_with_the_set() {
+    let (host, team) = note_and_team();
+    let output = shared(&host).unwrap();
+    assert_eq!(output["types"], json!(["lr/note/v1"]));
+    assert!(
+        team.workdir()
+            .join(".board/types/lr/note/v1.schema.json")
+            .exists()
+    );
+    assert!(team.workdir().join("notes/a.json").exists());
+}
+
+/// The share after another writer put `schema` at the destination's
+/// `lr/note/v1` schema between the share's read and its write.
+fn shared_after(schema: &Value) -> (Result<Value, PluginError>, board_scenario::Scenario) {
+    let (host, team) = note_and_team();
+    *host.first.borrow_mut() = Some(json!({
+        "path": "/team/.board/types/lr/note/v1.schema",
+        "record": schema,
+    }));
+    (shared(&host), team)
+}
+
+/// A schema line takes no expect: Board refuses one on it, writes a schema
+/// the board lacks and leaves an equal one it holds. So a different schema
+/// another writer stores first refuses the whole batch, and an equal one
+/// is left as theirs while the set is copied.
+#[test]
+fn a_different_schema_another_writer_stores_first_refuses_the_share_and_an_equal_one_is_kept() {
+    let theirs = json!({"type": "object", "title": "theirs"});
+    let (refused, team) = shared_after(&theirs);
+    let refused = refused.unwrap_err();
+    assert_eq!(
+        refused.fields["code"], "board::put::invalid",
+        "{}",
+        refused.message
+    );
+    assert!(
+        !team.workdir().join("notes/a.json").exists(),
+        "no copy is written"
+    );
+    let held = std::fs::read(team.workdir().join(".board/types/lr/note/v1.schema.json")).unwrap();
+    assert_eq!(serde_json::from_slice::<Value>(&held).unwrap(), theirs);
+    let equal: Value = serde_json::from_str(NOTE_SCHEMA).unwrap();
+    let (admitted, team) = shared_after(&equal);
+    admitted.unwrap();
+    assert!(
+        team.workdir().join("notes/a.json").exists(),
+        "the set is copied"
+    );
+}

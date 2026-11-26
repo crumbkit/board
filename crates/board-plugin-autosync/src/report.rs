@@ -6,6 +6,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use board_model::Object;
 use board_ops::{Host, Limit, Run, literal};
 use board_plugin::Target;
 use schemars::JsonSchema;
@@ -261,14 +262,20 @@ fn open_task(host: &dyn Host, name: &str) -> Result<Option<String>, String> {
         .map(str::to_owned))
 }
 
-/// Puts `body` after the task's frontmatter, keeping the frontmatter.
+/// Puts `body` after the task's frontmatter, keeping the frontmatter, only
+/// if the task is still the one read.
 fn rewrite(host: &dyn Host, path: &str, body: &str) -> Option<String> {
     let logical = path.parse().ok()?;
     let read = host.get_each(&[logical]).ok()?.into_iter().next()?.ok()?;
+    let Object::Blob(blob) = read.location.object else {
+        return Some(format!(
+            "{path} is not a file, so its task text cannot be rewritten"
+        ));
+    };
     let text = String::from_utf8(read.bytes).ok()?;
     let end = text.get(4..)?.find("\n---\n")? + 4 + 5;
     let new = format!("{}\n{body}\n", &text[..end]);
-    let line = json!({"path": path, "text": new});
+    let line = json!({"path": path, "expect": blob.to_string(), "text": new});
     (host.put(&[line]).err()).map(|error| error.refusal().message)
 }
 
@@ -296,6 +303,174 @@ mod tests {
         assert!(text.contains("team board"), "{text}");
         assert!(text.contains("2 findings"), "{text}");
         assert!(text.lines().count() <= 20);
+    }
+
+    /// The blob the task holds when `rewrite` reads it.
+    const READ: &str = "1111111111111111111111111111111111111111";
+
+    /// A personal board holding one task, as `READ`, whose puts apply each
+    /// line's expect as Board does under its put lock. Another writer may
+    /// change the task just before the next put.
+    struct Holding {
+        settings: board_ops::Settings,
+        blob: std::cell::RefCell<String>,
+        racing: std::cell::RefCell<bool>,
+        landed: std::cell::RefCell<Vec<Vec<Value>>>,
+    }
+
+    const TASK: &str = "---\n$type: tasks/task/v3\ntitle: t\nstatus: open\n---\n\nOld.\n";
+
+    impl Holding {
+        fn new(racing: bool) -> Self {
+            Self {
+                settings: board_ops::Settings {
+                    now: std::time::SystemTime::UNIX_EPOCH,
+                    day_start: None,
+                    utc_offset: 0,
+                    caller: None,
+                    environment: board_ops::Variables::default(),
+                    cache_home: None,
+                },
+                blob: std::cell::RefCell::new(READ.to_owned()),
+                racing: std::cell::RefCell::new(racing),
+                landed: std::cell::RefCell::default(),
+            }
+        }
+    }
+
+    impl Host for Holding {
+        fn query(
+            &self,
+            _: &str,
+            _: Limit,
+        ) -> Result<board_ops::QueryReport, board_ops::QueryError> {
+            unreachable!("rewrite runs no query")
+        }
+
+        fn refs(
+            &self,
+            _: &[board_model::LogicalPath],
+            _: board_ops::Absent,
+            _: &[String],
+        ) -> Result<Vec<Result<board_ops::RefsReport, board_ops::RefsError>>, board_ops::RefsError>
+        {
+            unreachable!("rewrite resolves no paths")
+        }
+
+        fn get_each(
+            &self,
+            paths: &[board_model::LogicalPath],
+        ) -> Result<Vec<Result<board_ops::GetReport, board_ops::ReadError>>, board_ops::ReadError>
+        {
+            let object = board_model::ObjectId::from_hex(&self.blob.borrow())
+                .map_or(board_model::Object::Directory, board_model::Object::Blob);
+            Ok(vec![Ok(board_ops::GetReport {
+                location: board_model::Location {
+                    board: board_model::Board {
+                        repository: std::path::PathBuf::from("/personal"),
+                        source: board_model::Source::WorkingTree,
+                    },
+                    path: "tasks/t.md".to_owned(),
+                    object,
+                    pointers: Vec::new(),
+                    follow: None,
+                },
+                display: paths[0].clone(),
+                bytes: TASK.as_bytes().to_vec(),
+                record: Ok(json!({})),
+            })])
+        }
+
+        fn put(&self, lines: &[Value]) -> Result<board_ops::PutReport, board_ops::PutError> {
+            if self.racing.replace(false) {
+                *self.blob.borrow_mut() = "3333333333333333333333333333333333333333".to_owned();
+            }
+            let held = self.blob.borrow().clone();
+            for line in lines {
+                if line["expect"].as_str().is_some_and(|expect| expect != held) {
+                    return Err(board_ops::PutError::Stale {
+                        path: line["path"].as_str().unwrap().parse().unwrap(),
+                        found: board_model::ObjectId::from_hex(&held),
+                    });
+                }
+            }
+            self.landed.borrow_mut().push(lines.to_vec());
+            Ok(board_ops::PutReport {
+                writes: Vec::new(),
+                removed: Vec::new(),
+                absent: Vec::new(),
+                commit: None,
+                mended: Vec::new(),
+            })
+        }
+
+        fn call(
+            &self,
+            _: &Target,
+            _: &Value,
+        ) -> Result<board_plugin::CallReport, Box<board_model::Refusal>> {
+            unreachable!("rewrite calls no plugin")
+        }
+
+        fn board(
+            &self,
+            _: &board_ops::Elsewhere,
+        ) -> Result<Box<dyn Host + '_>, Box<board_model::Refusal>> {
+            unreachable!("rewrite opens no other board")
+        }
+
+        fn decide(
+            &self,
+            _: &str,
+            _: &board_model::LogicalPath,
+            _: Option<&board_ops::Shown>,
+        ) -> Result<board_ops::DecideReport, Box<board_model::Refusal>> {
+            unreachable!("rewrite asks the owner nothing")
+        }
+
+        fn sync(&self, _: bool, _: Duration) -> Result<board_ops::Synced, board_ops::SyncError> {
+            unreachable!("rewrite syncs nothing")
+        }
+
+        fn mount_update(
+            &self,
+            _: &board_model::LogicalPath,
+            _: Duration,
+        ) -> Result<board_ops::MountUpdateReport, board_ops::MountError> {
+            unreachable!("rewrite updates no mount")
+        }
+
+        fn settings(&self) -> &board_ops::Settings {
+            &self.settings
+        }
+    }
+
+    #[test]
+    fn a_rewrite_expects_the_blob_it_read_and_keeps_the_frontmatter() {
+        let host = Holding::new(false);
+        assert_eq!(rewrite(&host, "/tasks/t.md", "New."), None);
+        let landed = host.landed.borrow();
+        assert_eq!(landed[0][0]["expect"], READ, "{}", landed[0][0]);
+        let text = landed[0][0]["text"].as_str().unwrap();
+        assert!(text.starts_with("---\n$type: tasks/task/v3\n"), "{text}");
+        assert!(text.ends_with("---\n\nNew.\n"), "{text}");
+    }
+
+    #[test]
+    fn a_task_another_writer_changes_first_makes_the_rewrite_stale_and_writes_nothing() {
+        let host = Holding::new(true);
+        let refused = rewrite(&host, "/tasks/t.md", "New.").expect("the rewrite is refused");
+        assert!(refused.contains("is not what --expect says"), "{refused}");
+        assert!(host.landed.borrow().is_empty(), "nothing is written");
+    }
+
+    #[test]
+    fn a_task_path_that_is_no_file_is_refused_with_a_message_and_nothing_is_written() {
+        let host = Holding::new(false);
+        *host.blob.borrow_mut() = String::new();
+        let refused = rewrite(&host, "/tasks/t.md", "New.").expect("the rewrite is refused");
+        assert!(refused.contains("/tasks/t.md"), "{refused}");
+        assert!(host.landed.borrow().is_empty(), "nothing is written");
     }
 
     #[test]

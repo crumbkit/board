@@ -266,7 +266,7 @@ fn record_at(host: &dyn Host, path: &str) -> Result<Map<String, Value>, PluginEr
 /// change at `path` in the sandbox `inner`, under `asker` in `host`, with
 /// the flow version the run names when `host` lacks it, and attaches the
 /// run to it; returns the copies' paths.
-fn copy_back(
+pub(super) fn copy_back(
     host: &dyn Host,
     inner: &dyn Host,
     asker: &str,
@@ -285,9 +285,9 @@ fn copy_back(
         && blob_at(host, version)? == "none"
     {
         let flow = record_at(inner, version)?;
-        // No expect: the path names the flow's content, as
+        // Expects nothing there, as `blob_at` read and
         // `flow::version_line` says.
-        lines.push(json!({"path": version, "record": flow}));
+        lines.push(json!({"path": version, "expect": "none", "record": flow}));
     }
     lines.push(json!({"path": to_stop, "expect": "none", "record": stop}));
     lines.push(json!({"path": to_run, "expect": "none", "record": record}));
