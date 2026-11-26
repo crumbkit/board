@@ -121,3 +121,7 @@ an edit of the order voids the answer (`board_model::approving`).
   owner's writes in the real board read the decoy's setting, and so skip
   the signature, only while the real board holds no signed record and does
   not set `configured` true. Nothing shows in the owner's board.
+- Plugin checks, such as `orders verify` for an order approved in chat and
+  the changes gates' signed acts, read the signing setting of the named
+  personal board alone, so a decoy personal board decides what those
+  checks require.
