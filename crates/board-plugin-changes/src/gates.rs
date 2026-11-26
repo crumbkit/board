@@ -140,6 +140,9 @@ pub(crate) struct Observed {
     /// when each edits only paths a check's `unchanged_by` allows or
     /// cleanly merges main, or else why not.
     pub(crate) after_review: BTreeMap<String, Result<Vec<String>, String>>,
+    /// The amendments since the last plan `changes.plan` wrote, oldest
+    /// first, which the pull request body lists.
+    pub(crate) amended: Vec<crate::amend::Amended>,
 }
 
 /// What `Host::decided` found of the owner's approval of `changes.approve`
@@ -186,6 +189,7 @@ impl Observed {
             held: BTreeSet::new(),
             approval: Approval::None,
             after_review: BTreeMap::new(),
+            amended: Vec::new(),
         }
     }
 
