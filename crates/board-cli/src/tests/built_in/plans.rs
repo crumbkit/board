@@ -899,3 +899,127 @@ fn a_decision_whose_ref_names_a_check_after_a_path_that_exists_checks_clean_and_
         );
     }
 }
+
+/// The data `board --json` with `arguments` and `stdin` prints, after it
+/// exits 0.
+fn decided(board: &Fixture, arguments: &[&str], stdin: &str) -> Value {
+    let arguments: Vec<&str> = std::iter::once("--json")
+        .chain(arguments.iter().copied())
+        .collect();
+    let output = board.run_with(&arguments, stdin);
+    assert_eq!(output.code, 0, "{}", text(&output.stdout));
+    json(&output)["data"]["output"].clone()
+}
+
+/// `board plans decide` with flags writes one decision under the project,
+/// each repeated `--alternatives` an item, `--review` given bare recorded
+/// as wanted, and its text output says where.
+#[test]
+fn plans_decide_records_a_decision_from_its_flags() {
+    let board = board();
+    board.write("projects/a/questions/q.json", &open(&json!({})));
+    let output = decided(
+        &board,
+        &[
+            "plans",
+            "decide",
+            "--project",
+            "a",
+            "--decision",
+            "Ship it.",
+            "--why",
+            "It is ready.",
+            "--session",
+            "local_0a1b",
+            "--alternatives",
+            "Wait.",
+            "--alternatives",
+            "Drop it.",
+            "--review",
+        ],
+        "",
+    );
+    let path = output["path"].as_str().unwrap();
+    assert!(path.starts_with("/projects/a/decisions/"), "{output}");
+    assert_eq!(output.get("warning"), None, "{output}");
+    let stored: Value = serde_json::from_str(&board.read(&format!("{}.json", &path[1..]))).unwrap();
+    assert_eq!(
+        (
+            &stored["$type"],
+            &stored["by"],
+            &stored["alternatives"],
+            &stored["review"]
+        ),
+        (
+            &json!("plans/decision/v1"),
+            &json!({"session": "local_0a1b"}),
+            &json!(["Wait.", "Drop it."]),
+            &json!("wanted")
+        )
+    );
+    assert_eq!(board.checked(path), codes(&[(path, None)]));
+    let printed = board.run(&[
+        "plans",
+        "decide",
+        "--project",
+        "a",
+        "--decision",
+        "Ship it.",
+        "--why",
+        "It is ready.",
+        "--person",
+        "pat",
+    ]);
+    assert_eq!(printed.code, 0, "{}", text(&printed.stderr));
+    assert!(
+        text(&printed.stdout).contains("Recorded /projects/a/decisions/"),
+        "{}",
+        text(&printed.stdout)
+    );
+}
+
+/// `board plans decide` reads JSON on stdin when no flag is given, lists
+/// and all, and a call that names no author is refused with the decide's
+/// code.
+#[test]
+fn plans_decide_reads_its_input_on_stdin_and_refuses_one_with_no_author() {
+    let board = board();
+    board.write("projects/a/questions/q.json", &open(&json!({})));
+    let input = json!({
+        "project": "a",
+        "decision": "Ship it.",
+        "why": "It is ready.",
+        "person": "pat",
+        "alternatives": ["Wait."],
+        "refs": ["/projects/a/questions/q"],
+    });
+    let output = decided(&board, &["plans", "decide"], &input.to_string());
+    let path = output["path"].as_str().unwrap();
+    let stored: Value = serde_json::from_str(&board.read(&format!("{}.json", &path[1..]))).unwrap();
+    assert_eq!(
+        (&stored["alternatives"], &stored["refs"]),
+        (&json!(["Wait."]), &json!(["/projects/a/questions/q"]))
+    );
+    let refused = board.refusal(
+        "plans.decide",
+        &[
+            "--project",
+            "a",
+            "--decision",
+            "Ship it.",
+            "--why",
+            "It is ready.",
+        ],
+    );
+    assert_eq!(refused["code"], "plans::decide::no_author", "{refused}");
+}
+
+/// What `board plans decide -h` prints, against its golden file.
+#[test]
+fn plans_decide_help_prints_its_golden_page() {
+    let board = board();
+    let output = board.run(&["plans", "decide", "-h"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    let golden = include_str!("../help/examples/plugins/board-plans-decide-h.txt");
+    assert_eq!(text(&output.stdout), golden);
+}

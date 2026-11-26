@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `board plans decide --project <project> --decision <text> --why <text>
+  --session <local_ id>` records a `plans/decision/v1` under the project's
+  decisions folder and prints its path. It fills in `$type`, `decided` and
+  `by`, takes `--person`, `--program`, a bare `--review` and repeated
+  `--alternatives`, `--refs` and `--urls`, and refuses a call that names
+  neither a session nor a person with `plans::decide::no_author`. When the
+  project held nothing before, it still writes the decision and warns with
+  the three nearest project names. The plans skill now records decisions
+  with it in place of a hand-built record and `put --new`.
+
 - Board runs the command an agent meant for a few common guesses that
   clap refused: `board cat` and `board show` run `get`, `board list` runs
   `ls` and `board schema` runs `schemas`; a long flag given with hyphens
