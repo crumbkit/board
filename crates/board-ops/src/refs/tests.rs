@@ -950,8 +950,8 @@ fn a_target_that_resolved_to_another_blob_than_the_walk_listed_is_target_changed
 
 #[test]
 fn a_target_in_a_kept_source_has_its_values_and_one_whose_kept_blob_differs_is_target_changed() {
-    // A mounted commit cannot change, so the test gives the snapshot a kept
-    // blob other than the one the reference resolved to.
+    // A mounted commit cannot change, so the test gives the snapshot a
+    // reference that resolved to another blob than the kept row holds.
     let answered = |differs: bool| {
         let (scenario, _library) = mounted();
         let cache = tempfile::tempdir().unwrap();
@@ -960,10 +960,15 @@ fn a_target_in_a_kept_source_has_its_values_and_one_whose_kept_blob_differs_is_t
         let index = board.index(Some(cache.path())).unwrap();
         let mut snapshot = board.snapshot(index, None, Need::Refs).unwrap();
         assert_eq!(snapshot.walked.len(), 1, "the library is not walked");
-        assert!(!snapshot.kept.is_empty(), "its blobs are kept");
+        assert_eq!(snapshot.kept.len(), 1, "its key is kept");
         if differs {
-            for blob in snapshot.kept.values_mut() {
-                *blob = Some(board_model::ObjectId::Sha1([7; 20]));
+            for referenced in &mut snapshot.references {
+                if let Some(location) = &mut referenced.reached.location
+                    && location.board.source != board_model::Source::WorkingTree
+                {
+                    location.object =
+                        board_model::Object::Blob(board_model::ObjectId::Sha1([7; 20]));
+                }
             }
         }
         board.take_trace();

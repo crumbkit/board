@@ -35,7 +35,7 @@ use crate::index::{
 mod decide;
 mod partial;
 
-use decide::{Blobs, Decide, Decisions};
+use decide::{Decide, Decisions, Keys};
 pub(crate) use decide::{Referenced, read_type};
 use partial::{Again, Heads, REMOTES, Slotted};
 
@@ -52,9 +52,9 @@ pub(crate) struct Snapshot {
     /// Every reference each checked record makes, and where it led.
     pub(crate) references: Vec<Referenced>,
     pub(crate) walked: Walked,
-    /// The blob of each entry of a mounted source that was not walked
-    /// because its decision is kept, by source and physical path.
-    pub(crate) kept: Blobs,
+    /// The key of each mounted source that was not walked because its
+    /// decision is kept, where `refs` looks up a target's kept blob.
+    pub(crate) kept: Keys,
 }
 
 /// What a snapshot is for, which decides whether it reads decisions the
@@ -191,14 +191,14 @@ impl Board {
     }
 
     /// Decides each entry, and returns the report, the references, the
-    /// files each source's walk listed, the blobs of the entries of each
-    /// mounted source read from kept rows, and the rows of `resolved`.
+    /// files each source's walk listed, the key of each mounted source read
+    /// from kept rows, and the rows of `resolved`.
     fn decide(
         &self,
         writer: &Writer,
         scope: Option<&LogicalPath>,
         need: Need,
-    ) -> Run<(CheckReport, Vec<Referenced>, Walked, Blobs)> {
+    ) -> Run<(CheckReport, Vec<Referenced>, Walked, Keys)> {
         let Refresh {
             entries,
             listings,
@@ -284,7 +284,7 @@ impl Board {
             (mounts.sources.into_iter())
                 .filter_map(|mounted| Some((Source::Commit(mounted.commit), mounted.walked?.0))),
         );
-        let found = (report, decided.references, walked, decided.blobs);
+        let found = (report, decided.references, walked, decided.keys);
         Ok((found, decided.resolved))
     }
 

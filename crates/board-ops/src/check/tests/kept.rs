@@ -62,7 +62,6 @@ fn row(checked: &Checked, detail: Option<String>) -> KeptRow {
     KeptRow {
         path: checked.path.clone(),
         logical: checked.logical.clone(),
-        blob: None,
         kind: checked.kind,
         code: match checked.status {
             Status::Degraded(code) => Some(code),

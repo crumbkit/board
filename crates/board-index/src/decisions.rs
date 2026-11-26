@@ -3,16 +3,9 @@
 //! (docs/architecture/performance/warm/decisions.md), and the views that show
 //! what one run decided.
 
-use std::ffi::OsStr;
-use std::os::unix::ffi::OsStrExt as _;
-use std::path::PathBuf;
-
-use board_model::{
-    Board, Change, Code, Digest, Kind, Location, LogicalPath, Mount, Object, ObjectId, Role, Source,
-};
+use board_model::{Change, Code, Digest, Kind, LogicalPath, Mount, ObjectId, Role, Source};
 use board_tree::{Held, Probed};
 use rusqlite::{OptionalExtension, params};
-use serde_json::{Value, json};
 
 use crate::open::{IndexError, Storage};
 use crate::schema::RESOLVED;
@@ -48,7 +41,6 @@ fn columns(entry: &Resolved) -> Columns<'_> {
 pub struct KeptRow {
     pub path: String,
     pub logical: Option<LogicalPath>,
-    pub blob: Option<ObjectId>,
     pub kind: Kind,
     pub code: Option<Code>,
     /// What check reports beyond the row, as `put_decision` was given it.
@@ -258,7 +250,6 @@ impl Writer {
         type Row = (
             String,
             Option<String>,
-            Option<String>,
             String,
             Option<String>,
             Option<String>,
@@ -267,7 +258,7 @@ impl Writer {
         let rows = self
             .connection()
             .prepare_cached(
-                "SELECT path, logical, blob, kind, code, detail, change FROM main.decided
+                "SELECT path, logical, kind, code, detail, change FROM main.decided
                  WHERE key = ?1 ORDER BY path",
             )?
             .query_map([key.hex()], |row| {
@@ -278,12 +269,11 @@ impl Writer {
                     row.get(3)?,
                     row.get(4)?,
                     row.get(5)?,
-                    row.get(6)?,
                 ))
             })?
             .collect::<Result<Vec<Row>, _>>()?;
         rows.into_iter()
-            .map(|(path, logical, blob, kind, code, detail, change)| {
+            .map(|(path, logical, kind, code, detail, change)| {
                 let unreadable =
                     |logical: &Option<LogicalPath>, column, value: &str| IndexError::Unreadable {
                         path: path.clone(),
@@ -295,13 +285,6 @@ impl Writer {
                     Some(text) => {
                         Some((text.parse()).map_err(|_| unreadable(&None, "logical", &text))?)
                     }
-                    None => None,
-                };
-                let blob = match blob {
-                    Some(text) => Some(
-                        ObjectId::from_hex(&text)
-                            .ok_or_else(|| unreadable(&logical, "blob", &text))?,
-                    ),
                     None => None,
                 };
                 let kind = Kind::parse(&kind).ok_or_else(|| unreadable(&logical, "kind", &kind))?;
@@ -319,7 +302,6 @@ impl Writer {
                 Ok(KeptRow {
                     path,
                     logical,
-                    blob,
                     kind,
                     code,
                     detail,
@@ -349,228 +331,4 @@ impl Writer {
             ])?;
         Ok(())
     }
-}
-
-/// One reference a record or Markdown file makes, and where it led.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Reached {
-    pub pointer: String,
-    /// Whether it is a Markdown link, whose `pointer` is its destination.
-    pub link: bool,
-    pub target: LogicalPath,
-    /// Where it resolved, or `None` when it dangles.
-    pub location: Option<Location>,
-    pub code: Option<Code>,
-}
-
-/// One reference an entry of a kept decision makes: the entry's path in
-/// its source, its logical path as its kept row holds it, and the reference.
-pub type KeptReference = (String, Option<LogicalPath>, Reached);
-
-impl Writer {
-    /// Keeps under `key` each reference `references` gives, by the path in
-    /// the board `own` of the entry that makes it, numbered in order for
-    /// each path. A location in `own` itself is kept without its board,
-    /// since a key names a tree, not a commit.
-    pub fn put_references<'r>(
-        &self,
-        key: &Digest,
-        own: &Board,
-        references: impl IntoIterator<Item = (&'r str, &'r Reached)>,
-    ) -> Result<(), IndexError> {
-        let key = key.hex();
-        let mut statement = self.connection().prepare_cached(
-            "INSERT OR REPLACE INTO main.resolutions
-             (key, path, ordinal, pointer, link, target, location, code)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        )?;
-        let mut last: Option<(&str, i64)> = None;
-        for (path, reached) in references {
-            let ordinal = match last {
-                Some((was, ordinal)) if was == path => ordinal + 1,
-                _ => 0,
-            };
-            last = Some((path, ordinal));
-            let location = (reached.location.as_ref()).map(|at| encoded(at, own).to_string());
-            statement.execute(params![
-                key,
-                path,
-                ordinal,
-                reached.pointer,
-                reached.link,
-                reached.target.as_str(),
-                location,
-                reached.code.map(Code::as_str),
-            ])?;
-        }
-        Ok(())
-    }
-
-    /// Each reference kept under `key`, by path and then in order, with
-    /// each location kept without its board in the board `own`.
-    pub fn references(&self, key: &Digest, own: &Board) -> Result<Vec<KeptReference>, IndexError> {
-        type Row = (
-            String,
-            Option<String>,
-            String,
-            bool,
-            String,
-            Option<String>,
-            Option<String>,
-        );
-        let rows = self
-            .connection()
-            .prepare_cached(
-                "SELECT r.path, d.logical, r.pointer, r.link, r.target, r.location, r.code
-                 FROM main.resolutions AS r
-                 LEFT JOIN main.decided AS d ON d.key = r.key AND d.path = r.path
-                 WHERE r.key = ?1 ORDER BY r.path, r.ordinal",
-            )?
-            .query_map([key.hex()], |row| {
-                Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                    row.get(5)?,
-                    row.get(6)?,
-                ))
-            })?
-            .collect::<Result<Vec<Row>, _>>()?;
-        rows.into_iter()
-            .map(|(path, logical, pointer, link, target, location, code)| {
-                let unreadable =
-                    |logical: &Option<LogicalPath>, column, value: &str| IndexError::Unreadable {
-                        path: path.clone(),
-                        logical: logical.clone(),
-                        column,
-                        value: value.to_owned(),
-                    };
-                let logical = match logical {
-                    Some(text) => {
-                        Some((text.parse()).map_err(|_| unreadable(&None, "logical", &text))?)
-                    }
-                    None => None,
-                };
-                let target =
-                    (target.parse()).map_err(|_| unreadable(&logical, "target", &target))?;
-                let location = match location {
-                    Some(text) => Some(
-                        (serde_json::from_str(&text).ok())
-                            .and_then(|value| decoded(&value, own))
-                            .ok_or_else(|| unreadable(&logical, "location", &text))?,
-                    ),
-                    None => None,
-                };
-                let code = match code {
-                    Some(text) => Some(
-                        Code::parse(&text).ok_or_else(|| unreadable(&logical, "code", &text))?,
-                    ),
-                    None => None,
-                };
-                let reached = Reached {
-                    pointer,
-                    link,
-                    target,
-                    location,
-                    code,
-                };
-                Ok((path, logical, reached))
-            })
-            .collect()
-    }
-}
-
-/// `location` as JSON: its board only when it is not `own`, as its
-/// repository and source, each `null` where it is `own`'s; and its
-/// pointers and `follow` only when it has them.
-fn encoded(location: &Location, own: &Board) -> Value {
-    let mut fields = serde_json::Map::new();
-    fields.insert("path".to_owned(), json!(location.path));
-    let object = match location.object {
-        Object::Blob(blob) => json!(blob.to_string()),
-        Object::Directory => Value::Null,
-    };
-    fields.insert("object".to_owned(), object);
-    let Board { repository, source } = &location.board;
-    if location.board != *own {
-        let repository = match repository.to_str() {
-            _ if *repository == own.repository => Value::Null,
-            Some(text) => json!(text),
-            None => json!(repository.as_os_str().as_bytes()),
-        };
-        let source = match source {
-            _ if *source == own.source => Value::Null,
-            Source::WorkingTree => json!("worktree"),
-            Source::Commit(commit) => json!(commit.to_string()),
-        };
-        fields.insert("board".to_owned(), json!([repository, source]));
-    }
-    if !location.pointers.is_empty() {
-        let pointers = location.pointers.iter();
-        let pointers: Vec<Value> = pointers.map(|pointer| encoded(pointer, own)).collect();
-        fields.insert("pointers".to_owned(), json!(pointers));
-    }
-    if let Some(follow) = &location.follow {
-        fields.insert("follow".to_owned(), json!(follow));
-    }
-    Value::Object(fields)
-}
-
-/// The location [`encoded`] gave as `value`, or `None` when it reads as none.
-fn decoded(value: &Value, own: &Board) -> Option<Location> {
-    let fields = value.as_object()?;
-    let known = ["path", "object", "board", "pointers", "follow"];
-    if !fields.keys().all(|key| known.contains(&key.as_str())) {
-        return None;
-    }
-    let board = match fields.get("board") {
-        None => own.clone(),
-        Some(board) => {
-            let [repository, source] = board.as_array()?.as_slice() else {
-                return None;
-            };
-            let repository = match repository {
-                Value::Null => own.repository.clone(),
-                Value::String(text) => PathBuf::from(text),
-                Value::Array(bytes) => {
-                    let bytes: Option<Vec<u8>> = (bytes.iter())
-                        .map(|byte| u8::try_from(byte.as_u64()?).ok())
-                        .collect();
-                    PathBuf::from(OsStr::from_bytes(&bytes?))
-                }
-                _ => return None,
-            };
-            let source = match source {
-                Value::Null => own.source.clone(),
-                Value::String(text) if text == "worktree" => Source::WorkingTree,
-                Value::String(text) => Source::Commit(ObjectId::from_hex(text)?),
-                _ => return None,
-            };
-            Board { repository, source }
-        }
-    };
-    let object = match fields.get("object")? {
-        Value::Null => Object::Directory,
-        Value::String(text) => Object::Blob(ObjectId::from_hex(text)?),
-        _ => return None,
-    };
-    let pointers = match fields.get("pointers") {
-        None => Vec::new(),
-        Some(pointers) => (pointers.as_array()?.iter())
-            .map(|pointer| decoded(pointer, own))
-            .collect::<Option<Vec<Location>>>()?,
-    };
-    let follow = match fields.get("follow") {
-        None => None,
-        Some(follow) => Some(follow.as_str()?.to_owned()),
-    };
-    Some(Location {
-        board,
-        path: fields.get("path")?.as_str()?.to_owned(),
-        object,
-        pointers,
-        follow,
-    })
 }

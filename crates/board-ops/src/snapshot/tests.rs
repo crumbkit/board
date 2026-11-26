@@ -157,7 +157,7 @@ const EVERY_TABLE: [&str; 16] = [
     "SELECT * FROM entries ORDER BY source, path",
     "SELECT * FROM entries",
     "SELECT * FROM decided ORDER BY key, path",
-    "SELECT * FROM resolutions ORDER BY key, path, ordinal",
+    "SELECT * FROM resolutions ORDER BY key, path",
     "SELECT * FROM pointers ORDER BY scan, path",
     "SELECT * FROM records ORDER BY source, path",
     "SELECT * FROM bodies ORDER BY blob",

@@ -247,7 +247,8 @@ impl Answering<'_> {
     /// the blob the walk listed, or the kept decision holds for a source
     /// not walked, and `snapshot` decided that code for: a file that
     /// resolved or reads as another blob changed after the walk, and is
-    /// `refs::target_changed`, counted as `target_changed` in the trace.
+    /// `refs::target_changed`, counted as `target_changed` in the trace, as
+    /// is a target whose kept row cannot be read or another process pruned.
     fn fielded(
         &mut self,
         snapshot: &Snapshot,
@@ -271,8 +272,10 @@ impl Answering<'_> {
             .and_then(|(_, entries)| entries.iter().find(|entry| entry.path == location.path))
             .map(|entry| entry.blob)
             .or_else(|| {
-                let at = (location.board.source.clone(), location.path.clone());
-                snapshot.kept.get(&at).copied()
+                let (_, key) =
+                    (snapshot.kept.iter()).find(|(source, _)| *source == location.board.source)?;
+                let kept = snapshot.decided.kept_blob(key, &location.path);
+                kept.ok().flatten()
             });
         let changed = || {
             self.board.trace.borrow_mut().count("target_changed", 1);

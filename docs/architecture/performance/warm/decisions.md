@@ -13,9 +13,10 @@ decides it. The working tree's decision is kept as [index.md](index.md) says.
   `detail` column holds, as JSON, what `check` reports beyond the row: a
   degraded entry's detail and the schema it names. The `decided` view
   leaves it out.
-- `resolutions`: each reference an entry of a kept decision makes, in
-  order, and where it resolved, under the same key, written in the same
-  transaction as its rows and pruned with them. A location in the decided
+- `resolutions`: one row for each entry of a kept decision that makes
+  references, holding them in order as a JSON array with where each
+  resolved, under the same key, written in the same transaction as its
+  rows and pruned with them. A location in the decided
   board itself keeps no board, so each run attaches the one that reached
   the key. `refs` reads them in place of deciding the source.
 - `pointers`: the mount pointers in a mounted tree, under a key of the tree

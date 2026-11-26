@@ -165,22 +165,17 @@ CREATE TABLE decided (
     change TEXT,
     PRIMARY KEY (key, path)
 ) WITHOUT ROWID;
--- Each reference a kept decision's record or Markdown file makes, under the
--- decision's key, numbered in order for each path: `pointer` is its JSON
--- pointer or a link's destination as written, `link` whether it is a
--- Markdown link, `target` the path it names, `location` where it resolved
--- as JSON, or null when it dangles, without its `board` when that is the
--- decided board itself, and `code` why it failed.
+-- The references each entry of a kept decision makes, under the decision's
+-- key: `reached` is a JSON array of them in order, each with its `pointer`
+-- (a JSON pointer or a link's destination as written), `link` when it is a
+-- Markdown link, the `target` it names, the `location` it resolved to,
+-- without its `board` when that is the decided board itself, and the `code`
+-- it failed with.
 CREATE TABLE resolutions (
     key TEXT NOT NULL,
     path TEXT NOT NULL,
-    ordinal INTEGER NOT NULL,
-    pointer TEXT NOT NULL,
-    link INTEGER NOT NULL,
-    target TEXT NOT NULL,
-    location TEXT,
-    code TEXT,
-    PRIMARY KEY (key, path, ordinal)
+    reached TEXT NOT NULL,
+    PRIMARY KEY (key, path)
 ) WITHOUT ROWID;
 ";
 

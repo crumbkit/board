@@ -42,9 +42,8 @@ fn symlink(entry: &Entry, code: Code) -> Option<Detail> {
     })
 }
 
-/// The blob of each entry of a mounted source read from kept rows, by
-/// source and physical path.
-pub(crate) type Blobs = HashMap<(Source, String), Option<ObjectId>>;
+/// The key each mounted source not walked keeps its decision under.
+pub(crate) type Keys = Vec<(Source, Digest)>;
 
 /// What a run decided: the report's entries and the rows of `resolved`,
 /// built together so they cannot disagree.
@@ -53,8 +52,8 @@ pub(super) struct Decisions {
     pub(super) checked: Vec<Checked>,
     pub(super) resolved: Vec<Resolved>,
     pub(super) references: Vec<Referenced>,
-    /// The blob of each entry of a mounted source read from kept rows.
-    pub(super) blobs: Blobs,
+    /// The key of each mounted source read from kept rows.
+    pub(super) keys: Keys,
     /// How many entries were decided, as against read from kept rows.
     pub(super) decided: usize,
 }
@@ -77,8 +76,9 @@ impl Decisions {
     }
 
     /// Reads what the index keeps under `key` of the board `own`, as `need`
-    /// reports it: each row of the report and, for refs, each reference and
-    /// the blob of each entry of a mounted source.
+    /// reports it: each row of the report and, for refs, each reference,
+    /// named by its entry's logical path from the kept row, and the key of
+    /// a mounted source.
     pub(super) fn read_kept(
         &mut self,
         writer: &Writer,
@@ -90,19 +90,26 @@ impl Decisions {
         }
         let source = &own.source;
         let refs = need == Need::Refs;
+        let mut logical = HashMap::new();
         for row in writer.decision(key)? {
-            if refs && *source != Source::WorkingTree {
-                (self.blobs).insert((source.clone(), row.path.clone()), row.blob);
+            if refs {
+                logical.insert(row.path.clone(), row.logical.clone());
             }
             self.checked.push(crate::check::from_kept(source, row)?);
         }
-        if refs {
-            let kept = writer.references(key, own)?.into_iter();
+        if !refs {
+            return Ok(());
+        }
+        if *source != Source::WorkingTree {
+            self.keys.push((source.clone(), *key));
+        }
+        for (path, reached) in writer.references(key, own)? {
+            let logical = logical.get(&path).cloned().flatten();
             self.references
-                .extend(kept.map(|(path, logical, reached)| Referenced {
+                .extend(reached.into_iter().map(|reached| Referenced {
                     source: source.clone(),
-                    path,
-                    logical,
+                    path: path.clone(),
+                    logical: logical.clone(),
                     reached,
                 }));
         }

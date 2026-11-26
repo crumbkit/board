@@ -28,7 +28,7 @@ it can see is gone.
 | `pointers` | a mounted tree's mount pointers | scan key, path |
 | `directories` | each directory's stat and items as a walk listed them ([performance/warm/index.md](performance/warm/index.md)) | path |
 | `decided` | a source's entries as decided ([performance/warm/decisions.md](performance/warm/decisions.md)) | decision key or slot, path |
-| `resolutions` | each reference a kept decision's entry makes, and where it resolved | decision key or slot, path, ordinal |
+| `resolutions` | the references a kept decision's entry makes, in order, and where each resolved | decision key or slot, path |
 | `probes` | what opening a mounted repository found ([performance/warm/index.md](performance/warm/index.md)) | stamp |
 | `slots`, `inputs` | the working tree's kept decision, and what each entry read | slot; slot, path |
 | `state` | index format, and when the last refresh that hashed or recorded a file began | key |
