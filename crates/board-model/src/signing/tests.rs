@@ -309,18 +309,21 @@ fn the_prompt_digest_is_the_sha256_the_board_plans_mod_logs() {
 }
 
 #[test]
-fn a_setting_digest_names_the_new_setting_so_an_answer_to_one_edit_does_not_approve_another() {
-    let short = super::setting_digest(Some(&json!({"require": []})));
+fn a_setting_digest_names_the_current_and_the_new_setting_so_an_answer_approves_one_edit_from_one_setting()
+ {
+    let empty = json!({"require": []});
+    let plan = json!({"require": ["plan"]});
+    let short = super::setting_digest(None, Some(&empty));
     assert!(
         short.starts_with("sha256:") && short.len() == 7 + 64,
         "{short}"
     );
-    assert_eq!(short, super::setting_digest(Some(&json!({"require": []}))));
-    assert_ne!(
-        short,
-        super::setting_digest(Some(&json!({"require": ["plan"]})))
-    );
-    assert_ne!(short, super::setting_digest(None));
+    assert_eq!(short, super::setting_digest(None, Some(&empty)));
+    assert_ne!(short, super::setting_digest(None, Some(&plan)));
+    assert_ne!(short, super::setting_digest(None, None));
+    // The same new setting from another starting setting, or the edit back.
+    assert_ne!(short, super::setting_digest(Some(&plan), Some(&empty)));
+    assert_ne!(short, super::setting_digest(Some(&empty), None));
 }
 
 #[test]
@@ -332,6 +335,7 @@ fn an_answer_is_recent_when_answered_in_the_last_30_days_and_not_after_now() {
     };
     let now = UNIX_EPOCH + Duration::from_secs(10_000_000);
     super::recent(&answered(9_999_000), now).unwrap();
+    assert_eq!(super::APPROVAL_DAYS, 30);
     super::recent(&answered(10_000_000 - 30 * 24 * 60 * 60), now).unwrap();
     let why = super::recent(&answered(10_000_000 - 31 * 24 * 60 * 60), now).unwrap_err();
     assert!(why.contains("30 days"), "{why}");

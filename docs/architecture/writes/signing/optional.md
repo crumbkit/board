@@ -36,10 +36,14 @@ a signature:
   `require` lists. An edit of `signing.configured` needs one with signing
   off too, so it is refused then. With signing off, an edit of `require`
   needs `board put --approved <answer>`: the owner's answer to a question
-  that names `board_model::setting_digest` of the new `signing`, which the
-  refusal without it gives. The answer must be from the last 30 days
-  (`board_model::recent`). Board keeps no record of the edits an answer
-  approved, so an answer is not single-use. A plugin never writes `.board/`.
+  that names `board_model::setting_digest` of the current and the new
+  `signing`, which the refusal without it gives. The answer must be from
+  the last 30 days (`board_model::APPROVAL_DAYS`). Board keeps no record of
+  the edits an answer approved, so an answer is not single-use, but it
+  approves only the edit from the setting its question names. Board does
+  not check who wrote the answer, so while signing is off an answer an
+  agent writes itself approves an edit of `require`. A plugin never writes
+  `.board/`.
 - A personal board the known boards file names but that does not open reads
   as signing configured with the file missing, so a listed act is refused.
   `board put` and `board rm` refuse only a write that reads signing's state
@@ -47,6 +51,11 @@ a signature:
 - When the known boards file names no personal board, a write reads the
   default setting, and a signed record in the board it writes keeps
   signing configured.
+- When it names another board, the board being written can only make
+  signing stricter. If its config sets `configured` true, or leaves it out
+  and the board holds a signed record, signing is configured and lists
+  every act either board's setting lists. The personal board is opened only
+  for a write that reads signing's state.
 - `board orders pinned` and `board orders signers` start with the state
   line, such as `Signing is off: every act takes an answer in chat.` As
   text, `pinned` then gives a row per order, those left out first, and
@@ -108,6 +117,7 @@ an edit of the order voids the answer (`board_model::approving`).
   `configured` without Touch ID. The guard covers `board put` only.
 - Board finds the personal board through `$XDG_CONFIG_HOME/board/config.json`,
   which the caller sets. An agent that points it at a decoy personal board
-  with `require: []` approves effects there with its own answer, and its
-  owner's writes in the real board read the decoy's setting, so they skip
-  the signature. Nothing shows in the owner's board.
+  with `require: []` approves effects there with its own answer. Its
+  owner's writes in the real board read the decoy's setting, and so skip
+  the signature, only while the real board holds no signed record and does
+  not set `configured` true. Nothing shows in the owner's board.

@@ -951,7 +951,7 @@ fn with_signing_off_a_put_that_edits_require_needs_an_approving_answer_and_one_o
     };
     let bare = put(&config, None);
     assert_eq!(refused(&bare), "board::signing::not_approved");
-    let digest = board_model::setting_digest(Some(&config["signing"]));
+    let digest = board_model::setting_digest(None, Some(&config["signing"]));
     assert!(
         json(&bare)["message"].as_str().unwrap().contains(&digest),
         "{}",
@@ -964,10 +964,11 @@ fn with_signing_off_a_put_that_edits_require_needs_an_approving_answer_and_one_o
         personal.record("/.board/board").unwrap()["signing"],
         config["signing"]
     );
+    let from = config["signing"].clone();
     config["signing"] = json!({"configured": false});
     let answer = approving_answer(
         &personal,
-        &board_model::setting_digest(Some(&config["signing"])),
+        &board_model::setting_digest(Some(&from), Some(&config["signing"])),
     );
     assert_eq!(
         refused(&put(&config, Some(answer))),
@@ -1013,7 +1014,7 @@ fn with_a_signed_seen_record_and_the_signers_file_gone_an_edit_of_require_or_a_w
     config["signing"] = json!({"require": []});
     let answer = approving_answer(
         &personal,
-        &board_model::setting_digest(Some(&config["signing"])),
+        &board_model::setting_digest(None, Some(&config["signing"])),
     );
     let ran = put_with(
         &personal,
@@ -1061,4 +1062,39 @@ fn a_personal_board_that_does_not_open_refuses_a_write_under_effects_and_not_a_p
     let ran = put_with(&personal, files, "/effects/seen/s", &order, None);
     assert_eq!(refused(&ran), "board::config::not_found");
     assert!(personal.record("/effects/seen/s").is_none());
+}
+
+/// A known boards file that names a second, empty board as the personal
+/// one does not turn signing off for the board being written: with a
+/// signed seen record there and the allowed signers file gone, an edit of
+/// `require` and a put under `effects/` are refused as `file_missing`, and
+/// a put elsewhere goes ahead.
+#[test]
+fn a_known_boards_file_naming_an_empty_board_keeps_the_written_boards_signed_record_refusing_a_missing_signers_file()
+ {
+    let (personal, decoy) = (personal(), personal());
+    let known = json!({"personal": decoy.board.workdir()}).to_string();
+    personal.xdg.write("board/config.json", Item::File(&known));
+    let seen = json!({"$type": board_model::SEEN_TYPE, "signature": "signed"});
+    personal.write(&format!("effects/seen/{SEEN}.json"), &seen.to_string());
+    let gone = signing_files(&personal, personal.signer.directory().join("gone"));
+    let mut config = personal.record("/.board/board").unwrap();
+    config["signing"] = json!({"require": []});
+    let answer = approving_answer(
+        &personal,
+        &board_model::setting_digest(None, Some(&config["signing"])),
+    );
+    let ran = put_with(
+        &personal,
+        gone.clone(),
+        "/.board/board",
+        &config,
+        Some(answer),
+    );
+    assert_eq!(refused(&ran), "board::signing::file_missing");
+    let order = json!({"$type": ORDER_TYPE, "order": "Do not push to main.", "context": "/orders/push.md", "expires": "2999-12-31"});
+    let ran = put_with(&personal, gone.clone(), "/effects/seen/s", &order, None);
+    assert_eq!(refused(&ran), "board::signing::file_missing");
+    let ran = put_with(&personal, gone, "/orders/other", &order, None);
+    assert_eq!(ran.code, 0, "{}{}", text(&ran.stdout), text(&ran.stderr));
 }

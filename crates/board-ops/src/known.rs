@@ -146,7 +146,7 @@ impl KnownBoards {
 
     /// The root of the personal board the file names, if it names one,
     /// refused unless a board's root is there.
-    fn named(&self, home: Option<&Path>) -> Result<Option<PathBuf>, Box<Refusal>> {
+    pub(crate) fn named(&self, home: Option<&Path>) -> Result<Option<PathBuf>, Box<Refusal>> {
         let file = self.file.as_deref();
         let Some(root) = self.known.personal.as_ref().map(|root| against(file, root)) else {
             return Ok(None);
@@ -183,28 +183,29 @@ impl KnownBoards {
 
 /// Who asks for a put or a removal: `plugin`, and the personal board
 /// `known` names, whose setting and signed records say what signing needs.
-/// When `known` was not read, or names a directory that is not a board's
-/// root, the refusal waits in the asker until a write that signing governs
-/// reads signing's state, so every other write goes ahead.
+/// The personal board is resolved and opened only when a write that signing
+/// governs reads signing's state. When `known` was not read, or names a
+/// directory that is not a board's root, the refusal waits until then, so
+/// every other write goes ahead.
 pub fn writing_asker(
     plugin: Option<PluginName>,
     known: Result<KnownBoards, Box<Refusal>>,
     home: Option<PathBuf>,
     signing: Signing,
 ) -> Asker {
-    let named = known.and_then(|known| known.named(home.as_deref()));
-    let (personal, unopened) = match named {
-        Ok(personal) => (personal, None),
+    let (known, unopened) = match known {
+        Ok(known) => (Some(known), None),
         Err(refusal) => (None, Some(refusal)),
     };
     Asker {
         plugin,
-        personal,
+        personal: None,
         home,
         signing,
         sign_owner_writes: true,
         approved: None,
         unopened,
+        known,
     }
 }
 
@@ -226,6 +227,7 @@ pub fn asker(
         sign_owner_writes: true,
         approved: None,
         unopened: None,
+        known: None,
     })
 }
 

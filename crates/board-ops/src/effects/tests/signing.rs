@@ -413,7 +413,7 @@ fn with_signing_off_an_edit_of_require_needs_an_approving_answer_that_names_the_
     assert_eq!(read(&mine, ".board/board.json")["signing"], Value::Null);
     answered(
         &mine,
-        &board_model::setting_digest(Some(&json!({"require": []}))),
+        &board_model::setting_digest(None, Some(&json!({"require": []}))),
         &json!({"person": "ana"}),
     );
     let approving = Asker {
@@ -428,7 +428,7 @@ fn with_signing_off_an_edit_of_require_needs_an_approving_answer_that_names_the_
     assert_eq!(other.unwrap_err().code(), Code::SigningNotApproved);
     answered(
         &mine,
-        &board_model::setting_digest(Some(&require)),
+        &board_model::setting_digest(None, Some(&require)),
         &json!({"person": "ana"}),
     );
     put(
@@ -446,7 +446,7 @@ fn with_signing_off_an_edit_of_configured_is_refused_even_with_an_approving_answ
     let configured = json!({"configured": false});
     answered(
         &mine,
-        &board_model::setting_digest(Some(&configured)),
+        &board_model::setting_digest(None, Some(&configured)),
         &json!({"person": "ana"}),
     );
     let approving = Asker {
@@ -582,7 +582,7 @@ fn removing_the_signed_records_and_then_the_signers_file_does_not_turn_signing_o
 fn with_signing_off_an_answer_from_over_30_days_ago_does_not_approve_an_edit_of_require() {
     let mine = personal();
     let require = json!({"require": ["plan"]});
-    let digest = board_model::setting_digest(Some(&require));
+    let digest = board_model::setting_digest(None, Some(&require));
     let approving = Asker {
         approved: Some(ANSWER.to_owned()),
         ..off(&mine)
@@ -616,7 +616,7 @@ fn with_no_personal_board_named_a_signed_record_in_the_written_board_keeps_a_mis
     let require = json!({"require": ["plan"]});
     answered(
         &mine,
-        &board_model::setting_digest(Some(&require)),
+        &board_model::setting_digest(None, Some(&require)),
         &json!({"person": "ana"}),
     );
     let unnamed = Asker {
@@ -636,7 +636,7 @@ fn with_no_personal_board_named_a_signed_record_in_the_written_board_keeps_a_mis
     let other = personal();
     answered(
         &other,
-        &board_model::setting_digest(Some(&require)),
+        &board_model::setting_digest(None, Some(&require)),
         &json!({"person": "ana"}),
     );
     put(
@@ -652,6 +652,97 @@ fn with_no_personal_board_named_a_signed_record_in_the_written_board_keeps_a_mis
     )
     .unwrap();
     assert_eq!(read(&other, ".board/board.json")["signing"], require);
+}
+
+#[test]
+fn with_a_second_empty_board_named_as_personal_a_signed_record_in_the_written_board_keeps_a_missing_signers_file_refusing()
+ {
+    let mine = personal();
+    signed_order(&mine);
+    let require = json!({"require": ["plan"]});
+    answered(
+        &mine,
+        &board_model::setting_digest(None, Some(&require)),
+        &json!({"person": "ana"}),
+    );
+    // A board the caller names as personal, with no signed record, or
+    // whose own config says signing is not configured and lists no act.
+    for decoy in [None, Some(json!({"require": [], "configured": false}))] {
+        let named = personal();
+        if let Some(setting) = &decoy {
+            set(&named, setting);
+        }
+        let elsewhere = Asker {
+            personal: Some(named.workdir().to_path_buf()),
+            approved: Some(ANSWER.to_owned()),
+            ..missing(&mine)
+        };
+        let writing = owning(&mine, elsewhere);
+        let error = put(&writing, "/.board/board", &config_with(&require)).unwrap_err();
+        assert_eq!(error.code(), Code::SigningFileMissing, "{decoy:?} {error}");
+        assert_eq!(read(&mine, ".board/board.json")["signing"], Value::Null);
+        let error = put(&writing, "/effects/seen/s", &task("")).unwrap_err();
+        assert_eq!(error.code(), Code::SigningFileMissing, "{decoy:?} {error}");
+        assert!(!exists(&mine, "effects/seen/s.json"));
+        put(&writing, "/tasks/a", &task("")).unwrap();
+    }
+}
+
+#[test]
+fn with_a_second_board_named_as_personal_configured_true_in_the_written_board_keeps_a_missing_signers_file_refusing()
+ {
+    let (mine, named) = (personal(), personal());
+    set(&mine, &json!({"configured": true}));
+    let elsewhere = Asker {
+        personal: Some(named.workdir().to_path_buf()),
+        ..missing(&mine)
+    };
+    let error = put(
+        &owning(&mine, elsewhere.clone()),
+        "/effects/seen/s",
+        &task(""),
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), Code::SigningFileMissing, "{error}");
+    // With neither board configured, the same write reads signing as off.
+    let other = personal();
+    put(&owning(&other, elsewhere), "/effects/seen/s", &task("")).unwrap();
+}
+
+#[test]
+fn with_signing_off_an_answer_approves_an_edit_of_require_only_from_the_setting_its_question_names()
+{
+    let mine = personal();
+    let from = json!({"require": ["data"]});
+    set(&mine, &from);
+    let require = json!({"require": ["plan"]});
+    let approving = Asker {
+        approved: Some(ANSWER.to_owned()),
+        ..off(&mine)
+    };
+    answered(
+        &mine,
+        &board_model::setting_digest(None, Some(&require)),
+        &json!({"person": "ana"}),
+    );
+    let other = put(
+        &owning(&mine, approving.clone()),
+        "/.board/board",
+        &config_with(&require),
+    )
+    .unwrap_err();
+    assert_eq!(other.code(), Code::SigningNotApproved, "{other}");
+    let digest = board_model::setting_digest(Some(&from), Some(&require));
+    assert!(other.to_string().contains(&digest), "{other}");
+    assert_eq!(read(&mine, ".board/board.json")["signing"], from);
+    answered(&mine, &digest, &json!({"person": "ana"}));
+    put(
+        &owning(&mine, approving),
+        "/.board/board",
+        &config_with(&require),
+    )
+    .unwrap();
+    assert_eq!(read(&mine, ".board/board.json")["signing"], require);
 }
 
 #[test]

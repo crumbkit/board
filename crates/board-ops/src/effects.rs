@@ -15,6 +15,7 @@ use board_tree::{Removes, Target, Working};
 use serde_json::Value;
 
 use crate::board::Board;
+use crate::known::KnownBoards;
 use crate::put::Expect;
 use crate::verdict::Admitted;
 
@@ -41,6 +42,10 @@ pub struct Asker {
     /// Why the personal board the known boards file names cannot be
     /// read, kept to refuse a write that signing governs with.
     pub unopened: Option<Box<Refusal>>,
+    /// The known boards file a put or a removal read, whose personal board
+    /// is resolved and opened only when a write that signing governs reads
+    /// signing's state, so other writes open no second board.
+    pub known: Option<KnownBoards>,
 }
 
 /// How the owner signs an approval, and the keys a signature must verify
@@ -170,23 +175,64 @@ impl Asker {
         Board::open(root, self.home.clone()).map_err(|source| EffectError::Open { source })
     }
 
-    /// Signing's state with the personal board's setting for a write to
-    /// `written`. When the known boards file names no personal board, it
-    /// is the default setting, and a signed record in `written` keeps
-    /// signing configured, so a caller who points the known boards file
-    /// elsewhere does not read the personal board's signed records as gone.
-    /// A personal board that is named but cannot be read is refused here,
-    /// so only a write that signing governs is refused for it.
+    /// Signing's state for a write to `written`. Which board is the
+    /// personal one is named by a file the caller chooses, so `written`'s
+    /// own signing is read too and can only make signing stricter:
+    ///
+    /// - With no personal board named, it is the default setting, and a
+    ///   signed record in `written` keeps signing configured.
+    /// - With `written` named, it is `written`'s setting and signed records.
+    /// - With another board named, it is that board's setting, unless
+    ///   `written` reads as configured on its own, by `configured` true in
+    ///   its config or, with `configured` left out, by holding a signed
+    ///   record. Then signing is configured and lists every act either
+    ///   board's setting lists.
+    ///
+    /// A personal board that is named but cannot be read is refused here, so
+    /// only a write that signing governs is refused for it.
     pub(crate) fn signing_now(&self, written: &Board) -> Result<board_model::Signing, EffectError> {
         if let Some(refusal) = &self.unopened {
             return Err(EffectError::Personal {
                 refusal: refusal.clone(),
             });
         }
-        Ok(match &self.personal {
-            Some(_) => self.signing.state(Some(&self.personal(String::new)?)),
-            None => (self.signing).read(SigningSetting::default(), Some(written)),
-        })
+        let root = match (&self.personal, &self.known) {
+            (Some(root), _) => Some(root.clone()),
+            (None, Some(known)) => known
+                .named(self.home.as_deref())
+                .map_err(|refusal| EffectError::Personal { refusal })?,
+            (None, None) => None,
+        };
+        let Some(root) = root else {
+            return Ok((self.signing).read(SigningSetting::default(), Some(written)));
+        };
+        let personal =
+            Board::open(&root, self.home.clone()).map_err(|source| EffectError::Open { source })?;
+        if personal.repository().path() == written.repository().path() {
+            return Ok(self.signing.state(Some(&personal)));
+        }
+        Ok(self.signing.elsewhere(&personal, written))
+    }
+}
+
+impl Signing {
+    /// Signing's state for a write to `written` when the known boards file
+    /// names `personal`, another board, as [`Asker::signing_now`] says.
+    fn elsewhere(&self, personal: &Board, written: &Board) -> board_model::Signing {
+        let named = &personal.config().signing;
+        let own = &written.config().signing;
+        let configured = own.configured.unwrap_or_else(|| holds_signature(written));
+        if !configured {
+            return self.read(named.clone(), Some(personal));
+        }
+        let require = (Act::ALL.into_iter())
+            .filter(|act| named.requires(*act) || own.requires(*act))
+            .collect();
+        let setting = SigningSetting {
+            require: Some(require),
+            configured: Some(true),
+        };
+        self.read(setting, Some(personal))
     }
 }
 
@@ -218,10 +264,10 @@ fn holds_signature(personal: &Board) -> bool {
 /// The directory of orders in the personal board.
 const ORDERS: &str = "orders";
 
-/// Whether the answer at `approved`, a logical path in `personal`, approves
+/// The answer at `approved`, a logical path in `personal`, when it approves
 /// the act on `target`, as [`board_model::approving`] says. `Err` says why
 /// not.
-pub(crate) fn approved_by(personal: &Board, approved: &str, target: &str) -> Result<(), String> {
+pub(crate) fn approved_by(personal: &Board, approved: &str, target: &str) -> Result<Value, String> {
     let relative = |path: &str| path.trim_start_matches('/').to_owned();
     let read = |path: &str, kind: &str| {
         read_record(personal, &relative(path), kind).map_err(|error| error.to_string())
@@ -233,8 +279,8 @@ pub(crate) fn approved_by(personal: &Board, approved: &str, target: &str) -> Res
         .transpose()?
         .flatten();
     board_model::approving(&answer, question.as_ref(), target)
-        .map(|_| ())
-        .map_err(|why| format!("the answer at {approved} does not approve it: {why}"))
+        .map_err(|why| format!("the answer at {approved} does not approve it: {why}"))?;
+    Ok(answer)
 }
 
 /// The owner's answer to `effect`, if they gave one. While signing lists
@@ -510,7 +556,7 @@ impl Board {
         // Removing or unsigning a signed record could turn signing off, so
         // it needs what an edit of signing needs.
         let setting = self.edits_signing(&change, &target.path, &on_disk);
-        let edit = (setting.as_ref().map(|(edit, _)| *edit))
+        let edit = (setting.as_ref().map(|setting| setting.edit))
             .or_else(|| self.unsigns(&change, &on_disk).then_some(Edit::Require));
         if !write && edit.is_none() {
             return Ok(());
@@ -552,8 +598,11 @@ impl Board {
                 });
             }
             Some(Need::Answer) => {
-                if let Some((Edit::Require, setting)) = &setting {
-                    self.approves_edit(setting.as_ref(), &landed)?;
+                if let Some(setting) = setting
+                    .as_ref()
+                    .filter(|setting| setting.edit == Edit::Require)
+                {
+                    self.approves_edit(setting, &landed)?;
                 }
                 return Ok(());
             }
@@ -605,16 +654,16 @@ impl Board {
     }
 
     /// The edit `change`, to the file given as `given` that lands at
-    /// `on_disk`, makes of `signing` in this board's config, and the
-    /// setting it leaves: a put whose `signing` differs from the one the
-    /// working tree holds, or the config's removal while it holds one. It
-    /// edits `configured` when that field differs, and `require` otherwise.
+    /// `on_disk`, makes of `signing` in this board's config: a put whose
+    /// `signing` differs from the one the working tree holds, or the
+    /// config's removal while it holds one. It edits `configured` when that
+    /// field differs, and `require` otherwise.
     fn edits_signing(
         &self,
         change: &Change<'_>,
         given: &str,
         on_disk: &str,
-    ) -> Option<(Edit, Option<Value>)> {
+    ) -> Option<SigningEdit> {
         let config = [given, on_disk]
             .iter()
             .any(|file| file.eq_ignore_ascii_case(".board/board.json"));
@@ -639,15 +688,20 @@ impl Board {
         } else {
             Edit::Configured
         };
-        Some((edit, next))
+        Some(SigningEdit {
+            edit,
+            from: current,
+            to: next,
+        })
     }
 
     /// Refuses unless the answer `board put --approved` names, in this
-    /// board, approves the edit that leaves `signing` as `setting`: its
-    /// question names [`board_model::setting_digest`] of it, and it was
-    /// answered in the last [`board_model::PROMPT_DAYS`] days.
-    fn approves_edit(&self, setting: Option<&Value>, landed: &str) -> Result<(), EffectError> {
-        let digest = board_model::setting_digest(setting);
+    /// board, approves `edit`: its question names
+    /// [`board_model::setting_digest`] of the setting the edit starts from
+    /// and the one it leaves, and it was answered in the last
+    /// [`board_model::APPROVAL_DAYS`] days.
+    fn approves_edit(&self, edit: &SigningEdit, landed: &str) -> Result<(), EffectError> {
+        let digest = board_model::setting_digest(edit.from.as_ref(), edit.to.as_ref());
         let what = format!("the owner's edit of signing in {landed}");
         let Some(approved) = &self.asker.approved else {
             return Err(EffectError::NotApproved {
@@ -662,20 +716,24 @@ impl Board {
             what: what.clone(),
             why,
         };
-        approved_by(self, approved, &digest).map_err(not_approved)?;
+        let answer = approved_by(self, approved, &digest).map_err(not_approved)?;
         // Board keeps no record of the edits an answer has approved, so an
         // answer is not single-use; it must be recent instead.
-        let answer = read_record(self, approved.trim_start_matches('/'), "plans/answer/v1")?;
-        (answer.as_ref())
-            .map_or(Ok(()), |answer| {
-                board_model::recent(answer, SystemTime::now())
-            })
-            .map_err(|why| {
-                not_approved(format!(
-                    "the answer at {approved} does not approve it: {why}"
-                ))
-            })
+        board_model::recent(&answer, SystemTime::now()).map_err(|why| {
+            not_approved(format!(
+                "the answer at {approved} does not approve it: {why}"
+            ))
+        })
     }
+}
+
+/// An edit of `signing` in a board's config: what it edits, the setting it
+/// starts from and the one it leaves, each `None` when the config holds no
+/// `signing`.
+struct SigningEdit {
+    edit: Edit,
+    from: Option<Value>,
+    to: Option<Value>,
 }
 
 /// The root of a board, as an effect names it: its canonical directory.

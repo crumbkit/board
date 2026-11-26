@@ -113,13 +113,22 @@ pub enum Edit {
     Configured,
 }
 
-/// What a question names to approve, in chat, an edit that leaves `signing`
-/// as `setting`: `sha256:` and the hex SHA-256 of its canonical JSON, or of
-/// `null` for an edit that removes it, so an answer approves that setting
-/// alone.
-pub fn setting_digest(setting: Option<&serde_json::Value>) -> String {
+/// What a question names to approve, in chat, an edit that changes
+/// `signing` from `current` to `next`: `sha256:` and the hex SHA-256 of the
+/// canonical JSON of `{"from": current, "to": next}`, with `null` for a
+/// setting that is not there. An answer therefore approves one edit from
+/// one starting setting, and approves it again only once the board is back
+/// in that starting setting.
+pub fn setting_digest(
+    current: Option<&serde_json::Value>,
+    next: Option<&serde_json::Value>,
+) -> String {
     let null = serde_json::Value::Null;
-    let canonical = crate::canonical_json(setting.unwrap_or(&null));
+    let edit = serde_json::json!({
+        "from": current.unwrap_or(&null),
+        "to": next.unwrap_or(&null),
+    });
+    let canonical = crate::canonical_json(&edit);
     format!("sha256:{}", sha256_hex(canonical.as_str().as_bytes()))
 }
 
@@ -302,7 +311,7 @@ pub fn approving(
 }
 
 /// Whether `answer`, a `plans/answer/v1`, was answered in the last
-/// [`PROMPT_DAYS`] days up to `now`. An answer that approves an edit of
+/// [`APPROVAL_DAYS`] days up to `now`. An answer that approves an edit of
 /// signing must be this recent, so one kept from long ago does not approve
 /// a return to the same setting. `Err` says why not.
 pub fn recent(answer: &serde_json::Value, now: std::time::SystemTime) -> Result<(), String> {
@@ -313,13 +322,18 @@ pub fn recent(answer: &serde_json::Value, now: std::time::SystemTime) -> Result<
         return Err("it was answered after now".to_owned());
     }
     let age = now.duration_since(answered).unwrap_or_default();
-    if age.as_secs() > PROMPT_DAYS * 24 * 60 * 60 {
+    if age.as_secs() > APPROVAL_DAYS * 24 * 60 * 60 {
         return Err(format!(
-            "it was answered more than {PROMPT_DAYS} days ago; ask the owner again"
+            "it was answered more than {APPROVAL_DAYS} days ago; ask the owner again"
         ));
     }
     Ok(())
 }
+
+/// How many days an answer that approves an edit of signing stays usable.
+/// Board keeps no record of the edits an answer approved, so this bound
+/// stops an old answer from being replayed.
+pub const APPROVAL_DAYS: u64 = 30;
 
 /// How long the board-plans mod keeps a prompt's digest.
 pub const PROMPT_DAYS: u64 = 30;
