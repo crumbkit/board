@@ -1,6 +1,6 @@
 ---
 name: plans
-description: 'The plans plugin records the decisions a session makes, the questions only the owner can answer, and the owner''s answers, as records in the board. Use it when you choose between options that a later session or reviewer needs to know about, and when work waits on the owner. Write a decision with `board -C <board> put --new --var project=<project>` and a `plans/decision/v1` on stdin; `board -C <board> plans open` lists the questions still waiting for an answer. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'The plans plugin records the decisions a session makes, the questions only the owner can answer, and the owner''s answers, as records in the board. Use it when you choose between options that a later session or reviewer needs to know about, and when work waits on the owner. Record a decision with `board -C <board> plans decide --project <project> --decision ''<what was chosen>'' --why ''<the reason>'' --session <local_ id>`; `board -C <board> plans open` lists the questions still waiting for an answer. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # plans
@@ -27,30 +27,36 @@ in. `<project>` names what the record concerns, such as the repository
    `type:answer` find questions and answers the same way, and
    `from:<person>` keeps the records that person wrote.
 
-2. When you or the owner choose between options, write a
-   `plans/decision/v1`. Write it as its own record, even while you write a
+2. When you or the owner choose between options, record a decision with
+   `plans.decide`. Record it as its own record, even while you write a
    change's plan; the plan can name it.
 
-       echo '{"$type": "plans/decision/v1", "decision": "<what was chosen>", "why": "<the reason>", "alternatives": ["<what was not chosen>"], "by": {"program": "claude-code"}, "decided": "<now>"}' | board -C <board> put --new --var project=<project>
+       board -C <board> plans decide --project <project> --decision '<what was chosen>' --why '<the reason>' --alternatives '<what was not chosen>' --session <your local_ id>
 
-   It prints the path it wrote, `/projects/<project>/decisions/<id>`.
-   `decided` is the UTC time, as `date -u +%Y-%m-%dT%H:%M:%SZ` prints it. `by` names who decided, with any of
-   `session` (a `local_` id), `program`, `person` and `agent`; the owner's
-   decision names the owner as `person`. Add `refs` for the board paths the
-   decision concerns, such as a plan or an answer, `urls` for web pages such
-   as a pull request, and `"review": "wanted"` when the owner should look
-   at it.
+   It prints the path it wrote, `/projects/<project>/decisions/<id>`, and
+   fills in `$type`, `decided` as now, and `by` from `--session`,
+   `--person` and `--program`. A call that gives neither `--session` nor
+   `--person` is refused with `plans::decide::no_author`. Repeat
+   `--alternatives` for each option not chosen, and `--refs` for each
+   board path the decision concerns, such as a plan or an answer, and
+   `--urls` for each web page, such as a pull request. Add `--review` when
+   the owner should look at it. JSON on stdin with the same names, such as
+   `{"project": "<project>", "decision": "...", "alternatives": ["..."]}`,
+   works too. When the project held nothing before, the decision is still
+   written, and the output warns with the three nearest project names; on
+   a typo, record it again under the right name and remove the first with
+   `board rm`.
 
    A change's owner checks count a decision only when its `by.person` is
    set and its `written_by` is empty. They count an answer when its
    `by.person` or its `written_by` is set. When the owner approves in chat,
-   record his approval with his name as `person` and his words, quoted, in
-   `why`:
+   record his approval with his name as `--person` and his words, quoted, in
+   `--why`:
 
-       echo '{"$type": "plans/decision/v1", "decision": "<the owner> approves the plan <plan record>.", "why": "Asked whether he approves the plan, <the owner> answered \"<his words>\".", "refs": ["<plan record>"], "by": {"person": "<the owner>", "session": "<your local_ id>"}, "decided": "<now>"}' | board -C <board> put --new --var project=<project>
+       board -C <board> plans decide --project <project> --decision '<the owner> approves the plan <plan record>.' --why 'Asked whether he approves the plan, <the owner> answered "<his words>".' --refs '<plan record>' --person '<the owner>' --session <your local_ id>
 
-   Set `person` only for a decision the owner made. A decision you make
-   yourself names your `session` or `program`.
+   Set `--person` only for a decision the owner made. A decision you make
+   yourself names your `--session` or `--program`.
 3. When the decision belongs to a change, attach it:
 
        board -C <board> changes attach --path /changes/<name> --ref /projects/<project>/decisions/<id>
