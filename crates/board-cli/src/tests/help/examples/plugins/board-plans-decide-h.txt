@@ -1,0 +1,24 @@
+Record a decision under /projects/<project>/decisions/, filling in its $type, decided as now, and by from session, person and program. A call that names neither a session nor a person is refused. A project that held nothing before is still written to, with a warning that names the three nearest projects. A repeat records a second decision.
+
+Usage: board call plans.decide [OPTIONS]
+
+Options:
+      --alternatives <alternatives>  What was not chosen; repeat the flag for each value, or give none alone for an empty list.
+      --decision <decision>          What was chosen.
+      --person <person>              The person who decided, such as ana; give it only for a decision that person made.
+      --program <program>            The program that decided, such as claude-code.
+      --project <project>            The project the decision concerns, such as `board`; the decision is written under `/projects/<project>/decisions/`.
+      --refs <refs>                  The board paths the decision concerns, such as a plan or an answer; repeat the flag for each value, or give none alone for an empty list.
+      --review [<true|false>]        Whether the owner should look at the decision, recorded as review wanted; given bare, it means true. [possible values: true, false]
+      --session <session>            The deciding session, by its local_ id; give it, the person, or both.
+      --urls <urls>                  The web pages the decision concerns, such as a pull request; repeat the flag for each value, or give none alone for an empty list.
+      --why <why>                    The reason for the choice.
+  -h, --help                         Print help (see more with '--help')
+
+Without a flag, Board reads the input as JSON on stdin; with one, it ignores stdin.
+
+Examples:
+  board call plans.decide
+
+Effects: additive, not idempotent, closed-world.
+Global flags: --json, --no-input. `board call plans.decide --help` describes them.

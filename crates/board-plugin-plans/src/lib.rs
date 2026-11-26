@@ -2,6 +2,7 @@
 
 mod answer;
 mod ask;
+mod decide;
 mod fill;
 mod migrate;
 mod open;
@@ -62,10 +63,11 @@ impl Plugin for Plans {
             "sweep" => sweep::sweep(host, &input),
             "stale" => stale::stale(host, &input),
             "ask" => ask::ask(host, &input),
+            "decide" => decide::decide(host, &input),
             other => Err(PluginError {
                 code: "plans::call::unknown_capability".to_owned(),
                 message: format!(
-                    "plans offers no capability {other}; it offers open, answer, withdraw, migrate, waiting, sweep, ask and stale"
+                    "plans offers no capability {other}; it offers open, answer, withdraw, migrate, waiting, sweep, ask, stale and decide"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -80,6 +82,8 @@ impl Plugin for Plans {
 enum Effect {
     /// It writes nothing.
     Reads,
+    /// It only adds records, and a repeat adds them again.
+    Adds,
     /// It only adds records or fields, and a repeat adds nothing more.
     AddsOnce,
     /// It changes fields of existing records, and a repeat changes nothing
@@ -92,6 +96,7 @@ impl Effect {
     fn hints(self) -> [bool; 3] {
         match self {
             Self::Reads => [true, false, true],
+            Self::Adds => [false, false, false],
             Self::AddsOnce => [false, false, true],
             Self::OverwritesOnce => [false, true, true],
         }
@@ -128,10 +133,10 @@ fn manifest() -> Value {
         "description": "The plans plugin records the decisions a session makes, the questions only \
             the owner can answer, and the owner's answers, as records in the board. Use it when \
             you choose between options that a later session or reviewer needs to know about, and \
-            when work waits on the owner. Write a decision with \
-            `board -C <board> put --new --var project=<project>` and a `plans/decision/v1` on \
-            stdin; `board -C <board> plans open` lists the questions still waiting for an \
-            answer. SKILL.md and README.md in the plugin's directory say more.",
+            when work waits on the owner. Record a decision with \
+            `board -C <board> plans decide --project <project> --decision '<what was chosen>' \
+            --why '<the reason>' --session <local_ id>`; `board -C <board> plans open` lists \
+            the questions still waiting for an answer. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "planning"},
         "types": record_schemas().map(|(name, _)| name),
         "capabilities": [
@@ -193,6 +198,15 @@ fn manifest() -> Value {
                  drop-or-keep question through plans.ask, as session; without it nothing is \
                  written.",
                 Effect::AddsOnce,
+            ),
+            capability::<decide::Input, decide::Output>(
+                "decide",
+                "Record a decision under /projects/<project>/decisions/, filling in its $type, \
+                 decided as now, and by from session, person and program. A call that names \
+                 neither a session nor a person is refused. A project that held nothing before \
+                 is still written to, with a warning that names the three nearest projects. A \
+                 repeat records a second decision.",
+                Effect::Adds,
             ),
         ],
     })
