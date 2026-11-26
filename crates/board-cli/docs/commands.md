@@ -193,6 +193,9 @@ Write the record on stdin at a path or --new name, or a .md file or one with --f
 
   With a `store` setting, --file uploads bytes over 1 MiB or not UTF-8 under their digest and writes a board/attachment/v1 record.
 - `--wait <DURATION>`: How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h. Default: `5s`.
+- `--strict`: Fill and drop no field, and refuse what the schema refuses.
+
+  Without it, a record's missing `by`, `asked`, `decided`, question `status` and review `patch_ids` are filled, and a field its schema does not name is dropped with a warning.
 
 Effects: destructive, not idempotent, open-world.
 
@@ -687,11 +690,13 @@ Effects: read-only, closed-world.
 
 ## `board schemas show`
 
-Print the JSON Schema of each document
+Print the JSON Schema of each document.
+
+It also prints the schema of each record type a built-in plugin ships, as `board plugin enable` writes it, which `board schemas list` does not list.
 
 ### Arguments
 
-- `<ID>`: The ids of the documents that `schemas list` lists, separated by spaces. Required. Takes more than one value.
+- `<ID>`: The ids of the documents that `schemas list` lists, or of the record types the built-in plugins ship, separated by spaces. Required. Takes more than one value.
 
 ### Columns
 

@@ -1,0 +1,1194 @@
+{
+  "$defs": {
+    "BoardRead": {
+      "additionalProperties": false,
+      "description": "The Board that made a report and the board holding its rules.",
+      "properties": {
+        "rules_commit": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The commit HEAD names in the rules board; null when git gives none."
+        },
+        "rules_from": {
+          "anyOf": [
+            {
+              "pattern": "^([a-z0-9-]+/[a-z0-9._-]+|[a-z0-9-]+(\\.[a-z0-9-]+)*\\.[a-z]+(/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)+)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The rules board's origin remote in identity form; null when it has\nnone."
+        },
+        "version": {
+          "description": "Board's version, such as `0.1.1`.",
+          "pattern": "^[0-9]+(\\.[0-9]+)*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "rules_from",
+        "rules_commit"
+      ],
+      "type": "object"
+    },
+    "BudgetChecker": {
+      "description": "A budget rule: a limit on the words or bytes of the files the control\napplies to, or of the text `evaluate` is given.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "max"
+              ]
+            },
+            {
+              "required": [
+                "per"
+              ]
+            },
+            {
+              "required": [
+                "unit"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "check": {
+            "const": "budget"
+          }
+        },
+        "required": [
+          "check"
+        ]
+      },
+      "properties": {
+        "max": {
+          "description": "The most words or bytes allowed.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "per": {
+          "default": "total",
+          "description": "`total`, the default, to sum the files' usage, or `file` to hold\neach file on its own within `max`.",
+          "enum": [
+            "total",
+            "file"
+          ],
+          "type": "string"
+        },
+        "unit": {
+          "description": "What the budget counts: `words`, separated by any whitespace, or\n`bytes`.",
+          "enum": [
+            "words",
+            "bytes"
+          ],
+          "type": "string"
+        }
+      },
+      "then": {
+        "required": [
+          "unit",
+          "max"
+        ]
+      }
+    },
+    "Counts": {
+      "additionalProperties": false,
+      "description": "How many members found each result.",
+      "properties": {
+        "behind": {
+          "description": "Version rules with a pin behind.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "missing_measure": {
+          "description": "Zero rules whose run lacks a measure.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "no_run": {
+          "description": "Zero rules whose suite has no qualifying run.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "not_zero": {
+          "description": "Zero rules with a measure not 0.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "over": {
+          "description": "Budgets over their max.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stale": {
+          "description": "Zero rules whose run is older than their `within_days`.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unmeasured": {
+          "description": "The repository's own rules.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unreadable": {
+          "description": "Rules that cannot be read.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "within": {
+          "description": "Budgets within their max.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "written": {
+          "description": "Rules this command does not measure.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "zero": {
+          "description": "Zero rules whose measures are all 0.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "within",
+        "over",
+        "behind",
+        "zero",
+        "not_zero",
+        "no_run",
+        "stale",
+        "missing_measure",
+        "written",
+        "unmeasured",
+        "unreadable"
+      ],
+      "type": "object"
+    },
+    "Differs": {
+      "additionalProperties": false,
+      "description": "An imposed rule the repository also holds, and the fields that differ.",
+      "properties": {
+        "fields": {
+          "description": "The fields whose values differ.",
+          "items": {
+            "enum": [
+              "requirement",
+              "purpose",
+              "summary",
+              "checker",
+              "kind",
+              "show"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "description": "The imposed rule's path.",
+          "pattern": "^/[^\\s{}]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "fields"
+      ],
+      "type": "object"
+    },
+    "Drift": {
+      "additionalProperties": false,
+      "description": "Where the repository's own rules differ from the imposed set, comparing\nrules by their paths below the imposed root.",
+      "properties": {
+        "differs": {
+          "description": "The imposed rules the repository also holds with different fields.",
+          "items": {
+            "$ref": "#/$defs/Differs"
+          },
+          "type": "array"
+        },
+        "extra": {
+          "description": "The repository's own rules with no imposed rule of the same path.",
+          "items": {
+            "pattern": "^/[^\\s{}]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "not_reached": {
+          "description": "The imposed rules that reach no file in the repository.",
+          "items": {
+            "pattern": "^/[^\\s{}]*$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "extra",
+        "differs",
+        "not_reached"
+      ],
+      "type": "object"
+    },
+    "FailedCase": {
+      "additionalProperties": false,
+      "description": "A case that failed or erred in a run.",
+      "properties": {
+        "case": {
+          "description": "The case's id, as the suite names it.",
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string",
+              "x-board-prose": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The run's note on the case; null when it has none."
+        }
+      },
+      "required": [
+        "case",
+        "note"
+      ],
+      "type": "object"
+    },
+    "FileOver": {
+      "additionalProperties": false,
+      "description": "A file over a per-file budget and what it uses.",
+      "properties": {
+        "file": {
+          "description": "The file, from the repository's root.",
+          "pattern": "^/[^\\s{}]*$",
+          "type": "string"
+        },
+        "used": {
+          "description": "What it uses.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "file",
+        "used"
+      ],
+      "type": "object"
+    },
+    "GroupRow": {
+      "additionalProperties": false,
+      "description": "A group and the state its members roll up to.",
+      "properties": {
+        "counts": {
+          "$ref": "#/$defs/Counts",
+          "description": "How many of the group's members that reach the repository found\neach result."
+        },
+        "id": {
+          "description": "The group's path.",
+          "pattern": "^/[^\\s{}]*$",
+          "type": "string"
+        },
+        "state": {
+          "description": "`failing` when a member fails, `unreadable` when one is unreadable\nand none fails, `passing` when every measured member passes,\n`written` when no member is measured, and `not_reached` when no\nmember reaches the repository.",
+          "enum": [
+            "failing",
+            "unreadable",
+            "passing",
+            "written",
+            "not_reached"
+          ],
+          "type": "string"
+        },
+        "title": {
+          "description": "The group's name for people.",
+          "pattern": "^\\S+( \\S+){0,24}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "state",
+        "counts"
+      ],
+      "type": "object"
+    },
+    "Imposed": {
+      "additionalProperties": false,
+      "description": "The imposed rule set.",
+      "properties": {
+        "root": {
+          "description": "The set's root, such as `/rules`.",
+          "pattern": "^/[^\\s{}]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "root"
+      ],
+      "type": "object"
+    },
+    "JudgedChecker": {
+      "description": "A judged rule: a rubric that a clean-context model reads text against.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "rubric"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "check": {
+            "const": "judged"
+          }
+        },
+        "required": [
+          "check"
+        ]
+      },
+      "properties": {
+        "rubric": {
+          "description": "The rubric the model reads.",
+          "format": "board-ref",
+          "type": "string"
+        }
+      },
+      "then": {
+        "required": [
+          "rubric"
+        ]
+      }
+    },
+    "Omitted": {
+      "additionalProperties": false,
+      "description": "How many items a row's lists left out past the first 20.",
+      "properties": {
+        "behind": {
+          "description": "Pins left out of `behind`.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "files": {
+          "description": "Files left out of `files`.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "over": {
+          "description": "Files left out of `over`.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "files",
+        "over",
+        "behind"
+      ],
+      "type": "object"
+    },
+    "PatternChecker": {
+      "description": "A pattern rule: a file of regular expressions, one per line, that text\nmust not match.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "file"
+              ]
+            },
+            {
+              "required": [
+                "quote"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "check": {
+            "const": "pattern"
+          }
+        },
+        "required": [
+          "check"
+        ]
+      },
+      "properties": {
+        "file": {
+          "description": "The file of regular expressions.",
+          "format": "board-ref",
+          "type": "string"
+        },
+        "quote": {
+          "description": "What a finding quotes: `match-only` quotes what matched and never\nthe expression, and `pattern` names the expression too.",
+          "enum": [
+            "match-only",
+            "pattern"
+          ],
+          "type": "string"
+        }
+      },
+      "then": {
+        "required": [
+          "file",
+          "quote"
+        ]
+      }
+    },
+    "PinBehind": {
+      "additionalProperties": false,
+      "description": "A pin older than a version rule's floor.",
+      "properties": {
+        "file": {
+          "description": "The file, from the repository's root.",
+          "pattern": "^/[^\\s{}]*$",
+          "type": "string"
+        },
+        "found": {
+          "description": "The version pinned.",
+          "pattern": "^[0-9]+(\\.[0-9]+)*$",
+          "type": "string"
+        },
+        "line": {
+          "description": "The line the pin is on, from 1.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "file",
+        "line",
+        "found"
+      ],
+      "type": "object"
+    },
+    "Refused": {
+      "additionalProperties": false,
+      "description": "A refusal or warning met while reading.",
+      "properties": {
+        "code": {
+          "description": "Board's or the plugin's code.",
+          "pattern": "^[a-z0-9-]+::[a-z0-9_]+::[a-z0-9_]+$",
+          "type": "string"
+        },
+        "message": {
+          "description": "What happened, for people.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "rules": {
+          "description": "The rules or groups it concerns, by path; empty when it concerns\nnone.",
+          "items": {
+            "pattern": "^/[^\\s{}]*$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "code",
+        "rules",
+        "message"
+      ],
+      "type": "object"
+    },
+    "RepositoryRead": {
+      "additionalProperties": false,
+      "description": "The repository a report measured.",
+      "properties": {
+        "commit": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The commit the report read; null when Board read the board's own\ntree and git gave no HEAD."
+        },
+        "committed": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When that commit was made; null when git cannot read it."
+        },
+        "name": {
+          "description": "The repository's name: its origin remote in identity form, or what\n`--repository` gave.",
+          "pattern": "^([a-z0-9-]+/[a-z0-9._-]+|[a-z0-9-]+(\\.[a-z0-9-]+)*\\.[a-z]+(/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)+)$",
+          "type": "string"
+        },
+        "uncommitted": {
+          "description": "Whether a file git tracks in the checkout read differs from the\ncommit.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "commit",
+        "committed",
+        "uncommitted"
+      ],
+      "type": "object"
+    },
+    "Row": {
+      "additionalProperties": false,
+      "description": "One rule that reaches the repository and what it found.",
+      "properties": {
+        "behind": {
+          "description": "Each pin older than a version rule's `at_least`, at most 20.",
+          "items": {
+            "$ref": "#/$defs/PinBehind"
+          },
+          "type": "array"
+        },
+        "checker": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/BudgetChecker"
+            },
+            {
+              "$ref": "#/$defs/PatternChecker"
+            },
+            {
+              "$ref": "#/$defs/JudgedChecker"
+            },
+            {
+              "$ref": "#/$defs/VersionChecker"
+            },
+            {
+              "$ref": "#/$defs/ZeroChecker"
+            }
+          ],
+          "description": "What a program checks, as the rule holds it; null for a rule with\nnone, one Board cannot read, or one of a kind this Board does not\nknow. A pattern checker names its file and never its expressions.",
+          "properties": {
+            "check": {
+              "description": "The kind of rule, which decides its other fields.",
+              "enum": [
+                "budget",
+                "pattern",
+                "judged",
+                "version",
+                "zero"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "check"
+          ],
+          "type": [
+            "object",
+            "null"
+          ],
+          "unevaluatedProperties": false
+        },
+        "code": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9-]+::[a-z0-9_]+::[a-z0-9_]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why the result is `unreadable`; null otherwise."
+        },
+        "files": {
+          "description": "The files a budget or version rule read, from the repository's root,\nat most 20.",
+          "items": {
+            "pattern": "^/[^\\s{}]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "groups": {
+          "description": "The paths of the groups the rule is in.",
+          "items": {
+            "pattern": "^/[^\\s{}]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "description": "The rule's path: in the rules board for an imposed rule, and from\nthe repository's root for one of its own.",
+          "pattern": "^/[^\\s{}]*$",
+          "type": "string"
+        },
+        "kind": {
+          "description": "`standing` or `obligation`, as the rule holds it.",
+          "enum": [
+            "standing",
+            "obligation"
+          ],
+          "type": "string"
+        },
+        "max": {
+          "description": "A budget's max; null for any other rule.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "omitted": {
+          "$ref": "#/$defs/Omitted",
+          "description": "How many items each list above left out."
+        },
+        "over": {
+          "description": "Each file over a per-file budget, at most 20.",
+          "items": {
+            "$ref": "#/$defs/FileOver"
+          },
+          "type": "array"
+        },
+        "purpose": {
+          "anyOf": [
+            {
+              "type": "string",
+              "x-board-prose": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why the requirement exists, as the rule holds it; null when the rule\ncannot be read."
+        },
+        "requirement": {
+          "anyOf": [
+            {
+              "type": "string",
+              "x-board-prose": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What the files must do, as the rule holds it; null when the rule\ncannot be read."
+        },
+        "result": {
+          "description": "What the rule found: `within` or `over` a budget, a pin `behind`, a\nzero rule's state, `written` for a rule this command does not\nmeasure, `unmeasured` for the repository's own rule, or\n`unreadable` with `code`.",
+          "enum": [
+            "within",
+            "over",
+            "behind",
+            "zero",
+            "not_zero",
+            "no_run",
+            "stale",
+            "missing_measure",
+            "written",
+            "unmeasured",
+            "unreadable"
+          ],
+          "type": "string"
+        },
+        "show": {
+          "description": "When the rule is shown, its default applied.",
+          "enum": [
+            "start",
+            "edit",
+            "failing"
+          ],
+          "type": "string"
+        },
+        "source": {
+          "description": "`imposed` for a rule of the imposed set, `repository` for one the\nrepository holds itself.",
+          "enum": [
+            "imposed",
+            "repository"
+          ],
+          "type": "string"
+        },
+        "used": {
+          "description": "What a budget's files use, its largest file's for a per-file budget;\nnull for any other rule.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "zero": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ZeroRead"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What a zero rule's suite's latest run reported; null for any other\nrule."
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "groups",
+        "requirement",
+        "purpose",
+        "kind",
+        "show",
+        "checker",
+        "result",
+        "code",
+        "used",
+        "max",
+        "files",
+        "over",
+        "behind",
+        "omitted",
+        "zero"
+      ],
+      "type": "object"
+    },
+    "SourceRun": {
+      "additionalProperties": false,
+      "description": "The GitHub Actions run that made a report.",
+      "properties": {
+        "commit": {
+          "description": "`GITHUB_SHA`: the commit the run checked out.",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+          "type": "string"
+        },
+        "repository": {
+          "description": "`GITHUB_REPOSITORY`: the repository whose workflow ran.",
+          "pattern": "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$",
+          "type": "string"
+        },
+        "run_id": {
+          "description": "`GITHUB_RUN_ID`: the run's id.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "run_number": {
+          "description": "`GITHUB_RUN_NUMBER`: the run's number in its workflow.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "repository",
+        "run_id",
+        "run_number",
+        "commit"
+      ],
+      "type": "object"
+    },
+    "SuiteRow": {
+      "additionalProperties": false,
+      "description": "A compliance suite and its newest full run of a clean revision.",
+      "properties": {
+        "cases": {
+          "description": "How many cases the suite lists inline; null when it lists none.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "code": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9-]+::[a-z0-9_]+::[a-z0-9_]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why `runs.latest` refused; null when it answered."
+        },
+        "id": {
+          "description": "The suite, by its logical path.",
+          "pattern": "^/[^\\s{}]*$",
+          "type": "string"
+        },
+        "run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SuiteRun"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The newest qualifying run; null when none qualifies or `runs.latest`\nrefused."
+        }
+      },
+      "required": [
+        "id",
+        "cases",
+        "run",
+        "code"
+      ],
+      "type": "object"
+    },
+    "SuiteRun": {
+      "additionalProperties": false,
+      "description": "A suite's newest qualifying run.",
+      "properties": {
+        "commit": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{7,40}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The commit the run's `versions.commit` names; null when it names\nnone."
+        },
+        "commits_since": {
+          "description": "Commits reachable from `repository.commit` and not from the run's\ncommit, as `git rev-list --count` counts them; null when they\ncannot be counted.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "commits_since_code": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9-]+::[a-z0-9_]+::[a-z0-9_]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why `commits_since` is null: `rules::report::run_commit_unnamed`\nwhen the run names no commit, `rules::report::run_commit_missing`\nwhen the clone lacks it, `rules::report::run_commit_not_ancestor`\nor `rules::report::no_git`; null when it is counted."
+        },
+        "failed": {
+          "description": "Each case that failed or erred, with the run's note on it.",
+          "items": {
+            "$ref": "#/$defs/FailedCase"
+          },
+          "type": "array"
+        },
+        "finished": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When the run finished, or started when it records no finish; null\nwhen it records neither as a time."
+        },
+        "id": {
+          "description": "The run, by its logical path.",
+          "pattern": "^/[^\\s{}]*$",
+          "type": "string"
+        },
+        "outcome": {
+          "description": "`fail` when a case failed or erred, else `pass`.",
+          "enum": [
+            "pass",
+            "fail"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "finished",
+        "commit",
+        "outcome",
+        "failed",
+        "commits_since",
+        "commits_since_code"
+      ],
+      "type": "object"
+    },
+    "VersionChecker": {
+      "description": "A version rule: every version the first group of `capture` finds is at\nleast `at_least`, compared over the numbers the version names.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "at_least"
+              ]
+            },
+            {
+              "required": [
+                "capture"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "check": {
+            "const": "version"
+          }
+        },
+        "required": [
+          "check"
+        ]
+      },
+      "properties": {
+        "at_least": {
+          "description": "The oldest version a file may pin, as numbers separated by dots,\nsuch as `1.99.1`.",
+          "pattern": "^[0-9]+(\\.[0-9]+)*$",
+          "type": "string"
+        },
+        "capture": {
+          "description": "A regular expression in the syntax of Rust's regex crate, whose\nfirst group finds each version a file pins.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "then": {
+        "required": [
+          "at_least",
+          "capture"
+        ]
+      }
+    },
+    "ZeroChecker": {
+      "description": "A zero rule: each of `measures` is 0 in the latest full run of a clean\nrevision of `suite`, which `runs.latest` gives.",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "measures"
+              ]
+            },
+            {
+              "required": [
+                "suite"
+              ]
+            },
+            {
+              "required": [
+                "within_days"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "check": {
+            "const": "zero"
+          }
+        },
+        "required": [
+          "check"
+        ]
+      },
+      "properties": {
+        "measures": {
+          "description": "The run-level measures that must each be 0, by the names the suite's\nruns record.",
+          "items": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "suite": {
+          "description": "The suite whose runs record the measures, by its logical path, such\nas `/suites/old-path-users`. It is no reference, so a suite that is\ngone fails this rule alone.",
+          "pattern": "^/[^\\s{}]*$",
+          "type": "string"
+        },
+        "within_days": {
+          "description": "The most days since the run finished; left out, a run of any age\ncounts.",
+          "maximum": 365,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "then": {
+        "required": [
+          "suite",
+          "measures"
+        ]
+      }
+    },
+    "ZeroRead": {
+      "additionalProperties": false,
+      "description": "What a zero rule's suite's latest qualifying run reported.",
+      "properties": {
+        "age_s": {
+          "description": "Whole seconds since the run finished; null with no run.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "measures": {
+          "additionalProperties": {
+            "type": [
+              "number",
+              "string",
+              "boolean",
+              "null"
+            ]
+          },
+          "description": "Each measure the rule names and the value the run recorded, a\nnumber, a label or a flag, null when it recorded none.",
+          "type": "object"
+        },
+        "run": {
+          "anyOf": [
+            {
+              "pattern": "^/[^\\s{}]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The run, by its logical path; null when none qualifies."
+        },
+        "suite": {
+          "description": "The suite, by its logical path.",
+          "pattern": "^/[^\\s{}]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "suite",
+        "run",
+        "age_s",
+        "measures"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`rules/report/v1`: every rule, group and compliance suite that reaches\none repository, what each found, where the repository's own rules differ\nfrom the imposed set, and every refusal met while reading them.\n\n`board rules report` prints one and writes nothing. File paths are from\nthe repository's root, so reports from different boards agree. A reader\nreads `result`, a group's `state` and a field list through `Open`, so a\nvalue a later Board adds reads as unknown.",
+  "properties": {
+    "$type": {
+      "const": "rules/report/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "board": {
+      "$ref": "#/$defs/BoardRead",
+      "description": "The Board that made the report and the board its rules came from."
+    },
+    "drift": {
+      "$ref": "#/$defs/Drift",
+      "description": "Where the repository's own rules differ from the imposed set."
+    },
+    "generated": {
+      "description": "When the command ran.",
+      "format": "date-time",
+      "pattern": "Z$",
+      "type": "string"
+    },
+    "groups": {
+      "description": "Each group and the state its members roll up to.",
+      "items": {
+        "$ref": "#/$defs/GroupRow"
+      },
+      "type": "array"
+    },
+    "imposed": {
+      "$ref": "#/$defs/Imposed",
+      "description": "The imposed rule set."
+    },
+    "refused": {
+      "description": "Each refusal and warning met while reading, which the rows it names\nalso show.",
+      "items": {
+        "$ref": "#/$defs/Refused"
+      },
+      "type": "array"
+    },
+    "repository": {
+      "$ref": "#/$defs/RepositoryRead",
+      "description": "The repository the report measured."
+    },
+    "rules": {
+      "description": "Each rule that reaches the repository, the imposed set's first by\npath, then the repository's own.",
+      "items": {
+        "$ref": "#/$defs/Row"
+      },
+      "type": "array"
+    },
+    "source_run": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SourceRun"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The GitHub Actions run that made the report, from its variables;\nnull outside GitHub Actions or when a variable is missing or\nmalformed."
+    },
+    "suites": {
+      "description": "Each compliance suite whose `subjects` name the repository, and its\nnewest full run of a clean revision.",
+      "items": {
+        "$ref": "#/$defs/SuiteRow"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "$type",
+    "generated",
+    "repository",
+    "board",
+    "source_run",
+    "imposed",
+    "rules",
+    "groups",
+    "suites",
+    "drift",
+    "refused"
+  ],
+  "title": "ReportRecord",
+  "type": "object"
+}

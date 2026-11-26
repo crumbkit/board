@@ -6,8 +6,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use board_types::{
-    Content, Degraded, Excerpt, Failure, FieldValue, File, Label, Location, Pointer, Printed,
-    PutReport, Recovery, Related, Removed, Report, Severity, Write,
+    Content, Degraded, Dropped, Excerpt, Failure, FieldValue, File, Filled, Label, Location,
+    Pointer, Printed, PutReport, Recovery, Related, Removed, Report, Severity, Write,
 };
 
 use super::*;
@@ -172,6 +172,17 @@ fn each_document_board_types_writes_is_admitted_by_its_schema_and_one_lacking_a_
         data: PutReport {
             absent: vec!["/gone".to_owned()],
             commit: Some("5b1d3c4e5f60718293a4b5c6d7e8f90a1b2c3d4e".to_owned()),
+            dropped: vec![Dropped {
+                line: Some(2),
+                near: Some("/alternatives".to_owned()),
+                path: "/decisions/a".to_owned(),
+                pointer: "/alternative".to_owned(),
+            }],
+            filled: vec![Filled {
+                line: None,
+                path: "/decisions/a".to_owned(),
+                pointer: "/decided".to_owned(),
+            }],
             removed: vec![Removed {
                 blob: "0a853c868c31f8e9991aa72662ad9eab6eabbc6b".to_owned(),
                 path: "/old".to_owned(),
@@ -292,6 +303,8 @@ fn board_types_covers_every_property_and_recovery_kind_the_report_schemas_name()
         data: PutReport {
             absent: Vec::new(),
             commit: None,
+            dropped: Vec::new(),
+            filled: Vec::new(),
             removed: Vec::new(),
             writes: Vec::new(),
         },

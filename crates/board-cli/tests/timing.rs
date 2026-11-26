@@ -290,6 +290,56 @@ fn board_timings_0_records_nothing_and_any_other_value_records_as_unset_does() {
     assert_eq!(records(on.path()).len(), 1);
 }
 
+/// Runs `skills list`, which opens no index, with a timing log and no tag in
+/// a cache root that is unwritable when `locked`, and gives its exit code
+/// and stderr.
+fn skills_under_cache_root(home: &Path, locked: bool) -> (Option<i32>, String) {
+    let scenario = board();
+    let root = home.join("cache/board");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("timings.jsonl"), b"").unwrap();
+    let mode = |mode| std::fs::Permissions::from_mode(mode);
+    std::fs::set_permissions(&root, mode(if locked { 0o500 } else { 0o700 })).unwrap();
+    let output = run(&scenario, home, None, &["skills", "list"]);
+    std::fs::set_permissions(&root, mode(0o700)).unwrap();
+    assert_eq!(records(home).len(), 1);
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    (output.status.code(), stderr)
+}
+
+#[test]
+fn appending_the_timing_line_under_an_unwritable_cache_root_warns_that_it_is_unmarked() {
+    let home = tempfile::tempdir().unwrap();
+    let (code, stderr) = skills_under_cache_root(home.path(), true);
+    assert_eq!(code, Some(0));
+    let root = home.path().join("cache/board");
+    // The error's text differs by platform: Linux names the temporary file.
+    let (message, hint) = stderr.split_once("; ").unwrap();
+    assert!(
+        message.starts_with(&format!(
+            "warning: board::cache::unmarked: the cache directory {} is not marked as a \
+             cache, so backups may copy it: Permission denied (os error 13)",
+            root.display()
+        )),
+        "{stderr}"
+    );
+    assert_eq!(
+        hint,
+        "Board marks the directory with a CACHEDIR.TAG file and, on macOS, a Time Machine \
+         exclusion; fix what stopped it, such as the directory's permissions, and the next \
+         run marks it\n"
+    );
+}
+
+#[test]
+fn appending_the_timing_line_under_a_writable_cache_root_warns_nothing() {
+    let home = tempfile::tempdir().unwrap();
+    assert_eq!(
+        skills_under_cache_root(home.path(), false),
+        (Some(0), String::new())
+    );
+}
+
 #[test]
 fn a_log_that_cannot_be_written_leaves_output_and_exit_code_as_a_writable_log_does() {
     let scenario = board();

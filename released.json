@@ -173,6 +173,78 @@
     "crates/board-plugin-rules/types/controls/source/v1.schema.json": {
       "shape": "0046310b3369a104cd9d9ffee9ef78956134139b"
     },
+    "crates/board-plugin-rules/types/rules/group/v1.schema.json": {
+      "shape": "891f774e9551bacb74058d4902ced12a11bab725"
+    },
+    "crates/board-plugin-rules/types/rules/report/v1.schema.json": {
+      "shape": "ce109f1c6f0dcd2257161ef708c633d8bdd1c412",
+      "enums": {
+        "/$defs/BudgetChecker/properties/per/enum": [
+          "total",
+          "file"
+        ],
+        "/$defs/BudgetChecker/properties/unit/enum": [
+          "words",
+          "bytes"
+        ],
+        "/$defs/Differs/properties/fields/items/enum": [
+          "requirement",
+          "purpose",
+          "summary",
+          "checker",
+          "kind",
+          "show"
+        ],
+        "/$defs/GroupRow/properties/state/enum": [
+          "failing",
+          "unreadable",
+          "passing",
+          "written",
+          "not_reached"
+        ],
+        "/$defs/PatternChecker/properties/quote/enum": [
+          "match-only",
+          "pattern"
+        ],
+        "/$defs/Row/properties/checker/properties/check/enum": [
+          "budget",
+          "pattern",
+          "judged",
+          "version",
+          "zero"
+        ],
+        "/$defs/Row/properties/kind/enum": [
+          "standing",
+          "obligation"
+        ],
+        "/$defs/Row/properties/result/enum": [
+          "within",
+          "over",
+          "behind",
+          "zero",
+          "not_zero",
+          "no_run",
+          "stale",
+          "missing_measure",
+          "written",
+          "unmeasured",
+          "unreadable"
+        ],
+        "/$defs/Row/properties/show/enum": [
+          "start",
+          "edit",
+          "failing"
+        ],
+        "/$defs/Row/properties/source/enum": [
+          "imposed",
+          "repository"
+        ],
+        "/$defs/SuiteRun/properties/outcome/enum": [
+          "pass",
+          "fail"
+        ]
+      }
+    },
     "crates/board-plugin-rules/types/rules/rule/v1.schema.json": {
       "shape": "b10cc15af0c366a25ecec4d4bb7afbdd4bd10f1e",
       "enums": {
@@ -13761,6 +13833,870 @@
         ]
       }
     },
+    "rules.report": {
+      "input": {
+        "type": [
+          "object"
+        ]
+      },
+      "input.imposed": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.repository": {
+        "type": [
+          "string"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "$type",
+            "board",
+            "drift",
+            "generated",
+            "groups",
+            "imposed",
+            "refused",
+            "repository",
+            "rules",
+            "source_run",
+            "suites"
+          ]
+        ]
+      },
+      "output.$type": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "rules/report/v1"
+        ]
+      },
+      "output.board": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "rules_commit",
+            "rules_from",
+            "version"
+          ]
+        ]
+      },
+      "output.board.rules_commit": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.board.rules_from": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.board.version": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.drift": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "differs",
+            "extra",
+            "not_reached"
+          ]
+        ]
+      },
+      "output.drift.differs": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.drift.differs[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "fields",
+            "id"
+          ]
+        ]
+      },
+      "output.drift.differs[].fields": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.drift.differs[].fields[]": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "requirement",
+          "purpose",
+          "summary",
+          "checker",
+          "kind",
+          "show"
+        ]
+      },
+      "output.drift.differs[].id": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.drift.extra": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.drift.extra[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.drift.not_reached": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.drift.not_reached[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.generated": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.groups": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.groups[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "counts",
+            "id",
+            "state",
+            "title"
+          ]
+        ]
+      },
+      "output.groups[].counts": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "behind",
+            "missing_measure",
+            "no_run",
+            "not_zero",
+            "over",
+            "stale",
+            "unmeasured",
+            "unreadable",
+            "within",
+            "written",
+            "zero"
+          ]
+        ]
+      },
+      "output.groups[].counts.behind": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.groups[].counts.missing_measure": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.groups[].counts.no_run": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.groups[].counts.not_zero": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.groups[].counts.over": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.groups[].counts.stale": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.groups[].counts.unmeasured": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.groups[].counts.unreadable": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.groups[].counts.within": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.groups[].counts.written": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.groups[].counts.zero": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.groups[].id": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.groups[].state": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "failing",
+          "unreadable",
+          "passing",
+          "written",
+          "not_reached"
+        ]
+      },
+      "output.groups[].title": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.imposed": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "root"
+          ]
+        ]
+      },
+      "output.imposed.root": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.refused": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.refused[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "code",
+            "message",
+            "rules"
+          ]
+        ]
+      },
+      "output.refused[].code": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.refused[].message": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.refused[].rules": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.refused[].rules[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.repository": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "commit",
+            "committed",
+            "name",
+            "uncommitted"
+          ]
+        ]
+      },
+      "output.repository.commit": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.repository.committed": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.repository.name": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.repository.uncommitted": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.rules": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.rules[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "behind",
+            "checker",
+            "code",
+            "files",
+            "groups",
+            "id",
+            "kind",
+            "max",
+            "omitted",
+            "over",
+            "purpose",
+            "requirement",
+            "result",
+            "show",
+            "source",
+            "used",
+            "zero"
+          ]
+        ]
+      },
+      "output.rules[].behind": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.rules[].behind[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "file",
+            "found",
+            "line"
+          ]
+        ]
+      },
+      "output.rules[].behind[].file": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rules[].behind[].found": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rules[].behind[].line": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.rules[].checker": {
+        "type": [
+          "null",
+          "object"
+        ],
+        "requires": [
+          [
+            "check"
+          ]
+        ]
+      },
+      "output.rules[].checker.at_least": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rules[].checker.capture": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rules[].checker.check": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "budget",
+          "pattern",
+          "judged",
+          "version",
+          "zero"
+        ]
+      },
+      "output.rules[].checker.file": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rules[].checker.max": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.rules[].checker.measures": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.rules[].checker.measures[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rules[].checker.per": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "total",
+          "file"
+        ]
+      },
+      "output.rules[].checker.quote": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "match-only",
+          "pattern"
+        ]
+      },
+      "output.rules[].checker.rubric": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rules[].checker.suite": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rules[].checker.unit": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "words",
+          "bytes"
+        ]
+      },
+      "output.rules[].checker.within_days": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.rules[].code": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.rules[].files": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.rules[].files[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rules[].groups": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.rules[].groups[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rules[].id": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rules[].kind": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "standing",
+          "obligation"
+        ]
+      },
+      "output.rules[].max": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "output.rules[].omitted": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "behind",
+            "files",
+            "over"
+          ]
+        ]
+      },
+      "output.rules[].omitted.behind": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.rules[].omitted.files": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.rules[].omitted.over": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.rules[].over": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.rules[].over[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "file",
+            "used"
+          ]
+        ]
+      },
+      "output.rules[].over[].file": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rules[].over[].used": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.rules[].purpose": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.rules[].requirement": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.rules[].result": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "within",
+          "over",
+          "behind",
+          "zero",
+          "not_zero",
+          "no_run",
+          "stale",
+          "missing_measure",
+          "written",
+          "unmeasured",
+          "unreadable"
+        ]
+      },
+      "output.rules[].show": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "start",
+          "edit",
+          "failing"
+        ]
+      },
+      "output.rules[].source": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "imposed",
+          "repository"
+        ]
+      },
+      "output.rules[].used": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "output.rules[].zero": {
+        "type": [
+          "null",
+          "object"
+        ],
+        "requires": [
+          [
+            "age_s",
+            "measures",
+            "run",
+            "suite"
+          ]
+        ]
+      },
+      "output.rules[].zero.age_s": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "output.rules[].zero.measures": {
+        "type": [
+          "object"
+        ]
+      },
+      "output.rules[].zero.measures.*": {
+        "type": [
+          "boolean",
+          "null",
+          "number",
+          "string"
+        ]
+      },
+      "output.rules[].zero.run": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.rules[].zero.suite": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.source_run": {
+        "type": [
+          "null",
+          "object"
+        ],
+        "requires": [
+          [
+            "commit",
+            "repository",
+            "run_id",
+            "run_number"
+          ]
+        ]
+      },
+      "output.source_run.commit": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.source_run.repository": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.source_run.run_id": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.source_run.run_number": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.suites": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.suites[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "cases",
+            "code",
+            "id",
+            "run"
+          ]
+        ]
+      },
+      "output.suites[].cases": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "output.suites[].code": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.suites[].id": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.suites[].run": {
+        "type": [
+          "null",
+          "object"
+        ],
+        "requires": [
+          [
+            "commit",
+            "commits_since",
+            "commits_since_code",
+            "failed",
+            "finished",
+            "id",
+            "outcome"
+          ]
+        ]
+      },
+      "output.suites[].run.commit": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.suites[].run.commits_since": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "output.suites[].run.commits_since_code": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.suites[].run.failed": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.suites[].run.failed[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "case",
+            "note"
+          ]
+        ]
+      },
+      "output.suites[].run.failed[].case": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.suites[].run.failed[].note": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.suites[].run.finished": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.suites[].run.id": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.suites[].run.outcome": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "pass",
+          "fail"
+        ]
+      }
+    },
     "runs.latest": {
       "input": {
         "type": [
@@ -14454,6 +15390,11 @@
           "string"
         ]
       },
+      "input.reason": {
+        "type": [
+          "string"
+        ]
+      },
       "input.refs": {
         "type": [
           "array"
@@ -14495,17 +15436,25 @@
         ],
         "requires": [
           [
+            "about",
             "commit",
             "conflicts",
             "defer",
+            "leaves_this_mac",
             "owner",
             "path",
+            "remote",
             "repo",
             "reviewed",
             "status",
             "unpushed",
             "unsynced"
           ]
+        ]
+      },
+      "output.about": {
+        "type": [
+          "string"
         ]
       },
       "output.commit": {
@@ -14528,6 +15477,11 @@
         "type": [
           "null",
           "string"
+        ]
+      },
+      "output.leaves_this_mac": {
+        "type": [
+          "boolean"
         ]
       },
       "output.owner": {
@@ -14558,6 +15512,12 @@
       },
       "output.path": {
         "type": [
+          "string"
+        ]
+      },
+      "output.remote": {
+        "type": [
+          "null",
           "string"
         ]
       },
@@ -16817,6 +17777,7 @@
     "autosync::state::unwritable",
     "board::attachment::mismatch",
     "board::attachment::missing",
+    "board::cache::unmarked",
     "board::cli::usage",
     "board::commit::not_found",
     "board::config::ambiguous",
@@ -17251,6 +18212,16 @@
     "rules::migrate::stale",
     "rules::migrate::unread",
     "rules::pattern::invalid",
+    "rules::report::ci_env_invalid",
+    "rules::report::file_unreadable",
+    "rules::report::group_unreadable",
+    "rules::report::member_unmatched",
+    "rules::report::no_git",
+    "rules::report::no_repository",
+    "rules::report::run_commit_missing",
+    "rules::report::run_commit_not_ancestor",
+    "rules::report::run_commit_unnamed",
+    "rules::report::suite_unreadable",
     "rules::rule::degraded",
     "rules::rule::not_found",
     "rules::rule::owed_by_standing",
@@ -17300,6 +18271,7 @@
     "tasks::repo::not_pushed",
     "tasks::repo::not_synced",
     "tasks::repo::origin_unread",
+    "tasks::repo::reason_needed",
     "tasks::repo::schema_stale",
     "tasks::repo::sync_timeout",
     "tasks::task::busy",

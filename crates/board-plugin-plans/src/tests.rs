@@ -157,7 +157,7 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
     assert_eq!(
         names,
         [
-            "open", "answer", "withdraw", "migrate", "waiting", "sweep", "ask", "stale"
+            "open", "answer", "withdraw", "migrate", "waiting", "sweep", "ask", "stale", "decide"
         ]
     );
     assert_eq!(manifest.description, skill_description());
@@ -310,6 +310,37 @@ fn each_capability_states_every_effect_hint_and_withdraw_is_destructive_and_idem
             &json!(false)
         )
     );
+}
+
+/// decide adds a record on every call, so it is neither destructive nor
+/// idempotent, and the description says agents record decisions with it.
+#[test]
+fn decide_adds_a_decision_on_each_call_and_the_description_names_it() {
+    let manifest = manifest();
+    let decide = (manifest["capabilities"].as_array().unwrap().iter())
+        .find(|capability| capability["name"] == "decide")
+        .unwrap();
+    assert_eq!(
+        (
+            &decide["annotations"]["readOnlyHint"],
+            &decide["annotations"]["destructiveHint"],
+            &decide["annotations"]["idempotentHint"],
+        ),
+        (&json!(false), &json!(false), &json!(false))
+    );
+    let input = &decide["inputSchema"];
+    assert_eq!(input["required"], json!(["project", "decision", "why"]));
+    let properties = input["properties"].as_object().unwrap();
+    for (name, property) in properties {
+        let description = property["description"].as_str().unwrap();
+        assert!(description.ends_with('.'), "{name}: {description}");
+    }
+    let description = manifest["description"].as_str().unwrap();
+    assert!(
+        description.contains("plans decide --project"),
+        "{description}"
+    );
+    assert!(!description.contains("put --new"), "{description}");
 }
 
 /// A question's status is open or withdrawn; answered is refused with the
@@ -609,7 +640,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_open_is_answered() {
     assert_eq!(refused.code, "plans::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "plans offers no capability closed; it offers open, answer, withdraw, migrate, waiting, sweep, ask and stale"
+        "plans offers no capability closed; it offers open, answer, withdraw, migrate, waiting, sweep, ask, stale and decide"
     );
     let answered = call("open").unwrap();
     assert_eq!(answered["total"], 0);

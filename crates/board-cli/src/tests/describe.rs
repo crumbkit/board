@@ -303,6 +303,128 @@ fn schemas_list_names_each_document_board_prints_and_show_prints_its_schema() {
 }
 
 #[test]
+fn schemas_show_prints_outside_a_board_the_schema_plugin_enable_writes_for_a_plugin_type() {
+    let board = Scenario::board();
+    board.identified();
+    let enabled = board_built_in(board.workdir(), &["plugin", "enable", "rules"]);
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    let written = std::fs::read(
+        board
+            .workdir()
+            .join(".board/types/rules/report/v1.schema.json"),
+    )
+    .unwrap();
+    let written: Value = serde_json::from_slice(&written).unwrap();
+    let outside = Scenario::new();
+    let show = |id: &str| {
+        board_built_in(
+            outside.workdir(),
+            &["schemas", "show", "--json", "--no-input", "--", id],
+        )
+    };
+    let shown = show("rules/report/v1");
+    assert_eq!(shown.code, 0, "{}", text(&shown.stderr));
+    let row = &json(&shown)["data"][0];
+    assert_eq!(row["id"], "rules/report/v1");
+    assert_eq!(row["schema"], written);
+    let misspelt = show("rules/reprot/v1");
+    assert_eq!(misspelt.code, 1, "{}", text(&misspelt.stdout));
+    let failure = &json(&misspelt)["failures"][0];
+    assert_eq!(failure["code"], "board::schemas::not_found");
+    assert_eq!(failure["message"], "board has no document rules/reprot/v1");
+    assert_eq!(
+        failure["recovery"],
+        json!({"kind": "run", "call": "board schemas list"})
+    );
+    // The board's own copy, even one that differs, changes nothing.
+    board.write(".board/types/rules/report/v1.schema.json", Item::File("{}"));
+    let inside = board_built_in(
+        board.workdir(),
+        &[
+            "schemas",
+            "show",
+            "--json",
+            "--no-input",
+            "--",
+            "rules/report/v1",
+        ],
+    );
+    assert_eq!(inside.code, 0, "{}", text(&inside.stderr));
+    assert_eq!(json(&inside)["data"][0]["schema"], written);
+}
+
+#[test]
+fn board_s_schemas_show_document_has_crumbkit_s_schema() {
+    assert_eq!(
+        crumbkit::schemas::document_schema(crate::describe::SHOWN),
+        crumbkit::schemas::document_schema(crumbkit::schemas::SCHEMAS_SHOW)
+    );
+}
+
+#[test]
+fn commands_list_marks_schemas_show_as_crumbkit_s_command() {
+    let outside = Scenario::new();
+    let listed = board_in(
+        outside.workdir(),
+        &[
+            "commands",
+            "list",
+            "schemas",
+            "show",
+            "--json",
+            "--full",
+            "--no-input",
+        ],
+    );
+    assert_eq!(listed.code, 0, "{}", text(&listed.stderr));
+    let rows = json(&listed)["data"].as_array().unwrap().clone();
+    let row = (rows.iter())
+        .find(|row| row["path"] == "board schemas show")
+        .unwrap_or_else(|| panic!("no schemas show in {rows:?}"));
+    assert_eq!(row["built_in"], true, "{row}");
+}
+
+#[test]
+fn each_built_in_plugin_ships_a_schema_for_each_type_its_manifest_lists() {
+    for plugin in board_plugins::BUILT_IN.0 {
+        let manifest = plugin.manifest();
+        let shipped: BTreeSet<_> = (plugin.schemas().into_iter())
+            .map(|(name, _)| name)
+            .collect();
+        let listed: BTreeSet<_> = manifest.types.into_iter().collect();
+        assert_eq!(shipped, listed, "{}", manifest.name);
+    }
+}
+
+#[test]
+fn schemas_show_keeps_the_order_of_documents_plugin_types_and_unknown_ids() {
+    let outside = Scenario::new();
+    let shown = board_built_in(
+        outside.workdir(),
+        &[
+            "schemas",
+            "show",
+            "--json",
+            "--no-input",
+            "--",
+            "rules/report/v1",
+            "nothing/here/v1",
+            "board/check-report/v2",
+        ],
+    );
+    assert_eq!(shown.code, 1, "{}", text(&shown.stdout));
+    let shown = json(&shown);
+    let ids: Vec<&str> = (shown["data"].as_array().unwrap().iter())
+        .map(|row| row["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["rules/report/v1", "board/check-report/v2"]);
+    let failure = &shown["failures"][0];
+    assert_eq!(failure["code"], "board::schemas::not_found");
+    assert_eq!(failure["key"], "nothing/here/v1");
+    assert_eq!(failure["index"], 1);
+}
+
+#[test]
 fn every_leaf_takes_no_input_and_json_before_its_own_words() {
     let listed = leaves();
     let tabled: Vec<String> = LINES.iter().map(|(path, ..)| (*path).to_owned()).collect();
@@ -679,4 +801,31 @@ fn a_boolean_flag_is_described_with_an_optional_true_or_false_value() {
     .unwrap();
     assert_eq!(urgent["value_names"], json!(["true|false"]));
     assert_eq!(urgent["possible_values"], json!(["true", "false"]));
+}
+
+#[test]
+fn a_string_array_input_of_a_built_in_capability_is_a_flag_that_takes_many_values() {
+    let (board, data) = enabling(r#""tasks", "changes""#);
+    let (rows, ..) = capability_rows(&board, &data);
+    let flag = |path: &str, name: &str| -> Option<Value> {
+        let arguments = row(&rows, path)["arguments"].as_array().unwrap();
+        (arguments.iter().find(|argument| argument["name"] == name)).cloned()
+    };
+    for (path, name) in [
+        ("board call tasks.add", "--after"),
+        ("board call tasks.add", "--contexts"),
+        ("board call tasks.add", "--refs"),
+        ("board call changes.plan", "--paths"),
+        ("board call changes.plan", "--uses"),
+    ] {
+        let found = flag(path, name).unwrap_or_else(|| panic!("no {name} on {path}"));
+        assert_eq!(found["many"], true, "{path} {name}");
+    }
+    assert_eq!(
+        flag("board call tasks.add", "--title").unwrap()["many"],
+        false
+    );
+    for name in ["--considered", "--owed"] {
+        assert!(flag("board call changes.plan", name).is_none(), "{name}");
+    }
 }

@@ -7,7 +7,8 @@
 use std::borrow::Cow;
 
 use board_plugin::shape::{
-    Accepts, Date, Glob, Open, PathKey, Prose, Record, Ref, Summary, Tag, Url,
+    Accepts, Date, DottedVersion, Glob, LogicalGlob, Open, PathKey, Prose, Record, Ref, Summary,
+    Tag, Url,
 };
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -132,6 +133,34 @@ pub struct SourceRecord {
 
 impl Record for SourceRecord {
     const TYPE: &'static str = "rules/source/v1";
+}
+
+/// `rules/group/v1`: a named set of rules whose states `report` rolls up
+/// into one, such as every Rust rule. A rule may be in several groups, and
+/// a group holds rules only, never another group.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(extend("x-board-folder" = "/rules/groups/"))]
+pub struct GroupRecord {
+    /// The record's type.
+    #[serde(rename = "$type")]
+    pub tag: Tag<Self>,
+    /// The group's name for people, such as `Rust`.
+    #[schemars(with = "Summary")]
+    pub title: String,
+    /// Why the group exists.
+    #[schemars(with = "Prose")]
+    pub purpose: String,
+    /// The rules in the group, as GLOB patterns over rule paths from the
+    /// board's root, such as `/rules/rust/*` or `/rules/*-server`, where
+    /// `*` also matches `/`. A rule in a mounted repository is matched by
+    /// its path from the repository's root.
+    #[schemars(with = "Vec<LogicalGlob>", length(min = 1))]
+    pub members: Vec<String>,
+}
+
+impl Record for GroupRecord {
+    const TYPE: &'static str = "rules/group/v1";
 }
 
 // Whether a control stays until changed or records owed work. No doc
@@ -363,7 +392,7 @@ pub struct Judged {
 pub struct Version {
     /// The oldest version a file may pin, as numbers separated by dots,
     /// such as `1.99.1`.
-    #[schemars(regex(pattern = r"^[0-9]+(\.[0-9]+)*$"))]
+    #[schemars(with = "DottedVersion")]
     pub at_least: String,
     /// A regular expression in the syntax of Rust's regex crate, whose
     /// first group finds each version a file pins.

@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use board_ops::{Host, PluginError, Run};
+use board_ops::{Host, PluginError, Run, Settings};
 use board_plugin::child::{Exited, ProcessError};
 use board_plugin::shape::Record;
 use serde_json::{Map, Value, json};
@@ -66,8 +66,16 @@ const TAIL: usize = 4096;
 
 /// The git repository whose working tree is at `root`.
 pub(crate) struct Repository<'a> {
-    pub(crate) host: &'a dyn Host,
+    runner: Runner<'a>,
     pub(crate) root: PathBuf,
+}
+
+/// What runs git: a capability's host, or the settings of a command-line
+/// put, which fills a report's patch ids with no host.
+#[derive(Clone, Copy)]
+enum Runner<'a> {
+    Host(&'a dyn Host),
+    Settings(&'a Settings),
 }
 
 impl Repository<'_> {
@@ -103,7 +111,11 @@ impl Repository<'_> {
             added: &ISOLATED,
         };
         let root = self.root.display();
-        match self.host.run_hiding(&run, &HIDDEN) {
+        let exited = match self.runner {
+            Runner::Host(host) => host.run_hiding(&run, &HIDDEN),
+            Runner::Settings(settings) => settings.run_hidden(&run, &HIDDEN),
+        };
+        match exited {
             Ok(exited) => Ok(exited),
             Err(ProcessError::NotStarted { .. }) if !self.root.is_dir() => Err(failed(
                 format!(
@@ -236,6 +248,16 @@ impl Repository<'_> {
             .collect())
     }
 
+    /// The patch id of each commit from `base` to `head` that has one,
+    /// oldest first: what a report of the range `base..head` covers.
+    pub(crate) fn covered(&self, base: &str, head: &str) -> Result<Vec<String>, PluginError> {
+        let commits = self.commits(base, head)?;
+        let ids = self.patch_ids(&commits)?;
+        Ok((commits.iter())
+            .filter_map(|commit| ids.get(commit).cloned())
+            .collect())
+    }
+
     /// The blob id at HEAD of each file under /reviews/, by its path from
     /// the board's root.
     pub(crate) fn committed(&self) -> Result<HashMap<String, String>, PluginError> {
@@ -334,9 +356,8 @@ impl Repository<'_> {
     /// Whether `path` in `commit` is a brief or a report at `/reviews/<id>/`
     /// of the type its name gives.
     fn record(&self, commit: &str, path: &str) -> bool {
-        let parts: Vec<&str> = (path.strip_prefix(REVIEW_PATH))
-            .map(|rest| rest.split('/').collect())
-            .unwrap_or_default();
+        let parts: Vec<&str> =
+            (path.strip_prefix(REVIEW_PATH)).map_or_default(|rest| rest.split('/').collect());
         let record_type = match parts[..] {
             [id, "brief.json"] if !id.is_empty() => BriefRecord::TYPE,
             [id, "report.json"] if !id.is_empty() => ReportRecord::TYPE,
@@ -360,7 +381,15 @@ fn failed(why: String, fields: Map<String, Value>) -> PluginError {
 /// The repository whose working tree is at `root`, read through `host`.
 pub(crate) fn at<'a>(host: &'a dyn Host, root: &Path) -> Repository<'a> {
     Repository {
-        host,
+        runner: Runner::Host(host),
+        root: root.to_path_buf(),
+    }
+}
+
+/// The repository whose working tree is at `root`, run with `settings`.
+pub(crate) fn with<'a>(settings: &'a Settings, root: &Path) -> Repository<'a> {
+    Repository {
+        runner: Runner::Settings(settings),
         root: root.to_path_buf(),
     }
 }

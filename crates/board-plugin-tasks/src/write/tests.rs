@@ -105,3 +105,137 @@ fn a_put_to_the_boards_own_tree_whose_head_moved_is_the_write_when_the_new_read_
     assert_eq!(host.puts.borrow().len(), 1, "the new read found the write");
     assert!(host.own("tasks/own.md").contains("status: \"done\""));
 }
+
+const PUSHED_TO: &str = "example-org/notes";
+
+#[test]
+fn a_task_pushed_to_a_notes_repo_is_said_to_be_pushed_to_its_remote() {
+    let said = added::said(
+        "/repos/notes/tasks/call-the-bank.md",
+        "/repos/notes",
+        (Some(PUSHED_TO), None),
+        Route::Named,
+        None,
+    );
+    assert_eq!(
+        said,
+        "Wrote /repos/notes/tasks/call-the-bank.md to /repos/notes and pushed it to \
+         example-org/notes."
+    );
+}
+
+#[test]
+fn a_task_whose_push_failed_is_said_to_be_only_on_this_mac_with_the_code() {
+    let said = added::said(
+        "/repos/notes/tasks/call-the-bank.md",
+        "/repos/notes",
+        (Some(PUSHED_TO), Some("board::sync::push_failed")),
+        Route::Routed(Some(PUSHED_TO)),
+        None,
+    );
+    assert_eq!(
+        said,
+        "Wrote /repos/notes/tasks/call-the-bank.md to /repos/notes, but the push failed with \
+         board::sync::push_failed, so the task is only on this Mac until the next sync."
+    );
+}
+
+#[test]
+fn a_task_named_to_the_boards_own_tree_is_said_to_stay_on_this_mac_with_its_reason() {
+    let path = "/tasks/call-the-bank.md";
+    let unpushed = Some("tasks::repo::not_synced");
+    let bare = added::said(path, "/", (None, unpushed), Route::Named, None);
+    assert_eq!(
+        bare,
+        "Wrote /tasks/call-the-bank.md to this board's own tree. tasks add does not push it, so \
+         it stays on this Mac unless something else pushes this board."
+    );
+    for reason in ["a queue item", "a queue item."] {
+        let said = added::said(path, "/", (None, unpushed), Route::Named, Some(reason));
+        assert_eq!(said, format!("{bare} The reason given: a queue item."));
+    }
+}
+
+#[test]
+fn a_task_routed_to_the_boards_own_tree_is_said_to_have_found_no_notes_repo() {
+    let path = "/tasks/x.md";
+    let unpushed = Some("tasks::repo::not_synced");
+    let covered = added::said(
+        path,
+        "/",
+        (None, unpushed),
+        Route::Routed(Some("a/b")),
+        None,
+    );
+    assert!(
+        covered.starts_with(
+            "Wrote /tasks/x.md to this board's own tree, because no notes repo covers a/b and \
+             the board lists no personal notes repo. tasks add does not push it"
+        ),
+        "{covered}"
+    );
+    let bare = added::said(path, "/", (None, unpushed), Route::Routed(None), None);
+    assert!(
+        bare.contains(", because the call gave no git remote and"),
+        "{bare}"
+    );
+}
+
+#[test]
+fn a_title_is_quoted_for_the_shell_and_given_with_equals_in_a_hints_command() {
+    let board = "board -C /b";
+    assert_eq!(
+        added::command(board, "Ship it", "/repos/work", false),
+        "board -C /b tasks add --title='Ship it' --repo /repos/work"
+    );
+    assert_eq!(
+        added::command(board, "Bob's", "/", true),
+        "board -C /b tasks add --title='Bob'\"'\"'s' --repo / --reason '<why it belongs with \
+         this board>'"
+    );
+    assert_eq!(
+        added::command(board, "plain", "/r", false),
+        "board -C /b tasks add --title=plain --repo /r"
+    );
+    assert_eq!(
+        added::command(board, "-v", "/r", false),
+        "board -C /b tasks add --title=-v --repo /r"
+    );
+}
+
+#[test]
+fn a_routed_sentence_shows_the_remote_without_its_userinfo() {
+    let remote = "https://someone:not-a-real-token@github.com/example-org/home.git";
+    let said = added::said(
+        "/tasks/x.md",
+        "/",
+        (None, Some("tasks::repo::not_synced")),
+        Route::Routed(Some(remote)),
+        None,
+    );
+    assert!(
+        said.contains("no notes repo covers example-org/home and"),
+        "{said}"
+    );
+    assert!(!said.contains("token"), "{said}");
+}
+
+#[test]
+fn a_reason_is_printed_only_for_the_boards_own_tree() {
+    let notes = added::said(
+        "/repos/notes/tasks/x.md",
+        "/repos/notes",
+        (Some(PUSHED_TO), None),
+        Route::Named,
+        Some("a queue item"),
+    );
+    assert!(!notes.contains("reason"), "{notes}");
+    let own = added::said(
+        "/tasks/x.md",
+        "/",
+        (None, Some("tasks::repo::not_synced")),
+        Route::Named,
+        Some("a queue item"),
+    );
+    assert!(own.ends_with(" The reason given: a queue item."), "{own}");
+}

@@ -334,7 +334,9 @@ pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
             CheckKind::Exists => &[Read::References, Read::Exists],
             CheckKind::Run => &[Read::Suite, Read::References],
             CheckKind::Paths => &[Read::Diff],
-            CheckKind::Obligations => &[Read::Plan, Read::Obligations],
+            // An obligation on a file the diff adds to the plan's paths
+            // counts, so the check reads the diff too.
+            CheckKind::Obligations => &[Read::Plan, Read::Diff, Read::Obligations],
             CheckKind::RulePaths => &[Read::Diff, Read::Controlled],
             CheckKind::PlannedRulePaths => &[Read::PlannedRules],
             CheckKind::Field if each.field == Some(Field::Pulls) => &[Read::Pull],
@@ -395,6 +397,9 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
                     (Status::Missing, format!("{detail}{unanchored}"))
                 }
                 (Some(detail), None) => (Status::Missing, detail),
+                (None, _) if each.kind.known() == Some(&CheckKind::Paths) => {
+                    (Status::Pass, paths::passed(observed))
+                }
                 (None, _) => (Status::Pass, kinds::passed(observed, each, &values)),
             };
             let (code, actor, said) = if left_out.is_empty() {
@@ -551,7 +556,7 @@ fn evaluate(
         CheckKind::Field => kinds::field_missing(observed, each),
         CheckKind::Records => kinds::records_missing(observed, each),
         CheckKind::Run => run_missing(observed, each.scope.unwrap_or(Scope::Full)),
-        CheckKind::Paths => paths_missing(observed),
+        CheckKind::Paths => paths::missing(observed),
         CheckKind::Tasks => tasks_missing(observed),
         CheckKind::Understood => kinds::understood_missing(observed, each),
         CheckKind::Mockups => match each.part {
@@ -758,27 +763,6 @@ fn run_missing(observed: &Observed, scope: Scope) -> Option<String> {
     (!passed).then(|| format!("no attached run of {suite} on {head} is full, clean and passing"))
 }
 
-fn paths_missing(observed: &Observed) -> Option<String> {
-    if observed.planned.is_empty() {
-        return Some(
-            "the change's plan declares no paths, so every edited file is outside them; write the \
-             plan again with `board changes plan` and its paths"
-                .to_owned(),
-        );
-    }
-    if let Some(unread) = &observed.diff_unread {
-        return Some(unread.clone());
-    }
-    (!observed.outside.is_empty()).then(|| {
-        format!(
-            "the change's diff edits files outside the plan's paths, so their rules were not in \
-             the brief: {}; add them to the paths with `board changes plan`, or revert the \
-             edit",
-            observed.outside.join(", ")
-        )
-    })
-}
-
 /// The head commit a report covers: the right side of its `base..head`
 /// range.
 pub(crate) fn reviewed_head(report: &Map<String, Value>) -> Option<Value> {
@@ -790,6 +774,7 @@ pub(crate) fn reviewed_head(report: &Map<String, Value>) -> Option<Value> {
 pub(crate) mod design;
 pub(crate) use design::{mockups, ux_missing};
 pub(crate) mod kinds;
+mod paths;
 pub(crate) mod remedy;
 pub(crate) mod signing;
 

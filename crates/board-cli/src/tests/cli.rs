@@ -114,10 +114,7 @@ fn every_command_argument_and_option_has_help() {
 #[test]
 fn every_command_that_runs_ends_its_help_in_examples_that_parse() {
     for (name, command) in leaves() {
-        let help = command
-            .get_after_help()
-            .map(ToString::to_string)
-            .unwrap_or_default();
+        let help = command.get_after_help().map_or_default(ToString::to_string);
         assert!(help.contains("Examples:\n"), "{name} has no examples");
         let shown = examples(&help);
         assert!(
@@ -144,10 +141,7 @@ fn every_command_group_ends_its_help_in_examples_of_its_commands_that_parse() {
         .filter(|command| command.has_subcommands())
     {
         let name = group.get_name();
-        let help = group
-            .get_after_help()
-            .map(ToString::to_string)
-            .unwrap_or_default();
+        let help = group.get_after_help().map_or_default(ToString::to_string);
         assert!(help.contains("Examples:\n"), "{name} has no examples");
         let shown = examples(&help);
         for sub in group
@@ -568,9 +562,7 @@ fn a_refused_command_line_names_the_value_at_fault_and_its_corrected_twin_runs()
         let call = format!("board {} -h", refused[0]);
         assert_eq!(error["recovery"]["call"], call.as_str(), "{refused:?}");
         let text_form = text(&board_in(scenario.workdir(), refused).stderr);
-        let usage = usage
-            .map(|usage| format!("  usage: {usage}\n"))
-            .unwrap_or_default();
+        let usage = usage.map_or_default(|usage| format!("  usage: {usage}\n"));
         assert_eq!(
             text_form,
             format!("error: {said}\n{usage}  help:  run `{call}`\n  code:  board::cli::usage\n")
@@ -1473,33 +1465,113 @@ fn an_unknown_flag_on_put_keeps_claps_refusal_and_the_flag_it_suggests_runs() {
     assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
 }
 
+/// The code, stdout and stderr of `output`, to compare two runs.
+fn printed(output: &Output) -> (u8, String, String) {
+    (output.code, text(&output.stdout), text(&output.stderr))
+}
+
 #[test]
-fn cat_is_refused_naming_get_and_the_hinted_get_runs() {
+fn a_guessed_first_word_runs_the_command_it_means_and_an_unknown_word_is_refused() {
     let scenario = board();
-    let refused = board_in(scenario.workdir(), &["cat", "/projects/p"]);
+    let directory = scenario.workdir();
+    for (guessed, meant) in [
+        (&["cat", "/projects/p"][..], &["get", "/projects/p"][..]),
+        (
+            &["--json", "show", "/projects/p"],
+            &["--json", "get", "/projects/p"],
+        ),
+        (&["list", "/projects"], &["ls", "/projects"]),
+        (&["schema", "list"], &["schemas", "list"]),
+    ] {
+        let ran = board_in(directory, meant);
+        assert_eq!(ran.code, 0, "{meant:?}: {}", text(&ran.stderr));
+        assert_eq!(
+            printed(&board_in(directory, guessed)),
+            printed(&ran),
+            "{guessed:?}"
+        );
+    }
+    let refused = board_in(directory, &["--json", "kat", "/projects/p"]);
     assert_eq!(
         (refused.code, refused.error.as_deref()),
         (2, Some("board::cli::usage"))
     );
+}
+
+#[test]
+fn a_path_flag_given_to_a_read_command_is_read_as_its_path_and_one_given_to_a_write_is_refused() {
+    let scenario = board();
+    let directory = scenario.workdir();
+    for (flagged, positional) in [
+        (
+            &["get", "--path", "/projects/p"][..],
+            &["get", "/projects/p"][..],
+        ),
+        (&["get", "--path=/projects/p"], &["get", "/projects/p"]),
+        (&["ls", "--path", "/projects"], &["ls", "/projects"]),
+        (&["check", "--path", "/projects"], &["check", "/projects"]),
+        (&["log", "--path", "/projects/p"], &["log", "/projects/p"]),
+        (&["refs", "--path", "/projects/p"], &["refs", "/projects/p"]),
+        (&["uri", "--path", "/projects/p"], &["uri", "/projects/p"]),
+        (
+            &["mount", "update", "--path", "/projects/zz"],
+            &["mount", "update", "/projects/zz"],
+        ),
+    ] {
+        let ran = board_in(directory, positional);
+        assert_ne!(ran.code, 2, "{positional:?}: {}", text(&ran.stderr));
+        assert_eq!(
+            printed(&board_in(directory, flagged)),
+            printed(&ran),
+            "{flagged:?}"
+        );
+    }
+    let repository = directory.display().to_string();
+    for refused in [
+        &["--json", "query", "--path", "/projects"][..],
+        &["--json", "rm", "--path", "/projects/zz", "--ignore-unmatch"],
+        &["--json", "put", "--path", "/projects/q"],
+        &["--json", "mount", "add", &repository, "--path", "/team"],
+    ] {
+        let refused = board_in(directory, refused);
+        assert_eq!(
+            (refused.code, refused.error.as_deref()),
+            (2, Some("board::cli::usage")),
+            "{}",
+            text(&refused.stderr)
+        );
+    }
+    let removed = board_in(directory, &["rm", "/projects/zz", "--ignore-unmatch"]);
+    assert_eq!(removed.code, 0, "{}", text(&removed.stderr));
+}
+
+#[test]
+fn a_built_in_flag_spelled_with_underscores_runs_and_one_with_no_such_flag_is_refused() {
+    let scenario = board();
+    let directory = scenario.workdir();
+    for (guessed, meant) in [
+        (
+            &["--no_input", "ls", "/projects"][..],
+            &["--no-input", "ls", "/projects"][..],
+        ),
+        (
+            &["rm", "/projects/zz", "--ignore_unmatch"],
+            &["rm", "/projects/zz", "--ignore-unmatch"],
+        ),
+    ] {
+        let ran = board_in(directory, meant);
+        assert_eq!(ran.code, 0, "{meant:?}: {}", text(&ran.stderr));
+        assert_eq!(
+            printed(&board_in(directory, guessed)),
+            printed(&ran),
+            "{guessed:?}"
+        );
+    }
+    let refused = board_in(directory, &["--json", "ls", "/projects", "--no_such"]);
     assert_eq!(
-        text(&refused.stderr),
-        "error: board has no command cat; get prints the file at a path\n\
-         \x20 help:  run `board get /projects/p`\n\
-         \x20 code:  board::cli::usage\n"
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::cli::usage"))
     );
-    let hints = hinted(&refused);
-    let got = run_hinted(scenario.workdir(), &hints[0].0, b"");
-    assert_eq!(got.code, 0, "{}", text(&got.stderr));
-    let document = json(&board_in(
-        scenario.workdir(),
-        &["--json", "cat", "/projects/p"],
-    ));
-    assert_eq!(document["code"], "board::cli::usage");
-    assert_eq!(
-        document["recovery"]["text"],
-        "run `board --json get /projects/p`"
-    );
-    assert_eq!(document["fields"]["value"], "cat");
 }
 
 #[test]
@@ -1564,23 +1636,20 @@ fn put_hints_quote_each_word_and_a_second_stray_word_keeps_claps_refusal() {
 }
 
 #[test]
-fn cat_after_a_directory_named_cat_hints_get_in_its_place_and_bare_cat_hints_get_help() {
+fn cat_after_a_directory_named_cat_runs_get_and_bare_cat_is_refused_as_bare_get_is() {
     let scenario = board();
     scenario.write("cat/README.md", Item::File("a directory named cat"));
-    let refused = board_in(scenario.workdir(), &["-C", "cat", "cat", "/projects/p"]);
+    let directory = scenario.workdir();
+    let ran = board_in(directory, &["-C", "cat", "get", "/projects/p"]);
+    assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
+    let cat = board_in(directory, &["-C", "cat", "cat", "/projects/p"]);
+    assert_eq!(printed(&cat), printed(&ran));
+    let bare = board_in(directory, &["get"]);
     assert_eq!(
-        (refused.code, refused.error.as_deref()),
+        (bare.code, bare.error.as_deref()),
         (2, Some("board::cli::usage"))
     );
-    assert_eq!(hint_of(&refused), "run `board -C cat get /projects/p`");
-    let refused = board_in(scenario.workdir(), &["cat"]);
-    assert_eq!(
-        (refused.code, refused.error.as_deref()),
-        (2, Some("board::cli::usage"))
-    );
-    assert_eq!(hint_of(&refused), "run `board get -h`");
-    let help = run_hinted(scenario.workdir(), "board get -h", b"");
-    assert_eq!(help.code, 0, "{}", text(&help.stderr));
+    assert_eq!(printed(&board_in(directory, &["cat"])), printed(&bare));
 }
 
 #[test]

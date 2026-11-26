@@ -152,23 +152,20 @@ fn a_built_in_command_wins_over_an_alias_of_the_same_word() {
 }
 
 #[test]
-fn an_alias_named_cat_runs_and_without_it_cat_is_refused_naming_get() {
-    for (enabled, expected) in [(&["tasks"][..], 0), (&[][..], 2)] {
+fn an_alias_named_cat_runs_its_plugin_and_without_it_cat_runs_get() {
+    for enabled in [&["tasks"][..], &[][..]] {
         let (board, data) = aliased(enabled, "cat");
         let output = run_in(&board, &data, &["--json", "cat", "due"]);
-        assert_eq!(
-            output.code,
-            expected,
-            "{enabled:?}: {}",
-            text(&output.stderr)
-        );
-        assert_eq!(taken(&data).is_some(), expected == 0, "{enabled:?}");
-        if expected == 2 {
-            assert_eq!(code(&output), "board::cli::usage");
+        assert_eq!(taken(&data).is_some(), !enabled.is_empty(), "{enabled:?}");
+        if enabled.is_empty() {
+            let got = run_in(&board, &data, &["--json", "get", "due"]);
+            assert_ne!(got.code, 2, "{}", text(&got.stderr));
             assert_eq!(
-                json(&output)["recovery"]["text"],
-                "run `board --json get due`"
+                (output.code, text(&output.stdout)),
+                (got.code, text(&got.stdout))
             );
+        } else {
+            assert_eq!(output.code, 0, "{}", text(&output.stderr));
         }
     }
 }

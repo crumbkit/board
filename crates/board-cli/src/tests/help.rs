@@ -11,12 +11,20 @@ use super::cli::{examples, words};
 use super::*;
 use crate::run::Cli;
 
-/// The `board` binary cargo built beside this test binary
-/// (`target/debug/deps/board-<hash>`). cargo sets `CARGO_BIN_EXE_board`
-/// only for integration tests, and an integration test cannot reach `Cli`.
+/// The `board` binary cargo built for this test binary's profile, found in
+/// the nearest directory above the test binary that holds one. Before Cargo
+/// 1.100 the test binary sat at `target/debug/deps/board-<hash>`, and from
+/// 1.100 it sits at `target/debug/build/board-cli/<hash>/out/board-<hash>`.
+/// cargo sets `CARGO_BIN_EXE_board` only for integration tests, and an
+/// integration test cannot reach `Cli`.
 pub(super) fn binary() -> String {
     let test = std::env::current_exe().unwrap();
-    let path = test.parent().unwrap().parent().unwrap().join("board");
+    let path = test
+        .ancestors()
+        .skip(1)
+        .map(|dir| dir.join("board"))
+        .find(|path| path.is_file())
+        .unwrap();
     path.to_str().unwrap().to_owned()
 }
 
@@ -250,8 +258,8 @@ pub(super) const BUDGETS: Budgets = Budgets::new()
         ),
         Budget::new(
             "put",
-            1_620,
-            "put has seven options of its own (--new, --var, --expect, --batch, --bulk, --file and --wait), and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes. Its page also ends with the Effects: line and a global flags line that names --no-input.",
+            1_710,
+            "put has eight options of its own (--new, --var, --expect, --batch, --bulk, --file, --wait and --strict), and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes. Its page also ends with the Effects: line and a global flags line that names --no-input.",
         ),
         Budget::new(
             "refs",

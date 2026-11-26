@@ -28,8 +28,9 @@ pub(crate) use answers::Answers;
 const PLAN_WORDS: usize = 3_000;
 const USES_WORDS: usize = 3_000;
 
-/// A plan for a change, given on stdin because `uses` and `paths` are
-/// arrays.
+/// A plan for a change, given as flags, with `uses` and `paths` repeated
+/// once for each item, or as JSON on stdin, which `considered`, `owed` and
+/// `answers` need.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "PlanInput")]
@@ -48,14 +49,14 @@ pub(crate) struct Input {
     #[serde(default)]
     #[schemars(
         with = "Vec<BoardPath>",
-        description = "The records and documents the plan relies on, a list given on stdin; the \
-                       documents hold at most 3,000 words in all, and none when left out."
+        description = "The records and documents the plan relies on; the documents hold at most \
+                       3,000 words in all, and none when left out."
     )]
     uses: Vec<String>,
     #[schemars(
         with = "Option<Vec<LogicalGlob>>",
-        description = "The files and SQLite GLOB patterns the change will edit, a list given on \
-                       stdin, by logical path under the change's mount, such as /repos/inbox/crates/inbox-store/**, \
+        description = "The files and SQLite GLOB patterns the change will edit, by logical path \
+                       under the change's mount, such as /repos/inbox/crates/inbox-store/**, \
                        where `*` also matches `/`; a build change needs one."
     )]
     paths: Option<Vec<String>>,

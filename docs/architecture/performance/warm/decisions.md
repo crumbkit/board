@@ -13,6 +13,12 @@ decides it. The working tree's decision is kept as [index.md](index.md) says.
   `detail` column holds, as JSON, what `check` reports beyond the row: a
   degraded entry's detail and the schema it names. The `decided` view
   leaves it out.
+- `resolutions`: one row for each entry of a kept decision that makes
+  references, holding them in order as a JSON array with where each
+  resolved, under the same key, written in the same transaction as its
+  rows and pruned with them. A location in the decided
+  board itself keeps no board, so each run attaches the one that reached
+  the key. `refs` reads them in place of deciding the source.
 - `pointers`: the mount pointers in a mounted tree, under a key of the tree
   and the build, so a run finds a source's mounts without walking it.
 
@@ -29,6 +35,15 @@ A source's key hashes:
   repository it opened, or the code that says why it did not;
 - for each mount it reaches, the same of that source, without its route.
 
+A source with a file whose blob its repository lacks, such as one read
+from a partial clone, is kept under a second key. That key hashes the
+first and a stamp of the repository's objects: the stat of its pack
+directory and of each directory of loose objects, taken before the walk
+reads the source. A fetch or a loose write that brings a blob changes the
+stamp, so the source is decided again. A run
+stamps a source's objects only when the index does not hold its decision
+under the first key.
+
 A run opens a mounted repository and looks up its pinned commit only when
 the repository's stamp changed ([index.md](index.md)), so a deleted repository
 or a lost commit still changes the key. The repositories one source's mounts
@@ -43,7 +58,9 @@ order.
   scope. It walks and decides the other sources its scope reaches, and
   keeps what it decided, except for a source it decided only in part. A
   row that cannot be read fails the run with `board::index::failed`.
-- `refs` decides every source, and keeps what it decided.
+- `refs` reads the kept rows and references of each source whose key the
+  index holds, and checks the blob of a target there against its kept row.
+  It decides only the other sources, and keeps what it decided.
 - A scoped run decides the working tree only in part, and keeps none of it.
 - `ls` reads kept rows as `check` does: the kept rows of each mounted
   source wholly in its scope, walking only the directory it lists there.
@@ -63,8 +80,12 @@ order.
 
 These sources are decided on every run:
 
-- one with a file that could not be read, or a read or resolution that
-  failed with a git error, which may pass;
+- one whose read or resolution failed with a git error, which may pass,
+  such as a reference to a blob another repository lacks;
+- one with a file whose blob its repository holds but could not read, as
+  after an I/O error;
+- one with a file whose blob its repository lacks, when that repository
+  borrows objects through alternates, which the stamp does not cover;
 - one holding a mount whose route is too long to name;
 - one that reaches a commit through another repository than the one that
   commit was walked in;

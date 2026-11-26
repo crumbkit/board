@@ -9,7 +9,8 @@ use board_ops::{Board, BuiltIn, PluginState};
 use board_plugin::{Capability, Manifest, Target};
 use clap::builder::{BoolValueParser, PossibleValue, StringValueParser};
 use clap::builder::{TypedValueParser, ValueParser};
-use clap::{Arg, ArgMatches, Command, FromArgMatches};
+use clap::error::ErrorKind;
+use clap::{Arg, ArgAction, ArgMatches, Command, FromArgMatches};
 use crumbkit::Tool;
 use crumbkit::help::{Effects, RuntimeLeaf};
 use serde_json::{Map, Value};
@@ -60,6 +61,17 @@ const BARE: &str = "; given bare, it means true";
 /// The value name of a boolean flag, whose value may be left out.
 const TRUE_OR_FALSE: &str = "true|false";
 
+/// The value of an array flag that, given alone, sends an empty array.
+const NONE: &str = "none";
+
+/// What an array flag's help adds, after its own text without a final `.`.
+const REPEATED: &str = "; repeat the flag for each value, or give none alone for an empty list.";
+
+/// What an array flag of paths adds, after its own text without a final `.`.
+const REPEATED_PATHS: &str = "; repeat the flag for each path, or give none alone for an empty \
+                              list; a path without a leading / is read from the current \
+                              directory, so give ./none for a path named none.";
+
 /// A flag for one input property.
 struct Flag {
     /// The property's name, which is the flag's long name.
@@ -70,7 +82,15 @@ struct Flag {
     path: bool,
     /// Whether the property is boolean, so the flag may be given bare.
     boolean: bool,
+    /// Whether the property is an array of strings, so the flag may be
+    /// given more than once, each value one item.
+    many: bool,
 }
+
+/// One value of an array flag: an item, or `none`, which given alone
+/// sends an empty array.
+#[derive(Clone)]
+struct Element(Option<Value>);
 
 /// A parsed command line, with the target and flags of a grafted command.
 pub(crate) struct Parsed {
@@ -81,15 +101,13 @@ pub(crate) struct Parsed {
 impl FromArgMatches for Parsed {
     fn from_arg_matches(matches: &ArgMatches) -> Result<Self, clap::Error> {
         let call = matches.subcommand_matches("call");
-        let grafted = call
-            .and_then(ArgMatches::subcommand)
-            .and_then(|(name, flags)| {
-                let value = |id: &str| flags.try_get_one::<Value>(id).ok().flatten().cloned();
-                let given = flags
-                    .ids()
-                    .filter_map(|id| Some((id.to_string(), value(id.as_str())?)));
-                Some((name.parse().ok()?, given.collect()))
-            });
+        let grafted = match call.and_then(ArgMatches::subcommand) {
+            Some((name, flags)) => match name.parse() {
+                Ok(target) => Some((target, given(flags)?)),
+                Err(_) => None,
+            },
+            None => None,
+        };
         Ok(Self {
             cli: Cli::from_arg_matches(matches)?,
             grafted,
@@ -102,24 +120,66 @@ impl FromArgMatches for Parsed {
     }
 }
 
+/// The value of each flag given in `flags`: a scalar flag's one value, or
+/// an array flag's values in the order given, with `none` alone as an
+/// empty array. `none` beside another value is a usage error.
+fn given(flags: &ArgMatches) -> Result<Map<String, Value>, clap::Error> {
+    let mut given = Map::new();
+    for id in flags.ids() {
+        let id = id.as_str();
+        if let Ok(Some(value)) = flags.try_get_one::<Value>(id) {
+            given.insert(id.to_owned(), value.clone());
+        } else if let Ok(Some(elements)) = flags.try_get_many::<Element>(id) {
+            let items: Option<Vec<Value>> = elements.map(|element| element.0.clone()).collect();
+            let items = match items {
+                Some(items) => items,
+                None if flags.get_raw_occurrences(id).into_iter().flatten().count() == 1 => {
+                    Vec::new()
+                }
+                None => {
+                    return Err(clap::Error::raw(
+                        ErrorKind::ArgumentConflict,
+                        format!(
+                            "--{id} {NONE} means an empty list, so it cannot be given beside \
+                             another --{id}\n"
+                        ),
+                    ));
+                }
+            };
+            given.insert(id.to_owned(), Value::Array(items));
+        }
+    }
+    Ok(given)
+}
+
 /// Reads each of `found`'s path flags in `flags` from the prefix `at`, or
-/// `/` without one. A value that does not read as a logical path stays as
-/// given, for the input schema to judge.
+/// `/` without one, and each item of its path array flags. A value that
+/// does not read as a logical path stays as given, for the input schema to
+/// judge.
 pub(crate) fn resolve(
     found: Option<&Grafted>,
     flags: &mut Map<String, Value>,
     at: Option<&Prefix>,
 ) {
     let offered = found.and_then(|found| found.offered.as_ref()).into_iter();
+    let Ok(from) = at.cloned().unwrap_or(Ok(LogicalPath::root())) else {
+        return;
+    };
+    let read = |value: &mut Value| {
+        if let Value::String(text) = value
+            && let Ok(path) = from.join(text)
+        {
+            *text = path.into();
+        }
+    };
     for flag in offered
         .flat_map(|(_, flags, ..)| flags)
         .filter(|flag| flag.path)
     {
-        if let Some(Value::String(text)) = flags.get_mut(&flag.name)
-            && let Ok(from) = at.cloned().unwrap_or(Ok(LogicalPath::root()))
-            && let Ok(path) = from.join(text)
-        {
-            *text = path.into();
+        match flags.get_mut(&flag.name) {
+            Some(Value::Array(items)) => items.iter_mut().for_each(read),
+            Some(value) => read(value),
+            None => {}
         }
     }
 }
@@ -173,7 +233,7 @@ pub(crate) fn enabled(board: &Board, plugins: Option<&Path>) -> (Vec<Grafted>, V
         board.plugin_list(None)
     });
     let mut grafted = Vec::new();
-    for entry in listed.map(|listed| listed.plugins).unwrap_or_default() {
+    for entry in listed.map_or_default(|listed| listed.plugins) {
         match &entry.state {
             _ if !entry.enabled => {}
             PluginState::Installed(manifest) => grafted.extend(
@@ -209,8 +269,10 @@ fn graft(name: &str, offered: &Capability) -> Grafted {
     // A schema that admits properties it does not name takes them only on stdin.
     let open = document.get("additionalProperties") != Some(&Value::Bool(false))
         || document.get("patternProperties").is_some();
+    // A list may still come on stdin, as it did before it was a flag.
+    let listed = flags.iter().any(|flag| flag.many);
     let help = match rest.as_slice() {
-        [] if open => STDIN.to_owned(),
+        [] if open || listed => STDIN.to_owned(),
         [] => NO_STDIN.to_owned(),
         rest => format!("{STDIN} These properties go on stdin: {}.", rest.join(", ")),
     };
@@ -233,7 +295,7 @@ fn graft(name: &str, offered: &Capability) -> Grafted {
     Grafted {
         name: name.to_owned(),
         offered: Some((offered.description.clone(), flags, help, effects)),
-        stdin: open || !rest.is_empty(),
+        stdin: open || listed || !rest.is_empty(),
     }
 }
 
@@ -293,10 +355,11 @@ fn ignored(found: Option<&Grafted>, flags: &Map<String, Value>) -> Option<String
     ))
 }
 
-/// Each top-level string, integer, number or boolean input property whose
-/// name is lowercase letters, digits, `-` and `_` and is not in
-/// `RESERVED_FLAGS`. A flag's help is the property's description, or its type,
-/// and a boolean flag's help says that it may be given bare.
+/// Each top-level string, integer, number or boolean input property, and
+/// each array whose items are strings, whose name is lowercase letters,
+/// digits, `-` and `_` and is not in `RESERVED_FLAGS`. A flag's help is the
+/// property's description, or its type; a boolean flag's help says that it
+/// may be given bare, and an array flag's that it may be repeated.
 fn flags(capability: &Capability) -> Vec<Flag> {
     let document = capability.input.document();
     let properties = document
@@ -313,13 +376,27 @@ fn flags(capability: &Capability) -> Vec<Flag> {
         })
         .filter_map(|(name, property)| {
             let kind = property.get("type")?.as_str()?;
-            let choices = property.get("enum").and_then(Value::as_array);
+            let many = kind == "array";
+            // An array flag takes its items' strings, one per value.
+            let item = match property.get("items") {
+                Some(items) if many && items.get("type")?.as_str()? == "string" => items,
+                _ if many => return None,
+                _ => property,
+            };
+            let path = item.get("format").and_then(Value::as_str) == Some(PATH_FORMAT);
+            let choices = item.get("enum").and_then(Value::as_array);
             let choices: Option<Vec<String>> = choices.and_then(|choices| {
                 (choices.iter())
                     .map(|choice| choice.as_str().map(str::to_owned))
                     .collect()
             });
             let parser: ValueParser = match (kind, choices) {
+                ("array", choices) => Items {
+                    name: name.clone(),
+                    choices,
+                    path,
+                }
+                .into(),
                 ("string", Some(choices)) => Choices(choices).into(),
                 ("string", None) => StringValueParser::new().map(Value::from).into(),
                 ("integer", _) => clap::value_parser!(i64).map(Value::from).into(),
@@ -333,9 +410,10 @@ fn flags(capability: &Capability) -> Vec<Flag> {
                 .get("description")
                 .and_then(Value::as_str)
                 .unwrap_or(kind);
-            let path = property.get("format").and_then(Value::as_str) == Some(PATH_FORMAT);
             let boolean = kind == "boolean";
             let added = match (path, boolean) {
+                _ if many && path => REPEATED_PATHS.to_owned(),
+                _ if many => REPEATED.to_owned(),
                 (true, _) => RELATIVE.to_owned(),
                 // A bare flag sends true, whatever the default.
                 (_, true) if property.get("default") == Some(&Value::Bool(true)) => format!(
@@ -354,6 +432,7 @@ fn flags(capability: &Capability) -> Vec<Flag> {
                 parser,
                 path,
                 boolean,
+                many,
             })
         })
         .collect()
@@ -388,6 +467,53 @@ impl TypedValueParser for Choices {
     }
 }
 
+/// An array flag's value: one item of the property `name`, whose `enum`, if
+/// any, lists `choices`, as [`Choices`] takes a string, or `none`. An item of
+/// paths that holds a comma is refused, because each path is its own value.
+#[derive(Clone)]
+struct Items {
+    name: String,
+    choices: Option<Vec<String>>,
+    path: bool,
+}
+
+impl TypedValueParser for Items {
+    type Value = Element;
+
+    fn parse_ref(
+        &self,
+        command: &Command,
+        arg: Option<&Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<Element, clap::Error> {
+        let text = StringValueParser::new().parse_ref(command, arg, value)?;
+        if text == NONE {
+            return Ok(Element(None));
+        }
+        if self.path && text.contains(',') {
+            let name = &self.name;
+            return Err(clap::Error::raw(
+                ErrorKind::ValueValidation,
+                format!(
+                    "--{name} takes one path per value, and {text} holds a comma; repeat \
+                     --{name} for each path, as --{name} /a.md --{name} /b.md\n"
+                ),
+            )
+            .with_cmd(command));
+        }
+        Ok(Element(Some(Value::from(text))))
+    }
+
+    fn possible_values(&self) -> Option<Box<dyn Iterator<Item = PossibleValue> + '_>> {
+        let choices = self.choices.as_ref()?;
+        Some(Box::new(
+            choices
+                .iter()
+                .map(|choice| PossibleValue::new(choice.clone())),
+        ))
+    }
+}
+
 /// Board's command tree, with each of `grafted` below `call`. A target
 /// that no installed plugin offers takes any words, help among them, so
 /// the run reaches Board's refusal of the target.
@@ -411,6 +537,8 @@ pub(crate) fn command(grafted: &[Grafted], root: Command) -> Command {
                         arg.num_args(0..=1)
                             .default_missing_value("true")
                             .value_name(TRUE_OR_FALSE)
+                    } else if flag.many {
+                        arg.action(ArgAction::Append)
                     } else {
                         arg
                     };

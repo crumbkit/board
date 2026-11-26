@@ -22,7 +22,7 @@ mod keys;
 mod probes;
 
 pub use choice::Choice;
-use keys::{Probe, scan};
+use keys::{Listing, Probe};
 pub use probes::Probed;
 
 /// What a cache, such as the index, holds about trees and blobs, so a walk
@@ -83,9 +83,20 @@ pub struct Mounted<F> {
     /// then lexically; its entries are named beneath it.
     pub route: LogicalPath,
     /// Everything its decision depends on, hashed, or `None` when that is
-    /// not known without deciding it.
+    /// not known without deciding it. When the cache holds its decision
+    /// under `lacking`, that key.
     pub key: Option<Digest>,
-    /// The key of its list of pointers.
+    /// The key its decision is kept under when a file in it cannot be
+    /// read because its repository lacks the blob: `key` and `objects`.
+    /// Found only when the cache does not hold its decision under `key`.
+    pub lacking: Option<Digest>,
+    /// The stamp of its repository's objects, taken before any walk of it
+    /// read them, which a blob arriving there changes. `None` when it was
+    /// not needed, or when a walk could not read a file whose blob the
+    /// repository holds, which may be read next run.
+    pub objects: Option<Digest>,
+    /// The key of its list of pointers, which for a list made while a file
+    /// could not be read also holds its repository's objects.
     pub scan: Digest,
     /// Each mount its decision may cross because its key holds that
     /// mount's probe.
@@ -214,22 +225,13 @@ impl Repositories {
                 chain,
             } = candidate;
             let source = Source::Commit(commit);
-            let scan = scan(build, root);
-            let listed = if keeping { cache.pointers(&scan) } else { None };
-            // A kept list holds each pointer's mount, so the repository is
-            // opened only to walk the source.
-            let (walked, held, unread) = if let Some(held) = listed {
-                (None, held, false)
-            } else {
-                let opened = self.open_at(&repository)?;
-                let (entries, facts) = walk(&opened, commit, root, cache)?;
-                let mut held = held(&entries, &|path| C::is_pointer(&facts, path));
-                let unread = read_mounts(&opened, &source, &mut held);
-                if keeping && !unread && C::complete(&facts, &entries) {
-                    cache.put_pointers(&scan, &held)?;
-                }
-                (Some((entries, facts)), held, unread)
-            };
+            let Listing {
+                scan,
+                objects,
+                walked,
+                held,
+                unread,
+            } = self.listing(cache, (build, keeping), (commit, root, &repository))?;
             if unread {
                 reached.unread.push(source.clone());
             }
@@ -247,6 +249,8 @@ impl Repositories {
                 repository,
                 route,
                 key: None,
+                lacking: None,
+                objects,
                 scan,
                 crossings: HashSet::new(),
                 kept: false,
@@ -258,16 +262,19 @@ impl Repositories {
             reached.key(build);
         }
         reached.scopes = reached.scopes(scope);
+        reached.kept(cache);
         for mounted in &mut reached.sources {
-            mounted.kept = mounted.key.as_ref().is_some_and(|key| cache.kept(key));
             let states = reached.scopes.get(&Source::Commit(mounted.commit));
             mounted.whole = states.is_some_and(|states| states.contains(&None));
             let wanted = states.is_some();
             let skip = skip_kept && mounted.kept && mounted.whole;
             if mounted.walked.is_none() && wanted && !skip {
                 let opened = self.open_at(&mounted.repository)?;
-                let walked = walk(&opened, mounted.commit, mounted.root, cache)?;
-                mounted.walked = Some(walked);
+                let (entries, facts, absent) = walk(&opened, mounted.commit, mounted.root, cache)?;
+                if !absent {
+                    (mounted.objects, mounted.lacking) = (None, None);
+                }
+                mounted.walked = Some((entries, facts));
             }
         }
         Ok(reached)
@@ -657,19 +664,25 @@ fn first(candidates: &[Candidate]) -> Option<usize> {
 }
 
 /// Stores a mounted commit's trees that `cache` does not hold, walks it from
-/// `cache`, and gets the cache's facts about its entries.
+/// `cache`, and gets the cache's facts about its entries, and whether each
+/// file the facts leave out names a blob the repository does not hold, so
+/// it was not read because it is absent.
 fn walk<C: Cache>(
     repository: &Repository,
     commit: ObjectId,
     root: ObjectId,
     cache: &mut C,
-) -> Result<(Vec<Entry>, C::Facts), C::Error> {
+) -> Result<(Vec<Entry>, C::Facts, bool), C::Error> {
     for tree in repository.trees(root, &mut |tree| cache.has_tree(tree))? {
         cache.put_tree(&tree)?;
     }
     let entries = walk_stored(repository, commit, root, &mut |tree| cache.rows(tree))?;
     let facts = cache.facts(repository, &Source::Commit(commit), &entries)?;
-    Ok((entries, facts))
+    let left_out = |entry: &&Entry| !C::complete(&facts, std::slice::from_ref(*entry));
+    let lacks =
+        |blob: ObjectId| (repository.gix_id(blob)).is_ok_and(|id| !repository.git().has_object(id));
+    let absent = (entries.iter().filter(left_out)).all(|entry| entry.blob.is_some_and(lacks));
+    Ok((entries, facts, absent))
 }
 
 /// Every mount among `entries` of `source`: its logical and physical paths

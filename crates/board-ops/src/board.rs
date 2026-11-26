@@ -93,6 +93,8 @@ pub struct Board {
     /// Why this run's commits touch many files, which each commit gives in
     /// a `Board-Bulk:` trailer: see [`Board::mark_bulk`].
     pub(crate) bulk: Option<crate::Bulk>,
+    /// The fills and drops of a command-line put: see [`Board::mend`].
+    pub(crate) mend: Option<crate::put::fill::Mend>,
     /// Runs before each attempt to move HEAD for a put's commit. Nothing in
     /// production; a test uses it to move HEAD at that moment.
     pub(crate) between: Between,
@@ -175,6 +177,7 @@ impl Board {
             running: crate::version::declared(),
             started: None,
             bulk: None,
+            mend: None,
             between: Between::default(),
         };
         board.gate_writes();

@@ -130,6 +130,7 @@ pub(crate) struct AddInput {
     #[schemars(regex(pattern = UNTIL), description = UNTIL_HELP)]
     pub(crate) defer: Option<String>,
     #[schemars(
+        with = "Option<Vec<BoardPath>>",
         description = "The paths, in the task's own repo, of the tasks it waits on, such as \
                        /tasks/agree-scope.md."
     )]
@@ -161,6 +162,7 @@ pub(crate) struct AddInput {
     )]
     pub(crate) kind: Option<String>,
     #[schemars(
+        with = "Option<Vec<BoardPath>>",
         length(max = 100),
         description = "The board paths, in the task's own repo, of the records and files the \
                        task names, such as /exchange/sent/20261122T0329Z-lead-scope.md. A \
@@ -181,16 +183,43 @@ pub(crate) struct AddInput {
     pub(crate) parent: Option<String>,
     #[schemars(
         regex(pattern = r"^/"),
-        description = "The repo to write the task to: / for the board's own tree, or a notes \
-                       repo's mount path; the caller's git remote chooses it when left out."
+        description = "The repo to write the task to: / for the board's own tree, which needs \
+                       reason and stays on this Mac, or a notes repo's mount path; the caller's \
+                       git remote chooses it when left out."
     )]
     pub(crate) repo: Option<String>,
+    #[schemars(
+        length(min = 1),
+        description = "Why a task given repo / belongs with this board, such as a queue item; \
+                       repo / needs it, and one that is only spaces is missing. It is printed in \
+                       the output's about and stored nowhere, and ignored for any other repo."
+    )]
+    pub(crate) reason: Option<String>,
     #[schemars(
         length(min = 1),
         description = "A git remote, or owner/name, to choose the repos by in place of the origin \
                        of the directory board was started in."
     )]
     pub(crate) remote: Option<String>,
+}
+
+/// A logical path, which `board call` takes as a flag read from the current
+/// directory and refuses with a comma in it.
+#[derive(Debug)]
+enum BoardPath {}
+
+impl JsonSchema for BoardPath {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "BoardPath".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "pattern": "^/", "format": "board-path"})
+    }
 }
 
 fn kind(_: &mut SchemaGenerator) -> Schema {
