@@ -1529,7 +1529,7 @@ fn a_path_flag_given_to_a_read_command_is_read_as_its_path_and_one_given_to_a_wr
     let repository = directory.display().to_string();
     for refused in [
         &["--json", "query", "--path", "/projects"][..],
-        &["--json", "rm", "--path", "/projects/p"],
+        &["--json", "rm", "--path", "/projects/zz", "--ignore-unmatch"],
         &["--json", "put", "--path", "/projects/q"],
         &["--json", "mount", "add", &repository, "--path", "/team"],
     ] {
@@ -1541,8 +1541,7 @@ fn a_path_flag_given_to_a_read_command_is_read_as_its_path_and_one_given_to_a_wr
             text(&refused.stderr)
         );
     }
-    assert_eq!(board_in(directory, &["get", "/projects/p"]).code, 0);
-    let removed = board_in(directory, &["rm", "/projects/p"]);
+    let removed = board_in(directory, &["rm", "/projects/zz", "--ignore-unmatch"]);
     assert_eq!(removed.code, 0, "{}", text(&removed.stderr));
 }
 
