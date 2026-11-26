@@ -17,6 +17,10 @@
   record types, such as `rules/report/v1`, as `board plugin enable` writes
   it, in any directory and whether or not a board enables the plugin.
   `board schemas list` does not list them.
+- An `obligations` check on a change with a head fails, with git's reason,
+  when git cannot list the change's diff. Before, it passed on the plan's
+  paths alone. It asks `rules.for-paths` about the files a change adds 100
+  to a call, so a large diff no longer sends them all at once.
 
 ## 0.1.3 (2026-11-25)
 
