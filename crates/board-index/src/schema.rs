@@ -170,13 +170,15 @@ CREATE TABLE decided (
 -- (a JSON pointer or a link's destination as written), `link` when it is a
 -- Markdown link, the `target` it names, the `location` it resolved to,
 -- without its `board` when that is the decided board itself, and the `code`
--- it failed with.
+-- it failed with. A rowid table, as `bodies` is: a WITHOUT ROWID table
+-- moves a row past about 4 KiB to overflow pages, which wasted half the
+-- table on the owner's board.
 CREATE TABLE resolutions (
     key TEXT NOT NULL,
     path TEXT NOT NULL,
     reached TEXT NOT NULL,
-    PRIMARY KEY (key, path)
-) WITHOUT ROWID;
+    UNIQUE (key, path)
+);
 ";
 
 /// Each source a run reached: the key its decision is kept under when the
