@@ -788,3 +788,102 @@ test('a band that stays on screen is drawn again by each read, so it reads what 
   for (let i = 0; i < 5; i++) await clock.advance(60_000)
   expect(reads(ran, waited)).toEqual({ waiting: 7, open: 1 })
 })
+
+// When the board's stamp gates the minute's reads. The board's .git is stood
+// in by fs hooks; tests above hook no file, so their stamp is unknown and
+// every minute reads, as the mod did before the stamp.
+type File = { text?: string; size?: number; mtimeMs?: number; kind?: 'file' | 'dir' }
+const GIT = '/boards/me/.git'
+/** Stands in for the board's .git at /boards/me, whose HEAD names main, and returns its files to change. */
+function gitFiles(on: On) {
+  const held: Record<string, File> = {
+    [GIT]: { kind: 'dir' },
+    [`${GIT}/HEAD`]: { text: 'ref: refs/heads/main\n' },
+    [`${GIT}/refs/heads/main`]: { text: `${'1'.repeat(40)}\n` },
+    [`${GIT}/index`]: { size: 4096, mtimeMs: 1000 },
+  }
+  on('fs.read', (_, e) => {
+    const file = held[e.path]
+    if (file?.text === undefined) throw new Error(`ENOENT: ${e.path}`)
+    return { value: file.text }
+  })
+  on('fs.exists', (_, e) => ({ value: held[e.path] !== undefined }))
+  on('fs.stat', (_, e) => {
+    const file = held[e.path]
+    if (file === undefined) throw new Error(`ENOENT: ${e.path}`)
+    return { value: { kind: file.kind ?? 'file', size: file.size ?? 0, mtimeMs: file.mtimeMs ?? 0, isLink: false } }
+  })
+  return held
+}
+const ME = { options: { board: '/boards/me' } }
+
+test('drawn minutes on a board whose HEAD and index stay as they were run no board, and its twin, a new commit, reads once on the next tick', ME, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = gitFiles(on)
+  const { ran, waited } = engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(3, 1) }) })
+  await start($)
+  for (let i = 0; i < 10; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(reads(ran, waited)).toEqual({ waiting: 1, open: 1 })
+  held[`${GIT}/refs/heads/main`] = { text: '2'.repeat(40) }
+  await draw($, clock)
+  await clock.advance(60_000)
+  expect(reads(ran, waited)).toEqual({ waiting: 2, open: 1 })
+  for (let i = 0; i < 5; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(reads(ran, waited)).toEqual({ waiting: 2, open: 1 })
+})
+
+test('a write to the board\'s index reads what waits on the next tick, and the open list when the count changed', ME, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = gitFiles(on)
+  let total = 3
+  const { ran, waited } = engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(total, 1) }) })
+  await start($)
+  await draw($, clock)
+  await clock.advance(60_000)
+  expect(reads(ran, waited)).toEqual({ waiting: 1, open: 1 })
+  total = 4
+  held[`${GIT}/index`] = { size: 4096, mtimeMs: 2000 }
+  await draw($, clock)
+  await clock.advance(60_000)
+  expect(reads(ran, waited)).toEqual({ waiting: 2, open: 2 })
+})
+
+test('a read that fails on an unchanged board is tried again on the next tick, until one works', ME, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  gitFiles(on)
+  let fails = true
+  const down = { exitCode: 1, stdout: JSON.stringify({ schema: 'board/failure/v1', code: 'board::lock::timeout', message: 'the board is busy' }) }
+  const { ran, waited } = engine(on, { waiting: () => (fails ? down : { exitCode: 0, stdout: waitingReport(3, 1) }) })
+  await start($)
+  for (let i = 0; i < 2; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(reads(ran, waited)).toEqual({ waiting: 3, open: 1 })
+  fails = false
+  for (let i = 0; i < 3; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(reads(ran, waited)).toEqual({ waiting: 4, open: 2 })
+})
+
+test('on an unchanged board the questions pane and an answer still read at once', ME, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  gitFiles(on)
+  const { ran, waited } = engine(on, { waiting: () => ({ exitCode: 0, stdout: waitingReport(2, 1) }) })
+  await start($)
+  await clock.advance(61_000)
+  await draw($, clock, pane('questions'))
+  expect(reads(ran, waited)).toEqual({ waiting: 1, open: 2 })
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  expect(ran.map(r => r[3])).toEqual(['plans.open', 'plans.open', 'plans.answer', 'plans.open'])
+  expect(waited).toHaveLength(2)
+})

@@ -25,6 +25,11 @@ button. After that:
 - A draw runs it when that read is a minute old.
 - `plans.open` runs for a pane whose list is a minute old, a changed count, an answer, or every read without `plans.waiting`.
 
+A tick or a draw runs `board` only when the commit `.git/HEAD` names, or
+the size or modified time of `.git/index`, changed since the last read that
+worked; `hooks/stamp.ts` reads them as files. An edit neither committed nor
+staged shows with the next commit.
+
 An undrawn session reads Board once. A failed refresh is logged, keeps
 the last count read and marks the band's button. The pane says why for a
 failed `plans.open`; a failed `plans.waiting` is in the debug log. The band is drawn on the terminal and the desktop app only.
@@ -81,6 +86,3 @@ an empty `why`, whenever it was written. Each question asked shows
 `answered` when an answer names it, and its status otherwise. The command's output row gives the
 totals. The query reads at most 1000 records, and when Board cuts it there,
 both the pane and the output row say so. The report quotes record fields only and calls no model.
-
-The pane is drawn by the mod's own `ui.render` hook. Once board-ui lands
-(#301), it moves to board-ui view and binding records.

@@ -5,6 +5,8 @@ import type { Open, Question, Unread, Waiting } from '../types'
 import { SLOT, drawsInto, joinBand, keepOneBand } from './band'
 import { begin, countCallsForList, end, isDue, REFRESH_MS, schedule, tickIsDue } from './refresh'
 import type { Counted, Schedule } from './refresh'
+import { unseen, whenChanged } from './stamp'
+import type { Seen } from './stamp'
 import { answerText, approvalText, approvedChange, blocking, countBadge, failure, parseAnswered, parseApproved, parseOpen, parseRows, parseWaiting, plain, project, refused, report, REPORT_LIMIT, REPORT_SQL, WRITTEN_BY } from './plans'
 
 // The mod reads the owner's open questions from Board, draws their count in
@@ -33,9 +35,12 @@ const LISTED = 100
 
 type Ran = { exitCode: number; stdout: string; stderr: string }
 
+/** The configured board's directory; empty for the personal board. */
+const configured = (options: PluginOptions) => String(options.board ?? '')
+
 /** Runs `board` with `args` in the configured board, the personal board when none is set. */
 function board($: EngineInterface, options: PluginOptions, args: string[], timeoutMs = TIMEOUT_MS): Promise<Ran> {
-  const dir = String(options.board ?? '')
+  const dir = configured(options)
   const where = dir === '' ? ['--personal'] : ['-C', dir]
   return $.process.run(['/bin/sh', '-c', RUN, 'board', ...where, '--json', ...args], { timeoutMs })
 }
@@ -78,8 +83,8 @@ async function refreshOpen($: EngineInterface, options: PluginOptions): Promise<
   return found !== null
 }
 
-/** What the mod keeps between reads: whether plans.waiting is absent, and its schedule. */
-type Local = { absent: boolean; schedule: Schedule }
+/** What the mod keeps between reads: whether plans.waiting is absent, its schedule, and the board's stamp the last read that worked saw. */
+type Local = { absent: boolean; schedule: Schedule; seen: Seen }
 
 /** Runs `work`, logs what it throws, so a read launched without a wait rejects nothing, and runs `done` however it ends. */
 async function guarded($: EngineInterface, what: string, work: () => Promise<void>, done: () => void) {
@@ -94,15 +99,21 @@ async function guarded($: EngineInterface, what: string, work: () => Promise<voi
 
 const totalOf = (counted: Counted) => (counted.kind === 'read' ? counted.total : null)
 
-/** Reads the open questions, whose read the schedule marks begun, and marks it ended beside the count `total`. */
-async function list($: EngineInterface, options: PluginOptions, s: Schedule, total: number | null) {
+/** Reads the open questions, whose read the schedule marks begun, marks it ended beside the count `total`, and says whether it worked. */
+async function list($: EngineInterface, options: PluginOptions, s: Schedule, total: number | null): Promise<boolean> {
   let worked = false
   await guarded($, 'plans.open', async () => {
     worked = await refreshOpen($, options)
   }, () => end(s, 'list', { worked, total }))
+  return worked
 }
 
-/** Reads the open questions and what waits on the owner, side by side, as a session starts and after an answer. */
+/**
+ * Reads the open questions and what waits on the owner, side by side, as a
+ * session starts and after an answer. It reads whatever the board's stamp
+ * says, and records the stamp when both reads work, so the next minute's
+ * tick on an unchanged board runs no `board`.
+ */
 async function refreshBoth($: EngineInterface, options: PluginOptions, local: Local) {
   const s = local.schedule
   const now = await $.clock.now()
@@ -111,22 +122,32 @@ async function refreshBoth($: EngineInterface, options: PluginOptions, local: Lo
   let worked = false
   let counted: Counted = { kind: 'failed' }
   await guarded($, 'a refresh', async () => {
-    ;[worked, counted] = await Promise.all([refreshOpen($, options), refreshWaiting($, options, local)])
+    await whenChanged($, configured(options), local.seen, async () => {
+      ;[worked, counted] = await Promise.all([refreshOpen($, options), refreshWaiting($, options, local)])
+      return worked && counted.kind !== 'failed'
+    }, true)
   }, () => {
     end(s, 'count')
     end(s, 'list', { worked, total: totalOf(counted) })
   })
 }
 
-/** Reads what waits on the owner, whose read the schedule marks begun, and the open questions only when the count calls for them. */
+/**
+ * Reads what waits on the owner, whose read the schedule marks begun, and the
+ * open questions only when the count calls for them. It runs no `board` when
+ * the board's stamp is the one the last read that worked saw; the schedule
+ * still counts the minute as read, so the next check is a minute away.
+ */
 async function refreshCount($: EngineInterface, options: PluginOptions, local: Local) {
   const s = local.schedule
   await guarded($, 'plans.waiting', async () => {
-    const counted = await refreshWaiting($, options, local)
-    const now = await $.clock.now()
-    if (!countCallsForList(s, counted, now)) return
-    begin(s, 'list', now)
-    await list($, options, s, totalOf(counted))
+    await whenChanged($, configured(options), local.seen, async () => {
+      const counted = await refreshWaiting($, options, local)
+      const now = await $.clock.now()
+      if (!countCallsForList(s, counted, now)) return counted.kind !== 'failed'
+      begin(s, 'list', now)
+      return (await list($, options, s, totalOf(counted))) && counted.kind !== 'failed'
+    })
   }, () => end(s, 'count'))
 }
 
@@ -217,7 +238,7 @@ const age = (asked: string, now: number) => {
 }
 
 export const register: Register = (on, options) => {
-  const local: Local = { absent: false, schedule: schedule() }
+  const local: Local = { absent: false, schedule: schedule(), seen: unseen() }
 
   // The minute's refresh starts with the first band drawn, which a `-p` run
   // never draws. Desktop sessions report `isInteractive: false`, so that flag

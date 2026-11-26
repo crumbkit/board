@@ -452,3 +452,71 @@ test('output naming many ids Board does not hold costs one list read', async ($,
   expect(asked).toEqual([])
   expect(ran).toEqual([LIST, LIST])
 })
+
+// When the personal board's stamp gates the minute's read. The config and the
+// board's .git are stood in by fs hooks; tests above hook no file, so their
+// stamp is unknown and every minute reads, as the mod did before the stamp.
+type File = { text?: string; size?: number; mtimeMs?: number; kind?: 'file' | 'dir' }
+const GIT = `${HOME}/board/.git`
+/** Stands in for the board config, which names ~/board, and that board's .git, and returns the files to change. */
+function gitFiles(on: On) {
+  const held: Record<string, File> = {
+    [`${HOME}/.config/board/config.json`]: { text: JSON.stringify({ boards: [], personal: '~/board' }) },
+    [GIT]: { kind: 'dir' },
+    [`${GIT}/HEAD`]: { text: 'ref: refs/heads/main\n' },
+    [`${GIT}/refs/heads/main`]: { text: `${'1'.repeat(40)}\n` },
+    [`${GIT}/index`]: { size: 4096, mtimeMs: 1000 },
+  }
+  on('fs.read', (_, e) => {
+    const file = held[e.path]
+    if (file?.text === undefined) throw new Error(`ENOENT: ${e.path}`)
+    return { value: file.text }
+  })
+  on('fs.exists', (_, e) => ({ value: held[e.path] !== undefined }))
+  on('fs.stat', (_, e) => {
+    const file = held[e.path]
+    if (file === undefined) throw new Error(`ENOENT: ${e.path}`)
+    return { value: { kind: file.kind ?? 'file', size: file.size ?? 0, mtimeMs: file.mtimeMs ?? 0, isLink: false } }
+  })
+  return held
+}
+
+test('minutes on a personal board whose HEAD and index stay as they were run no board, and its twin, a new commit or an index write, reads once', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const held = gitFiles(on)
+  const { ran } = engine(on)
+  await start($)
+  await (await band($)).unmount()
+  for (let i = 0; i < 10; i++) await clock.advance(60_000)
+  expect(ran).toEqual([LIST])
+  held[`${GIT}/refs/heads/main`] = { text: '2'.repeat(40) }
+  for (let i = 0; i < 3; i++) await clock.advance(60_000)
+  expect(ran).toEqual([LIST, LIST])
+  held[`${GIT}/index`] = { size: 4096, mtimeMs: 2000 }
+  for (let i = 0; i < 3; i++) await clock.advance(60_000)
+  expect(ran).toEqual([LIST, LIST, LIST])
+})
+
+test('a read that fails on an unchanged board is tried again each minute, until one works', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  gitFiles(on)
+  let answer: Ran = { exitCode: 1, stdout: failed('board::query::timeout', 'the query ran past 5 s') }
+  const { ran } = engine(on, { query: () => answer })
+  await start($)
+  await (await band($)).unmount()
+  await clock.advance(60_000)
+  expect(ran).toHaveLength(2)
+  answer = { exitCode: 0, stdout: report([ROWS[A] as unknown[]]) }
+  for (let i = 0; i < 3; i++) await clock.advance(60_000)
+  expect(ran).toHaveLength(3)
+})
+
+test('on an unchanged board an answer still reads the list again at once', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  gitFiles(on)
+  const { ran } = engine(on)
+  await start($)
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await pane.press({ key: `${A}#approve` })
+  expect(ran).toEqual([LIST, one(A), ['answer', A, 'approve'], LIST])
+})
