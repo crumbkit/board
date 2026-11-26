@@ -149,6 +149,44 @@ fn an_amend_that_adds_a_path_or_an_owed_entry_is_refused_and_one_with_a_section_
     assert_eq!(amendments(&board), 1);
 }
 
+/// `plan-amend` takes every input as a flag, so Board never reads JSON on
+/// stdin for it: a `paths` or `owed` key there is refused as
+/// `board::plugin::bad_input` and nothing is written, and the same text
+/// as flags without the key is written.
+#[test]
+fn an_amend_on_stdin_with_a_paths_or_owed_key_is_refused_as_bad_input_and_the_same_flags_without_it_are_written()
+ {
+    let board = Changes::new();
+    let first = planned(&board, PLAN);
+    for (key, value) in [
+        ("paths", json!(["/repos/x/extra.rs"])),
+        ("owed", json!(["/rules/x/owed"])),
+    ] {
+        let mut given = json!({"path": CHANGE, "proves": "It stops."});
+        given[key] = value;
+        let refused = board.refusal_stdin("plan-amend", &given);
+        assert_eq!(
+            refused["code"], "board::plugin::bad_input",
+            "{key}: {refused}"
+        );
+        let hint = refused["recovery"]["text"].as_str().unwrap();
+        assert!(
+            hint.contains(
+                "Board ignored stdin because changes.plan-amend takes every input as a flag"
+            ),
+            "{key}: {hint}"
+        );
+    }
+    assert_eq!(amendments(&board), 0);
+    assert_eq!(board.read("changes/t.json")["plan"], first["path"]);
+    let output = board.call(
+        "plan-amend",
+        &json!({"path": CHANGE, "proves": "It stops."}),
+    );
+    assert_eq!(at(&board, &output["path"])["paths"], json!(PATHS));
+    assert_eq!(amendments(&board), 1);
+}
+
 #[test]
 fn an_amend_of_a_change_with_no_plan_is_refused_and_one_with_a_plan_is_written() {
     let board = Changes::new();

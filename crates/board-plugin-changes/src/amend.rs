@@ -16,7 +16,7 @@ use crate::board::{self, rows, text};
 use crate::change::{line, plan_at, read, touch};
 use crate::gates::{FENCES, HEADING, sections};
 use crate::phases::final_phase;
-use crate::plan::{PLAN_WORDS, Planned, plan_lines, stamp, thousands, words};
+use crate::plan::{Planned, check_words, plan_lines, stamp};
 use crate::records::{PlanRecord, is_final};
 use crate::{PLUGIN, refusal, to_value};
 
@@ -150,18 +150,7 @@ pub(crate) fn plan_amend(host: &dyn Host, input: &Value) -> Result<Value, Plugin
             [("path", json!(path))],
         ));
     }
-    let counted = words(&text);
-    if counted > PLAN_WORDS {
-        return Err(refusal(
-            "changes::plan::too_long",
-            format!(
-                "the amended plan for {path} would hold {} words, over the 3,000-word limit; add \
-                 less text",
-                thousands(counted)
-            ),
-            [("path", json!(path)), ("words", json!(counted))],
-        ));
-    }
+    check_words(&path, &text)?;
     let now = host.settings().now;
     let planned = Planned {
         uses: plan.uses.clone(),

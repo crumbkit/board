@@ -212,9 +212,10 @@ const ANSWERS: &str = r#","answers":{"ux":"none","data":"none","lifecycle":"none
 /// `said` with the fields `board changes plan` takes on stdin and a one-line
 /// example, when `said` names `changes plan` or `changes.plan`. The command
 /// replaces the plan, so for a change that has one, `said` says to resend
-/// every field and the two optional ones.
+/// every field and the two optional ones. `changes plan-amend` adds to the
+/// plan without replacing it, so naming it alone adds nothing.
 fn with_plan_usage(observed: &Observed, said: String) -> String {
-    if !said.contains("changes plan") && !said.contains("changes.plan") {
+    if !names_plan(&said) {
         return said;
     }
     let typed = (observed.flow.iter()).any(|flow| flow.answers().next().is_some());
@@ -239,6 +240,14 @@ fn with_plan_usage(observed: &Observed, said: String) -> String {
              {count} fields with any `considered` and `owed`, such as `{example}`."
         )
     }
+}
+
+/// Whether `said` names `changes plan` or `changes.plan`, apart from
+/// `changes plan-amend` and `changes.plan-amend`.
+fn names_plan(said: &str) -> bool {
+    ["changes plan", "changes.plan"].iter().any(|command| {
+        (said.match_indices(command)).any(|(at, _)| !said[at + command.len()..].starts_with('-'))
+    })
 }
 
 /// `said` with the fields `board changes lifecycle` takes on stdin and a

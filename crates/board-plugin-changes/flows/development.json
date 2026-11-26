@@ -87,10 +87,11 @@
     {
       "name": "land",
       "agent": "lead",
-      "instruction": "Add What the tests prove and What the tests do not prove to the plan. Draft the pull request with `board changes pr --path {change}`, read pr.md and fix what is wrong, fix each path in `unreadable` and draft again or say why in the body, then run the command it returns in a POSIX shell from a checkout on {head}. Record the pull request with `board github ref --ref <owner>/<repo>#<number>` and attach it with --pull. Merging happens outside Board; advancing from land ends the change in done. Rechecks do not block the merge: after it, ask the owner two of each data understanding check's predict or edge questions again, worded differently, and add them to its rechecks; `board changes owed` lists each done change that still owes them, with the questions to ask.",
+      "instruction": "Add What the tests prove and What the tests do not prove to the plan with `board changes plan-amend --path {change}`, giving their text with --proves and --does-not-prove; it adds only those two sections and keeps the rest of the plan. Draft the pull request with `board changes pr --path {change}`, read pr.md and fix what is wrong, fix each path in `unreadable` and draft again or say why in the body, then run the command it returns in a POSIX shell from a checkout on {head}. Record the pull request with `board github ref --ref <owner>/<repo>#<number>` and attach it with --pull. Merging happens outside Board; advancing from land ends the change in done. Rechecks do not block the merge: after it, ask the owner two of each data understanding check's predict or edge questions again, worded differently, and add them to its rechecks; `board changes owed` lists each done change that still owes them, with the questions to ask.",
       "checks": [
         {"id": "test-sections", "kind": "sections",
-         "sections": ["What the tests prove", "What the tests do not prove"]},
+         "sections": ["What the tests prove", "What the tests do not prove"],
+         "remedy": "Add the missing sections with `board changes plan-amend --path {change} --proves <text> --does-not-prove <text>`, giving only the flags for the headings the detail names; it adds only those sections and keeps the rest of the plan."},
         {"id": "pull-request", "kind": "field", "field": "pulls", "types": ["github/pull/v1"]},
         {"id": "rechecks", "kind": "understood", "actor": "owner", "subject": "data", "rechecks": 2,
          "blocks": false,

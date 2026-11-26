@@ -122,6 +122,28 @@ const PLAN_AMEND: [&str; 3] = [
     "plan-amend.does_not_prove",
 ];
 
+/// A caller that sends `plan-amend` JSON, such as a plugin, has a `paths`
+/// or `owed` key refused by the input schema, so only the owner's
+/// `changes plan` widens a plan's scope.
+#[test]
+fn the_plan_amend_input_schema_refuses_a_key_it_does_not_list() {
+    let manifest = manifest();
+    let amend = (manifest["capabilities"].as_array().unwrap().iter())
+        .find(|each| each["name"] == "plan-amend")
+        .unwrap();
+    assert_eq!(
+        amend["inputSchema"]["additionalProperties"], false,
+        "{amend}"
+    );
+    let keys: Vec<&str> = (amend["inputSchema"]["properties"]
+        .as_object()
+        .unwrap()
+        .keys())
+    .map(String::as_str)
+    .collect();
+    assert_eq!(keys, ["does_not_prove", "path", "proves"]);
+}
+
 #[test]
 fn every_input_property_carries_a_sentence_that_says_what_it_means() {
     let mut described = Vec::new();
