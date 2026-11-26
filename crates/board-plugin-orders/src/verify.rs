@@ -69,7 +69,7 @@ pub(crate) fn verified(host: &dyn Host, path: &str) -> Result<Output, PluginErro
         (Some(signature), _) => {
             let signer = (host.verify_order(&held.order, signature))
                 .map_err(|error| unverified(path, &error))?;
-            debug_assert_eq!(signer, PRINCIPAL);
+            by_owner(path, signer)?;
             SIGNED
         }
         (None, Some(approved)) => {
@@ -107,6 +107,23 @@ pub(crate) fn verified(host: &dyn Host, path: &str) -> Result<Output, PluginErro
         context: held.fields.context,
         context_text: held.order.context_text,
     })
+}
+
+/// Refuses a signature of the order at `path` that verified under
+/// `signer`, unless `signer` is the owner, so an order another principal
+/// signed is never reported as signed by the owner.
+pub(crate) fn by_owner(path: &str, signer: &str) -> Result<(), PluginError> {
+    if signer == PRINCIPAL {
+        return Ok(());
+    }
+    Err(refusal(
+        "orders::order::bad_signature",
+        format!(
+            "{path}'s signature verifies as {signer}'s, not {PRINCIPAL}'s, so the owner did not \
+             sign it; ask the owner to sign it"
+        ),
+        [("path", json!(path)), ("signer", json!(signer))],
+    ))
 }
 
 /// Refuses unless the answer at `approved` approves `order` in chat: signing

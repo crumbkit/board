@@ -40,6 +40,13 @@ for both were rewritten for the new shapes. A board holding the old copies
 in `.board/types/` refuses those fields until `board plugin enable plans
 orders` replaces them.
 
+After 0.1.1, `board/seen/v1`, the owner's answer to a pending effect,
+gained an optional `approved` in place: the path of the `plans/answer/v1`
+that approved the effect in chat where signing takes an answer for
+effects. A seen record without it reads as before. Seen records refuse a
+field they do not know, so a Board older than this change refuses a seen
+record that holds `approved` rather than reading it as approved.
+
 The map plugin's `map/layout/v1` changes in place until map increment 4
 lands, because increments 3 and 4 add optional fields to it. The unstable
 list cannot hold it, because the list accepts only the external plugin
