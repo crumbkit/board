@@ -36,8 +36,13 @@ pub(crate) fn observe(
     observe_in(host, path, change, flow)
 }
 
-/// What a caller already read of a change that follows a flow, so is a
-/// build, which [`observe_known`] takes in place of reading it again.
+/// What a caller already read of a change that follows a flow, which
+/// [`observe_known`] takes in place of reading it again.
+///
+/// The change is observed as a build whatever its kind, a prototype
+/// included. That is sound only because its one caller, `owed::owing`,
+/// judges the change through `interpret`, which never reads the observed
+/// kind; `gate` does, so a caller that gates must not pass a `Known`.
 pub(crate) struct Known {
     /// The plan record at the change's `plan`, or none when Board reads no
     /// plan record there.
@@ -478,15 +483,16 @@ fn reads_past_answers(checks: &[flow::Check]) -> bool {
     checks.iter().any(|each| {
         let sections = (each.when.as_ref())
             .is_some_and(|when| when.section.is_some() || when.section_not.is_some());
-        sections || whenless(each).is_none_or(|bare| reads(&[bare]).contains(&Read::Plan))
+        sections || reads(&[whenless(each)]).contains(&Read::Plan)
     })
 }
 
-/// `each` with no `when`, or none when it does not read back.
-fn whenless(each: &flow::Check) -> Option<flow::Check> {
-    let mut value = serde_json::to_value(each).ok()?;
-    value.as_object_mut()?.remove("when");
-    serde_json::from_value(value).ok()
+/// `each` with no `when`.
+fn whenless(each: &flow::Check) -> flow::Check {
+    flow::Check {
+        when: None,
+        ..each.clone()
+    }
 }
 
 /// `file` as a SQLite GLOB pattern that matches only itself, since

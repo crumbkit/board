@@ -53,7 +53,7 @@ pub(crate) fn development() -> Flow {
 ///
 /// A change moves through `phases` in order and then to `done`. `stop` is
 /// where an agent that runs the flow stops by default.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(extend("x-board-folder" = "/flows/"))]
 pub(crate) struct Flow {
@@ -121,7 +121,7 @@ pub(crate) enum Stop {
 }
 
 /// One phase of a flow.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Phase {
     /// The phase's name, which a change's `phase` holds while it is here.
@@ -157,7 +157,7 @@ pub(crate) enum Agent {
 ///
 /// Each parameter after `waivable` belongs to the kinds its description
 /// names, and a check refuses the parameters of every other kind.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Check {
     /// The check's name, unique in the flow, which `next` reports.
@@ -305,7 +305,7 @@ pub(crate) enum Actor {
 }
 
 /// When a check applies: every condition given holds.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct When {
     /// The change's route is one of these.
@@ -333,7 +333,7 @@ pub(crate) struct When {
 }
 
 /// A record whose absence a check's `when` needs.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Absent {
     /// Where the record would be, its placeholders filled.
@@ -385,7 +385,7 @@ impl Distinct {
 }
 
 /// What each record a `records` check counts must meet.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Where {
     /// The field whose commit must be the change's head.

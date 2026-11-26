@@ -6,18 +6,18 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
-use board_model::parse_json;
-use board_ops::{Host, PluginError, literal};
-use board_plugin::shape::Record;
+use board_ops::{Host, PluginError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::board::{readable, rows, text, tree_codes};
-use crate::change::{NOT_FOUND, Referenced, change_types, parsed, referenced, today};
+use crate::board::{readable, rows, text};
+use crate::change::{attached_each, change_types, parsed, plans_at, referenced, today};
 use crate::flow::{self, Flow, at_paths, development, gone};
 use crate::gates::remedy::{self, PLACEHOLDERS};
-use crate::gates::{Check, Observed, Read, Status, UNDERSTANDING_TYPE, interpret, objects, reads};
+use crate::gates::{
+    Check, Observed, Read, Status, UNDERSTANDING_TYPE, fails_unread, interpret, objects, reads,
+};
 use crate::phases::{Known, board_root, observe_known};
 use crate::plan::Answers;
 use crate::records::{ChangeRecord, DONE, PlanRecord};
@@ -135,12 +135,11 @@ pub(crate) fn owing(host: &dyn Host) -> Result<(Vec<Owed>, usize), PluginError> 
         .flat_map(|last| &last.checks)
         .any(names_board);
     let board = if names_board { board_root(host)? } else { None };
-    let mut cited = attached_each(
-        host,
-        (left.iter())
-            .filter(|each| reads(each.checks()).contains(&Read::References))
-            .map(|each| each.path.as_str()),
-    )?;
+    let citing: Vec<&str> = (left.iter())
+        .filter(|each| reads(each.checks()).contains(&Read::References))
+        .map(|each| each.path.as_str())
+        .collect();
+    let mut cited = attached_each(host, &citing)?;
     let all: Vec<String> = cited.values().flatten().cloned().collect();
     let records = referenced(host, &all)?;
     let mut found = Vec::new();
@@ -152,7 +151,7 @@ pub(crate) fn owing(host: &dyn Host) -> Result<(Vec<Owed>, usize), PluginError> 
     } in left
     {
         let cited = cited.remove(&path).unwrap_or_default();
-        let records = only(&records, &cited);
+        let records = records.only(&cited);
         let known = Known {
             plan,
             board: board.clone(),
@@ -255,107 +254,36 @@ fn answered(
     flows: &Flows,
     asked: Vec<(String, ChangeRecord)>,
 ) -> Result<Vec<Left>, PluginError> {
-    let plans = plans_at(
-        host,
-        (asked.iter()).filter_map(|(_, change)| change.plan.as_deref()),
-    )?;
+    let named: Vec<&str> = (asked.iter())
+        .filter_map(|(_, change)| change.plan.as_deref())
+        .collect();
+    let plans = plans_at(host, &named)?;
     let mut left = Vec::new();
     for (path, mut change) in asked {
-        let held = change.plan.as_ref().and_then(|plan| plans.get(plan));
-        let answers = held.and_then(|plan| plan.answers).unwrap_or_default();
+        let plan = (change.plan.as_ref())
+            .and_then(|plan| plans.get(plan))
+            .map(|(record, _)| record);
+        let answers = plan.and_then(|plan| plan.answers).unwrap_or_default();
         let Some(Some(flow)) = flows.get(&key(&change)) else {
             continue;
         };
         if !may_apply(flow, &change, Some(answers)) {
             continue;
         }
-        let mut flow = copied(flow);
+        let mut flow = flow.clone();
         if let Some(last) = flow.phases.last_mut() {
             last.checks
-                .retain(|each| !fails(each, &change, Some(answers)));
+                .retain(|each| !fails_unread(each, change.route, Some(answers)));
             change.phase.clone_from(&last.name);
         }
-        let plan = held.and_then(|plan| serde_json::from_value(plan.body.clone()).ok());
         left.push(Left {
             path,
             change,
             flow,
-            plan,
+            plan: plan.cloned(),
         });
     }
     Ok(left)
-}
-
-/// The records attached to each change at `paths`, by path, as
-/// `change::attached` reads them for one, in one query.
-fn attached_each<'a>(
-    host: &dyn Host,
-    paths: impl Iterator<Item = &'a str>,
-) -> Result<HashMap<String, Vec<String>>, PluginError> {
-    let prefixes: Vec<(&str, String)> =
-        paths.map(|path| (path, format!("{path}/plans/"))).collect();
-    let mut found: HashMap<String, Vec<String>> = HashMap::new();
-    if prefixes.is_empty() {
-        return Ok(found);
-    }
-    let under: Vec<String> = (prefixes.iter())
-        .map(|(_, prefix)| {
-            format!(
-                "substr(logical, 1, {}) = {}",
-                prefix.chars().count(),
-                literal(prefix)
-            )
-        })
-        .collect();
-    let sql = format!(
-        "SELECT logical, body FROM records WHERE type = {} AND ({}) AND ({}) ORDER BY logical",
-        literal(PlanRecord::TYPE),
-        sound(),
-        under.join(" OR ")
-    );
-    for row in rows(host, &sql)? {
-        let Some(logical) = text(row.first()) else {
-            continue;
-        };
-        let records = plan_in(row.get(1)).and_then(|plan| plan.records);
-        for (path, prefix) in &prefixes {
-            if !logical.starts_with(prefix.as_str()) {
-                continue;
-            }
-            let listed = found.entry((*path).to_owned()).or_default();
-            for each in records.iter().flatten() {
-                if !listed.contains(each) {
-                    listed.push(each.clone());
-                }
-            }
-        }
-    }
-    Ok(found)
-}
-
-/// The part of `all` that `refs` name, in their order, each once, as
-/// `change::referenced` reads `refs` alone.
-fn only(all: &Referenced, refs: &[String]) -> Referenced {
-    let mut found = Referenced::default();
-    for each in refs {
-        if found.records.iter().any(|(seen, _)| seen == each)
-            || found.unreadable.iter().any(|(seen, _)| seen == each)
-        {
-            continue;
-        }
-        if let Some(record) = all.get(each) {
-            found.records.push((each.clone(), record.clone()));
-            continue;
-        }
-        let code = (all.unreadable.iter())
-            .find_map(|(seen, code)| (seen == each).then(|| code.clone()))
-            .unwrap_or_else(|| NOT_FOUND.to_owned());
-        found.unreadable.push((each.clone(), code));
-        if let Some(kind) = all.unreadable_types.get(each) {
-            found.unreadable_types.insert(each.clone(), kind.clone());
-        }
-    }
-    found
 }
 
 /// `flow` with only its last phase's checks that do not block, or none
@@ -371,36 +299,7 @@ fn after(mut flow: Flow) -> Option<Flow> {
 fn may_apply(flow: &Flow, change: &ChangeRecord, answers: Option<Answers>) -> bool {
     (flow.phases.last().into_iter())
         .flat_map(|last| &last.checks)
-        .any(|each| !fails(each, change, answers))
-}
-
-/// Whether the check's `when` fails on the change's route or on `answers`.
-///
-/// The gate reads a `when`'s route first, then its section patterns, then
-/// its answers. A pattern it cannot read makes the check missing, so a
-/// `when` with section patterns is left to the gate whatever the answers.
-fn fails(each: &flow::Check, change: &ChangeRecord, answers: Option<Answers>) -> bool {
-    let Some(when) = &each.when else {
-        return false;
-    };
-    if let Some(routes) = &when.route
-        && !(change.route).is_some_and(|route| routes.contains(&route))
-    {
-        return true;
-    }
-    if when.section.is_some() || when.section_not.is_some() {
-        return false;
-    }
-    let Some(answers) = answers else {
-        return false;
-    };
-    let unmet = when.answers.is_some_and(|wanted| !answers.meet(wanted));
-    let unless = when.answers_not.is_some_and(|unless| {
-        (unless.ux.is_none() || answers.ux == unless.ux)
-            && (unless.data.is_none() || answers.data == unless.data)
-            && (unless.lifecycle.is_none() || answers.lifecycle == unless.lifecycle)
-    });
-    unmet || unless
+        .any(|each| !fails_unread(each, change.route, answers))
 }
 
 /// What stands in for the board's root while [`names_board`] fills a
@@ -413,68 +312,6 @@ fn names_board(each: &flow::Check) -> bool {
     let own = serde_json::to_string(each).is_ok_and(|text| text.contains("{board}"));
     let values = PLACEHOLDERS.map(|name| (name, (name == "board").then(|| ROOT.to_owned())));
     own || remedy::of(each, &values).contains(ROOT)
-}
-
-/// A plan record's typed answers and its body, which the change's observed
-/// plan reads.
-struct Held {
-    answers: Option<Answers>,
-    body: Value,
-}
-
-/// The plan record at each of `paths` that Board reads, by path, in one
-/// query, as `plan_at` reads one.
-fn plans_at<'a>(
-    host: &dyn Host,
-    paths: impl Iterator<Item = &'a str>,
-) -> Result<HashMap<String, Held>, PluginError> {
-    let listed: Vec<String> = paths.map(literal).collect();
-    let mut found = HashMap::new();
-    if listed.is_empty() {
-        return Ok(found);
-    }
-    let sql = format!(
-        "SELECT logical, body FROM records WHERE type = {} AND ({}) AND logical IN ({})",
-        literal(PlanRecord::TYPE),
-        sound(),
-        listed.join(", ")
-    );
-    for row in rows(host, &sql)? {
-        let Some(path) = text(row.first()) else {
-            continue;
-        };
-        let Some(body) = text(row.get(1)).and_then(|body| parse_json(body.as_bytes()).ok()) else {
-            continue;
-        };
-        let Some(plan) = serde_json::from_value::<PlanRecord>(body.clone()).ok() else {
-            continue;
-        };
-        (found.entry(path.to_owned())).or_insert(Held {
-            answers: plan.answers,
-            body,
-        });
-    }
-    Ok(found)
-}
-
-/// The plan record a `body` column holds, or none when it does not read as
-/// one.
-fn plan_in(body: Option<&Value>) -> Option<PlanRecord> {
-    let body = parse_json(text(body)?.as_bytes()).ok()?;
-    serde_json::from_value(body).ok()
-}
-
-/// The SQL condition that a row's code leaves its record read: none, or a
-/// code only the tree around it gives.
-fn sound() -> String {
-    format!("code IS NULL OR code IN ({})", tree_codes())
-}
-
-/// A copy of `flow`, which a flow Board read always gives.
-fn copied(flow: &Flow) -> Flow {
-    serde_json::to_value(flow)
-        .and_then(serde_json::from_value)
-        .expect("a flow Board read writes and reads back as itself")
 }
 
 pub(crate) fn owed(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
