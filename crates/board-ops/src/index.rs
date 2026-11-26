@@ -11,7 +11,7 @@ use board_index::{
 };
 use board_model::{
     Canonical, Classified, Code, Content, MAX_RECORD_BYTES, ObjectId, RecordType, Role, Source,
-    canonical_json, classify,
+    Text, canonical_json, classify,
 };
 use board_tree::{Entry, GitError, Listings, Reader, Repository, latest};
 use board_validate::Schema;
@@ -295,6 +295,8 @@ struct Parsed {
     /// A Markdown file's links that name board paths, as written, outside
     /// its frontmatter.
     links: Vec<String>,
+    /// What search reads in a Markdown file or a JSON file with no `$type`.
+    text: Option<Text>,
 }
 
 /// Classifies the `bytes` of `blob` in `role`, or a blob too large to
@@ -314,6 +316,12 @@ fn parse(blob: ObjectId, role: Role, bytes: Option<&[u8]>) -> Parsed {
         (Role::Markdown, Some(bytes)) => board_model::links(bytes),
         _ => Vec::new(),
     };
+    let text = match (role, &classified.content, bytes) {
+        (Role::Markdown, _, Some(bytes)) | (Role::Json, Content::Json { .. }, Some(bytes)) => {
+            board_model::text(bytes)
+        }
+        _ => None,
+    };
     Parsed {
         blob,
         role,
@@ -321,6 +329,7 @@ fn parse(blob: ObjectId, role: Role, bytes: Option<&[u8]>) -> Parsed {
         reason,
         body,
         links,
+        text,
     }
 }
 
@@ -374,6 +383,7 @@ impl Kept {
             reason,
             body,
             links,
+            text,
         } = parsed;
         let (judged, compiled) = judged(&classified);
         self.compiled += usize::from(compiled);
@@ -395,6 +405,9 @@ impl Kept {
         writer.put_blob(blob, role, &fact)?;
         if let Some(body) = &body {
             writer.put_body(blob, body)?;
+        }
+        if let Some(text) = &text {
+            writer.put_text(blob, text)?;
         }
         if let Content::Record { value, .. } = classified.content {
             self.values.insert(blob, value);

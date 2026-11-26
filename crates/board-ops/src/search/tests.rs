@@ -1,5 +1,7 @@
 //! Searching a board's records with Board's search syntax.
 
+use std::time::{Duration, SystemTime};
+
 use board_scenario::{Item, Scenario};
 use board_search::{ErrorCode, Span, parse};
 
@@ -125,6 +127,17 @@ const EXAMPLES: [(&str, &[&str]); 10] = [
     ("-budget type:change", &["/changes/passkey-login"]),
 ];
 
+/// The time every record of [`RECORDS`] was last modified, so results of
+/// equal rank among them come by path.
+fn written() -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+}
+
+/// A time `seconds` after [`written`].
+fn later(seconds: u64) -> SystemTime {
+    written() + Duration::from_secs(seconds)
+}
+
 /// A board holding [`RECORDS`] and a schema for each of their types.
 fn fixture() -> Scenario {
     let scenario = Scenario::board();
@@ -140,7 +153,7 @@ fn fixture() -> Scenario {
         scenario.write(&format!(".board/types/{kind}.schema.json"), Item::File(ANY));
     }
     for (path, record) in RECORDS {
-        scenario.write(path, Item::File(record));
+        scenario.write(path, Item::Dated(record, written()));
     }
     scenario
 }
@@ -256,12 +269,18 @@ fn pages_after_a_cursor_join_to_the_whole_result_and_the_last_page_has_no_next()
 
 #[test]
 fn a_cursor_that_board_did_not_print_is_not_read() {
-    for text in ["", "1", "1.2", "a.1.2f", "1.1.2", "1.1.zz", "1.1.ff"] {
+    for text in [
+        "", "1", "1.2", "1.0.2f61", "a.1.5.2f", "1.1.5.2", "1.1.x.2f", "1.1.5.zz", "1.1.5.ff",
+    ] {
         assert_eq!(Cursor::parse(text), None, "{text}");
     }
     assert_eq!(
-        Cursor::parse("1.0.2f61").map(|cursor| cursor.path),
-        Some("/a".to_owned())
+        Cursor::parse("1.0.5.2f61").map(|cursor| (cursor.modified_ns, cursor.path)),
+        Some((5, "/a".to_owned()))
+    );
+    assert_eq!(
+        Cursor::parse("1.0.-9.2f61").map(|cursor| cursor.modified_ns),
+        Some(-9)
     );
 }
 
@@ -364,4 +383,367 @@ fn a_filter_s_condition_comes_before_any_word_s_in_the_statement() {
     let filter = condition.find("substr(k, 1,").unwrap();
     let word = condition.find(" LIKE ").unwrap();
     assert!(filter < word, "{sql}");
+}
+
+/// The fixture with a Markdown note, a Markdown task, an untyped JSON file
+/// and an image, each written `later` than the records.
+fn documents() -> Scenario {
+    let scenario = fixture();
+    scenario
+        .write(
+            "notes/offsite.md",
+            Item::Dated(
+                "# Offsite *agenda* review\n\nWe walk the riverbank before lunch.\n",
+                later(10),
+            ),
+        )
+        .write(
+            "notes/plain.md",
+            Item::Dated("No heading here, only a lighthouse.\n", later(20)),
+        )
+        .write(
+            "tasks/kettle.md",
+            Item::Dated(
+                "---\n$type: tasks/task/v2\ntitle: Fix the kitchen\nstatus: open\n---\nDescale the kettle first.\n",
+                later(30),
+            ),
+        )
+        .write(
+            "data/settings.json",
+            Item::Dated(r#"{"palette": "aubergine"}"#, later(40)),
+        )
+        .write("images/aubergine.png", Item::Bytes(b"\x89PNG\r\n\x1a\n\xffaubergine"));
+    scenario
+}
+
+#[test]
+fn a_markdown_file_is_found_by_its_heading_and_its_prose_and_titled_by_its_heading() {
+    let scenario = documents();
+    let board = open(&scenario);
+    for word in ["agenda", "riverbank"] {
+        let report = search(&board, word, 50, None);
+        assert_eq!(paths(&report.results), ["/notes/offsite.md"], "{word}");
+        let found = &report.results[0];
+        assert_eq!(found.kind, None);
+        assert_eq!(found.title.as_deref(), Some("Offsite agenda review"));
+    }
+    let phrase = search(&board, "\"offsite agenda\"", 50, None);
+    assert_eq!(paths(&phrase.results), ["/notes/offsite.md"]);
+    assert_eq!(phrase.results[0].title_hits, 1);
+}
+
+#[test]
+fn a_file_with_no_heading_is_titled_by_its_file_name() {
+    let scenario = documents();
+    let report = search(&open(&scenario), "lighthouse", 50, None);
+    assert_eq!(paths(&report.results), ["/notes/plain.md"]);
+    assert_eq!(report.results[0].title.as_deref(), Some("plain.md"));
+}
+
+#[test]
+fn a_markdown_record_is_found_by_a_word_only_its_prose_holds() {
+    let scenario = documents();
+    let report = search(&open(&scenario), "descale", 50, None);
+    assert_eq!(paths(&report.results), ["/tasks/kettle.md"]);
+    let found = &report.results[0];
+    assert_eq!(found.kind.as_deref(), Some("tasks/task/v2"));
+    assert_eq!(found.title.as_deref(), Some("Fix the kitchen"));
+    assert_eq!((found.title_hits, found.body_hits), (0, 1));
+}
+
+#[test]
+fn an_untyped_json_file_is_found_by_its_text_and_a_binary_file_only_by_its_path() {
+    let scenario = documents();
+    let board = open(&scenario);
+    assert_eq!(
+        paths(&search(&board, "palette", 50, None).results),
+        ["/data/settings"]
+    );
+    let both = search(&board, "aubergine", 50, None);
+    assert_eq!(
+        paths(&both.results),
+        ["/images/aubergine.png", "/data/settings"]
+    );
+    assert_eq!(both.results[0].title.as_deref(), Some("aubergine.png"));
+    assert_eq!(
+        paths(&search(&board, "PNG", 50, None).results),
+        ["/images/aubergine.png"]
+    );
+    assert_eq!(
+        paths(&search(&board, "IHDR", 50, None).results),
+        Vec::<&str>::new()
+    );
+}
+
+#[test]
+fn type_doc_matches_only_entries_with_no_type_and_minus_type_doc_leaves_them_out() {
+    let scenario = documents();
+    let board = open(&scenario);
+    let docs = search(&board, "type:doc", 1000, None);
+    assert!(docs.results.iter().all(|found| found.kind.is_none()));
+    let found = paths(&docs.results);
+    for path in ["/notes/offsite.md", "/notes/plain.md", "/data/settings"] {
+        assert!(found.contains(&path), "{path}: {found:?}");
+    }
+    assert!(!found.contains(&"/tasks/kettle.md"), "{found:?}");
+    let typed = search(&board, "-type:doc", 1000, None);
+    assert_ne!(typed.results.len(), 0);
+    assert!(typed.results.iter().all(|found| found.kind.is_some()));
+    let either = search(&board, "type:doc,task kettle", 50, None);
+    assert_eq!(paths(&either.results), ["/tasks/kettle.md"]);
+}
+
+#[test]
+fn a_path_filter_matches_by_prefix_and_a_path_without_a_leading_slash_is_refused() {
+    let scenario = documents();
+    let board = open(&scenario);
+    let notes = search(&board, "path:/notes", 50, None);
+    assert_eq!(
+        paths(&notes.results),
+        ["/notes/plain.md", "/notes/offsite.md"]
+    );
+    let budget = search(&board, "budget path:/plans/q,/tasks", 50, None);
+    assert_eq!(
+        paths(&budget.results),
+        [
+            "/plans/questions/q1",
+            "/plans/questions/q2",
+            "/tasks/budget-review"
+        ]
+    );
+    let outside = search(&board, "budget -path:/plans", 50, None);
+    assert_eq!(
+        paths(&outside.results),
+        ["/tasks/budget-review", "/changes/budget-report"]
+    );
+    let errors = compile(&parse("path:notes").unwrap(), OWNER).unwrap_err();
+    let found: Vec<(ErrorCode, Span)> = errors
+        .iter()
+        .map(|error| (error.code, error.span))
+        .collect();
+    assert_eq!(found, [(ErrorCode::RelativePath, Span::new(5, 10))]);
+    assert!(compile(&parse("path:/notes").unwrap(), OWNER).is_ok());
+}
+
+#[test]
+fn results_of_equal_rank_and_a_query_of_filters_alone_come_newest_first() {
+    let scenario = fixture();
+    scenario
+        .write(
+            "tasks/old-budget.json",
+            Item::Dated(
+                r#"{"$type": "tasks/task/v2", "title": "Budget ledger", "status": "open"}"#,
+                later(5),
+            ),
+        )
+        .write(
+            "tasks/new-budget.json",
+            Item::Dated(
+                r#"{"$type": "tasks/task/v2", "title": "Budget ledger", "status": "open"}"#,
+                later(50),
+            ),
+        )
+        .write(
+            "notes/budget.md",
+            Item::Dated("# Budget ledger\n", later(30)),
+        );
+    let board = open(&scenario);
+    let ranked = search(&board, "\"budget ledger\"", 50, None);
+    assert_eq!(
+        paths(&ranked.results),
+        ["/tasks/new-budget", "/notes/budget.md", "/tasks/old-budget"]
+    );
+    let filtered = search(&board, "type:task", 50, None);
+    assert_eq!(
+        paths(&filtered.results),
+        [
+            "/tasks/new-budget",
+            "/tasks/old-budget",
+            "/tasks/budget-review",
+            "/tasks/hiring-plan"
+        ]
+    );
+    let mut joined = Vec::new();
+    let mut after: Option<Cursor> = None;
+    loop {
+        let page = search(&board, "type:task", 1, after.as_ref());
+        joined.extend(page.results);
+        let Some(next) = page.next else {
+            break;
+        };
+        assert_eq!(Cursor::parse(&next.text()), Some(next.clone()));
+        after = Some(next);
+    }
+    assert_eq!(joined, filtered.results);
+}
+
+#[test]
+fn a_cache_holding_an_index_of_the_previous_format_builds_one_of_this_format_and_searches_it() {
+    let scenario = documents();
+    let cache = Scenario::new();
+    let root = std::fs::canonicalize(scenario.workdir()).unwrap();
+    let file = board_index::location(cache.workdir(), &root);
+    let previous = file.with_file_name(format!("index-{}.sqlite", board_index::INDEX_VERSION - 1));
+    let inside = previous.strip_prefix(cache.workdir()).unwrap();
+    cache.write(
+        inside.to_str().unwrap(),
+        Item::Bytes(b"an index of the previous format"),
+    );
+    let board = open(&scenario);
+    let found = board.search(&statement("riverbank"), 50, None, Some(cache.workdir()));
+    assert_eq!(paths(&found.unwrap().results), ["/notes/offsite.md"]);
+    assert!(file.exists(), "{}", file.display());
+    assert!(previous.exists(), "{}", previous.display());
+}
+
+#[test]
+fn each_documented_example_answers_the_same_warm_as_cold() {
+    let scenario = documents();
+    for (text, _) in EXAMPLES {
+        let cache = tempfile::tempdir().unwrap();
+        let cold = open(&scenario)
+            .search(&statement(text), 50, None, Some(cache.path()))
+            .unwrap();
+        let warm = open(&scenario)
+            .search(&statement(text), 50, None, Some(cache.path()))
+            .unwrap();
+        assert_eq!(warm, cold, "{text}");
+        assert_eq!(cold.memory, None, "{text}");
+    }
+}
+
+/// The logical paths, in order, of the entries under `/d` whose text holds
+/// `word` by a `LIKE` scan of the `texts` view.
+fn scanned(board: &Board, word: &str) -> Vec<String> {
+    let sql = format!(
+        "SELECT e.logical FROM entries AS e JOIN texts AS x ON x.blob = e.blob \
+         WHERE e.logical LIKE '/d/%' AND x.body LIKE '%{word}%' ORDER BY e.logical"
+    );
+    let rows = board.query(&sql, 1000, None, None).unwrap().rows;
+    rows.iter()
+        .map(|row| row[0].as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// The logical paths, in order, that `board search` finds for `word` among
+/// the files under `/d`.
+fn searched(board: &Board, word: &str) -> Vec<String> {
+    let report = search(board, &format!("path:/d {word}"), 1000, None);
+    let mut found: Vec<String> = report.results.into_iter().map(|hit| hit.path).collect();
+    found.sort();
+    found
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::prelude::ProptestConfig::with_cases(24))]
+
+    /// The alphabet holds no character of the paths `/d/n0.md` to
+    /// `/d/n3.md` or their file names, so a word matches only by its text.
+    #[test]
+    fn a_word_of_three_or_more_characters_finds_the_texts_a_like_scan_finds(
+        texts in proptest::collection::vec("[abcABC ]{0,40}", 1..5),
+        words in proptest::collection::vec("[abcABC]{3,5}", 1..5),
+    ) {
+        let scenario = Scenario::board();
+        for (at, text) in texts.iter().enumerate() {
+            scenario.write(&format!("d/n{at}.md"), Item::File(text));
+        }
+        let board = open(&scenario);
+        for word in &words {
+            proptest::prop_assert_eq!(searched(&board, word), scanned(&board, word), "{}", word);
+        }
+    }
+}
+
+#[test]
+fn a_non_ascii_word_finds_a_text_holding_it_in_another_case_and_an_ascii_word_only_texts_holding_it()
+ {
+    let scenario = Scenario::board();
+    scenario
+        .write("d/summer.md", Item::File("Notes from the ÉTÉ offsite.\n"))
+        .write("d/plain.md", Item::File("Notes from the ete offsite.\n"));
+    let board = open(&scenario);
+    assert_eq!(searched(&board, "été"), ["/d/summer.md"]);
+    assert_eq!(searched(&board, "ÉTÉ"), ["/d/summer.md"]);
+    assert_eq!(searched(&board, "ete"), ["/d/plain.md"]);
+    assert_eq!(searched(&board, "ETE"), ["/d/plain.md"]);
+}
+
+#[test]
+fn a_word_of_one_or_two_characters_finds_its_texts_by_scan() {
+    let scenario = Scenario::board();
+    scenario
+        .write("d/one.md", Item::File("a rare aQz pair\n"))
+        .write("d/two.md", Item::File("no such pair\n"));
+    let board = open(&scenario);
+    assert_eq!(searched(&board, "qz"), ["/d/one.md"]);
+    assert_eq!(searched(&board, "QZ"), ["/d/one.md"]);
+    assert_eq!(searched(&board, "Q"), ["/d/one.md"]);
+}
+
+/// Whether the program `SQLite` compiles for the search `text` reads the
+/// `body` column of `main.texts`: an `OpenRead` of the table's root page in
+/// `main` names a cursor, and a `Column` of that cursor at the body's
+/// position reads it.
+fn reads_prose(board: &Board, text: &str, cache: &std::path::Path) -> bool {
+    let root = board
+        .query(
+            "SELECT rootpage FROM main.sqlite_schema WHERE name = 'texts'",
+            1,
+            None,
+            Some(cache),
+        )
+        .unwrap()
+        .rows[0][0]
+        .as_i64()
+        .unwrap();
+    let columns = board
+        .query(
+            "SELECT cid FROM pragma_table_info('texts', 'main') WHERE name = 'body'",
+            1,
+            None,
+            Some(cache),
+        )
+        .unwrap()
+        .rows[0][0]
+        .as_i64()
+        .unwrap();
+    let sql = format!("EXPLAIN {}", statement(text).sql(None));
+    let program = board.query(&sql, 100_000, None, Some(cache)).unwrap().rows;
+    let field = |row: &[serde_json::Value], name: usize| row[name].as_i64();
+    let cursors: Vec<i64> = program
+        .iter()
+        .filter(|row| {
+            row[1] == "OpenRead" && field(row, 3) == Some(root) && field(row, 4) == Some(0)
+        })
+        .filter_map(|row| field(row, 2))
+        .collect();
+    program.iter().any(|row| {
+        row[1] == "Column"
+            && field(row, 2).is_some_and(|cursor| cursors.contains(&cursor))
+            && field(row, 3) == Some(columns)
+    })
+}
+
+#[test]
+fn a_warm_search_for_words_of_three_or_more_characters_reads_no_prose_and_one_for_a_shorter_word_does()
+ {
+    let scenario = documents();
+    let cache = tempfile::tempdir().unwrap();
+    let board = open(&scenario);
+    board
+        .search(&statement("riverbank"), 50, None, Some(cache.path()))
+        .unwrap();
+    for text in [
+        "riverbank",
+        "the plan board",
+        "type:task the plan",
+        "\"offsite agenda\"",
+        "-lunch",
+    ] {
+        assert!(!reads_prose(&board, text, cache.path()), "{text}");
+    }
+    for text in ["ri", "riverbank ri"] {
+        assert!(reads_prose(&board, text, cache.path()), "{text}");
+    }
 }

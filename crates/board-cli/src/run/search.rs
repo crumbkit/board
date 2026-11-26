@@ -1,4 +1,4 @@
-//! `board search`: the records that match a query in Board's search
+//! `board search`: the entries that match a query in Board's search
 //! syntax (docs/commands/search.md).
 
 use std::fmt::Write as _;
@@ -41,32 +41,33 @@ pub(crate) struct Searching {
 /// `board search -h`'s syntax and examples.
 pub(crate) const SEARCH_HELP: &str = "\
 A query is parts separated by spaces, all of which must match:
-  budget                 a word in the path, title or body, in any case
+  budget                 a word in the path, title, body or prose, any case
   \"budget review\"        a phrase, matched as one string
-  type:question          a kind of record: task, question, answer, decision,
-                         change, plan, eval, run, artifact or rule
+  type:question          task, question, answer, decision, change, plan,
+                         eval, run, artifact, rule, or doc for no $type
   from:erin              by.person, by.agent or by.program; from:me is the
                          owner named in $XDG_CONFIG_HOME/board/config.json
-  type:decision,answer   a comma means any of the values
-  -type:task             a leading minus excludes the part
+  path:/notes            a logical path that starts with /notes
+  -type:task             a leading minus excludes the part; a comma in a
+                         filter means any of its values
 
-Words match by substring, so run also matches running and prune.
-Results come by the most words in the title, then in the body, then by path.
---filters lists the filters and type names; docs/commands/search.md says more.
+Words match by substring. Results come by the most words in the title,
+then in the body, then newest first. docs/commands/search.md says more.
 
 Examples:
   board search 'budget type:question'
   board search 'type:question from:erin -budget'
+  board search 'type:doc path:/notes offsite'
   board search --filters";
 
-/// `search`'s document: the canonical query, its parts, the records that
+/// `search`'s document: the canonical query, its parts, the entries that
 /// matched and the cursor of the next page; with `--filters`, the filters
 /// and the short type names.
 pub(crate) const SEARCH: Document<Answer> = Document::new(
     "board",
     "search-report",
     1,
-    "The records a search matched, or with --filters the filters a search can use.",
+    "The entries a search matched, or with --filters the filters a search can use.",
 );
 
 /// The refusal of a query that does not parse, or that names a type or a
@@ -163,7 +164,10 @@ fn filters(printer: Printer) -> Output {
     }
     text.push_str("Types:\n");
     for short in TYPES {
-        let _ = writeln!(text, "  {:<9} {}*", short.name, short.prefix);
+        let matched = short
+            .prefix
+            .map_or("no $type".to_owned(), |prefix| format!("{prefix}*"));
+        let _ = writeln!(text, "  {:<9} {matched}", short.name);
     }
     let value = json!({"fields": fields, "types": types});
     printer.print(SEARCH, Ok(render::said(value, text)))
@@ -206,11 +210,15 @@ pub(crate) fn unanswered(refusal: Refusal) -> Refusal {
     }
 }
 
-/// The short name of `kind`, such as `question` for `plans/question/v2`, or
-/// `kind` itself when no short name matches it.
-fn short(kind: &str) -> &str {
+/// The short name of `kind`, such as `question` for `plans/question/v2`,
+/// `doc` for an entry with no `$type`, or `kind` itself when no short name
+/// matches it.
+fn short(kind: Option<&str>) -> &str {
+    let Some(kind) = kind else {
+        return "doc";
+    };
     (TYPES.iter())
-        .find(|short| kind.starts_with(short.prefix))
+        .find(|short| short.prefix.is_some_and(|prefix| kind.starts_with(prefix)))
         .map_or(kind, |short| short.name)
 }
 
@@ -233,7 +241,7 @@ fn printed(printer: Printer, query: &Query, limit: usize, report: &SearchReport)
     });
     let mut text = String::new();
     for hit in &report.results {
-        let kind = hit.kind.as_deref().map_or("-", short);
+        let kind = short(hit.kind.as_deref());
         let title = hit.title.as_deref().unwrap_or_default();
         let title: String = title
             .chars()

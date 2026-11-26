@@ -23,7 +23,7 @@ fn a_mistyped_filter_name_suggests_the_filter_it_is_closest_to() {
 fn a_filter_of_a_later_increment_names_the_filters_this_version_has() {
     assert_eq!(
         message("updated:7d"),
-        "There is no filter called updated yet; use type: or from:, or put the text in quotes to search for it."
+        "There is no filter called updated yet; use type:, from: or path:, or put the text in quotes to search for it."
     );
 }
 
@@ -45,6 +45,20 @@ fn an_empty_value_names_an_example_of_what_its_filter_takes() {
         message("type:"),
         "type needs a kind of record, such as type:question."
     );
+    assert_eq!(
+        message("path:"),
+        "path needs a board path that starts with /, such as path:/tasks."
+    );
+}
+
+#[test]
+fn a_path_filter_parses_as_a_filter_of_the_path_field() {
+    let query = parse("Path:/tasks budget").unwrap();
+    assert_eq!(query.to_string(), "path:/tasks budget");
+    let Term::Filter { field, values } = &query.parts()[0].term else {
+        panic!("{query:?}");
+    };
+    assert_eq!((*field, values[0].text.as_str()), (Field::Path, "/tasks"));
 }
 
 #[test]
@@ -80,4 +94,5 @@ fn a_tab_or_a_newline_separates_parts_as_a_space_does() {
 fn an_error_code_is_spelled_without_any_tool_s_prefix() {
     assert_eq!(ErrorCode::UnknownField.text(), "unknown_field");
     assert_eq!(ErrorCode::UnknownPerson.text(), "unknown_person");
+    assert_eq!(ErrorCode::RelativePath.text(), "relative_path");
 }

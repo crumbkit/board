@@ -37,6 +37,9 @@ pub enum Item<'a> {
     /// A file whose modification time is an hour ahead, so it is newer than
     /// any refresh that has begun, however slow.
     Ahead(&'a str),
+    /// A file last modified at the given time, so files can share one time
+    /// or be ordered by it.
+    Dated(&'a str, SystemTime),
     /// A file holding any bytes, UTF-8 or not.
     Bytes(&'a [u8]),
     Symlink(&'a str),
@@ -185,6 +188,10 @@ impl Scenario {
             Item::Ahead(text) => {
                 fs::write(&path, text).unwrap();
                 modified(&path, SystemTime::now() + Duration::from_hours(1));
+            }
+            Item::Dated(text, time) => {
+                fs::write(&path, text).unwrap();
+                modified(&path, time);
             }
             Item::File(text) => {
                 fs::write(&path, text).unwrap();
@@ -485,7 +492,7 @@ impl Scenario {
         let mut editor = self.git.edit_tree(empty).unwrap();
         for (path, item) in items {
             let (kind, id) = match item {
-                Item::File(text) | Item::Fresh(text) | Item::Ahead(text) => {
+                Item::File(text) | Item::Fresh(text) | Item::Ahead(text) | Item::Dated(text, _) => {
                     (EntryKind::Blob, self.git.write_blob(text).unwrap().detach())
                 }
                 Item::Bytes(bytes) => (

@@ -3,7 +3,7 @@
 
 /// The index format, which names the index file. `open.rs` and
 /// docs/architecture/index.md say what a new format does to older files.
-pub const INDEX_VERSION: u32 = 30;
+pub const INDEX_VERSION: u32 = 31;
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
@@ -79,6 +79,28 @@ CREATE TABLE bodies (
     blob TEXT NOT NULL UNIQUE,
     body TEXT NOT NULL
 );
+-- What search reads in a Markdown file or a JSON file with no `$type`: its
+-- first heading and its prose, cut at 64 KiB. A rowid table, as `bodies`,
+-- whose `id` names the row in `texts_fts`; as an INTEGER PRIMARY KEY a
+-- full VACUUM keeps it.
+CREATE TABLE texts (
+    id INTEGER PRIMARY KEY,
+    blob TEXT NOT NULL UNIQUE,
+    heading TEXT,
+    body TEXT NOT NULL
+);
+-- The trigrams of each text's body, so a word of three or more characters
+-- finds its texts without reading them. It keeps no copy of the prose, and
+-- the two triggers keep it in step with `texts`.
+CREATE VIRTUAL TABLE texts_fts USING fts5(
+    body, content = 'texts', content_rowid = 'id', tokenize = 'trigram'
+);
+CREATE TRIGGER texts_stored AFTER INSERT ON texts BEGIN
+    INSERT INTO texts_fts (rowid, body) VALUES (new.id, new.body);
+END;
+CREATE TRIGGER texts_pruned AFTER DELETE ON texts BEGIN
+    INSERT INTO texts_fts (texts_fts, rowid, body) VALUES ('delete', old.id, old.body);
+END;
 CREATE TABLE validations (
     record TEXT NOT NULL,
     schema TEXT NOT NULL,
@@ -201,11 +223,12 @@ DELETE FROM temp.probed;
 /// decision with its references, a slot or a pointer list unless this run
 /// reached its key, and
 /// a probe unless this run used it.
-pub(crate) const PRUNE: [&str; 12] = [
+pub(crate) const PRUNE: [&str; 13] = [
     "DELETE FROM main.trees WHERE tree NOT IN temp.kept",
     "DELETE FROM main.blobs WHERE blob NOT IN temp.kept",
     "DELETE FROM main.links WHERE blob NOT IN temp.kept",
     "DELETE FROM main.bodies WHERE blob NOT IN temp.kept",
+    "DELETE FROM main.texts WHERE blob NOT IN temp.kept",
     "DELETE FROM main.validations
      WHERE record NOT IN temp.kept OR schema NOT IN temp.kept",
     "DELETE FROM main.refs WHERE record NOT IN temp.kept OR schema NOT IN temp.kept",
@@ -308,6 +331,9 @@ WHERE (blob, role) IN (SELECT blob, role FROM temp.resolved);
 CREATE TEMP VIEW IF NOT EXISTS bodies AS
 SELECT * FROM main.bodies
 WHERE blob IN (SELECT blob FROM temp.resolved WHERE kind = 'record');
+CREATE TEMP VIEW IF NOT EXISTS texts AS
+SELECT * FROM main.texts
+WHERE blob IN (SELECT blob FROM temp.resolved WHERE role IN ('markdown', 'json'));
 CREATE TEMP VIEW IF NOT EXISTS records AS
 SELECT e.source, e.path, e.logical, e.blob, e.type, e.status, e.code, b.body
 FROM temp.entries AS e

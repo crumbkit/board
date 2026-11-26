@@ -159,3 +159,55 @@ fn bolero_any_bytes_give_links_that_name_paths() {
         }
     });
 }
+
+#[test]
+fn a_file_s_text_is_its_first_heading_and_its_prose_after_the_frontmatter() {
+    let file = "\
+---
+$type: tasks/task/v1
+title: Ship it
+---
+Some intro.
+
+## The *budget* plan
+
+# Later heading
+";
+    let found = text(file.as_bytes()).unwrap();
+    assert_eq!(found.heading.as_deref(), Some("The budget plan"));
+    assert_eq!(
+        found.body,
+        "Some intro.\n\n## The *budget* plan\n\n# Later heading\n"
+    );
+}
+
+#[test]
+fn a_file_with_no_heading_has_none_and_its_whole_text_as_prose() {
+    let found = text(b"Just a paragraph.\n").unwrap();
+    assert_eq!(found.heading, None);
+    assert_eq!(found.body, "Just a paragraph.\n");
+    let setext = text(b"Title\n=====\n\nBody.\n").unwrap();
+    assert_eq!(setext.heading.as_deref(), Some("Title"));
+}
+
+#[test]
+fn a_notes_app_s_frontmatter_is_not_prose() {
+    let found = text(b"---\ntags: [a]\n---\n# Note\n").unwrap();
+    assert_eq!(found.heading.as_deref(), Some("Note"));
+    assert_eq!(found.body, "# Note\n");
+}
+
+#[test]
+fn prose_is_cut_at_the_text_limit_on_a_character_boundary() {
+    let long = format!("{}é tail", "a".repeat(TEXT_BYTES - 1));
+    let found = text(long.as_bytes()).unwrap();
+    assert_eq!(found.body.len(), TEXT_BYTES - 1);
+    let fits = "a".repeat(TEXT_BYTES);
+    assert_eq!(text(fits.as_bytes()).unwrap().body.len(), TEXT_BYTES);
+}
+
+#[test]
+fn bytes_that_are_not_utf8_have_no_text() {
+    assert_eq!(text(b"# Title\n\xff\xfe"), None);
+    assert!(text(b"# Title\n").is_some());
+}

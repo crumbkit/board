@@ -1,6 +1,6 @@
-//! Board's filters: the list that `board search --fields` prints, the short
-//! type names that `type:` takes, and the check of `type:` values against
-//! them.
+//! Board's filters: the list that `board search --filters` prints, the
+//! short type names that `type:` takes, and the check of `type:` and
+//! `path:` values.
 
 use serde::Serialize;
 
@@ -15,6 +15,8 @@ pub enum FieldKind {
     Keyword,
     /// A person, an agent or a program, or `me` for the board's owner.
     Person,
+    /// The start of a logical path, such as `/tasks`.
+    Path,
 }
 
 /// One of Board's filters.
@@ -36,51 +38,56 @@ pub struct FieldInfo {
 pub struct ShortType {
     /// The name `type:` takes.
     pub name: &'static str,
-    /// The start of every `$type` it matches.
-    pub prefix: &'static str,
+    /// The start of every `$type` it matches, or `None` for `doc`, which
+    /// matches the entries with no `$type`.
+    pub prefix: Option<&'static str>,
 }
 
 /// The short type names, in the order a builder offers them.
 pub const TYPES: &[ShortType] = &[
     ShortType {
         name: "task",
-        prefix: "tasks/task/",
+        prefix: Some("tasks/task/"),
     },
     ShortType {
         name: "question",
-        prefix: "plans/question/",
+        prefix: Some("plans/question/"),
     },
     ShortType {
         name: "answer",
-        prefix: "plans/answer/",
+        prefix: Some("plans/answer/"),
     },
     ShortType {
         name: "decision",
-        prefix: "plans/decision/",
+        prefix: Some("plans/decision/"),
     },
     ShortType {
         name: "change",
-        prefix: "changes/change/",
+        prefix: Some("changes/change/"),
     },
     ShortType {
         name: "plan",
-        prefix: "changes/plan/",
+        prefix: Some("changes/plan/"),
     },
     ShortType {
         name: "eval",
-        prefix: "evals/eval/",
+        prefix: Some("evals/eval/"),
     },
     ShortType {
         name: "run",
-        prefix: "runs/run/",
+        prefix: Some("runs/run/"),
     },
     ShortType {
         name: "artifact",
-        prefix: "artifacts/artifact/",
+        prefix: Some("artifacts/artifact/"),
     },
     ShortType {
         name: "rule",
-        prefix: "rules/rule/",
+        prefix: Some("rules/rule/"),
+    },
+    ShortType {
+        name: "doc",
+        prefix: None,
     },
 ];
 
@@ -109,6 +116,12 @@ pub const FIELDS: &[FieldInfo] = &[
         values: &["me"],
         about: "Who wrote the record: the person, agent or program its `by` names, or me for the board's owner.",
     },
+    FieldInfo {
+        field: Field::Path,
+        kind: FieldKind::Path,
+        values: &[],
+        about: "The start of the entry's logical path, such as /tasks; it must start with /.",
+    },
 ];
 
 /// The short type that `value` names, in any case.
@@ -133,24 +146,25 @@ pub fn unknown_person(value: &Value) -> QueryError {
     message(ErrorCode::UnknownPerson, value.span, None, &value.text)
 }
 
-/// Every `type:` value of `query` that names no short type, in the order
-/// of the text.
+/// Every `type:` value of `query` that names no short type and every
+/// `path:` value that does not start with `/`, in the order of the text.
 #[must_use]
 pub fn check(query: &Query) -> Vec<QueryError> {
-    query
-        .parts()
-        .iter()
-        .filter_map(|part| match &part.term {
-            Term::Filter {
-                field: Field::Type,
-                values,
-            } => Some(values),
-            _ => None,
-        })
-        .flatten()
-        .filter(|value| short_type(&value.text).is_none())
-        .map(|value| message(ErrorCode::UnknownType, value.span, None, &value.text))
-        .collect()
+    let mut errors = Vec::new();
+    for part in query.parts() {
+        let Term::Filter { field, values } = &part.term else {
+            continue;
+        };
+        for value in values {
+            let code = match field {
+                Field::Type if short_type(&value.text).is_none() => ErrorCode::UnknownType,
+                Field::Path if !value.text.starts_with('/') => ErrorCode::RelativePath,
+                _ => continue,
+            };
+            errors.push(message(code, value.span, None, &value.text));
+        }
+    }
+    errors
 }
 
 #[cfg(test)]

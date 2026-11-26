@@ -22,7 +22,7 @@ impl Span {
     }
 }
 
-/// A filter of the first slice.
+/// A filter of the first slice, or Board's own `path:`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Field {
@@ -30,11 +30,13 @@ pub enum Field {
     Type,
     /// `from:`, the person, agent or program that wrote the record.
     From,
+    /// `path:`, the start of an entry's logical path. Board's own.
+    Path,
 }
 
 impl Field {
     /// Every field, in the order the field list shows them.
-    pub const ALL: [Self; 2] = [Self::Type, Self::From];
+    pub const ALL: [Self; 3] = [Self::Type, Self::From, Self::Path];
 
     /// The field's name, as the canonical text spells it.
     #[must_use]
@@ -42,6 +44,7 @@ impl Field {
         match self {
             Self::Type => "type",
             Self::From => "from",
+            Self::Path => "path",
         }
     }
 

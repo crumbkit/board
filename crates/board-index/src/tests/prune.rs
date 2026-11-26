@@ -73,6 +73,7 @@ fn stored(writer: &Writer, unreachable: bool) -> usize {
     writer
         .put_blob(blob(4), Role::Markdown, &markdown())
         .unwrap();
+    writer.put_text(blob(4), &prose()).unwrap();
     writer
         .put_validation(blob(1), blob(2), &valid("/a"))
         .unwrap();
@@ -91,6 +92,7 @@ fn stored(writer: &Writer, unreachable: bool) -> usize {
     writer
         .put_blob(blob(5), Role::Markdown, &markdown())
         .unwrap();
+    writer.put_text(blob(5), &lantern()).unwrap();
     for gone in [3, 5] {
         writer.put_blob(blob(gone), Role::Json, &record()).unwrap();
         writer
@@ -104,24 +106,62 @@ fn stored(writer: &Writer, unreachable: bool) -> usize {
     writer
         .put_validation(blob(3), blob(2), &valid("/d"))
         .unwrap();
-    // One tree row, three blobs with two links and two bodies, two
+    // One tree row, three blobs with two links, two bodies and a text, two
     // validations and their refs.
-    1 + 3 + 2 + 2 + 2 + 2
+    1 + 3 + 2 + 2 + 2 + 2 + 1
 }
 
-/// The rows of every table a prune may delete from.
+/// A Markdown file's text.
+fn prose() -> board_model::Text {
+    board_model::Text {
+        heading: Some("Plan".to_owned()),
+        body: "# Plan".to_owned(),
+    }
+}
+
+/// The text of a Markdown file that only blob 5 holds.
+fn lantern() -> board_model::Text {
+    board_model::Text {
+        heading: Some("Lantern".to_owned()),
+        body: "# Lantern".to_owned(),
+    }
+}
+
+/// The ids of the texts `texts_fts` finds for the FTS5 query `query`.
+fn matched(index: &Index, query: &str) -> Vec<i64> {
+    index
+        .connection
+        .prepare("SELECT rowid FROM main.texts_fts WHERE texts_fts MATCH ?1 ORDER BY rowid")
+        .unwrap()
+        .query_map([query], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+/// The rows of every table a prune may delete from, and the texts
+/// `texts_fts` has indexed.
 fn counts(index: &Index) -> Vec<(String, i64)> {
-    ["trees", "blobs", "bodies", "validations", "refs", "links"]
-        .into_iter()
-        .map(|table| {
-            let sql = format!("SELECT count(*) FROM main.{table}");
-            let count = index
-                .connection
-                .query_row(&sql, [], |row| row.get(0))
-                .unwrap();
-            (table.to_owned(), count)
-        })
-        .collect()
+    [
+        "trees",
+        "blobs",
+        "bodies",
+        "validations",
+        "refs",
+        "links",
+        "texts",
+        "texts_fts_docsize",
+    ]
+    .into_iter()
+    .map(|table| {
+        let sql = format!("SELECT count(*) FROM main.{table}");
+        let count = index
+            .connection
+            .query_row(&sql, [], |row| row.get(0))
+            .unwrap();
+        (table.to_owned(), count)
+    })
+    .collect()
 }
 
 /// `index` holding the facts `stored` gives, with blob 3 unreachable when
@@ -150,6 +190,17 @@ fn a_prune_deletes_the_facts_no_source_or_working_tree_file_reaches() {
     let (index, pruned) = prune(index);
     assert_eq!(pruned, unreachable);
     assert_eq!(counts(&index), counts(&reached));
+}
+
+#[test]
+fn a_prune_that_deletes_a_text_deletes_its_trigrams_and_a_word_only_it_held_finds_nothing() {
+    let (index, _) = filled_with(memory(), true);
+    assert_eq!(matched(&index, "\"lantern\"").len(), 1);
+    let plan = matched(&index, "\"plan\"");
+    assert_eq!(plan.len(), 1);
+    let (index, _) = prune(index);
+    assert_eq!(matched(&index, "\"lantern\""), Vec::<i64>::new());
+    assert_eq!(matched(&index, "\"plan\""), plan);
 }
 
 #[test]
@@ -240,7 +291,7 @@ fn a_prune_gives_the_pages_it_frees_back_to_the_file() {
     let cache = tempfile::tempdir().unwrap();
     let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     let writer = index.write().unwrap();
-    let large = serde_json::json!({ "text": "x".repeat(400_000) });
+    let large = serde_json::json!({ "text": "x".repeat(800_000) });
     writer.put_body(blob(9), &canonical_json(&large)).unwrap();
     let index = writer.decide(Vec::new()).unwrap().index;
     let full = pages(&index);

@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use board_model::{
-    Canonical, Change, Code, Kind, LogicalPath, ObjectId, RecordType, Role, Source, Stat,
+    Canonical, Change, Code, Kind, LogicalPath, ObjectId, RecordType, Role, Source, Stat, Text,
 };
 use board_tree::{Entry, MountPoint, Status, TreeRow, TreeRows};
 use rusqlite::types::{ToSqlOutput, ValueRef};
@@ -292,6 +292,16 @@ impl Writer {
         self.connection()
             .prepare_cached("INSERT OR IGNORE INTO main.bodies (blob, body) VALUES (?1, ?2)")?
             .execute(params![blob.to_string(), body.as_str()])?;
+        Ok(())
+    }
+
+    /// Stores `text`, what search reads in the file `blob` holds.
+    pub fn put_text(&self, blob: ObjectId, text: &Text) -> Result<(), IndexError> {
+        self.connection()
+            .prepare_cached(
+                "INSERT OR IGNORE INTO main.texts (blob, heading, body) VALUES (?1, ?2, ?3)",
+            )?
+            .execute(params![blob.to_string(), text.heading, text.body])?;
         Ok(())
     }
 
