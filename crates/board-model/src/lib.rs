@@ -62,7 +62,7 @@ pub use crate::repo::{
 };
 pub use crate::signing::{
     APPROVE_OPTION, Act, Approving, Edit, Need, PROMPT_DAYS, Signers, Signing, SigningSetting,
-    SigningState, approving, heard_in, prompt_digest, setting_digest,
+    SigningState, approving, heard_in, prompt_digest, recent, setting_digest,
 };
 pub use crate::stat::{Change, Stat};
 pub use crate::time::{moment, utc, utc_seconds};

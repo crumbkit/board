@@ -8,8 +8,8 @@ use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
 use super::{
-    Asker, EffectError, Signing, answer, asked, asker, board, decide, exists, opened, personal,
-    put, read, rm, signer, signing,
+    Asker, EffectError, Signing, answer, asked, asker, board, decide, exists, now, opened,
+    personal, put, read, rm, signer, signing,
 };
 use crate::Board;
 use crate::tests::task;
@@ -54,12 +54,18 @@ fn missing(mine: &Scenario) -> Asker {
 }
 
 /// Writes in `mine` a question naming `target` and the owner's answer
-/// choosing `approve`, by `by`, at [`ANSWER`].
+/// choosing `approve`, by `by`, at [`ANSWER`], answered a minute ago.
 fn answered(mine: &Scenario, target: &str, by: &Value) {
+    answered_at(mine, target, by, -60);
+}
+
+/// [`answered`], answered `offset` seconds from now and asked a minute
+/// before that.
+fn answered_at(mine: &Scenario, target: &str, by: &Value, offset: i64) {
     let question = json!({
         "$type": "plans/question/v1",
         "question": format!("Approve {target}?"),
-        "asked": "2026-11-24T10:00:00Z",
+        "asked": now(offset - 60),
         "by": {"session": "local_1"},
         "status": "open",
         "options": [{"id": "approve", "text": "Approve"}, {"id": "refuse", "text": "Refuse"}],
@@ -69,7 +75,7 @@ fn answered(mine: &Scenario, target: &str, by: &Value) {
         "question": "/projects/p/questions/q",
         "choice": "approve",
         "words": "yes",
-        "answered": "2026-11-24T10:05:00Z",
+        "answered": now(offset),
         "by": by,
     });
     mine.write(
@@ -570,4 +576,111 @@ fn removing_the_signed_records_and_then_the_signers_file_does_not_turn_signing_o
         Some(ANSWER.to_owned()),
     );
     assert_eq!(code(error), Code::SigningFileMissing);
+}
+
+#[test]
+fn with_signing_off_an_answer_from_over_30_days_ago_does_not_approve_an_edit_of_require() {
+    let mine = personal();
+    let require = json!({"require": ["plan"]});
+    let digest = board_model::setting_digest(Some(&require));
+    let approving = Asker {
+        approved: Some(ANSWER.to_owned()),
+        ..off(&mine)
+    };
+    let days = |days: i64| days * 24 * 60 * 60;
+    answered_at(&mine, &digest, &json!({"person": "ana"}), -days(31));
+    let stale = put(
+        &owning(&mine, approving.clone()),
+        "/.board/board",
+        &config_with(&require),
+    )
+    .unwrap_err();
+    assert_eq!(stale.code(), Code::SigningNotApproved, "{stale}");
+    assert!(stale.to_string().contains("30 days"), "{stale}");
+    assert_eq!(read(&mine, ".board/board.json")["signing"], Value::Null);
+    answered_at(&mine, &digest, &json!({"person": "ana"}), -days(29));
+    put(
+        &owning(&mine, approving),
+        "/.board/board",
+        &config_with(&require),
+    )
+    .unwrap();
+    assert_eq!(read(&mine, ".board/board.json")["signing"], require);
+}
+
+#[test]
+fn with_no_personal_board_named_a_signed_record_in_the_written_board_keeps_a_missing_signers_file_refusing()
+ {
+    let mine = personal();
+    signed_order(&mine);
+    let require = json!({"require": ["plan"]});
+    answered(
+        &mine,
+        &board_model::setting_digest(Some(&require)),
+        &json!({"person": "ana"}),
+    );
+    let unnamed = Asker {
+        personal: None,
+        approved: Some(ANSWER.to_owned()),
+        ..missing(&mine)
+    };
+    let writing = owning(&mine, unnamed.clone());
+    let error = put(&writing, "/.board/board", &config_with(&require)).unwrap_err();
+    assert_eq!(error.code(), Code::SigningFileMissing, "{error}");
+    assert_eq!(read(&mine, ".board/board.json")["signing"], Value::Null);
+    let error = put(&writing, "/effects/seen/s", &task("")).unwrap_err();
+    assert_eq!(error.code(), Code::SigningFileMissing, "{error}");
+    assert!(!exists(&mine, "effects/seen/s.json"));
+    put(&writing, "/tasks/a", &task("")).unwrap();
+    // With no signed record, the same write reads signing as off.
+    let other = personal();
+    answered(
+        &other,
+        &board_model::setting_digest(Some(&require)),
+        &json!({"person": "ana"}),
+    );
+    put(
+        &owning(
+            &other,
+            Asker {
+                personal: None,
+                ..unnamed
+            },
+        ),
+        "/.board/board",
+        &config_with(&require),
+    )
+    .unwrap();
+    assert_eq!(read(&other, ".board/board.json")["signing"], require);
+}
+
+#[test]
+fn a_personal_board_that_cannot_be_named_refuses_only_the_writes_signing_governs() {
+    let mine = personal();
+    let refusal = board_model::Refusal::new(
+        Code::ConfigNotFound,
+        "`personal` names a directory that is not the root of a board",
+        &board_model::Fields::default(),
+    );
+    let unopened = Asker {
+        personal: None,
+        unopened: Some(Box::new(refusal)),
+        ..off(&mine)
+    };
+    let writing = owning(&mine, unopened);
+    put(&writing, "/tasks/a", &task("")).unwrap();
+    let error = put(&writing, "/effects/seen/s", &task("")).unwrap_err();
+    assert_eq!(error.code(), Code::ConfigNotFound, "{error}");
+    assert_eq!(
+        error.refusal().message,
+        "`personal` names a directory that is not the root of a board"
+    );
+    assert!(!exists(&mine, "effects/seen/s.json"));
+    let error = put(
+        &writing,
+        "/.board/board",
+        &config_with(&json!({"require": []})),
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), Code::ConfigNotFound, "{error}");
 }

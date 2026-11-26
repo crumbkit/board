@@ -3,18 +3,19 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use board_model::{
-    Act, Answer, Code, EFFECT_TYPE, EFFECT_TYPES, Edit, Effect, Fields, LogicalPath,
-    MAX_DECIDE_BYTES, MAX_RECORD_BYTES, Need, ObjectId, PUT_OP, PathError, PluginName, RM_OP,
-    Refusal, SEEN_TYPE, Seen, Signers, SigningSetting, SigningState, canonical_json, parse_json,
+    Act, Answer, EFFECT_TYPE, EFFECT_TYPES, Edit, Effect, LogicalPath, Need, ObjectId, PUT_OP,
+    PluginName, RM_OP, Refusal, SEEN_TYPE, Seen, Signers, SigningSetting, SigningState,
+    canonical_json, parse_json,
 };
 use board_plugin::Listed;
-use board_tree::{GitError, Removes, Target, Working, WriteError};
+use board_tree::{Removes, Target, Working};
 use serde_json::Value;
 
-use crate::board::{Board, OpenError};
-use crate::put::{Expect, PutError};
+use crate::board::Board;
+use crate::put::Expect;
 use crate::verdict::Admitted;
 
 /// Who asks, and where their pending effects and answers go.
@@ -37,6 +38,9 @@ pub struct Asker {
     /// in the board the put writes, that approves an edit of `signing`
     /// while signing is off.
     pub approved: Option<String>,
+    /// Why the personal board the known boards file names cannot be
+    /// read, kept to refuse a write that signing governs with.
+    pub unopened: Option<Box<Refusal>>,
 }
 
 /// How the owner signs an approval, and the keys a signature must verify
@@ -70,6 +74,12 @@ impl Signing {
         let setting = personal.map_or_else(SigningSetting::default, |personal| {
             personal.config().signing.clone()
         });
+        self.read(setting, personal)
+    }
+
+    /// Signing's state with `setting`, where `holder` is the board whose
+    /// signed records keep signing configured.
+    fn read(&self, setting: SigningSetting, holder: Option<&Board>) -> board_model::Signing {
         let signers = match listed(self.allowed.as_deref()) {
             Signers::Missing | Signers::NoOwner
                 if listed(self.attention_allowed.as_deref()) == Signers::Owner =>
@@ -82,7 +92,7 @@ impl Signing {
         // line is there, so only then is it read.
         let held = signers != Signers::Owner
             && setting.configured.is_none()
-            && personal.is_some_and(holds_signature);
+            && holder.is_some_and(holds_signature);
         board_model::Signing::new(signers, setting, held)
     }
 
@@ -116,141 +126,6 @@ const SEEN: &str = "effects/seen";
 const ANSWERED: &str = "effects/answered";
 /// The directory that holds them, in any board.
 const EFFECTS: &str = "effects";
-
-/// A request refused by the effects check, or one it could not finish.
-#[derive(Debug, thiserror::Error)]
-pub enum EffectError {
-    #[error("plugin {plugin} may not {op} {path} until the owner answers pending effect {id}")]
-    Asked {
-        plugin: PluginName,
-        op: String,
-        path: LogicalPath,
-        id: String,
-    },
-    #[error("plugin {plugin} may not {op} {path}: the owner refused pending effect {id}")]
-    Refused {
-        plugin: PluginName,
-        op: String,
-        path: LogicalPath,
-        id: String,
-    },
-    #[error("plugin {plugin} may not {what}; only the owner may, outside a plugin")]
-    FromPlugin {
-        plugin: PluginName,
-        path: Option<LogicalPath>,
-        what: String,
-    },
-    #[error(
-        "{path} lands at a file with no logical path, so no pending effect can name it: {source}"
-    )]
-    Unlanded {
-        path: LogicalPath,
-        source: PathError,
-    },
-    #[error("{what}, but the known boards file names no personal board")]
-    NoPersonal { what: String },
-    #[error("the record at {path} in the personal board is over {MAX_RECORD_BYTES} bytes")]
-    TooLarge { path: String },
-    #[error("{why}")]
-    Unshown { code: Code, why: String },
-    #[error("{source}")]
-    Resolve { source: Box<WriteError> },
-    #[error("no pending effect {id} is in the personal board")]
-    NotFound { id: String },
-    #[error("the record at /{PENDING}/{id} is not the pending effect {id} names: {why}")]
-    Forged { id: String, why: String },
-    #[error("pending effect {id} has no good approval signature: {why}")]
-    Unsigned { id: String, why: String },
-    #[error(
-        "the owner's {op} of {path} changes an effect or the board's config and has no good signature: {why}"
-    )]
-    OwnerUnsigned {
-        op: &'static str,
-        path: String,
-        why: String,
-    },
-    #[error(
-        "{what} needs the owner's signature and {file} is missing; Board has verified a signature before, so it does not take an answer instead"
-    )]
-    FileMissing { what: String, file: String },
-    #[error("{what} is not approved: {why}")]
-    NotApproved { what: String, why: String },
-    #[error("the records in {} cannot be read: {source}", directory)]
-    Read { directory: String, source: GitError },
-    #[error("the personal board cannot be opened: {source}")]
-    Open { source: OpenError },
-    #[error("the personal board refused a write: {source}")]
-    Write { source: Box<PutError> },
-}
-
-impl EffectError {
-    pub fn code(&self) -> Code {
-        match self {
-            Self::Asked { .. } => Code::SettingsAsked,
-            Self::Refused { .. } => Code::SettingsRefused,
-            Self::FromPlugin { .. } => Code::SettingsFromPlugin,
-            Self::NoPersonal { .. } => Code::SettingsNoPersonal,
-            Self::Unlanded { source, .. } => source.code(),
-            Self::TooLarge { .. } => Code::JsonTooLarge,
-            Self::Unshown { code, .. } => *code,
-            Self::Resolve { source } => source.code(),
-            Self::NotFound { .. } | Self::Forged { .. } => Code::SettingsNotFound,
-            Self::Unsigned { .. } | Self::OwnerUnsigned { .. } => Code::SettingsUnsigned,
-            Self::FileMissing { .. } => Code::SigningFileMissing,
-            Self::NotApproved { .. } => Code::SigningNotApproved,
-            Self::Read { source, .. } => source.code(),
-            Self::Open { source } => source.code(),
-            Self::Write { source } => source.code(),
-        }
-    }
-
-    pub fn fields(&self) -> Fields {
-        match self {
-            Self::Asked {
-                plugin, path, id, ..
-            }
-            | Self::Refused {
-                plugin, path, id, ..
-            } => Fields {
-                plugin: Some(plugin.clone()),
-                effect: Some(id.clone()),
-                ..Fields::at(path)
-            },
-            Self::FromPlugin { plugin, path, .. } => Fields {
-                plugin: Some(plugin.clone()),
-                path: path.clone(),
-                ..Fields::default()
-            },
-            Self::Unlanded { path, .. } => Fields::at(path),
-            Self::NotFound { id } | Self::Forged { id, .. } | Self::Unsigned { id, .. } => Fields {
-                effect: Some(id.clone()),
-                ..Fields::default()
-            },
-            Self::OwnerUnsigned { path, .. } => Fields {
-                path: path.parse().ok(),
-                ..Fields::default()
-            },
-            Self::Open { source } => source.fields(),
-            Self::Write { source } => source.fields(),
-            Self::Resolve { source } => source.fields(),
-            Self::Read { .. }
-            | Self::FileMissing { .. }
-            | Self::NotApproved { .. }
-            | Self::NoPersonal { .. }
-            | Self::TooLarge { .. }
-            | Self::Unshown { .. } => Fields::default(),
-        }
-    }
-
-    pub fn refusal(&self) -> Refusal {
-        let refusal = Refusal::new(self.code(), self, &self.fields());
-        let shown = [Code::JsonTooLarge, Code::RecordNotARecord].contains(&self.code());
-        match self {
-            Self::Unshown { .. } if shown => refusal.with_hint(format!("a decide shows the owner a JSON object, or UTF-8 text, of at most {MAX_DECIDE_BYTES} bytes; give the content the op will write")),
-            _ => refusal,
-        }
-    }
-}
 
 /// The record at `relative` in `board`'s working tree, if it reads as JSON
 /// of type `record_type`.
@@ -295,14 +170,23 @@ impl Asker {
         Board::open(root, self.home.clone()).map_err(|source| EffectError::Open { source })
     }
 
-    /// Signing's state with the personal board's setting, or the default
-    /// setting when the known boards file names no personal board.
-    pub(crate) fn signing_now(&self) -> Result<board_model::Signing, EffectError> {
-        let personal = match &self.personal {
-            Some(_) => Some(self.personal(String::new)?),
-            None => None,
-        };
-        Ok(self.signing.state(personal.as_ref()))
+    /// Signing's state with the personal board's setting for a write to
+    /// `written`. When the known boards file names no personal board, it
+    /// is the default setting, and a signed record in `written` keeps
+    /// signing configured, so a caller who points the known boards file
+    /// elsewhere does not read the personal board's signed records as gone.
+    /// A personal board that is named but cannot be read is refused here,
+    /// so only a write that signing governs is refused for it.
+    pub(crate) fn signing_now(&self, written: &Board) -> Result<board_model::Signing, EffectError> {
+        if let Some(refusal) = &self.unopened {
+            return Err(EffectError::Personal {
+                refusal: refusal.clone(),
+            });
+        }
+        Ok(match &self.personal {
+            Some(_) => self.signing.state(Some(&self.personal(String::new)?)),
+            None => (self.signing).read(SigningSetting::default(), Some(written)),
+        })
     }
 }
 
@@ -584,7 +468,7 @@ impl Board {
         };
         let landing = (target.path.as_str(), on_disk.as_str(), &path);
         if self.unsigns(&change, &on_disk)
-            && self.asker.signing_now()?.need_to_edit(Edit::Require) != Need::Answer
+            && self.asker.signing_now(self)?.need_to_edit(Edit::Require) != Need::Answer
         {
             return Err(EffectError::FromPlugin {
                 plugin: plugin.clone(),
@@ -632,7 +516,7 @@ impl Board {
             return Ok(());
         }
         let landed = landed(&on_disk, change.shape(&on_disk));
-        let now = self.asker.signing_now()?;
+        let now = self.asker.signing_now(self)?;
         let need = [
             write.then(|| now.need(Act::OwnerWrite)),
             edit.map(|edit| now.need_to_edit(edit)),
@@ -760,7 +644,8 @@ impl Board {
 
     /// Refuses unless the answer `board put --approved` names, in this
     /// board, approves the edit that leaves `signing` as `setting`: its
-    /// question names [`board_model::setting_digest`] of it.
+    /// question names [`board_model::setting_digest`] of it, and it was
+    /// answered in the last [`board_model::PROMPT_DAYS`] days.
     fn approves_edit(&self, setting: Option<&Value>, landed: &str) -> Result<(), EffectError> {
         let digest = board_model::setting_digest(setting);
         let what = format!("the owner's edit of signing in {landed}");
@@ -773,7 +658,23 @@ impl Board {
                 ),
             });
         };
-        approved_by(self, approved, &digest).map_err(|why| EffectError::NotApproved { what, why })
+        let not_approved = |why| EffectError::NotApproved {
+            what: what.clone(),
+            why,
+        };
+        approved_by(self, approved, &digest).map_err(not_approved)?;
+        // Board keeps no record of the edits an answer has approved, so an
+        // answer is not single-use; it must be recent instead.
+        let answer = read_record(self, approved.trim_start_matches('/'), "plans/answer/v1")?;
+        (answer.as_ref())
+            .map_or(Ok(()), |answer| {
+                board_model::recent(answer, SystemTime::now())
+            })
+            .map_err(|why| {
+                not_approved(format!(
+                    "the answer at {approved} does not approve it: {why}"
+                ))
+            })
     }
 }
 
@@ -783,10 +684,12 @@ fn root(board: &Board) -> String {
 }
 
 mod decide;
+mod error;
 mod order;
 mod write;
 
 pub use decide::{AnswerReport, DecideReport, Shown, answer};
+pub use error::EffectError;
 pub use order::{SignOrderError, VerifyOrderError};
 pub(crate) use order::{legacy, order_signers, sign_order, verify_order};
 pub use write::OwnerWriteError;

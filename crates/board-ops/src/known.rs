@@ -181,9 +181,36 @@ impl KnownBoards {
     }
 }
 
+/// Who asks for a put or a removal: `plugin`, and the personal board
+/// `known` names, whose setting and signed records say what signing needs.
+/// When `known` was not read, or names a directory that is not a board's
+/// root, the refusal waits in the asker until a write that signing governs
+/// reads signing's state, so every other write goes ahead.
+pub fn writing_asker(
+    plugin: Option<PluginName>,
+    known: Result<KnownBoards, Box<Refusal>>,
+    home: Option<PathBuf>,
+    signing: Signing,
+) -> Asker {
+    let named = known.and_then(|known| known.named(home.as_deref()));
+    let (personal, unopened) = match named {
+        Ok(personal) => (personal, None),
+        Err(refusal) => (None, Some(refusal)),
+    };
+    Asker {
+        plugin,
+        personal,
+        home,
+        signing,
+        sign_owner_writes: true,
+        approved: None,
+        unopened,
+    }
+}
+
 /// Who asks for an effect: `plugin`, and the personal board `personal`
 /// names when the run writes there, refused unless a board's root is there.
-/// `Some(known)` means this run writes to the personal board; a put passes `None`.
+/// `Some(known)` means this run writes to the personal board.
 pub fn asker(
     plugin: Option<PluginName>,
     personal: Option<&KnownBoards>,
@@ -198,6 +225,7 @@ pub fn asker(
         signing,
         sign_owner_writes: true,
         approved: None,
+        unopened: None,
     })
 }
 

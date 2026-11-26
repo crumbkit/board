@@ -37,9 +37,16 @@ a signature:
   off too, so it is refused then. With signing off, an edit of `require`
   needs `board put --approved <answer>`: the owner's answer to a question
   that names `board_model::setting_digest` of the new `signing`, which the
-  refusal without it gives. A plugin never writes `.board/`.
+  refusal without it gives. The answer must be from the last 30 days
+  (`board_model::recent`). Board keeps no record of the edits an answer
+  approved, so an answer is not single-use. A plugin never writes `.board/`.
 - A personal board the known boards file names but that does not open reads
   as signing configured with the file missing, so a listed act is refused.
+  `board put` and `board rm` refuse only a write that reads signing's state
+  for it, with the known boards file's refusal.
+- When the known boards file names no personal board, a write reads the
+  default setting, and a signed record in the board it writes keeps
+  signing configured.
 - `board orders pinned` and `board orders signers` start with the state
   line, such as `Signing is off: every act takes an answer in chat.` As
   text, `pinned` then gives a row per order, those left out first, and

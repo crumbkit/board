@@ -227,6 +227,18 @@ pub(crate) fn asker(context: &Context, personal: bool) -> Result<Asker, Box<Refu
     )
 }
 
+/// Who asks for a put or a removal, with the personal board the known
+/// boards file names. A known boards file that cannot be read, or names no
+/// board's root, refuses only a write that signing governs.
+pub(crate) fn writing_asker(context: &Context) -> Result<Asker, Box<Refusal>> {
+    Ok(board_ops::writing_asker(
+        plugin(context)?,
+        context.known(),
+        context.home.clone(),
+        signing(context),
+    ))
+}
+
 /// How the owner signs an approval or an order, and the allowed signers
 /// files each is checked against, which a built-in plugin's decide, order
 /// signing and order verifying read too.

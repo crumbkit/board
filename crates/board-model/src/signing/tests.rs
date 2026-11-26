@@ -322,3 +322,21 @@ fn a_setting_digest_names_the_new_setting_so_an_answer_to_one_edit_does_not_appr
     );
     assert_ne!(short, super::setting_digest(None));
 }
+
+#[test]
+fn an_answer_is_recent_when_answered_in_the_last_30_days_and_not_after_now() {
+    use std::time::{Duration, UNIX_EPOCH};
+    let answered = |seconds: u64| {
+        let at = crate::utc(UNIX_EPOCH + Duration::from_secs(seconds));
+        answer(&json!({"answered": at}))
+    };
+    let now = UNIX_EPOCH + Duration::from_secs(10_000_000);
+    super::recent(&answered(9_999_000), now).unwrap();
+    super::recent(&answered(10_000_000 - 30 * 24 * 60 * 60), now).unwrap();
+    let why = super::recent(&answered(10_000_000 - 31 * 24 * 60 * 60), now).unwrap_err();
+    assert!(why.contains("30 days"), "{why}");
+    let why = super::recent(&answered(10_000_001), now).unwrap_err();
+    assert!(why.contains("after"), "{why}");
+    let why = super::recent(&answer(&json!({"answered": "soon"})), now).unwrap_err();
+    assert!(why.contains("time"), "{why}");
+}

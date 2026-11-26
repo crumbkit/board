@@ -301,6 +301,26 @@ pub fn approving(
     })
 }
 
+/// Whether `answer`, a `plans/answer/v1`, was answered in the last
+/// [`PROMPT_DAYS`] days up to `now`. An answer that approves an edit of
+/// signing must be this recent, so one kept from long ago does not approve
+/// a return to the same setting. `Err` says why not.
+pub fn recent(answer: &serde_json::Value, now: std::time::SystemTime) -> Result<(), String> {
+    let answered = (answer.get("answered").and_then(serde_json::Value::as_str))
+        .and_then(crate::moment)
+        .ok_or_else(|| "it names no time it was answered".to_owned())?;
+    if answered > now {
+        return Err("it was answered after now".to_owned());
+    }
+    let age = now.duration_since(answered).unwrap_or_default();
+    if age.as_secs() > PROMPT_DAYS * 24 * 60 * 60 {
+        return Err(format!(
+            "it was answered more than {PROMPT_DAYS} days ago; ask the owner again"
+        ));
+    }
+    Ok(())
+}
+
 /// How long the board-plans mod keeps a prompt's digest.
 pub const PROMPT_DAYS: u64 = 30;
 
