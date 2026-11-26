@@ -69,6 +69,16 @@ impl<R> Default for Tag<R> {
     }
 }
 
+// By hand, since a derive would ask `R: Clone` of a record type that a tag
+// only names.
+impl<R> Clone for Tag<R> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<R> Copy for Tag<R> {}
+
 impl<R: Record> Serialize for Tag<R> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(R::TYPE)
