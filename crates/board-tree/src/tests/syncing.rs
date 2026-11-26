@@ -673,22 +673,20 @@ fn a_sync_that_pushes_always_fetches_and_one_that_does_not_skips_within_the_wind
 }
 
 #[test]
-fn a_clone_mid_merge_or_shallow_within_the_window_is_refused_as_a_full_sync_is_and_its_twin_is_skipped()
- {
+fn a_clone_skipped_within_the_window_is_refused_as_a_full_sync_is_once_mid_merge_or_shallow() {
     for (blocker, code) in [
         (".git/MERGE_HEAD", Code::SyncMerging),
         (".git/shallow", Code::SyncShallow),
     ] {
         let (_remote, clone, first, _) = fetched_then_moved();
+        let skipped = unless_fetched(&clone, false, WITHIN);
+        assert_eq!((skipped.new, skipped.attempts), (first, 0), "{blocker}");
         clone.write(blocker, Item::Fresh(&format!("{first}\n")));
         let error = clone
             .open()
             .sync_unless_fetched(false, WITHIN, Deadline::after(GIT_DEADLINE), Duration::ZERO)
             .unwrap_err();
         assert_eq!(error.code(), code, "{blocker}: {error}");
-        clone.write(blocker, Item::Deleted);
-        let skipped = unless_fetched(&clone, false, WITHIN);
-        assert_eq!((skipped.new, skipped.attempts), (first, 0), "{blocker}");
     }
 }
 
