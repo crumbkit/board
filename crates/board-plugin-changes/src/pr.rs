@@ -335,6 +335,7 @@ pub(crate) fn body(observed: &Observed, closes: &[String]) -> String {
         ));
     }
     parts.extend(added_section(observed));
+    parts.extend(amended_section(observed));
     parts.push(format!("## Evidence\n\n{}", bullets(&evidence(observed))));
     for issue in closes {
         parts.push(format!("Closes {issue}"));
@@ -367,6 +368,42 @@ fn added_section(observed: &Observed) -> Option<String> {
         "## {ADDED}\n\nThe change edits these files, which no path in its plan named when the \
          plan was written:\n\n{}",
         bullets(&added)
+    ))
+}
+
+/// The section that lists what each amendment since the last full plan
+/// added to it, so the owner sees additions the plan's approval did not
+/// cover; none when there are none.
+fn amended_section(observed: &Observed) -> Option<String> {
+    if observed.amended.is_empty() {
+        return None;
+    }
+    let listed = |kind: &str, items: &[String]| {
+        (!items.is_empty()).then(|| {
+            let shown: Vec<String> = items.iter().map(|item| quoted_text(item)).collect();
+            format!("the {kind} {}", shown.join(", "))
+        })
+    };
+    let lines: Vec<String> = (observed.amended.iter())
+        .map(|each| {
+            let headings: Vec<String> = (each.sections.iter())
+                .map(|section| section.heading().to_owned())
+                .collect();
+            let added: Vec<String> = [
+                listed("paths", &each.paths),
+                listed("owed entries", &each.owed),
+                (!headings.is_empty()).then(|| format!("the sections {}", headings.join(", "))),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            format!("{} added {}", quoted_text(&each.path), added.join("; "))
+        })
+        .collect();
+    Some(format!(
+        "## Plan amendments\n\nThese were added to the plan after it was written, with \
+         `board changes plan-amend`:\n\n{}",
+        bullets(&lines)
     ))
 }
 
@@ -440,6 +477,7 @@ pub(crate) fn pr(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     observed.cited = cited;
     observed.plan = plan;
     observed.plan_file = plan_file;
+    observed.amended = crate::amend::chain(host, &path, observed.change.plan.as_deref())?;
     reviewed(host, &mut observed)?;
     if let Some(flow) = of_change(host, &path, &observed.change)? {
         let checks = flow.phases.iter().flat_map(|phase| &phase.checks);

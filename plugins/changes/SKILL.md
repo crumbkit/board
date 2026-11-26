@@ -63,6 +63,11 @@ blocks is missing.
    leaves owed go in `owed`, as `[{"rule": "<path>", "why": "<reason>"}]`.
    Both fields take paths, and the gates do not read paths in the text.
    Keep the plan near 900 words; `plan` refuses one over 3,000.
+   To add a path, an owed entry or a test section to an existing plan,
+   such as at land, run `board -C <board> changes plan-amend --path
+   /changes/<name>` with `--paths`, `--proves` or `--does-not-prove`, or
+   `owed` on stdin, in place of resending the whole plan. It only adds,
+   and `next` and the pull request body list each addition for the owner.
    Failure paths has one row per step that can fail: what fails, the state
    it leaves, the recovery, and the order of the check against the
    destructive step it guards. Consumers lists every caller and reader of

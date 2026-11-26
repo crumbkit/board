@@ -1,0 +1,104 @@
+{
+  "$defs": {
+    "Owed": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "required": [
+                "rule"
+              ]
+            },
+            {
+              "required": [
+                "control"
+              ]
+            }
+          ]
+        }
+      ],
+      "description": "An obligation a change leaves owed. A plan written before the rename\nnames its path `control`.",
+      "properties": {
+        "control": {
+          "description": "The path of the obligation left owed. Board's check does not follow\nit, because an obligation is deleted once its work is done and a plan\nsnapshot never changes. `changes.plan` and the migration check that\nthe path holds a rule when they write it.",
+          "pattern": "^/[^\\s{}]*$",
+          "type": "string"
+        },
+        "rule": {
+          "description": "The path of the obligation left owed. Board's check does not follow\nit, because an obligation is deleted once its work is done and a plan\nsnapshot never changes. `changes.plan` and the migration check that\nthe path holds a rule when they write it.",
+          "pattern": "^/[^\\s{}]*$",
+          "type": "string"
+        },
+        "why": {
+          "description": "Why this change does not discharge it, and what will.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "why"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`changes/amendment/v1`: what one `changes.plan-amend` added to a plan.\n\nIt lives at `/changes/<name>/amendments/<stamp>`, with the stamp of the\nplan it wrote. Each field it adds to is left out when it added none.",
+  "properties": {
+    "$type": {
+      "const": "changes/amendment/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "from": {
+      "description": "The plan version it added to.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "changes/plan/v1"
+    },
+    "owed": {
+      "description": "The obligations it added to the plan's owed entries.",
+      "items": {
+        "$ref": "#/$defs/Owed"
+      },
+      "type": "array"
+    },
+    "paths": {
+      "description": "The files and SQLite GLOB patterns it added to the plan's paths.",
+      "items": {
+        "minLength": 1,
+        "pattern": "^/",
+        "type": "string",
+        "x-board-glob": true
+      },
+      "type": "array"
+    },
+    "plan": {
+      "description": "The plan version the amendment wrote.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "changes/plan/v1"
+    },
+    "sections": {
+      "description": "The test headings it filled in the plan's text.",
+      "items": {
+        "description": "A heading of a plan's text that an amendment may fill, which the land\ngate's `test-sections` check reads.",
+        "enum": [
+          "What the tests prove",
+          "What the tests do not prove"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "$type",
+    "plan",
+    "from"
+  ],
+  "title": "AmendmentRecord",
+  "type": "object",
+  "x-board-folder": "/changes/{change}/amendments/"
+}

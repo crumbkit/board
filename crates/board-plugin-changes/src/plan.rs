@@ -25,7 +25,7 @@ pub(crate) use answers::Answers;
 
 /// The most words a plan's text holds, and the most words the documents it
 /// uses hold in all.
-const PLAN_WORDS: usize = 3_000;
+pub(crate) const PLAN_WORDS: usize = 3_000;
 const USES_WORDS: usize = 3_000;
 
 /// A plan for a change, given as flags, with `uses` and `paths` repeated
@@ -174,7 +174,7 @@ pub(crate) fn documents(
 
 /// What each path the plan names is, or a refusal when one reaches nothing
 /// or an owed path is no rule.
-fn check_named(
+pub(crate) fn check_named(
     host: &dyn Host,
     path: &str,
     uses: &[String],
@@ -497,6 +497,11 @@ fn check_paths(path: &str, mount: &str, paths: &[String], kind: Kind) -> Result<
             [("path", json!(path))],
         ));
     }
+    check_mount(path, mount, paths)
+}
+
+/// Refuses any of `paths` outside the change's mount.
+pub(crate) fn check_mount(path: &str, mount: &str, paths: &[String]) -> Result<(), PluginError> {
     let inside = format!("{}/", mount.trim_end_matches('/'));
     let outside: Vec<&str> = (paths.iter())
         .filter(|planned| !planned.starts_with(&inside))

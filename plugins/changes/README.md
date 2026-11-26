@@ -386,7 +386,9 @@ of `changes` still fails `review`.
   fields must be resent, with `considered` and `owed` when it has them. When
   every missing check that blocks is the owner's or a reviewer's,
   `waiting_on` names them and `ask` holds the question to put to them,
-  built from those checks' details and remedies.
+  built from those checks' details and remedies. `amended` lists what each
+  `plan-amend` since the last full plan added, and is left out when there
+  is none.
 - `sync` in the output of `open` and `next` is `{synced, stale, code,
   command}`: the day of the last sync, or null; `stale` when that is
   before today in UTC or null and sync has a pull request to read, with
@@ -565,6 +567,31 @@ of `changes` still fails `review`.
   separated by whitespace. The last limit comes from
   `/evals/board-standards-selection` in the owner's board: agents that chose
   standards from each directory's `index.md` stayed within it.
+- `plan-amend --path /changes/<name> [--paths <glob>]... [--proves <text>] [--does-not-prove <text>]`,
+  or JSON on stdin, which `owed` needs, writes a new plan version that only
+  adds to the change's current plan: `paths` after the plan's paths, `owed`
+  entries after its owed entries, and text under the headings "What the
+  tests prove" (`proves`) and "What the tests do not prove"
+  (`does_not_prove`). A path or owed rule the plan holds is skipped. Text
+  goes under the heading when the plan's text has it with nothing under
+  it, or after the text under a new `##` heading when it has none; every
+  other byte of the text is kept. The new plan copies `uses`, `considered`,
+  `answers`, `lifecycle` and `records`, and becomes the change's plan. The
+  same write puts a `changes/amendment/v1` at
+  `/changes/<name>/amendments/<stamp>`: `plan`, the version it wrote,
+  `from`, the version it added to, and the `paths`, `owed` and `sections`
+  it added, each left out when empty. `next` lists, as `amended`, each
+  amendment since the last plan `plan` wrote, oldest first, and the pull
+  request body lists them under "Plan amendments", so the owner sees what
+  was added after the plan was approved. It refuses an input that adds
+  nothing new (`changes::amend::nothing`), a heading that already holds
+  text (`changes::amend::section_held`, whose `sections` names them), and
+  a change with no plan record (`changes::amend::no_plan`). Like `plan`, it
+  refuses a done or dropped change (`changes::phase::final`), a path outside
+  the mount (`changes::plan::outside_mount`), an owed path that reaches
+  nothing or is no rule (`changes::ref::dangling`,
+  `changes::ref::wrong_type`) and a text over 3,000 words
+  (`changes::plan::too_long`). It writes nothing when it refuses.
 - `lifecycle`, given as JSON on stdin with `path`, `text`, `doc` and
   `external`, since `external` is a list, writes the change's
   `changes/lifecycle/v1` and its text and sets the plan's `lifecycle`. A
@@ -1187,6 +1214,7 @@ broken reference of its own is still read.
 | Review | Each attached `review/report/v1`: verdict, author, range, findings by severity. |
 | Evidence | The change, the plan, and every reference with its type (`file` for a file that is not a record, `directory` for a directory), or the code that hid it. |
 | Work in progress | The change's `over_limit`, when set. |
+| Plan amendments | Each `changes/amendment/v1` since the last plan `plan` wrote, oldest first, with the paths, owed rules and headings it added, when there are any. |
 | Files added to the plan's paths | Each file the change's diff edits that no path of its plan matches, when there are any, as the review gate's `paths` check names them, at most 50 with a count of the rest. When the change has no head or git cannot list the diff, it says why instead. |
 | `Closes <issue>` | The `url` of each `github/issue/v1` in `tickets`. |
 

@@ -144,7 +144,9 @@ pub(crate) struct AttachInput {
 /// reached it; it is left out when no run set one. `not_required` lists the
 /// checks of the phase whose `when` does not hold, so the gate leaves them
 /// out, such as `owner-approval` for a plan that answers `ux` none and
-/// `data` none.
+/// `data` none. `amended` lists, oldest first, what each `changes.plan-amend`
+/// since the last plan `changes.plan` wrote added to it; it is left out when
+/// there is none.
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct NextOutput {
     pub(crate) path: String,
@@ -160,6 +162,8 @@ pub(crate) struct NextOutput {
     pub(crate) ask: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) stop: Option<Shown>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) amended: Vec<crate::amend::Amended>,
     pub(crate) instruction: String,
     pub(crate) sync: LastSync,
 }
@@ -396,6 +400,7 @@ pub(crate) fn step_of(host: &dyn Host, path: &str) -> Result<(NextOutput, Observ
         waiting_on,
         ask,
         stop,
+        amended: crate::amend::chain(host, path, change.plan.as_deref())?,
         sync: last_sync(host, sync_reads(path, &change))?,
     };
     Ok((next, observed))

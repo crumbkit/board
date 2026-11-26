@@ -34,6 +34,7 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
     assert_eq!(
         types,
         [
+            "changes/amendment/v1",
             "changes/attempt/v1",
             "changes/change/v1",
             "changes/change/v2",
@@ -107,12 +108,21 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
             ),
             ("stop", vec![], None),
             ("approve", vec![], None),
+            ("plan-amend", vec![], None),
         ]
     );
 }
 
 /// The input properties of `owed` and `ask`.
 const OWED_AND_ASK: [&str; 4] = ["owed.limit", "ask.path", "ask.project", "ask.by"];
+/// The input properties of `plan-amend`.
+const PLAN_AMEND: [&str; 5] = [
+    "plan-amend.path",
+    "plan-amend.paths",
+    "plan-amend.owed",
+    "plan-amend.proves",
+    "plan-amend.does_not_prove",
+];
 
 #[test]
 fn every_input_property_carries_a_sentence_that_says_what_it_means() {
@@ -213,6 +223,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "approve.path",
     ];
     expected.extend(OWED_AND_ASK);
+    expected.extend(PLAN_AMEND);
     expected.sort_unstable();
     assert_eq!(described, expected);
 }

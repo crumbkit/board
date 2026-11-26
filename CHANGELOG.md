@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `board changes plan-amend --path /changes/<name>` writes a new plan
+  version that only adds paths, owed entries, and text under the "What the
+  tests prove" and "What the tests do not prove" headings to the change's
+  current plan, so an agent no longer resends the whole plan at land. It
+  refuses any other edit and an input that adds nothing. It records each
+  addition in a `changes/amendment/v1`, which `changes next` lists as
+  `amended` and the pull request body lists under "Plan amendments".
 - A query that looks entries or records up by logical path, blob or record
   type reads an index in place of every entry, so plugin calls that look
   records up, such as `plans open` and `changes next`, answer faster. The
