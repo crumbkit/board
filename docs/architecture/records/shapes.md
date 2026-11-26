@@ -126,7 +126,7 @@ Built-in plugins generate schemas from structs with schemars, through
   `T`, to a marker that lists several types, or to any entry when `T` is left
   out. Both are always inlined.
 - `Prose`, `Date`, `Timestamp`, `Url`, `Digest`, `Glob`, `LogicalGlob`, `Summary`,
-  `SessionId`, `Slug`, `Person`, `ObjectId`, `CommitName`, `Remote`, `Repository`, `Subject`, `TypeName`,
+  `SessionId`, `Slug`, `Person`, `ObjectId`, `CommitName`, `CodeName`, `DottedVersion`, `Remote`, `Repository`, `Subject`, `TypeName`,
   `PathKey`, `PathTemplate`, `Pattern` and `WorkspaceId` are shared string
   shapes, and `Actor` and `Pinned` are shared object shapes. A `String` field takes one with
   `#[schemars(with = "Prose")]`, and a `urls` field with `#[schemars(with = "Vec<Url>")]`. `Digest` is `sha256:` and 64
@@ -138,7 +138,10 @@ Built-in plugins generate schemas from structs with schemars, through
   lowercase uuid, `Slug` is lowercase words joined by `-`, `Person` is a
   slug or an email address, and `ObjectId` is a git object id of 40 or 64
   lowercase hex digits. `CommitName` is a commit named by 7 to 40 of
-  its leading hex digits, such as a change's head. `Subject` is what a test or study concerns: an
+  its leading hex digits, such as a change's head. `CodeName` is a code Board or a
+  plugin gives, an owner, an area and a reason joined by `::`, such as
+  `board::ref::dangling`. `DottedVersion` is numbers separated by dots, such as
+  a version rule's `at_least` or `1.99.1`. `Subject` is what a test or study concerns: an
   `owner/name` repository or a board path that starts with `/`. `TypeName` is a record type
   as `$type` names it, such as `changes/flow/v1`. `PathKey` is a logical path with no
   placeholder, where a reference cannot go, such as the key of an object. `PathTemplate` is a logical path that

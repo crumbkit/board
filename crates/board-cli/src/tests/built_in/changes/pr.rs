@@ -109,6 +109,10 @@ fn pr_writes_the_body_beside_the_plan_and_returns_the_gh_command_that_would_use_
              _The plan's What the tests do not prove section is empty._\n\n\
              ## Review\n\n\
              - `/reviews/1`: approve by `a reviewer` over {BASE}..{HEAD}, findings none\n\n\
+             ## Files added to the plan's paths\n\n\
+             The change's diff could not be listed, so the files it adds to its plan's paths \
+             are not known: nothing is at /repos/x, so the change's diff cannot be read; check \
+             the mount with `board ls /repos`. Fix that and run `board changes pr` again.\n\n\
              ## Evidence\n\n\
              - `/changes/t`: the change\n\
              - `/changes/t/plan.md`: the plan\n\

@@ -463,8 +463,21 @@ fn board_scenario() -> Scenario {
     scenario
 }
 
+/// The longest any wait in these tests lasts before it fails.
+const WAIT: Duration = Duration::from_mins(1);
+
+/// Sets the stop flag when dropped, so a panic in a test's body stops its
+/// server at once instead of after the server's idle life.
+struct StopOnDrop<'a>(&'a AtomicBool);
+
+impl Drop for StopOnDrop<'_> {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
 /// Runs a server for the board at `workdir` while `during` runs with its
-/// port and token, then stops it.
+/// port and token, then stops it, also when `during` panics.
 fn with_server<T>(
     workdir: &std::path::Path,
     cache: &std::path::Path,
@@ -481,14 +494,25 @@ fn with_server<T>(
             let board = Board::open(workdir, None).unwrap();
             serve(&board, cache, Duration::from_mins(1), &stop)
         });
+        let stopping = StopOnDrop(&stop);
+        let start = Instant::now();
         let (port, token) = loop {
             if let Some(bytes) = board_index::read_server(cache, &root).unwrap() {
                 break read_record(&bytes).unwrap();
             }
+            if server.is_finished() {
+                let ended = server.join().unwrap().map(|_| ());
+                panic!("the server stopped before it wrote a server file: {ended:?}");
+            }
+            assert!(
+                start.elapsed() < WAIT,
+                "the server wrote no server file within {:?}",
+                start.elapsed()
+            );
             std::thread::sleep(Duration::from_millis(10));
         };
         let result = during(port, token);
-        stop.store(true, Ordering::Relaxed);
+        drop(stopping);
         (result, server.join().unwrap().unwrap())
     })
 }
@@ -538,10 +562,15 @@ fn a_server_with_no_authorised_request_exits_when_idle() {
 }
 
 /// A launch whose browser is a script that records the URL it is asked to
-/// open, and whose `board` binary cannot start.
+/// open, and whose `board` binary cannot start. The script writes the URL
+/// beside the file and renames it into place, so a reader never sees the
+/// file empty between the shell creating it and `printf` writing it.
 fn launch(scenario: &Scenario, cache: &std::path::Path) -> (Launch, std::path::PathBuf) {
     let opened = cache.join("opened");
-    let script = format!("#!/bin/sh\nprintf %s \"$1\" > {}\n", opened.display());
+    let script = format!(
+        "#!/bin/sh\nprintf %s \"$1\" > '{0}.part' && mv '{0}.part' '{0}'\n",
+        opened.display()
+    );
     scenario.write("browser.sh", Item::Executable(&script));
     let launch = Launch {
         cache: cache.to_owned(),
@@ -553,14 +582,18 @@ fn launch(scenario: &Scenario, cache: &std::path::Path) -> (Launch, std::path::P
 
 /// What the browser was asked to open, waiting for the detached script.
 fn opened(file: &std::path::Path) -> String {
-    let deadline = Instant::now() + Duration::from_mins(1);
-    while Instant::now() < deadline {
+    let start = Instant::now();
+    while start.elapsed() < WAIT {
         if let Ok(url) = std::fs::read_to_string(file) {
             return url;
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    panic!("the browser was never run");
+    panic!(
+        "the browser was never run: {} did not appear within {:?}",
+        file.display(),
+        start.elapsed()
+    );
 }
 
 #[test]

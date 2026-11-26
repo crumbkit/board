@@ -723,6 +723,43 @@ fn ls_says_on_stderr_when_the_index_is_in_memory() {
     );
 }
 
+/// Runs `ls` once, removes the cache root's tag, then runs `ls` again
+/// with the root unwritable when `locked`, and gives what that printed on
+/// stderr.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test removes the tag and makes the cache root unwritable"
+)]
+fn ls_under_cache_root(locked: bool) -> (u8, String) {
+    use std::os::unix::fs::PermissionsExt as _;
+    let scenario = board();
+    let cache = tempfile::tempdir().unwrap();
+    board_cached(scenario.workdir(), Some(cache.path()), &["ls"]);
+    let board = cache.path().join("board");
+    std::fs::remove_file(board.join("CACHEDIR.TAG")).unwrap();
+    let mode = |mode| std::fs::Permissions::from_mode(mode);
+    std::fs::set_permissions(&board, mode(if locked { 0o500 } else { 0o700 })).unwrap();
+    let output = board_cached(scenario.workdir(), Some(cache.path()), &["ls"]);
+    std::fs::set_permissions(&board, mode(0o700)).unwrap();
+    (output.code, text(&output.stderr))
+}
+
+#[test]
+fn a_run_under_an_unwritable_cache_root_warns_that_it_is_unmarked_and_still_succeeds() {
+    let (code, stderr) = ls_under_cache_root(true);
+    assert_eq!(code, 0);
+    assert!(
+        stderr.starts_with("warning: board::cache::unmarked: the cache directory "),
+        "{stderr}"
+    );
+    assert_eq!(stderr.lines().count(), 1, "{stderr}");
+}
+
+#[test]
+fn a_run_under_a_writable_cache_root_warns_nothing() {
+    assert_eq!(ls_under_cache_root(false), (0, String::new()));
+}
+
 /// crumbkit's JSON document has no place for a note, so Board prints the
 /// index's note on stderr after it, as it does in text.
 #[test]

@@ -20,7 +20,7 @@ use crate::gates::{Observed, Read, objects, reads, reviewed_head, same_commit};
 use crate::lifecycle::LifecycleRecord;
 use crate::records::{ChangeRecord, FixRecord};
 use crate::repo::check_suite;
-use crate::rules::{current as current_rule, listed_by, obligations, on_paths};
+use crate::rules::{Found, current as current_rule, listed_by, names, obligations_in, on_plan};
 
 use super::plan_file;
 
@@ -53,6 +53,7 @@ pub(crate) fn observe_in(
         Vec::new()
     };
     let records = referenced(host, &cited)?;
+    let mut on_planned = None;
     let mut found = Observed::new(path, change.clone(), kind_of(host, path)?, records);
     found.flow = flow;
     found.cited = cited;
@@ -90,7 +91,7 @@ pub(crate) fn observe_in(
         found.pull_read = pull_of(host, newest)?.is_some();
     }
     if wanted.contains(&Read::Obligations) {
-        found.obligations = obligations(host, &current(host, change)?.2)?;
+        found.obligations = obligations(host, &found, &mut on_planned)?;
     }
     if wanted.contains(&Read::Controlled) {
         let filled = values(&found);
@@ -125,7 +126,7 @@ pub(crate) fn observe_in(
         records_held(host, &mut found)?;
     }
     if wanted.contains(&Read::PlannedRules) {
-        planned_rules(host, &mut found)?;
+        planned_rules(host, &mut found, &mut on_planned)?;
     }
     if wanted.contains(&Read::Approval) {
         found.approval = approval(host, &found)?;
@@ -337,9 +338,72 @@ fn records_held(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError
     Ok(())
 }
 
+/// The answer of the one `rules.for-paths` call on the paths of the change's
+/// plan, which `answer` holds once a read has asked for it.
+fn answered<'a>(
+    host: &dyn Host,
+    change: &ChangeRecord,
+    answer: &'a mut Option<Result<Vec<Found>, PluginError>>,
+) -> Result<&'a Result<Vec<Found>, PluginError>, PluginError> {
+    let asked = match answer.take() {
+        Some(asked) => asked,
+        None => on_plan(host, &current(host, change)?.2),
+    };
+    Ok(answer.insert(asked))
+}
+
+/// The obligations on the plan's paths and on each file the diff edits
+/// outside them, which the change adds to its paths, so an added file's
+/// obligation counts as a planned path's does. The diff is read first.
+/// After the call on the plan's paths, the added files go [`BATCH`] to a
+/// call, and each obligation is named once.
+fn obligations(
+    host: &dyn Host,
+    found: &Observed,
+    answer: &mut Option<Result<Vec<Found>, PluginError>>,
+) -> Result<Vec<String>, PluginError> {
+    let mut rules = (answered(host, &found.change, answer)?.as_ref())
+        .map_err(Clone::clone)?
+        .clone();
+    for batch in found.outside.chunks(BATCH) {
+        let added: Vec<String> = batch.iter().map(|file| glob_literal(file)).collect();
+        rules.extend(on_plan(host, &added)?);
+    }
+    rules.sort_by(|one, other| one.rule.cmp(&other.rule));
+    rules.dedup_by(|one, other| one.rule == other.rule);
+    Ok((obligations_in(host, &rules)?.into_iter())
+        .map(|each| each.rule)
+        .collect())
+}
+
+/// The most added files one `rules.for-paths` call names.
+const BATCH: usize = 100;
+
+/// `file` as a SQLite GLOB pattern that matches only itself, since
+/// `rules.for-paths` reads `*`, `?` and `[` as pattern characters and an
+/// added file is a real name, such as `app/[id]/page.tsx`.
+pub(crate) fn glob_literal(file: &str) -> String {
+    let mut pattern = String::with_capacity(file.len());
+    for character in file.chars() {
+        match character {
+            '[' | '*' | '?' => {
+                pattern.push('[');
+                pattern.push(character);
+                pattern.push(']');
+            }
+            other => pattern.push(other),
+        }
+    }
+    pattern
+}
+
 /// What `planned-rule-paths` checks read: which rules they name the board
 /// holds, and the rules on the plan's paths, or why those cannot be read.
-fn planned_rules(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
+fn planned_rules(
+    host: &dyn Host,
+    found: &mut Observed,
+    answer: &mut Option<Result<Vec<Found>, PluginError>>,
+) -> Result<(), PluginError> {
     let filled = values(found);
     let named: Vec<String> = (found.checks().iter())
         .filter(|each| each.kind.known() == Some(&CheckKind::PlannedRulePaths))
@@ -350,16 +414,17 @@ fn planned_rules(host: &dyn Host, found: &mut Observed) -> Result<(), PluginErro
             found.held.insert(rule);
         }
     }
-    match on_paths(host, &current(host, &found.change)?.2) {
-        Ok(rules) => found.on_planned = rules,
-        Err(error) => found.on_planned_unread = Some(error.message),
+    match answered(host, &found.change, answer)? {
+        Ok(rules) => found.on_planned = names(rules),
+        Err(error) => found.on_planned_unread = Some(error.message.clone()),
     }
     Ok(())
 }
 
 /// Adds the paths of the plan the change names and the files the change's diff edits
-/// outside them to `found`.
-fn reviewed(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
+/// outside them to `found`, or why the diff cannot be read. The gate's `paths`
+/// check and the pull request body both read them from here.
+pub(crate) fn reviewed(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
     let (_, _, planned) = current(host, &found.change)?;
     found.planned = planned;
     let Some(head) = found.change.head.clone() else {
@@ -380,3 +445,6 @@ fn reviewed(host: &dyn Host, found: &mut Observed) -> Result<(), PluginError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

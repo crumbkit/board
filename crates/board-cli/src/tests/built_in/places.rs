@@ -79,8 +79,7 @@ impl Places {
     /// Each argument line the stub `mxv` was run with.
     fn mxv_calls(&self) -> Vec<String> {
         std::fs::read_to_string(self.bin.workdir().join("mxv.log"))
-            .map(|log| log.lines().map(str::to_owned).collect())
-            .unwrap_or_default()
+            .map_or_default(|log| log.lines().map(str::to_owned).collect())
     }
 
     /// Runs `board --json <arguments>` started in `caller`, with

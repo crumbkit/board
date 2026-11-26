@@ -259,8 +259,11 @@ to replace the flow copies changes kept before versions.
   it will edit.
 - `changes::plan::outside_mount`: start each planned path with the change's
   mount and `/`.
-- `changes::paths::outside_plan`: the diff edits the files named outside
-  the plan's paths. Add them with `changes.plan`, or revert the edit.
+- `changes::paths::outside_plan`: the plan has no paths, or git cannot
+  list the change's diff. Write the plan with its paths, or fix what the
+  detail names. A file the diff edits outside the plan's paths does not
+  refuse: the gate lists it as added, and `changes.pr` lists it in the
+  pull request body, so do not write the plan again for it.
 - `changes::brief::rules_missing`: the Board running the plugin has no
   `rules.for-paths`. Run `board plugin enable rules`.
 - `changes::data::not_signed`: run the understanding check and attach its

@@ -145,22 +145,26 @@ impl Writer {
         Ok(())
     }
 
-    /// Deletes the rows and inputs of the slot `slot` at `paths`, or every
+    /// Deletes the rows, references and inputs of the slot `slot` at `paths`, or every
     /// one when `paths` is `None`.
     pub fn forget(&self, slot: &Digest, paths: Option<&[&str]>) -> Result<(), IndexError> {
         let slot = slot.hex();
         let connection = self.connection();
         let Some(paths) = paths else {
             connection.execute("DELETE FROM main.decided WHERE key = ?1", [&slot])?;
+            connection.execute("DELETE FROM main.resolutions WHERE key = ?1", [&slot])?;
             connection.execute("DELETE FROM main.inputs WHERE slot = ?1", [&slot])?;
             return Ok(());
         };
         let mut rows =
             connection.prepare_cached("DELETE FROM main.decided WHERE key = ?1 AND path = ?2")?;
+        let mut references = connection
+            .prepare_cached("DELETE FROM main.resolutions WHERE key = ?1 AND path = ?2")?;
         let mut inputs =
             connection.prepare_cached("DELETE FROM main.inputs WHERE slot = ?1 AND path = ?2")?;
         for path in paths {
             rows.execute(params![slot, path])?;
+            references.execute(params![slot, path])?;
             inputs.execute(params![slot, path])?;
         }
         Ok(())

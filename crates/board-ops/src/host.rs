@@ -64,6 +64,12 @@ pub trait Plugin: Sync {
     fn renamed_types(&self) -> &'static [(&'static str, &'static str)] {
         &[]
     }
+    /// The fields of its types that a command-line `board put` fills when
+    /// the caller leaves them out (docs/architecture/writes.md, Fills and
+    /// drops).
+    fn fills(&self) -> &'static [crate::Fill] {
+        &[]
+    }
 }
 
 /// What Board offers a built-in plugin while it runs a capability.
@@ -739,10 +745,7 @@ impl Host for Hosted<'_> {
     }
 
     fn known_boards(&self) -> Vec<PathBuf> {
-        self.plugins
-            .known
-            .map(KnownBoards::boards)
-            .unwrap_or_default()
+        self.plugins.known.map_or_default(KnownBoards::boards)
     }
 
     #[expect(

@@ -75,6 +75,7 @@ impl Board {
         // path the put lands in there.
         mounted.ask_as(self.asker.clone());
         mounted.bulk.clone_from(&self.bulk);
+        mounted.mend.clone_from(&self.mend);
         // Refuses a `follow` that names nothing, as `mount update` does.
         let pin = self.repositories().pin(mount)?;
         let root = match sent {
@@ -101,8 +102,10 @@ impl Board {
             &mut |path: &LogicalPath| repositories.resolve_in(repositories.root(), new, path);
         let root = &mut repositories.root().reader();
         let mut writes = Vec::with_capacity(written.prepared.len());
+        let mut mended = Vec::new();
         let items = written.prepared.iter().zip(written.crossed);
         for ((item, crossing), previous) in items.zip(written.pinned) {
+            mended.extend(item.mends.at(&crossing.path));
             let blob = mounted.repository().blob_id(&item.canonical);
             let location = view
                 .as_mut()
@@ -128,7 +131,10 @@ impl Board {
                 temporary: None,
             });
         }
-        Ok(PutReport::new(writes, commit))
+        Ok(PutReport {
+            mended,
+            ..PutReport::new(writes, commit)
+        })
     }
 
     /// In this board, mounted where `crossings` lead, puts what `sent`

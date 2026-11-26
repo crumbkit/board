@@ -13,6 +13,7 @@ mod cache;
 mod format;
 mod kept;
 mod prune;
+mod resolutions;
 mod texts;
 mod worktree;
 

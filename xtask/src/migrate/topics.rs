@@ -79,13 +79,12 @@ impl Gathered {
                     ]),
                 };
                 let mut aliases: Vec<String> = (record.get("aliases").and_then(Value::as_array))
-                    .map(|aliases| {
+                    .map_or_default(|aliases| {
                         aliases
                             .iter()
                             .filter_map(|alias| alias.as_str().map(str::to_owned))
                             .collect()
-                    })
-                    .unwrap_or_default();
+                    });
                 for name in names {
                     if *name != title && !aliases.contains(name) {
                         aliases.push(name.clone());

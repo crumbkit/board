@@ -324,6 +324,27 @@ fn an_obligations_detail_names_ten_obligations_and_counts_the_rest() {
 }
 
 #[test]
+fn an_obligations_check_on_a_change_with_a_head_fails_when_git_cannot_list_its_diff() {
+    let list = json!([{"id": "o", "kind": "obligations"}]);
+    let mut headed = observed(&json!({"head": HEAD}), &[]);
+    headed.diff_unread = Some("`git diff` failed in /r".to_owned());
+    let check = first(&headed, list.clone());
+    assert_eq!(
+        (check.status, check.detail.as_str(), check.code),
+        (
+            Status::Missing,
+            "`git diff` failed in /r",
+            "changes::gate::unmet"
+        )
+    );
+    headed.diff_unread = None;
+    assert_eq!(first(&headed, list.clone()).status, Status::Pass);
+    let mut headless = observed(&json!({}), &[]);
+    headless.diff_unread = Some("the change records no head commit".to_owned());
+    assert_eq!(first(&headless, list).status, Status::Pass);
+}
+
+#[test]
 fn a_missing_check_with_blocks_false_never_blocks_and_its_blocking_twin_does() {
     let mut found = observed(&json!({}), &[]);
     found.obligations = vec!["/rules/x/docs-owed".to_owned()];

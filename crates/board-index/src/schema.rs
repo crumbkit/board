@@ -3,7 +3,7 @@
 
 /// The index format, which names the index file. `open.rs` and
 /// docs/architecture/index.md say what a new format does to older files.
-pub const INDEX_VERSION: u32 = 29;
+pub const INDEX_VERSION: u32 = 31;
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
@@ -187,6 +187,20 @@ CREATE TABLE decided (
     change TEXT,
     PRIMARY KEY (key, path)
 ) WITHOUT ROWID;
+-- The references each entry of a kept decision makes, under the decision's
+-- key: `reached` is a JSON array of them in order, each with its `pointer`
+-- (a JSON pointer or a link's destination as written), `link` when it is a
+-- Markdown link, the `target` it names, the `location` it resolved to,
+-- without its `board` when that is the decided board itself, and the `code`
+-- it failed with. A rowid table, as `bodies` is: a WITHOUT ROWID table
+-- moves a row past about 4 KiB to overflow pages, which left 30 of its
+-- 77 MB unused on the owner's board.
+CREATE TABLE resolutions (
+    key TEXT NOT NULL,
+    path TEXT NOT NULL,
+    reached TEXT NOT NULL,
+    UNIQUE (key, path)
+);
 ";
 
 /// Each source a run reached: the key its decision is kept under when the
@@ -206,9 +220,10 @@ DELETE FROM temp.probed;
 /// Deletes the facts nothing current reaches: each tree beneath a source's
 /// root, each object those trees hold, and each working-tree blob. A
 /// validation and its references go unless both blobs are reached, a
-/// decision, a slot or a pointer list unless this run reached its key, and
+/// decision with its references, a slot or a pointer list unless this run
+/// reached its key, and
 /// a probe unless this run used it.
-pub(crate) const PRUNE: [&str; 12] = [
+pub(crate) const PRUNE: [&str; 13] = [
     "DELETE FROM main.trees WHERE tree NOT IN temp.kept",
     "DELETE FROM main.blobs WHERE blob NOT IN temp.kept",
     "DELETE FROM main.links WHERE blob NOT IN temp.kept",
@@ -218,6 +233,8 @@ pub(crate) const PRUNE: [&str; 12] = [
      WHERE record NOT IN temp.kept OR schema NOT IN temp.kept",
     "DELETE FROM main.refs WHERE record NOT IN temp.kept OR schema NOT IN temp.kept",
     "DELETE FROM main.decided
+     WHERE key NOT IN (SELECT key FROM temp.reached WHERE key IS NOT NULL)",
+    "DELETE FROM main.resolutions
      WHERE key NOT IN (SELECT key FROM temp.reached WHERE key IS NOT NULL)",
     "DELETE FROM main.pointers
      WHERE scan NOT IN (SELECT scan FROM temp.reached WHERE scan IS NOT NULL)",
@@ -288,6 +305,8 @@ SELECT * FROM temp.fresh;
 CREATE TEMP VIEW IF NOT EXISTS decided AS
 SELECT key, path, logical, blob, size, role, schema, kind, code
 FROM main.decided WHERE key IN (SELECT key FROM temp.reached);
+CREATE TEMP VIEW IF NOT EXISTS resolutions AS
+SELECT * FROM main.resolutions WHERE key IN (SELECT key FROM temp.reached);
 CREATE TEMP VIEW IF NOT EXISTS pointers AS
 SELECT * FROM main.pointers WHERE scan IN (SELECT scan FROM temp.reached);
 CREATE TEMP VIEW IF NOT EXISTS entries AS

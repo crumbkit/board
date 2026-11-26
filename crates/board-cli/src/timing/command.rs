@@ -52,7 +52,7 @@ pub(crate) fn timing(command: &TimingCommand, context: &Context, printer: Printe
     };
     let root = std::fs::canonicalize(&personal).unwrap_or_else(|_| personal.clone());
     let cache = context.cache.as_deref();
-    let timings = cache.map(board_ops::read_timings).unwrap_or_default();
+    let timings = cache.map_or_default(board_ops::read_timings);
     let now = jiff::Timestamp::now();
     let now_ms = u64::try_from(now.as_millisecond()).unwrap_or_default();
     let read = check::read(&timings, &root.display().to_string(), now_ms);

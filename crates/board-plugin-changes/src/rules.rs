@@ -47,17 +47,17 @@ fn rule_types() -> String {
 /// summary and, for an obligation, the line that says how to close it, as
 /// the rules plugin gives it. An agent reads and closes the rule at that
 /// path, so it stays under `/controls/` until the board is migrated.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Found {
     pub(crate) rule: String,
     pub(crate) summary: String,
     pub(crate) close: Option<String>,
 }
 
-/// The rules `rules.for-paths` finds on `paths`; none when the rules
-/// plugin is not installed or not enabled, since a board without it records
-/// no obligations.
-fn for_paths(host: &dyn Host, paths: &[String]) -> Result<Vec<Found>, PluginError> {
+/// The rules `rules.for-paths` finds on `paths`, a plan's files and
+/// patterns, in one call; none when the rules plugin is not installed or not
+/// enabled, since a board without it records no obligations.
+pub(crate) fn on_plan(host: &dyn Host, paths: &[String]) -> Result<Vec<Found>, PluginError> {
     if paths.is_empty() {
         return Ok(Vec::new());
     }
@@ -122,12 +122,9 @@ fn unreadable(field: &str) -> PluginError {
     )
 }
 
-/// Every rule on `paths`, a plan's files and patterns, by its path in its
-/// `/rules/` form; none when the rules plugin is not enabled.
-pub(crate) fn on_paths(host: &dyn Host, paths: &[String]) -> Result<Vec<String>, PluginError> {
-    Ok((for_paths(host, paths)?.iter())
-        .map(|found| current(&found.rule))
-        .collect())
+/// Each rule `found`, by its path in its `/rules/` form.
+pub(crate) fn names(found: &[Found]) -> Vec<String> {
+    found.iter().map(|each| current(&each.rule)).collect()
 }
 
 /// Which of `rules` are obligations, by the `kind` their records hold.
@@ -150,15 +147,6 @@ fn obligations_among(host: &dyn Host, rules: &[String]) -> Result<Vec<String>, P
     Ok(owed)
 }
 
-/// The obligations on `paths`, a plan's files and patterns, each by the path
-/// it is stored at; none when the rules plugin is not enabled.
-pub(crate) fn obligations(host: &dyn Host, paths: &[String]) -> Result<Vec<String>, PluginError> {
-    Ok(obligations_in(host, for_paths(host, paths)?)?
-        .into_iter()
-        .map(|found| found.rule)
-        .collect())
-}
-
 /// Whether a rule of either type that Board reads is stored at `path` under
 /// either prefix.
 pub(crate) fn exists(host: &dyn Host, path: &str) -> Result<bool, PluginError> {
@@ -174,16 +162,15 @@ pub(crate) fn exists(host: &dyn Host, path: &str) -> Result<bool, PluginError> {
 /// summary and close line; none when the rules plugin is not enabled.
 pub(crate) fn on_mount(host: &dyn Host, mount: &str) -> Result<Vec<Found>, PluginError> {
     let pattern = format!("{}/**", mount.trim_end_matches('/'));
-    obligations_in(host, for_paths(host, &[pattern])?)
+    obligations_in(host, &on_plan(host, &[pattern])?)
 }
 
-/// The obligations among the rules `found`.
-fn obligations_in(host: &dyn Host, found: Vec<Found>) -> Result<Vec<Found>, PluginError> {
-    let rules: Vec<String> = found.iter().map(|each| current(&each.rule)).collect();
-    let owed = obligations_among(host, &rules)?;
-    Ok(found
-        .into_iter()
+/// The obligations among the rules `found`, read with one query.
+pub(crate) fn obligations_in(host: &dyn Host, found: &[Found]) -> Result<Vec<Found>, PluginError> {
+    let owed = obligations_among(host, &names(found))?;
+    Ok((found.iter())
         .filter(|each| owed.contains(&current(&each.rule)))
+        .cloned()
         .collect())
 }
 
@@ -245,4 +232,4 @@ pub(crate) fn listed_by(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

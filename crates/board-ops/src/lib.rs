@@ -33,8 +33,8 @@ mod verdict;
 mod version;
 
 pub use board_index::{
-    Budget, Fallback, Timings, append_timing, read_timings, source_name, stamp_timing,
-    timing_stamped,
+    Budget, Fallback, Timings, Unmarked, append_timing, read_timings, source_name, stamp_timing,
+    take_unmarked, timing_stamped,
 };
 
 pub use crate::attachment::{FetchError, MAX_INLINE_BYTES};
@@ -61,8 +61,8 @@ pub use crate::plugins::{
     SchemaProblem,
 };
 pub use crate::put::{
-    Bulk, Expect, MAX_BATCH_LINES, PutError, PutReport, Refused, Removed, Removing, Unmatched,
-    Vars, Written, folder_text,
+    Bulk, Derive, Dropped, Expect, Fill, MAX_BATCH_LINES, Mended, Mending, Mends, PutError,
+    PutReport, Refused, Removed, Removing, Unmatched, Vars, With, Written, folder_text,
 };
 pub use crate::query::{DEFAULT_LIMIT, MAX_LIMIT, QueryError, QueryReport};
 pub use crate::read::{GetReport, Listed, LsReport, ReadError};
@@ -75,7 +75,9 @@ pub use crate::trace::{Phase, Trace};
 pub use crate::types::TypeError;
 pub use crate::ui::{BindingError, Drawn, Failed, Page, PageError};
 pub use crate::verdict::{Fault, SchemaFound};
-pub use crate::version::{MinBoard, Version, declare_build, take_undated_gate_notes};
+pub use crate::version::{
+    MinBoard, Version, declare_build, running_release, take_undated_gate_notes,
+};
 pub use board_tree::LOCK_WAIT;
 
 #[cfg(test)]

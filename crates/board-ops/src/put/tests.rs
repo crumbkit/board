@@ -16,6 +16,7 @@ use crate::tests::{MANIFEST, open, task};
 
 mod batch;
 mod file;
+mod fill;
 mod folder;
 mod moved;
 mod new;

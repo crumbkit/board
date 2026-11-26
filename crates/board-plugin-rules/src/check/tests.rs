@@ -157,6 +157,17 @@ pub(crate) fn recording(files: &[(&str, &str)]) -> (Scenario, Recording) {
 /// path, and a host recording the calls made of it.
 pub(crate) fn enabling(plugins: &[&str], files: &[(&str, &str)]) -> (Scenario, Recording) {
     let scenario = Scenario::new();
+    let host = enabling_in(&scenario, plugins, files);
+    (scenario, host)
+}
+
+/// [`enabling`] over `scenario`, a repository that may already hold
+/// commits.
+pub(crate) fn enabling_in(
+    scenario: &Scenario,
+    plugins: &[&str],
+    files: &[(&str, &str)],
+) -> Recording {
     let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
     scenario.write(".board/board.json", Item::File(config));
     let mut board = Board::open(scenario.workdir(), None).unwrap();
@@ -168,7 +179,7 @@ pub(crate) fn enabling(plugins: &[&str], files: &[(&str, &str)]) -> (Scenario, R
         scenario.write(path, Item::File(text));
     }
     let board = Board::open(scenario.workdir(), None).unwrap();
-    let host = Recording {
+    Recording {
         board,
         settings: Settings {
             now: std::time::SystemTime::UNIX_EPOCH,
@@ -179,8 +190,7 @@ pub(crate) fn enabling(plugins: &[&str], files: &[(&str, &str)]) -> (Scenario, R
             cache_home: None,
         },
         calls: RefCell::default(),
-    };
-    (scenario, host)
+    }
 }
 
 /// A control with `fields` added to its requirement and purpose.
