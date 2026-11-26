@@ -2,6 +2,7 @@
 
 pub mod records;
 mod thread;
+mod threads;
 
 use board_model::{CapabilityName, RecordType};
 use board_ops::{Host, Plugin, PluginError};
@@ -35,9 +36,12 @@ impl Plugin for Requests {
     ) -> Result<Value, PluginError> {
         match capability.as_str() {
             "thread" => thread::thread(host, &input),
+            "threads" => threads::threads(host, &input),
             other => Err(PluginError {
                 code: "requests::call::unknown_capability".to_owned(),
-                message: format!("requests offers no capability {other}; it offers thread"),
+                message: format!(
+                    "requests offers no capability {other}; it offers thread and threads"
+                ),
                 fields: Map::new(),
                 hint: None,
             }),
@@ -52,7 +56,8 @@ fn manifest() -> Value {
         "version": "0.1.0",
         "description": "A plugin's request to the owner as a thread: every version of a pending effect, \
             the owner's answers and the owner's replies. Run `board --personal requests thread \
-            --effect <id>` with any version's id. docs/plugins/built-in/requests.md in Board's repository says \
+            --effect <id>` with any version's id, or `board --personal requests threads` for every \
+            request with a pending version. docs/plugins/built-in/requests.md in Board's repository says \
             where a reply lives.",
         "metadata": {"area": "effects"},
         "types": [ReplyRecord::TYPE],
@@ -62,6 +67,19 @@ fn manifest() -> Value {
                 and the owner's replies to them, oldest first.",
             "inputSchema": schema_of::<thread::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<thread::Output>(SchemaSettings::draft2020_12().for_serialize()),
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false,
+            },
+            "_meta": {},
+        }, {
+            "name": "threads",
+            "description": "The thread of every request with a pending version, as `thread` \
+                returns it, ordered by board, plugin, op and path.",
+            "inputSchema": schema_of::<threads::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": schema_of::<threads::Output>(SchemaSettings::draft2020_12().for_serialize()),
             "annotations": {
                 "readOnlyHint": true,
                 "destructiveHint": false,

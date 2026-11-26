@@ -13,7 +13,7 @@ ok places 0.1.0 disabled offers attach, detach, list
 ok plans 0.1.0 disabled offers open, answer, withdraw, migrate, waiting, sweep, ask, stale, decide
 ok priorities 0.1.0 disabled offers list, set, move, drop, confirm
 ok prompts 0.1.0 disabled offers get, list
-ok requests 0.1.0 disabled offers thread
+ok requests 0.1.0 disabled offers thread, threads
 ok review 0.2.0 disabled offers run, post, covered
 ok rules 0.1.0 disabled offers for-path, for-paths, check, evaluate, from-standards, migrate, report
 ok runs 0.1.0 disabled offers latest, trend, migrate
