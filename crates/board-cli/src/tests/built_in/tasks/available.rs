@@ -326,7 +326,7 @@ fn a_call_syncs_the_repos_in_scope_and_an_after_in_a_mount_resolves_in_that_moun
         titles_of(&["First"]),
         "a clone fetched within the minute is read as it is"
     );
-    fetched_long_ago(&clone);
+    fetch_forgotten(&clone);
     let output = tasks
         .call("available", &["--repo", "/repos/personal"])
         .unwrap();
@@ -337,15 +337,10 @@ fn a_call_syncs_the_repos_in_scope_and_an_after_in_a_mount_resolves_in_that_moun
     );
 }
 
-/// Dates `clone`'s last fetch an hour ago, as a call a minute or more
-/// after the last one finds it.
-fn fetched_long_ago(clone: &Path) {
-    let fetch_head = std::fs::File::options()
-        .write(true)
-        .open(clone.join(".git/FETCH_HEAD"))
-        .unwrap();
-    let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_hours(1);
-    fetch_head.set_modified(hour_ago).unwrap();
+/// Empties `clone`'s `FETCH_HEAD`, as git leaves it after a fetch that
+/// failed, so the next call fetches as one a minute later would.
+fn fetch_forgotten(clone: &Path) {
+    write_file(&clone.join(".git/FETCH_HEAD"), "");
 }
 
 #[test]
