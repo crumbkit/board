@@ -268,15 +268,15 @@
     {
       "rule": "help-budget/command",
       "applies_to": "board put",
-      "reason": "put has seven options of its own (--new, --var, --expect, --batch, --bulk, --file and --wait), and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes. Its page also ends with the Effects: line and a global flags line that names --no-input.",
+      "reason": "put has eight options of its own (--new, --var, --expect, --batch, --bulk, --file, --wait and --strict), and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes. Its page also ends with the Effects: line and a global flags line that names --no-input.",
       "costs": [
-        "Each read of the page can cost 420 bytes more than the default, about 105 tokens."
+        "Each read of the page can cost 510 bytes more than the default, about 128 tokens."
       ],
       "budget": {
-        "bytes": 1620,
+        "bytes": 1710,
         "default": 1200,
-        "extra_bytes": 420,
-        "extra_tokens": 105
+        "extra_bytes": 510,
+        "extra_tokens": 128
       }
     },
     {
