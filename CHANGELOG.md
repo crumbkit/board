@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.4 (2026-11-26)
+
 - A warm `board refs`, and each plugin call that asks `host.refs`, reads the
   references of each source the index keeps a decision for, with where they
   resolved, from a new `resolutions` table, and decides only the sources
