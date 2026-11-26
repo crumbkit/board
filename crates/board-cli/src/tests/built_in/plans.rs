@@ -899,3 +899,67 @@ fn a_decision_whose_ref_names_a_check_after_a_path_that_exists_checks_clean_and_
         );
     }
 }
+
+/// The session a command-line put fills `by` from.
+const SESSION: (&str, &str) = ("BOARD_SESSION", "local_84ccdcef-4c52");
+
+#[test]
+fn put_fills_a_questions_by_asked_and_status_from_its_session_and_time() {
+    let board = board();
+    let question = json!({"$type": "plans/question/v1", "question": "Which way?"});
+    let arguments = ["--json", "put", "/projects/a/questions/q"];
+    let output = board.run_inheriting(&arguments, &question.to_string(), &[SESSION]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    let written: Value = serde_json::from_str(&board.read("projects/a/questions/q.json")).unwrap();
+    assert_eq!(written["by"], json!({"session": "local_84ccdcef-4c52"}));
+    assert_eq!(written["status"], json!("open"));
+    assert!(board_model::moment(written["asked"].as_str().unwrap()).is_some());
+    let report = json(&output);
+    let filled: Vec<&str> = (report["data"]["filled"].as_array().unwrap().iter())
+        .map(|filled| filled["pointer"].as_str().unwrap())
+        .collect();
+    assert_eq!(filled, ["/by", "/asked", "/status"]);
+}
+
+#[test]
+fn put_with_no_session_refuses_a_question_with_no_by_as_before() {
+    let board = board();
+    let question = json!({"$type": "plans/question/v1", "question": "Which way?"});
+    let output = board.run_with(&["put", "/projects/a/questions/q"], &question.to_string());
+    assert_eq!(output.code, 1, "{}", text(&output.stderr));
+    assert!(text(&output.stderr).contains("board::record::invalid"));
+    let host = ("CLAUDE_CODE_HOST_SESSION_ID", "local_9ba41ad4");
+    let output = board.run_inheriting(
+        &["put", "/projects/a/questions/q"],
+        &question.to_string(),
+        &[host],
+    );
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+}
+
+#[test]
+fn put_drops_a_decisions_summary_with_a_warning_and_strict_refuses_it() {
+    let board = board();
+    let decision = decision(&json!({"summary": "In short.", "alternative": ["Wait."]}));
+    let strict = board.run_with(&["put", "--strict", "/projects/a/decisions/d"], &decision);
+    assert_eq!(strict.code, 1, "{}", text(&strict.stderr));
+    assert!(text(&strict.stderr).contains("board::record::invalid"));
+    let output = board.run_with(&["--json", "put", "/projects/a/decisions/d"], &decision);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    let written: Value = serde_json::from_str(&board.read("projects/a/decisions/d.json")).unwrap();
+    assert_eq!(written.get("summary"), None);
+    assert_eq!(written.get("alternative"), None);
+    let stderr = text(&output.stderr);
+    assert!(
+        stderr.contains(
+            "warning: /projects/a/decisions/d: dropped /alternative, which its type does not name; the type has /alternatives"
+        ),
+        "{stderr}"
+    );
+    assert!(stderr.contains("dropped /summary"), "{stderr}");
+    let dropped = &json(&output)["data"]["dropped"];
+    assert_eq!(
+        dropped[0],
+        json!({"near": "/alternatives", "path": "/projects/a/decisions/d", "pointer": "/alternative"})
+    );
+}

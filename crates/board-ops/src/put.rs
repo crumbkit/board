@@ -7,9 +7,9 @@ use std::convert::Infallible;
 use std::time::Duration;
 
 use board_model::{
-    BINARY_NAME, Classified, Code, Fields, Found, FrontmatterError, JsonError, Lined, Location,
-    LogicalPath, MAX_PATH_BYTES, MAX_RECORD_BYTES, Object, ObjectId, PathError, RecordType,
-    Refusal, Role, canonical_json, classify, parse_json,
+    BINARY_NAME, Classified, Code, Fields, Found, Lined, Location, LogicalPath, MAX_PATH_BYTES,
+    MAX_RECORD_BYTES, Object, ObjectId, PathError, RecordType, Refusal, Role, canonical_json,
+    classify, parse_json,
 };
 use board_tree::{
     Directory, GitError, LOCK_WAIT, Lock, PinError, Reader, ResolveError, Resolver, Working,
@@ -27,7 +27,9 @@ use crate::verdict::{self, Admitted, Fault, SchemaFound};
 
 mod bulk;
 mod commit;
+pub(crate) mod fill;
 pub use bulk::Bulk;
+pub use fill::{Derive, Dropped, Fill, Mended, Mending, Mends, With};
 
 /// What a put expects to find where it writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,6 +75,9 @@ pub struct PutReport {
     /// The paths a removal that ignores what names nothing found absent.
     pub absent: Vec<LogicalPath>,
     pub commit: Option<ObjectId>,
+    /// What a command-line put filled and dropped in each record it wrote
+    /// that it changed, in the order written.
+    pub mended: Vec<Mended>,
 }
 
 impl PutReport {
@@ -83,6 +88,7 @@ impl PutReport {
             removed: Vec::new(),
             absent: Vec::new(),
             commit,
+            mended: Vec::new(),
         }
     }
 
@@ -104,6 +110,8 @@ pub(crate) struct Prepared {
     pub(crate) canonical: Vec<u8>,
     pub(crate) target: board_tree::Target,
     pub(crate) admitted: Admitted,
+    /// What a command-line put filled and dropped in the record.
+    pub(crate) mends: Mends,
 }
 
 /// A working-tree file a put removes, only if it still holds `blob`.
@@ -170,6 +178,30 @@ impl<'r> Schemas<'r> {
     /// takes the field, so a caller can borrow the other fields beside it.
     fn reader<'s>(reader: &'s mut Option<Reader<'r>>, board: &'r Board) -> &'s mut Reader<'r> {
         reader.get_or_insert_with(|| board.repository().reader())
+    }
+
+    /// The schema of `record_type` in `board`'s working tree, read and
+    /// compiled the first time, or what is there instead.
+    pub(crate) fn schema(
+        &mut self,
+        board: &'r Board,
+        record_type: &RecordType,
+    ) -> Result<&Schema, SchemaFound> {
+        let Self {
+            held,
+            compiled,
+            reader,
+        } = self;
+        let schema = match held.entry(record_type.clone()) {
+            Entry::Occupied(held) => held.into_mut(),
+            Entry::Vacant(entry) => {
+                let reader = Self::reader(reader, board);
+                let schema = board.read_schema(reader, entry.key());
+                *compiled += usize::from(schema.is_ok());
+                entry.insert(schema)
+            }
+        };
+        schema.as_ref().map_err(SchemaFound::clone)
     }
 }
 
@@ -239,7 +271,12 @@ impl Board {
         bytes: &[u8],
     ) -> Result<Prepared, PutError> {
         let _timed = self.timed("put.validate");
-        let admitted = self.check_record(schemas, bytes);
+        let applied = match &self.mend {
+            Some(mend) => mend.apply(bytes, |record_type| schemas.schema(self, record_type).ok()),
+            None => fill::Applied::none(bytes),
+        };
+        let admitted = (self.check_record(schemas, &applied.bytes))
+            .map_err(|refused| applied.refused(refused));
         let pointer = admitted.as_ref().is_ok_and(|admitted| admitted.pointer);
         // A record through a mount is checked against the mounted board's
         // schemas, so the mount is named before this board's verdict.
@@ -262,6 +299,7 @@ impl Board {
             canonical,
             target,
             admitted,
+            mends: applied.mends,
         })
     }
 
@@ -351,8 +389,12 @@ impl Board {
             };
         }
         let removed = removed.iter().map(Removal::removed).collect();
+        let mended = (prepared.iter().zip(&writes))
+            .filter_map(|(item, written)| item.mends.at(&written.display))
+            .collect();
         Ok(PutReport {
             removed,
+            mended,
             ..PutReport::new(writes, commit)
         })
     }
@@ -375,25 +417,8 @@ impl Board {
         schemas: &mut Schemas<'b>,
         classified: Classified,
     ) -> Result<Admitted, Fault> {
-        let find = move |record_type: &RecordType| {
-            // Moving the borrow out makes this `FnOnce`, so it can lend the schema.
-            let Schemas {
-                held,
-                compiled,
-                reader,
-                ..
-            } = { schemas };
-            let schema = match held.entry(record_type.clone()) {
-                Entry::Occupied(held) => held.into_mut(),
-                Entry::Vacant(entry) => {
-                    let reader = Schemas::reader(reader, self);
-                    let schema = self.read_schema(reader, entry.key());
-                    *compiled += usize::from(schema.is_ok());
-                    entry.insert(schema)
-                }
-            };
-            schema.as_ref().map_err(SchemaFound::clone)
-        };
+        // Moving the borrow in makes this `FnOnce`, so it can lend the schema.
+        let find = move |record_type: &RecordType| { schemas }.schema(self, record_type);
         verdict::record(classified, find)
     }
 
@@ -469,49 +494,6 @@ impl Board {
             tally.add(&reference.pointer, Some(&dangling));
         }
         tally.first()
-    }
-}
-
-/// Why a record is refused, with what failed when Board knows more than the
-/// code says.
-#[derive(Debug, thiserror::Error)]
-pub enum Refused {
-    #[error(transparent)]
-    Json(#[from] JsonError),
-    #[error(transparent)]
-    Frontmatter(#[from] FrontmatterError),
-    #[error(transparent)]
-    Fault(#[from] Fault),
-    #[error("it is empty")]
-    Empty,
-    #[error("it is not a json object")]
-    NotAnObject,
-    #[error("it has no $type")]
-    NoType,
-}
-
-impl Refused {
-    pub fn code(&self) -> Code {
-        match self {
-            Self::Json(error) => error.code(),
-            Self::Frontmatter(error) => error.code(),
-            Self::Fault(fault) => fault.code(),
-            Self::Empty => Code::JsonParse,
-            Self::NotAnObject | Self::NoType => Code::PutInvalid,
-        }
-    }
-
-    /// The type and schema file of a record with no usable schema, or the
-    /// pointer a schema refused.
-    pub fn fields(&self) -> Fields {
-        match self {
-            Self::Fault(fault) => fault.fields(),
-            Self::Json(_)
-            | Self::Frontmatter(_)
-            | Self::Empty
-            | Self::NotAnObject
-            | Self::NoType => Fields::default(),
-        }
     }
 }
 
@@ -745,19 +727,11 @@ pub(crate) fn checked(bytes: &[u8]) -> Result<Classified, Refused> {
     Ok(Role::Json.classify(Some(bytes)))
 }
 
-/// What a refused record is, after "the record" or its path.
-fn said(refused: &Refused) -> String {
-    match refused {
-        Refused::Fault(Fault::Code(_)) => "is refused".to_owned(),
-        Refused::Fault(Fault::Record(error)) => error.to_string(),
-        _ => format!("is refused: {refused}"),
-    }
-}
-
 mod batch;
 mod file;
 mod folder;
 mod new;
+mod refused;
 mod remove;
 mod through;
 
@@ -765,6 +739,8 @@ pub use batch::MAX_BATCH_LINES;
 pub(crate) use batch::{Checked, ReadLine};
 pub use folder::Vars;
 pub use new::folder_text;
+pub use refused::Refused;
+use refused::said;
 pub use remove::{Removing, Unmatched};
 use through::{Crossing, Sent};
 

@@ -31,12 +31,16 @@ in. `<project>` names what the record concerns, such as the repository
    `plans/decision/v1`. Write it as its own record, even while you write a
    change's plan; the plan can name it.
 
-       echo '{"$type": "plans/decision/v1", "decision": "<what was chosen>", "why": "<the reason>", "alternatives": ["<what was not chosen>"], "by": {"program": "claude-code"}, "decided": "<now>"}' | board -C <board> put --new --var project=<project>
+       echo '{"$type": "plans/decision/v1", "decision": "<what was chosen>", "why": "<the reason>", "alternatives": ["<what was not chosen>"]}' | board -C <board> put --new --var project=<project>
 
    It prints the path it wrote, `/projects/<project>/decisions/<id>`.
-   `decided` is the UTC time, as `date -u +%Y-%m-%dT%H:%M:%SZ` prints it. `by` names who decided, with any of
-   `session` (a `local_` id), `program`, `person` and `agent`; the owner's
-   decision names the owner as `person`. Add `refs` for the board paths the
+   `board put` fills `by` with your session, from `BOARD_SESSION` or a
+   `local_` Claude Code session id, and `decided` with the time now. Give
+   either when you know better: `by` names who decided, with any of
+   `session` (a `local_` id), `program`, `person` and `agent`, and the
+   owner's decision names the owner as `person`. `put` drops a field the
+   type does not name and warns, so read the warning and move the text to
+   the field it names. Add `refs` for the board paths the
    decision concerns, such as a plan or an answer, `urls` for web pages such
    as a pull request, and `"review": "wanted"` when the owner should look
    at it.

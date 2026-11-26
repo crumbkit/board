@@ -1177,7 +1177,8 @@ fn capabilities() -> BTreeMap<String, BTreeMap<String, Field>> {
 }
 
 /// A put that holds every field a put report can print: a degraded write
-/// reached through a mount, a removal, an absent path and a commit.
+/// reached through a mount, a removal, an absent path, a commit, and a
+/// field filled and one dropped on a batch's line.
 fn full_put() -> PutReport {
     let blob = Scenario::new().blob("{}");
     let board = |repository: &str| board_model::Board {
@@ -1223,6 +1224,17 @@ fn full_put() -> PutReport {
         }],
         absent: vec!["/tasks/c".parse().unwrap()],
         commit: Some(blob),
+        mended: vec![board_ops::Mended {
+            path: "/vendor/lib/tasks/b".parse().unwrap(),
+            mends: board_ops::Mends {
+                line: Some(1),
+                filled: vec!["/asked".to_owned()],
+                dropped: vec![board_ops::Dropped {
+                    pointer: "/alternative".to_owned(),
+                    near: Some("/alternatives".to_owned()),
+                }],
+            },
+        }],
     }
 }
 

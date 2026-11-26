@@ -360,7 +360,10 @@ impl Board {
                 }
             };
             boards.push((number, board));
-            let Some(item) = item else { continue };
+            let Some(mut item) = item else { continue };
+            if let Step::Write(prepared) = &mut item {
+                prepared.mends.line = Some(number);
+            }
             let Some(written) = item.file().map(str::to_owned) else {
                 steps.push((number, item));
                 continue;
