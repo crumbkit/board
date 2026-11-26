@@ -73,7 +73,7 @@ impl Repository {
     }
 
     /// `shallow` or `partial` when the clone lacks history, else `None`.
-    fn incomplete(&self, remote: &str) -> Option<&'static str> {
+    pub(super) fn incomplete(&self, remote: &str) -> Option<&'static str> {
         let git = self.git();
         if git.is_shallow() {
             return Some("shallow");

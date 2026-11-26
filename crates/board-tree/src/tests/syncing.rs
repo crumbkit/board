@@ -613,7 +613,7 @@ fn a_clone_never_fetched_or_whose_last_fetch_failed_syncs_in_full() {
     let second = remote.commit(&[("a.json", "{}"), ("b.json", "[]")]);
     assert!(!clone.workdir().join(".git/FETCH_HEAD").exists());
     assert_eq!(unless_fetched(&clone, false, WITHIN).new, second);
-    // git empties FETCH_HEAD when a fetch fails or is stopped.
+    // A fetch that fails after reaching the remote leaves FETCH_HEAD empty.
     clone.write(".git/FETCH_HEAD", Item::Fresh(""));
     let third = remote.commit(&[("a.json", "{}"), ("b.json", "[]"), ("c.json", "[]")]);
     assert_eq!(unless_fetched(&clone, false, WITHIN).new, third);
@@ -670,4 +670,39 @@ fn a_sync_that_pushes_always_fetches_and_one_that_does_not_skips_within_the_wind
     assert_eq!(unless_fetched(&clone, false, WITHIN).new, first);
     let pushed = unless_fetched(&clone, true, WITHIN);
     assert_eq!((pushed.new, pushed.attempts), (second, 1), "{pushed:?}");
+}
+
+#[test]
+fn a_clone_mid_merge_or_shallow_within_the_window_is_refused_as_a_full_sync_is_and_its_twin_is_skipped()
+ {
+    for (blocker, code) in [
+        (".git/MERGE_HEAD", Code::SyncMerging),
+        (".git/shallow", Code::SyncShallow),
+    ] {
+        let (_remote, clone, first, _) = fetched_then_moved();
+        clone.write(blocker, Item::Fresh(&format!("{first}\n")));
+        let error = clone
+            .open()
+            .sync_unless_fetched(false, WITHIN, Deadline::after(GIT_DEADLINE), Duration::ZERO)
+            .unwrap_err();
+        assert_eq!(error.code(), code, "{blocker}: {error}");
+        clone.write(blocker, Item::Deleted);
+        let skipped = unless_fetched(&clone, false, WITHIN);
+        assert_eq!((skipped.new, skipped.attempts), (first, 0), "{blocker}");
+    }
+}
+
+#[test]
+fn a_partial_clone_skipped_within_the_window_is_refused_as_shallow_once_marked_partial() {
+    let (_remote, clone, first, _) = fetched_then_moved();
+    assert_eq!(unless_fetched(&clone, false, WITHIN).new, first);
+    clone.write(
+        ".git/config",
+        Item::Appended("[remote \"origin\"]\n\tpromisor = true\n"),
+    );
+    let error = clone
+        .open()
+        .sync_unless_fetched(false, WITHIN, Deadline::after(GIT_DEADLINE), Duration::ZERO)
+        .unwrap_err();
+    assert_eq!(error.code(), Code::SyncShallow, "{error}");
 }

@@ -3,7 +3,7 @@
 //! walked file (docs/architecture/index.md).
 
 use std::cell::OnceCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use board_model::{Code, Source};
 use board_tree::{Entry, Status};
@@ -98,7 +98,14 @@ impl Lookup {
                     targets.degraded.entry(at).or_insert(code);
                 }
             }
+            // Only the first walk of each source counts, as a scan for the
+            // source's walk finds the first: a later walk of a source two
+            // mounts share adds nothing.
+            let mut seen = HashSet::new();
             for (walk, (source, entries)) in snapshot.walked.iter().enumerate() {
+                if !seen.insert(source) {
+                    continue;
+                }
                 for (file, entry) in entries.iter().enumerate() {
                     let at = (source.clone(), entry.path.clone());
                     targets.walked.entry(at).or_insert((walk, file));

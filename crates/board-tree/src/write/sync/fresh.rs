@@ -13,10 +13,13 @@ impl Repository {
     /// that fetch brought. It then changes nothing, takes no lock, and
     /// returns HEAD as both `old` and `new`, the remote-tracking commit as
     /// `fetched`, and zero `attempts`. The last fetch is fresh when git's
-    /// `FETCH_HEAD` is not empty and was written less than `within` ago;
-    /// git empties it when a fetch fails or is stopped, so a failed fetch
-    /// never counts. Any other clone, and every sync with `push`, syncs in
-    /// full (docs/architecture/writes/sync/fresh.md).
+    /// `FETCH_HEAD` is not empty and was written less than `within` ago.
+    /// git rewrites `FETCH_HEAD` only after it has reached the remote, so a
+    /// fetch that cannot reach it leaves the previous fetch's file and date,
+    /// and one that fails after that leaves it empty, which never counts.
+    /// A clone mid-merge or lacking history syncs in full, so it is refused
+    /// as [`Self::sync`] refuses it. Any other clone, and every sync with
+    /// `push`, syncs in full (docs/architecture/writes/sync/fresh.md).
     pub fn sync_unless_fetched(
         &self,
         push: bool,
@@ -31,10 +34,14 @@ impl Repository {
     }
 
     /// HEAD as a sync that fetched nothing reports it, when the last fetch
-    /// is younger than `within` and HEAD holds the remote-tracking commit,
-    /// or `None` when the sync must run in full.
+    /// is younger than `within`, HEAD holds the remote-tracking commit and
+    /// no refusal before integration applies, or `None` when the sync must
+    /// run in full.
     fn fetched_within(&self, within: Duration) -> Result<Option<Synced>, SyncError> {
         let upstream = self.upstream()?;
+        if self.operation_in_progress().is_some() || self.incomplete(&upstream.remote).is_some() {
+            return Ok(None);
+        }
         let fresh = std::fs::metadata(self.git_dir().join("FETCH_HEAD"))
             .ok()
             .filter(|metadata| metadata.len() > 0)

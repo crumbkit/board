@@ -1081,3 +1081,37 @@ fn a_snapshots_lookup_finds_for_each_object_what_a_scan_of_every_reference_and_e
     }
     assert!(found.iter().all(|count| *count > 0), "{found:?}");
 }
+
+/// Two mounts of one commit, and a second walk of that commit's source
+/// that lists a file the first walk does not: `refs` reads the first walk
+/// of each source only, so the lookup finds that file nowhere, as the scan
+/// does.
+#[test]
+fn a_lookup_reads_only_the_first_walk_of_a_source_two_mounts_share_as_a_scan_does() {
+    let (scenario, _library) = mounted();
+    let mount = std::fs::read_to_string(scenario.workdir().join("vendor.json")).unwrap();
+    scenario.write("again.json", Item::File(&mount));
+    let board = open(&scenario);
+    let mut snapshot = board
+        .snapshot(board.index(None).unwrap(), None, Need::Refs)
+        .unwrap();
+    let (shared, entries) = (snapshot.walked.iter())
+        .find(|(source, _)| matches!(source, Source::Commit(_)))
+        .cloned()
+        .unwrap();
+    let mut only_later = entries[0].clone();
+    only_later.path = "only/in/the/later/walk.json".to_owned();
+    let mut shadowed = entries[0].clone();
+    shadowed.blob = None;
+    snapshot
+        .walked
+        .push((shared.clone(), vec![only_later.clone(), shadowed.clone()]));
+    let lookup = super::Lookup::new(&snapshot);
+    for path in [&only_later.path, &shadowed.path] {
+        let looked = lookup
+            .walked(&snapshot, &shared, path)
+            .map(|entry| entry.blob);
+        assert_eq!(looked, scanned(&snapshot, &shared, path).3, "{path}");
+    }
+    assert_eq!(lookup.walked(&snapshot, &shared, &only_later.path), None);
+}
