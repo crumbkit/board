@@ -62,14 +62,19 @@ fn put_as(printer: Printer, report: &PutReport, text: String, note: Option<Strin
             Some(line) => format!("line {line}, {}", mended.path),
             None => mended.path.to_string(),
         };
-        (mended.mends.dropped.iter()).map(move |dropped| {
+        let unfilled = (mended.mends.unfilled.iter()).map({
+            let at = at.clone();
+            move |why| format!("warning: {at}: could not fill {why}")
+        });
+        let dropped = (mended.mends.dropped.iter()).map(move |dropped| {
             let near = (dropped.near.as_ref())
                 .map_or_else(String::new, |near| format!("; the type has {near}"));
-            Note::Always(format!(
+            format!(
                 "warning: {at}: dropped {}, which its type does not name{near}",
                 dropped.pointer
-            ))
-        })
+            )
+        });
+        dropped.chain(unfilled).map(Note::Always)
     });
     let answer = said(json!(put_data(report)), text);
     let notes = (dropped.chain(notes).chain(temporary)).chain(note.map(Note::Text));

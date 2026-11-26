@@ -19,9 +19,11 @@
   `patch_ids`, from its `range` in the directory the put runs in. They also
   drop a field the schema does not name, at any depth, with one warning on
   stderr per field that names a known field one edit away, such as
-  `/alternatives`. `--json` lists both in `filled` and `dropped`, and
-  `--strict` refuses as before. A plugin's write through its host fills and
-  drops nothing.
+  `/alternatives`. A field one edit from a field the record lacks is
+  refused with a hint to rename it, and a fill that could not run prints
+  why. `--json` lists both in `filled` and `dropped`, and `--strict`
+  refuses as before. A plugin's write through its host fills and drops
+  nothing.
 - Board runs the command an agent meant for a few common guesses that
   clap refused: `board cat` and `board show` run `get`, `board list` runs
   `ls` and `board schema` runs `schemas`; a long flag given with hyphens

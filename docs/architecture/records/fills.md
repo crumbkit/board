@@ -21,19 +21,27 @@ top-level field. A fill never replaces a field the record holds.
 | `plans/decision/v1` | `decided` | the put's time |
 | `review/report/v1` | `patch_ids` | each commit of `range` that has a diff, oldest first, as `review.run` records them |
 
-The session is `BOARD_SESSION`, or else `CLAUDE_CODE_HOST_SESSION_ID` when it
-starts with `local_`. An id that is not `local_` and lowercase hex is not
-used, and `by` stays absent. A subagent's put names its host's session.
+The session is `BOARD_SESSION`, or else `CLAUDE_CODE_HOST_SESSION_ID`. Each
+is used only when it is `local_` then lowercase hex and `-`, so an invalid
+`BOARD_SESSION` does not hide a valid host session. With neither, `by` stays
+absent. A subagent's put names its host's session.
 
 The patch ids are read with git in the directory the put started in. When
 that directory lacks a commit of `range`, the field stays absent, and the
-schema's refusal names the commit.
+refusal names the commit and says to run the put from a checkout that holds
+it, or to give `patch_ids`.
+
+A fill that cannot run leaves its field absent. When the check still admits
+the record, the put prints `warning: <path>: could not fill <pointer>: <why>`;
+when the check refuses it, the refusal ends with the same reason.
 
 ## Drops
 
 Where the schema closes an object with `additionalProperties: false`, a field
 it does not name is removed, at any depth. A field that only a branch of
-`anyOf` or `oneOf` refuses is kept, so the check refuses it. Each drop prints
+`anyOf` or `oneOf` refuses is kept, so the check refuses it. A field one edit
+from a field the object lacks, such as `alternative` in a decision with no
+`alternatives`, is kept too, and the refusal says to rename it. Each drop prints
 one warning on stderr, with the field's pointer and a field the type names
 one edit away, such as
 `warning: /projects/a/decisions/d: dropped /alternative, which its type does not name; the type has /alternatives`.
@@ -55,6 +63,7 @@ message names the fields dropped.
 
 Nothing on disk changes before `written`. A batch takes every line through
 `checked` before it writes any, so it still writes all or nothing. A kill
-during `filled` or `dropped` leaves the board as it was. A git failure or
-timeout in the `patch_ids` fill leaves the field absent, and the check
-refuses the put.
+during `filled` or `dropped` leaves the board as it was. A fill that fails,
+such as a git failure or timeout in the `patch_ids` fill, leaves its field
+absent and never refuses by itself; the check decides, and the put's warning
+or refusal says why the fill did not run.

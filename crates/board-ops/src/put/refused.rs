@@ -22,11 +22,11 @@ pub enum Refused {
     NoType,
     /// A record still refused after a command-line put dropped the fields
     /// its type does not name, or could not fill one.
-    #[error("{}", mended(refused, dropped, unfilled))]
+    #[error("{refused}{}", lost(notes))]
     Mended {
         refused: Box<Self>,
-        dropped: Vec<String>,
-        unfilled: Vec<String>,
+        /// What the put changed or kept, each a clause after "; ".
+        notes: Vec<String>,
     },
 }
 
@@ -62,31 +62,15 @@ pub(super) fn said(refused: &Refused) -> String {
     match refused {
         Refused::Fault(Fault::Code(_)) => "is refused".to_owned(),
         Refused::Fault(Fault::Record(error)) => error.to_string(),
-        Refused::Mended {
-            refused,
-            dropped,
-            unfilled,
-        } => said(refused) + &lost(dropped, unfilled),
+        Refused::Mended { refused, notes } => said(refused) + &lost(notes),
         _ => format!("is refused: {refused}"),
     }
 }
 
-/// A mended refusal after "is refused: ".
-fn mended(refused: &Refused, dropped: &[String], unfilled: &[String]) -> String {
-    refused.to_string() + &lost(dropped, unfilled)
-}
-
-/// What a refused record lost before its check: the fields dropped, and
-/// why each field that could not be filled was not.
-fn lost(dropped: &[String], unfilled: &[String]) -> String {
-    let dropped = (!dropped.is_empty()).then(|| {
-        format!(
-            "; before the check, board put dropped {}, which its type does not name",
-            dropped.join(", ")
-        )
-    });
-    let unfilled = unfilled
+/// What a refused record lost or kept before its check, each note after
+/// "; ".
+fn lost(notes: &[String]) -> String {
+    notes
         .iter()
-        .map(|why| format!("; board put could not fill {why}"));
-    dropped.into_iter().chain(unfilled).collect()
+        .fold(String::new(), |lost, note| lost + "; " + note)
 }

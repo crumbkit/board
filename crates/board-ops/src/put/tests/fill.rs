@@ -15,6 +15,7 @@ use crate::{Board, Settings, Variables};
 /// A question: who asked, when, its status and options, each closed.
 const QUESTION_SCHEMA: &str = r#"{
     "type": "object",
+    "x-board-folder": "/q/{project}",
     "additionalProperties": false,
     "required": ["$type", "question", "by", "asked", "status"],
     "properties": {
@@ -126,9 +127,10 @@ fn written(scenario: &Scenario, physical: &str) -> Value {
     serde_json::from_slice(&file(scenario, physical).unwrap()).unwrap()
 }
 
-fn mends(filled: &[&str], dropped: &[(&str, Option<&str>)]) -> Mends {
+fn mends(filled: &[&str], dropped: &[(&str, Option<&str>)], unfilled: &[&str]) -> Mends {
     Mends {
         line: None,
+        unfilled: unfilled.iter().map(|why| (*why).to_owned()).collect(),
         filled: filled.iter().map(|pointer| (*pointer).to_owned()).collect(),
         dropped: (dropped.iter())
             .map(|(pointer, near)| Dropped {
@@ -158,7 +160,7 @@ fn a_question_with_no_by_asked_or_status_is_written_with_each_filled() {
     assert_eq!(report.mended[0].path.to_string(), "/q/a");
     assert_eq!(
         report.mended[0].mends,
-        mends(&["/by", "/asked", "/status"], &[])
+        mends(&["/by", "/asked", "/status"], &[], &[])
     );
 }
 
@@ -183,7 +185,12 @@ fn with_no_session_a_question_with_no_by_is_refused_as_before() {
     let question = json!({"$type": "lr/question/v1", "question": "Which?"});
     let error = put(&mended(&scenario, None), "/q/a", &question).unwrap_err();
     assert_eq!(error.code(), Code::RecordInvalid);
-    assert!(error.to_string().contains("\"by\""), "{error}");
+    let message = error.to_string();
+    assert!(message.contains("\"by\""), "{message}");
+    assert!(
+        message.contains("could not fill /by: the put has no session; set BOARD_SESSION"),
+        "{message}"
+    );
     assert_eq!(file(&scenario, "q/a.json"), None);
 }
 
@@ -212,7 +219,10 @@ fn a_decision_with_an_extra_summary_is_written_without_it() {
         written(&scenario, "d/a.json"),
         json!({"$type": "lr/decision/v1", "decision": "d", "why": "w"})
     );
-    assert_eq!(report.mended[0].mends, mends(&[], &[("/summary", None)]));
+    assert_eq!(
+        report.mended[0].mends,
+        mends(&[], &[("/summary", None)], &[])
+    );
 }
 
 #[test]
@@ -226,15 +236,38 @@ fn without_mending_a_decision_with_an_extra_summary_is_refused_at_its_root() {
 }
 
 #[test]
-fn a_misspelled_field_is_dropped_naming_the_field_one_edit_away() {
+fn a_misspelled_field_of_a_field_the_record_lacks_is_kept_and_refused_naming_that_field() {
     let scenario = questions();
     let decision =
         json!({"$type": "lr/decision/v1", "decision": "d", "why": "w", "alternative": ["x"]});
+    let error = put(&mended(&scenario, Some(SESSION)), "/d/a", &decision).unwrap_err();
+    assert_eq!(error.code(), Code::RecordInvalid);
+    let message = error.to_string();
+    assert!(
+        message.contains(
+            "board put kept /alternative, which its type does not name, since it is one edit from /alternatives, which the record lacks; rename it"
+        ),
+        "{message}"
+    );
+    assert_eq!(file(&scenario, "d/a.json"), None);
+}
+
+#[test]
+fn a_misspelled_field_of_a_field_the_record_holds_is_dropped_naming_that_field() {
+    let scenario = questions();
+    let decision = json!({
+        "$type": "lr/decision/v1",
+        "decision": "d",
+        "why": "w",
+        "alternatives": ["y"],
+        "alternative": ["x"],
+    });
     let report = put(&mended(&scenario, Some(SESSION)), "/d/a", &decision).unwrap();
     assert_eq!(
         report.mended[0].mends,
-        mends(&[], &[("/alternative", Some("/alternatives"))])
+        mends(&[], &[("/alternative", Some("/alternatives"))], &[])
     );
+    assert_eq!(written(&scenario, "d/a.json")["alternatives"], json!(["y"]));
 }
 
 #[test]
@@ -282,16 +315,75 @@ fn a_fill_that_cannot_be_made_leaves_the_field_out_and_the_refusal_says_why() {
         "{message}"
     );
     let admitted = json!({"$type": "lr/decision/v1", "decision": "d"});
-    assert!(put(&mended(&scenario, Some(SESSION)), "/d/a", &admitted).is_ok());
+    let report = put(&mended(&scenario, Some(SESSION)), "/d/a", &admitted).unwrap();
+    assert_eq!(
+        report.mended[0].mends,
+        mends(&[], &[], &["/why: abc names no commit in /checkout"])
+    );
+}
+
+#[test]
+fn a_new_put_in_its_types_folder_fills_and_drops_as_a_put_at_a_path_does() {
+    let scenario = questions();
+    let question = json!({"$type": "lr/question/v1", "question": "Which?", "summary": "s"});
+    let vars = [("project".to_owned(), "p".to_owned())]
+        .into_iter()
+        .collect();
+    let report = mended(&scenario, Some(SESSION))
+        .put_declared_waiting(
+            &vars,
+            question.to_string().as_bytes(),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+    let display = report.writes[0].display.to_string();
+    assert!(display.starts_with("/q/p/"), "{display}");
+    assert_eq!(
+        report.mended[0].mends,
+        mends(&["/by", "/asked", "/status"], &[("/summary", None)], &[])
+    );
+    let error = crate::tests::open(&scenario)
+        .put_declared_waiting(
+            &vars,
+            question.to_string().as_bytes(),
+            Duration::from_secs(5),
+        )
+        .unwrap_err();
+    assert_eq!(error.code(), Code::RecordInvalid);
+}
+
+#[test]
+fn a_new_put_in_a_named_folder_fills_and_drops_as_a_put_at_a_path_does() {
+    let scenario = questions();
+    let question = json!({"$type": "lr/question/v1", "question": "Which?", "summary": "s"});
+    let report = mended(&scenario, Some(SESSION))
+        .put_new_waiting(
+            &path("/q"),
+            question.to_string().as_bytes(),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+    assert_eq!(
+        report.mended[0].mends,
+        mends(&["/by", "/asked", "/status"], &[("/summary", None)], &[])
+    );
+    let error = crate::tests::open(&scenario)
+        .put_new_waiting(
+            &path("/q"),
+            question.to_string().as_bytes(),
+            Duration::from_secs(5),
+        )
+        .unwrap_err();
+    assert_eq!(error.code(), Code::RecordInvalid);
 }
 
 #[test]
 fn a_batch_reports_each_fill_and_drop_under_its_line() {
     let scenario = questions();
     let question = json!({"$type": "lr/question/v1", "question": "Which?"});
-    let decision = json!({"$type": "lr/decision/v1", "decision": "d", "notes": "n"});
+    let decision = json!({"$type": "lr/decision/v1", "decision": "d", "why": "w", "notes": "n"});
     let input = [
-        json!({"path": "/d/plain", "record": {"$type": "lr/decision/v1", "decision": "d"}}),
+        json!({"path": "/d/plain", "record": {"$type": "lr/decision/v1", "decision": "d", "why": "w"}}),
         json!({"path": "/q/a", "record": question}),
         json!({"new": "/d/", "record": decision}),
     ]
@@ -349,7 +441,8 @@ fn a_session_comes_from_board_session_or_else_a_local_host_session() {
         (None, os("cse_9ba41ad4"), None),
         (os("Local_9"), None, None),
         (os("local_"), None, None),
-        (os("local_9G"), os("local_9"), None),
+        (os("local_9G"), os("local_9"), Some("local_9")),
+        (os("bogus"), os("local_ab"), Some("local_ab")),
         (None, None, None),
     ];
     for (board, host, expected) in cases {

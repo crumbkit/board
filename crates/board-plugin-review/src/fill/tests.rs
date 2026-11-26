@@ -80,6 +80,12 @@ fn a_range_the_checkout_lacks_is_not_filled_and_says_which_commit_is_missing() {
         why.contains(&format!("'{missing}' names no commit")),
         "{why}"
     );
+    assert!(
+        why.ends_with(
+            "run the put from a checkout of the repository that holds the range, or give patch_ids"
+        ),
+        "{why}"
+    );
 }
 
 #[test]

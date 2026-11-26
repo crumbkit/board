@@ -8,6 +8,7 @@ use std::borrow::Cow;
 use std::ffi::OsStr;
 
 use board_model::{LogicalPath, RecordType, canonical_json, parse_json, utc_seconds};
+use board_plugin::shape::session_id;
 use board_validate::Schema;
 use serde_json::{Map, Value, json};
 
@@ -53,18 +54,16 @@ pub struct Mending {
 
 impl Mending {
     /// The session `BOARD_SESSION` names, or else the Claude Code host
-    /// session `CLAUDE_CODE_HOST_SESSION_ID` names when it starts with
-    /// `local_`. One that is not a `SessionId`, `local_` and lowercase hex
-    /// and `-`, is none.
+    /// session `CLAUDE_CODE_HOST_SESSION_ID` names. Each is used only when
+    /// it is a `SessionId`, `local_` then lowercase hex and `-`, so an
+    /// invalid `BOARD_SESSION` does not hide a valid host session.
     pub fn session(board: Option<&OsStr>, host: Option<&OsStr>) -> Option<String> {
-        let host = host.filter(|host| host.as_encoded_bytes().starts_with(b"local_"));
-        let id = board.or(host)?.to_str()?;
-        let hex = id.strip_prefix("local_")?;
-        (!hex.is_empty()
-            && hex
-                .bytes()
-                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f' | b'-')))
-        .then(|| id.to_owned())
+        [board, host]
+            .into_iter()
+            .flatten()
+            .filter_map(OsStr::to_str)
+            .find(|id| session_id(id))
+            .map(str::to_owned)
     }
 }
 
@@ -83,6 +82,9 @@ pub struct Mends {
     /// The pointer of each field filled.
     pub filled: Vec<String>,
     pub dropped: Vec<Dropped>,
+    /// Why each fill that could not be made was not, after the pointer of
+    /// its field, such as `/by: the put has no session; set BOARD_SESSION`.
+    pub unfilled: Vec<String>,
 }
 
 /// A field dropped: its pointer, and the pointer of the field the type
@@ -103,19 +105,28 @@ pub struct Mended {
 impl Mends {
     /// These mends of the record written at `path`, unless there are none.
     pub(crate) fn at(&self, path: &LogicalPath) -> Option<Mended> {
-        (!self.filled.is_empty() || !self.dropped.is_empty()).then(|| Mended {
-            path: path.clone(),
-            mends: self.clone(),
-        })
+        (!self.filled.is_empty() || !self.dropped.is_empty() || !self.unfilled.is_empty()).then(
+            || Mended {
+                path: path.clone(),
+                mends: self.clone(),
+            },
+        )
     }
 }
 
-/// A record mended: its bytes, what was filled and dropped, and why each
-/// fill that could not run did not.
+/// A record mended: its bytes, what was filled and dropped, and each field
+/// kept though its type does not name it, because it is one edit from a
+/// field the record lacks, so the check refuses it.
 pub(crate) struct Applied<'a> {
     pub(crate) bytes: Cow<'a, [u8]>,
     pub(crate) mends: Mends,
-    pub(crate) unfilled: Vec<String>,
+    pub(crate) kept: Vec<Kept>,
+}
+
+/// A field kept for the check to refuse, and the field it is one edit from.
+pub(crate) struct Kept {
+    pointer: String,
+    near: String,
 }
 
 impl<'a> Applied<'a> {
@@ -127,30 +138,44 @@ impl<'a> Applied<'a> {
                 line: None,
                 filled: Vec::new(),
                 dropped: Vec::new(),
+                unfilled: Vec::new(),
             },
-            unfilled: Vec::new(),
+            kept: Vec::new(),
         }
     }
 
-    /// `refused`, naming what was dropped and could not be filled, so a
-    /// refusal after a drop says what the record lost.
+    /// `refused`, naming what was dropped, kept and could not be filled, so
+    /// a refusal after a drop says what the record lost and what to rename.
     pub(crate) fn refused(&self, refused: Refused) -> Refused {
-        if self.mends.dropped.is_empty() && self.unfilled.is_empty() {
+        let Mends {
+            dropped, unfilled, ..
+        } = &self.mends;
+        let dropped = (!dropped.is_empty()).then(|| {
+            let pointers: Vec<&str> = dropped.iter().map(|field| field.pointer.as_str()).collect();
+            format!(
+                "before the check, board put dropped {}, which its type does not name",
+                pointers.join(", ")
+            )
+        });
+        let kept = self.kept.iter().map(|kept| {
+            format!(
+                "board put kept {}, which its type does not name, since it is one edit from {}, which the record lacks; rename it",
+                kept.pointer, kept.near
+            )
+        });
+        let unfilled = unfilled
+            .iter()
+            .map(|why| format!("board put could not fill {why}"));
+        let notes: Vec<String> = dropped.into_iter().chain(kept).chain(unfilled).collect();
+        if notes.is_empty() {
             return refused;
         }
         Refused::Mended {
             refused: Box::new(refused),
-            dropped: (self.mends.dropped.iter())
-                .map(|dropped| dropped.pointer.clone())
-                .collect(),
-            unfilled: self.unfilled.clone(),
+            notes,
         }
     }
 }
-
-/// The most passes a drop makes, each removing what the last left: one
-/// removes every field the schema reports, and the next finds none.
-const PASSES: usize = 4;
 
 impl Mend {
     /// `bytes` with each fill of its type made on a field it lacks, then
@@ -175,25 +200,25 @@ impl Mend {
             return unchanged();
         };
         let (filled, unfilled) = self.fill(&record_type, record);
-        let dropped = if record_type.is_known() {
-            Vec::new()
+        let (dropped, kept) = if record_type.is_known() {
+            (Vec::new(), Vec::new())
         } else {
             schema(&record_type).map_or_default(|schema| dropped(schema, &mut value))
         };
-        if filled.is_empty() && dropped.is_empty() {
-            return Applied {
-                unfilled,
-                ..unchanged()
-            };
-        }
+        let bytes = if filled.is_empty() && dropped.is_empty() {
+            Cow::Borrowed(bytes)
+        } else {
+            Cow::Owned(canonical_json(&value).into_bytes())
+        };
         Applied {
-            bytes: Cow::Owned(canonical_json(&value).into_bytes()),
+            bytes,
             mends: Mends {
                 line: None,
                 filled,
                 dropped,
+                unfilled,
             },
-            unfilled,
+            kept,
         }
     }
 
@@ -211,18 +236,23 @@ impl Mend {
                 continue;
             }
             let settings = &self.mending.settings;
-            let value = match &fill.with {
-                With::Session => (self.mending.session.as_ref()).map(|id| json!({"session": id})),
-                With::Now => Some(json!(utc_seconds(settings.now))),
-                With::Text(text) => Some(json!(text)),
-                With::Derived(derive) => match derive(record, settings) {
-                    Ok(value) => value,
-                    Err(why) => {
-                        unfilled.push(format!("/{}: {why}", fill.field));
-                        None
-                    }
-                },
+            let made = match &fill.with {
+                With::Session => (self.mending.session.as_ref())
+                    .map(|id| Some(json!({"session": id})))
+                    .ok_or_else(|| {
+                        format!(
+                            "the put has no session; set BOARD_SESSION to your local_ session id, or give {}",
+                            fill.field
+                        )
+                    }),
+                With::Now => Ok(Some(json!(utc_seconds(settings.now)))),
+                With::Text(text) => Ok(Some(json!(text))),
+                With::Derived(derive) => derive(record, settings),
             };
+            let value = made.unwrap_or_else(|why| {
+                unfilled.push(format!("/{}: {why}", fill.field));
+                None
+            });
             if let Some(value) = value {
                 record.insert(fill.field.to_owned(), value);
                 filled.push(format!("/{}", fill.field));
@@ -232,27 +262,32 @@ impl Mend {
     }
 }
 
-/// Removes from `value` each field `schema` does not name, and returns them.
-fn dropped(schema: &Schema, value: &mut Value) -> Vec<Dropped> {
-    let mut dropped = Vec::new();
-    for _ in 0..PASSES {
-        let unexpected = schema.unexpected(value);
-        if unexpected.is_empty() {
-            break;
+/// Removes from `value` each field `schema` does not name, and returns
+/// them, and each field kept because it is one edit from a field the
+/// object lacks, which is most likely a misspelling of it.
+fn dropped(schema: &Schema, value: &mut Value) -> (Vec<Dropped>, Vec<Kept>) {
+    let (mut dropped, mut kept) = (Vec::new(), Vec::new());
+    for field in schema.unexpected(value) {
+        let Some(object) = value.pointer_mut(&field.at).and_then(Value::as_object_mut) else {
+            continue;
+        };
+        if let (Some(near), Some(pointer)) = (&field.near, field.near_pointer())
+            && !object.contains_key(near)
+        {
+            kept.push(Kept {
+                pointer: field.pointer(),
+                near: pointer,
+            });
+            continue;
         }
-        for field in unexpected {
-            let removed = (value.pointer_mut(&field.at))
-                .and_then(Value::as_object_mut)
-                .and_then(|object| object.remove(&field.name));
-            if removed.is_some() {
-                dropped.push(Dropped {
-                    pointer: field.pointer(),
-                    near: field.near_pointer(),
-                });
-            }
+        if object.remove(&field.name).is_some() {
+            dropped.push(Dropped {
+                pointer: field.pointer(),
+                near: field.near_pointer(),
+            });
         }
     }
-    dropped
+    (dropped, kept)
 }
 
 impl Board {

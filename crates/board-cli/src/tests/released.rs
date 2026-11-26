@@ -1233,6 +1233,7 @@ fn full_put() -> PutReport {
                     pointer: "/alternative".to_owned(),
                     near: Some("/alternatives".to_owned()),
                 }],
+                unfilled: Vec::new(),
             },
         }],
     }

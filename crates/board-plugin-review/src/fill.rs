@@ -42,7 +42,12 @@ fn covered(
 ) -> Result<Vec<String>, String> {
     let repository = git::with(settings, checkout);
     for commit in [base, head] {
-        repository.commit(commit).map_err(|error| error.message)?;
+        if repository.commit(commit).is_err() {
+            return Err(format!(
+                "'{commit}' names no commit in {}; run the put from a checkout of the repository that holds the range, or give patch_ids",
+                checkout.display()
+            ));
+        }
     }
     (repository.covered(base, head)).map_err(|error| error.message)
 }

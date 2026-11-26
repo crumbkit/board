@@ -1052,6 +1052,11 @@ fn put_with_no_session_refuses_a_question_with_no_by_as_before() {
     let output = board.run_with(&["put", "/projects/a/questions/q"], &question.to_string());
     assert_eq!(output.code, 1, "{}", text(&output.stderr));
     assert!(text(&output.stderr).contains("board::record::invalid"));
+    assert!(
+        text(&output.stderr).contains("board put could not fill /by: the put has no session"),
+        "{}",
+        text(&output.stderr)
+    );
     let host = ("CLAUDE_CODE_HOST_SESSION_ID", "local_9ba41ad4");
     let output = board.run_inheriting(
         &["put", "/projects/a/questions/q"],
@@ -1064,7 +1069,9 @@ fn put_with_no_session_refuses_a_question_with_no_by_as_before() {
 #[test]
 fn put_drops_a_decisions_summary_with_a_warning_and_strict_refuses_it() {
     let board = board();
-    let decision = decision(&json!({"summary": "In short.", "alternative": ["Wait."]}));
+    let decision = decision(
+        &json!({"summary": "In short.", "alternative": ["Wait."], "alternatives": ["Stop."]}),
+    );
     let strict = board.run_with(&["put", "--strict", "/projects/a/decisions/d"], &decision);
     assert_eq!(strict.code, 1, "{}", text(&strict.stderr));
     assert!(text(&strict.stderr).contains("board::record::invalid"));
@@ -1085,5 +1092,18 @@ fn put_drops_a_decisions_summary_with_a_warning_and_strict_refuses_it() {
     assert_eq!(
         dropped[0],
         json!({"near": "/alternatives", "path": "/projects/a/decisions/d", "pointer": "/alternative"})
+    );
+}
+
+#[test]
+fn put_refuses_a_misspelt_field_whose_right_spelling_the_record_lacks() {
+    let board = board();
+    let decision = decision(&json!({"alternative": ["Wait."]}));
+    let output = board.run_with(&["put", "/projects/a/decisions/d"], &decision);
+    assert_eq!(output.code, 1, "{}", text(&output.stderr));
+    let stderr = text(&output.stderr);
+    assert!(
+        stderr.contains("board put kept /alternative, which its type does not name, since it is one edit from /alternatives, which the record lacks; rename it"),
+        "{stderr}"
     );
 }

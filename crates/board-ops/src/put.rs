@@ -271,10 +271,7 @@ impl Board {
         bytes: &[u8],
     ) -> Result<Prepared, PutError> {
         let _timed = self.timed("put.validate");
-        let applied = match &self.mend {
-            Some(mend) => mend.apply(bytes, |record_type| schemas.schema(self, record_type).ok()),
-            None => fill::Applied::none(bytes),
-        };
+        let applied = self.mended(schemas, bytes);
         let admitted = (self.check_record(schemas, &applied.bytes))
             .map_err(|refused| applied.refused(refused));
         let pointer = admitted.as_ref().is_ok_and(|admitted| admitted.pointer);
@@ -301,6 +298,19 @@ impl Board {
             admitted,
             mends: applied.mends,
         })
+    }
+
+    /// `bytes` with the fills and drops of a command-line put, or as given
+    /// when this board makes none.
+    pub(crate) fn mended<'a, 'b>(
+        &'b self,
+        schemas: &mut Schemas<'b>,
+        bytes: &'a [u8],
+    ) -> fill::Applied<'a> {
+        match &self.mend {
+            Some(mend) => mend.apply(bytes, |record_type| schemas.schema(self, record_type).ok()),
+            None => fill::Applied::none(bytes),
+        }
     }
 
     /// `message` with this board's `Board-Bulk:` trailer, when it has one.
