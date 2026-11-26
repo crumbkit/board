@@ -76,18 +76,19 @@ impl Decisions {
         self.checked[start..].sort_by(|a, b| a.path.cmp(&b.path));
     }
 
-    /// Reads what the index keeps under `key` of `source`, as `need`
+    /// Reads what the index keeps under `key` of the board `own`, as `need`
     /// reports it: each row of the report and, for refs, each reference and
     /// the blob of each entry of a mounted source.
     pub(super) fn read_kept(
         &mut self,
         writer: &Writer,
-        (source, key): (&Source, &Digest),
+        (own, key): (&Board, &Digest),
         need: Need,
     ) -> Result<(), IndexError> {
         if !need.reports_kept() {
             return Ok(());
         }
+        let source = &own.source;
         let refs = need == Need::Refs;
         for row in writer.decision(key)? {
             if refs && *source != Source::WorkingTree {
@@ -96,7 +97,7 @@ impl Decisions {
             self.checked.push(crate::check::from_kept(source, row)?);
         }
         if refs {
-            let kept = writer.references(key, source)?.into_iter();
+            let kept = writer.references(key, own)?.into_iter();
             self.references
                 .extend(kept.map(|(path, logical, reached)| Referenced {
                     source: source.clone(),
@@ -638,6 +639,14 @@ impl Decide<'_> {
         let read = &mut |location: &Location, blob| self.read(location, blob);
         let fitted = fitted((path, None), read, resolve);
         fitted.map(|(code, detail)| (code, Some(detail)))
+    }
+}
+
+/// The board `mounted` is, read from its commit.
+pub(super) fn board(mounted: &Mounted<Facts>) -> Board {
+    Board {
+        repository: mounted.repository.clone(),
+        source: Source::Commit(mounted.commit),
     }
 }
 

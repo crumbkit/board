@@ -231,7 +231,7 @@ impl Board {
         let validating =
             if let Some(slotted) = slotted.as_ref().filter(|_| held && need.reads_kept()) {
                 unvalidated(&kept, &mut work);
-                decided.read_kept(writer, (&root, &slotted.slot), need)?;
+                decided.read_kept(writer, (&slotted.board, &slotted.slot), need)?;
                 writer.reach(&root, Some(&slotted.slot), None)?;
                 None
             } else {
@@ -260,7 +260,7 @@ impl Board {
                 let key = mounted.key.as_ref().filter(|_| mounted.kept);
                 if let Some(key) = key.filter(|_| read_kept) {
                     work.kept += 1;
-                    decided.read_kept(writer, (&source, key), need)?;
+                    decided.read_kept(writer, (&decide::board(mounted), key), need)?;
                 }
                 writer.reach(&source, key, Some(&mounted.scan))?;
                 continue;
@@ -565,7 +565,7 @@ impl Board {
                 writer.put_decision(key, rows.iter().zip(details))?;
                 let references = decided.references[first_reference..].iter();
                 let each = references.map(|referenced| (&referenced.path[..], &referenced.reached));
-                writer.put_references(key, &source, each)?;
+                writer.put_references(key, &decide::board(mounted), each)?;
                 Some(key)
             }
             _ => None,

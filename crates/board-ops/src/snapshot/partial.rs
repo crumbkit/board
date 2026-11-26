@@ -32,6 +32,8 @@ pub(super) struct Slotted {
     pub(super) kept: Option<Slot>,
     /// What the slot holds once it keeps this run's decision.
     pub(super) now: Slot,
+    /// The working tree's board, which its kept references name without it.
+    pub(super) board: board_model::Board,
 }
 
 impl Slotted {
@@ -210,11 +212,16 @@ impl Board {
                 .map(|(path, probe)| (path, probe.hex()))
                 .collect(),
         };
+        let board = board_model::Board {
+            repository: self.repository().path().to_path_buf(),
+            source: Source::WorkingTree,
+        };
         Ok(Some(Slotted {
             kept: writer.slot(&slot)?,
             slot,
             crossings,
             now,
+            board,
         }))
     }
 
@@ -352,7 +359,7 @@ impl Board {
         writer.put_decision(slot, decided.resolved.iter().zip(details))?;
         let references = decided.references.iter();
         let each = references.map(|referenced| (&referenced.path[..], &referenced.reached));
-        writer.put_references(slot, &Source::WorkingTree, each)?;
+        writer.put_references(slot, &slotted.board, each)?;
         writer.put_inputs(slot, inputs)?;
         for (path, change) in flipped {
             writer.set_change(slot, path, *change)?;
@@ -377,7 +384,7 @@ impl Board {
         }
         decided.checked.clear();
         decided.references.clear();
-        let kept = (&Source::WorkingTree, &slotted.slot);
+        let kept = (&slotted.board, &slotted.slot);
         Ok(decided.read_kept(writer, kept, need)?)
     }
 }

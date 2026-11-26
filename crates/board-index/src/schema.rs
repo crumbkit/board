@@ -169,8 +169,8 @@ CREATE TABLE decided (
 -- decision's key, numbered in order for each path: `pointer` is its JSON
 -- pointer or a link's destination as written, `link` whether it is a
 -- Markdown link, `target` the path it names, `location` where it resolved
--- as JSON, or null when it dangles, with a null `source` for the decided
--- source itself, and `code` why it failed.
+-- as JSON, or null when it dangles, without its `board` when that is the
+-- decided board itself, and `code` why it failed.
 CREATE TABLE resolutions (
     key TEXT NOT NULL,
     path TEXT NOT NULL,

@@ -369,13 +369,13 @@ pub type KeptReference = (String, Option<LogicalPath>, Reached);
 
 impl Writer {
     /// Keeps under `key` each reference `references` gives, by the path in
-    /// `source` of the entry that makes it, numbered in order for each
-    /// path. A location in `source` itself is kept without its source,
+    /// the board `own` of the entry that makes it, numbered in order for
+    /// each path. A location in `own` itself is kept without its board,
     /// since a key names a tree, not a commit.
     pub fn put_references<'r>(
         &self,
         key: &Digest,
-        source: &Source,
+        own: &Board,
         references: impl IntoIterator<Item = (&'r str, &'r Reached)>,
     ) -> Result<(), IndexError> {
         let key = key.hex();
@@ -391,7 +391,7 @@ impl Writer {
                 _ => 0,
             };
             last = Some((path, ordinal));
-            let location = (reached.location.as_ref()).map(|at| encoded(at, source).to_string());
+            let location = (reached.location.as_ref()).map(|at| encoded(at, own).to_string());
             statement.execute(params![
                 key,
                 path,
@@ -407,12 +407,8 @@ impl Writer {
     }
 
     /// Each reference kept under `key`, by path and then in order, with
-    /// each location kept without its source given `source`.
-    pub fn references(
-        &self,
-        key: &Digest,
-        source: &Source,
-    ) -> Result<Vec<KeptReference>, IndexError> {
+    /// each location kept without its board in the board `own`.
+    pub fn references(&self, key: &Digest, own: &Board) -> Result<Vec<KeptReference>, IndexError> {
         type Row = (
             String,
             Option<String>,
@@ -462,7 +458,7 @@ impl Writer {
                 let location = match location {
                     Some(text) => Some(
                         (serde_json::from_str(&text).ok())
-                            .and_then(|value| decoded(&value, source))
+                            .and_then(|value| decoded(&value, own))
                             .ok_or_else(|| unreadable(&logical, "location", &text))?,
                     ),
                     None => None,
@@ -486,69 +482,93 @@ impl Writer {
     }
 }
 
-/// `location` as JSON, its source `null` where it is `own`.
-fn encoded(location: &Location, own: &Source) -> Value {
-    let Board { repository, source } = &location.board;
-    let repository = match repository.to_str() {
-        Some(text) => json!(text),
-        None => json!(repository.as_os_str().as_bytes()),
-    };
-    let source = match source {
-        source if source == own => Value::Null,
-        Source::WorkingTree => json!("worktree"),
-        Source::Commit(commit) => json!(commit.to_string()),
-    };
+/// `location` as JSON: its board only when it is not `own`, as its
+/// repository and source, each `null` where it is `own`'s; and its
+/// pointers and `follow` only when it has them.
+fn encoded(location: &Location, own: &Board) -> Value {
+    let mut fields = serde_json::Map::new();
+    fields.insert("path".to_owned(), json!(location.path));
     let object = match location.object {
         Object::Blob(blob) => json!(blob.to_string()),
         Object::Directory => Value::Null,
     };
-    let pointers: Vec<Value> = (location.pointers.iter())
-        .map(|pointer| encoded(pointer, own))
-        .collect();
-    json!({
-        "repository": repository,
-        "source": source,
-        "path": location.path,
-        "object": object,
-        "pointers": pointers,
-        "follow": location.follow,
-    })
+    fields.insert("object".to_owned(), object);
+    let Board { repository, source } = &location.board;
+    if location.board != *own {
+        let repository = match repository.to_str() {
+            _ if *repository == own.repository => Value::Null,
+            Some(text) => json!(text),
+            None => json!(repository.as_os_str().as_bytes()),
+        };
+        let source = match source {
+            _ if *source == own.source => Value::Null,
+            Source::WorkingTree => json!("worktree"),
+            Source::Commit(commit) => json!(commit.to_string()),
+        };
+        fields.insert("board".to_owned(), json!([repository, source]));
+    }
+    if !location.pointers.is_empty() {
+        let pointers = location.pointers.iter();
+        let pointers: Vec<Value> = pointers.map(|pointer| encoded(pointer, own)).collect();
+        fields.insert("pointers".to_owned(), json!(pointers));
+    }
+    if let Some(follow) = &location.follow {
+        fields.insert("follow".to_owned(), json!(follow));
+    }
+    Value::Object(fields)
 }
 
 /// The location [`encoded`] gave as `value`, or `None` when it reads as none.
-fn decoded(value: &Value, own: &Source) -> Option<Location> {
-    let repository = match value.get("repository")? {
-        Value::String(text) => PathBuf::from(text),
-        Value::Array(bytes) => {
-            let bytes: Option<Vec<u8>> = (bytes.iter())
-                .map(|byte| u8::try_from(byte.as_u64()?).ok())
-                .collect();
-            PathBuf::from(OsStr::from_bytes(&bytes?))
+fn decoded(value: &Value, own: &Board) -> Option<Location> {
+    let fields = value.as_object()?;
+    let known = ["path", "object", "board", "pointers", "follow"];
+    if !fields.keys().all(|key| known.contains(&key.as_str())) {
+        return None;
+    }
+    let board = match fields.get("board") {
+        None => own.clone(),
+        Some(board) => {
+            let [repository, source] = board.as_array()?.as_slice() else {
+                return None;
+            };
+            let repository = match repository {
+                Value::Null => own.repository.clone(),
+                Value::String(text) => PathBuf::from(text),
+                Value::Array(bytes) => {
+                    let bytes: Option<Vec<u8>> = (bytes.iter())
+                        .map(|byte| u8::try_from(byte.as_u64()?).ok())
+                        .collect();
+                    PathBuf::from(OsStr::from_bytes(&bytes?))
+                }
+                _ => return None,
+            };
+            let source = match source {
+                Value::Null => own.source.clone(),
+                Value::String(text) if text == "worktree" => Source::WorkingTree,
+                Value::String(text) => Source::Commit(ObjectId::from_hex(text)?),
+                _ => return None,
+            };
+            Board { repository, source }
         }
-        _ => return None,
     };
-    let source = match value.get("source")? {
-        Value::Null => own.clone(),
-        Value::String(text) if text == "worktree" => Source::WorkingTree,
-        Value::String(text) => Source::Commit(ObjectId::from_hex(text)?),
-        _ => return None,
-    };
-    let object = match value.get("object")? {
+    let object = match fields.get("object")? {
         Value::Null => Object::Directory,
         Value::String(text) => Object::Blob(ObjectId::from_hex(text)?),
         _ => return None,
     };
-    let pointers = (value.get("pointers")?.as_array()?.iter())
-        .map(|pointer| decoded(pointer, own))
-        .collect::<Option<Vec<Location>>>()?;
-    let follow = match value.get("follow")? {
-        Value::Null => None,
-        Value::String(text) => Some(text.clone()),
-        _ => return None,
+    let pointers = match fields.get("pointers") {
+        None => Vec::new(),
+        Some(pointers) => (pointers.as_array()?.iter())
+            .map(|pointer| decoded(pointer, own))
+            .collect::<Option<Vec<Location>>>()?,
+    };
+    let follow = match fields.get("follow") {
+        None => None,
+        Some(follow) => Some(follow.as_str()?.to_owned()),
     };
     Some(Location {
-        board: Board { repository, source },
-        path: value.get("path")?.as_str()?.to_owned(),
+        board,
+        path: fields.get("path")?.as_str()?.to_owned(),
         object,
         pointers,
         follow,

@@ -15,9 +15,9 @@ decides it. The working tree's decision is kept as [index.md](index.md) says.
   leaves it out.
 - `resolutions`: each reference an entry of a kept decision makes, in
   order, and where it resolved, under the same key, written in the same
-  transaction as its rows and pruned with them. A location in the source
-  itself keeps no source, so each run attaches the one that reached the
-  key. `refs` reads them in place of deciding the source.
+  transaction as its rows and pruned with them. A location in the decided
+  board itself keeps no board, so each run attaches the one that reached
+  the key. `refs` reads them in place of deciding the source.
 - `pointers`: the mount pointers in a mounted tree, under a key of the tree
   and the build, so a run finds a source's mounts without walking it.
 

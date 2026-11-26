@@ -136,11 +136,20 @@ fn at(repository: &str, source: Source, path: &str, object: Object) -> Location 
     }
 }
 
+/// The mounted board `/boards/lib` read from `source`.
+fn lib(source: Source) -> board_model::Board {
+    board_model::Board {
+        repository: "/boards/lib".into(),
+        source,
+    }
+}
+
 /// The references one mounted entry, `tasks/a`, and one Markdown file,
-/// `notes.md`, make, the entry's in its source `own`: one within the
-/// source through a link, one through a mount into another commit, one
-/// into a directory, one that dangles, and a link from the file.
-fn references(own: &Source) -> Vec<(&'static str, Reached)> {
+/// `notes.md`, make, the entry's in the board `own`: one within it through
+/// a link, one through a mount into another commit, one into a directory,
+/// one into the same commit read from another clone, one that dangles, and
+/// a link from the file.
+fn references(own: &board_model::Board) -> Vec<(&'static str, Reached)> {
     let reached = |pointer: &str, location, code| Reached {
         pointer: pointer.to_owned(),
         link: false,
@@ -148,18 +157,12 @@ fn references(own: &Source) -> Vec<(&'static str, Reached)> {
         location,
         code,
     };
-    let mut linked = at(
-        "/boards/lib",
-        own.clone(),
-        "projects/p.json",
-        Object::Blob(blob(3)),
-    );
-    linked.pointers.push(at(
-        "/boards/lib",
-        own.clone(),
-        "links/l.json",
-        Object::Blob(blob(4)),
-    ));
+    let lib = own.repository.to_str().unwrap();
+    let source = || own.source.clone();
+    let mut linked = at(lib, source(), "projects/p.json", Object::Blob(blob(3)));
+    linked
+        .pointers
+        .push(at(lib, source(), "links/l.json", Object::Blob(blob(4))));
     let mut mounted = at(
         "/boards/two",
         Source::Commit(blob(7)),
@@ -168,14 +171,15 @@ fn references(own: &Source) -> Vec<(&'static str, Reached)> {
     );
     mounted.pointers.push(Location {
         follow: Some("main".to_owned()),
-        ..at(
-            "/boards/lib",
-            own.clone(),
-            "vendor.json",
-            Object::Blob(blob(6)),
-        )
+        ..at(lib, source(), "vendor.json", Object::Blob(blob(6)))
     });
-    let directory = at("/boards/lib", own.clone(), "projects", Object::Directory);
+    let directory = at(lib, source(), "projects", Object::Directory);
+    let clone = at(
+        "/boards/clone",
+        source(),
+        "tasks/c.json",
+        Object::Blob(blob(2)),
+    );
     vec![
         ("tasks/a", reached("/project", Some(linked), None)),
         ("tasks/a", reached("/see", Some(mounted), None)),
@@ -183,6 +187,7 @@ fn references(own: &Source) -> Vec<(&'static str, Reached)> {
             "tasks/a",
             reached("/dir", Some(directory), Some(Code::RefWrongType)),
         ),
+        ("tasks/a", reached("/clone", Some(clone), None)),
         ("tasks/a", reached("/none", None, Some(Code::RefDangling))),
         (
             "notes.md",
@@ -194,9 +199,9 @@ fn references(own: &Source) -> Vec<(&'static str, Reached)> {
     ]
 }
 
-/// `references` kept under `key` for the source `own`, with a kept row for
+/// `references` kept under `key` for the board `own`, with a kept row for
 /// `tasks/a` and none for `notes.md`.
-fn kept_references(writer: &Writer, key: &board_model::Digest, own: &Source) {
+fn kept_references(writer: &Writer, key: &board_model::Digest, own: &board_model::Board) {
     let entry = row("tasks/a", None);
     writer.put_decision(key, [(&entry, None)]).unwrap();
     let references = references(own);
@@ -208,7 +213,7 @@ fn kept_references(writer: &Writer, key: &board_model::Digest, own: &Source) {
 fn kept_references_come_back_by_path_in_order_with_where_they_led() {
     let writer = Index::fall_back().unwrap().write().unwrap();
     let key = board_model::Digest::of(b"key");
-    let own = Source::Commit(blob(9));
+    let own = lib(Source::Commit(blob(9)));
     kept_references(&writer, &key, &own);
     let mut expected: Vec<KeptReference> = (references(&own).into_iter())
         .map(|(path, reached)| {
@@ -225,25 +230,33 @@ fn a_kept_reference_into_its_own_source_names_the_source_it_is_read_for_and_one_
  {
     let writer = Index::fall_back().unwrap().write().unwrap();
     let key = board_model::Digest::of(b"key");
-    kept_references(&writer, &key, &Source::Commit(blob(9)));
+    kept_references(&writer, &key, &lib(Source::Commit(blob(9))));
     // A commit of the same tree reads the same decision.
     let other = Source::Commit(blob(8));
-    let read = writer.references(&key, &other).unwrap();
-    let led: Vec<Vec<Source>> = (read.iter())
+    let read = writer.references(&key, &lib(other.clone())).unwrap();
+    let led: Vec<Vec<(String, Source)>> = (read.iter())
         .map(|(_, _, reached)| {
             let location = reached.location.iter();
             (location.flat_map(|at| at.pointers.iter().chain([at])))
-                .map(|at| at.board.source.clone())
+                .map(|at| {
+                    (
+                        at.board.repository.display().to_string(),
+                        at.board.source.clone(),
+                    )
+                })
                 .collect()
         })
         .collect();
+    let at = |repository: &str, source: &Source| (repository.to_owned(), source.clone());
+    let lib = |source: &Source| at("/boards/lib", source);
     assert_eq!(
         led,
         [
             vec![],
-            vec![other.clone(), other.clone()],
-            vec![other.clone(), Source::Commit(blob(7))],
-            vec![other],
+            vec![lib(&other), lib(&other)],
+            vec![lib(&other), at("/boards/two", &Source::Commit(blob(7)))],
+            vec![lib(&other)],
+            vec![at("/boards/clone", &other)],
             vec![],
         ]
     );
@@ -254,7 +267,7 @@ fn a_kept_reference_into_its_own_source_names_the_source_it_is_read_for_and_one_
 fn references_with(column: &str, value: &str) -> Result<Vec<KeptReference>, (Code, String)> {
     let cache = tempfile::tempdir().unwrap();
     let key = board_model::Digest::of(b"key");
-    let own = Source::Commit(blob(9));
+    let own = lib(Source::Commit(blob(9)));
     let open = || Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     let writer = open().write().unwrap();
     kept_references(&writer, &key, &own);
@@ -272,15 +285,25 @@ fn references_with(column: &str, value: &str) -> Result<Vec<KeptReference>, (Cod
 fn a_kept_reference_whose_target_location_or_code_cannot_be_read_fails_with_the_index_code_and_its_twin_reads()
  {
     let named = "/vendor/tasks/a (tasks/a in its source)";
-    let directory = r#"{"repository": "/b", "source": null, "path": "", "object": null, "pointers": [], "follow": null}"#;
+    let directory = r#"{"path": "projects", "object": null, "board": [null, "worktree"]}"#;
     for (column, admitted, refused) in [
         ("target", "/projects/q", "no/slash"),
-        ("location", directory, r#"{"repository": "/b"}"#),
+        ("location", directory, r#"{"path": "projects"}"#),
+        (
+            "location",
+            directory,
+            r#"{"path": "p", "object": null, "board": [null]}"#,
+        ),
+        (
+            "location",
+            directory,
+            r#"{"path": "p", "object": null, "extra": 1}"#,
+        ),
         ("location", directory, "not json"),
         ("code", "board::ref::dangling", "board::ref::lost"),
     ] {
         let read = references_with(column, admitted).unwrap();
-        assert_eq!(read.len(), 5, "{column}");
+        assert_eq!(read.len(), 6, "{column}");
         assert_eq!(
             references_with(column, refused),
             Err((
@@ -296,13 +319,13 @@ fn a_kept_reference_whose_target_location_or_code_cannot_be_read_fails_with_the_
 fn a_prune_deletes_the_references_of_a_decision_no_source_reached_and_keeps_those_of_one_it_did() {
     let writer = Index::fall_back().unwrap().write().unwrap();
     let [reached, gone] = [b"reached".as_slice(), b"gone"].map(board_model::Digest::of);
-    let own = Source::Commit(blob(9));
+    let own = lib(Source::Commit(blob(9)));
     for key in [&reached, &gone] {
         kept_references(&writer, key, &own);
     }
-    writer.reach(&own, Some(&reached), None).unwrap();
+    writer.reach(&own.source, Some(&reached), None).unwrap();
     writer.prune().unwrap();
-    assert_eq!(writer.references(&reached, &own).unwrap().len(), 5);
+    assert_eq!(writer.references(&reached, &own).unwrap().len(), 6);
     assert_eq!(writer.references(&gone, &own).unwrap(), Vec::new());
 }
 
@@ -310,7 +333,7 @@ fn a_prune_deletes_the_references_of_a_decision_no_source_reached_and_keeps_thos
 fn forgetting_paths_of_a_slot_deletes_their_references_and_keeps_the_others() {
     let writer = Index::fall_back().unwrap().write().unwrap();
     let slot = board_model::Digest::of(b"slot");
-    let own = Source::WorkingTree;
+    let own = lib(Source::WorkingTree);
     kept_references(&writer, &slot, &own);
     writer.forget(&slot, Some(&["tasks/a"])).unwrap();
     let paths: Vec<String> = (writer.references(&slot, &own).unwrap().into_iter())
