@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The rules plugin's README lists each code `board rules report` can put
+  in `refused`, says which are warnings that leave every row as it is, and
+  says that `rules::report::run_commit_unnamed` also covers a malformed
+  `versions.commit` and a run Board cannot read.
 - `board schemas show` prints the schema each built-in plugin ships for its
   record types, such as `rules/report/v1`, as `board plugin enable` writes
   it, in any directory and whether or not a board enables the plugin.

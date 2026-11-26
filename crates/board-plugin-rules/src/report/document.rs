@@ -407,6 +407,10 @@ pub(crate) struct SuiteRun {
     /// when the run names no commit, `rules::report::run_commit_missing`
     /// when the clone lacks it, `rules::report::run_commit_not_ancestor`
     /// or `rules::report::no_git`; null when it is counted.
+    // `run_commit_unnamed` also stands for a `versions.commit` that is not
+    // 7 to 40 lowercase hex digits and for a run Board cannot read. The
+    // doc comment above is the schema's text, which rules/report/v1 froze
+    // at 0.1.3, so the plugin's README says this instead.
     #[schemars(schema_with = "or_null::<CodeName>")]
     pub(crate) commits_since_code: Option<String>,
 }
@@ -481,6 +485,9 @@ pub(crate) struct Refused {
     pub(crate) code: String,
     /// The rules or groups it concerns, by path; empty when it concerns
     /// none.
+    // `rules::report::suite_unreadable` names a suite here. The doc comment
+    // above is the schema's text, which rules/report/v1 froze at 0.1.3, so
+    // the plugin's README says this instead.
     #[schemars(with = "Vec<PathKey>")]
     pub(crate) rules: Vec<String>,
     /// What happened, for people.

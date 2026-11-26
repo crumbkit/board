@@ -18,7 +18,8 @@ const SUITES: &str = "SELECT logical, body FROM records WHERE type = 'runs/suite
 
 /// Each compliance suite whose `subjects` name the repository, by its name
 /// or its mount, and its newest qualifying run. A suite whose body does not
-/// parse is a `rules::report::suite_unreadable` refusal.
+/// parse is a `rules::report::suite_unreadable` refusal; Board indexes only
+/// a record that parses, so the index should never give one.
 pub(crate) fn suites(
     host: &dyn Host,
     place: &Place,
