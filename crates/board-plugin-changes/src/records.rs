@@ -493,7 +493,7 @@ impl Clone for PrototypeRecord {
 /// A plan lives at `/changes/<name>/plans/<stamp>`, beside its text at
 /// `<stamp>.md`; the change's `plan` names its current one. A plan for a build
 /// change that `changes.plan` wrote always has `paths`.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(extend("x-board-folder" = "/changes/{change}/plans/"))]
 pub(crate) struct PlanRecord {
