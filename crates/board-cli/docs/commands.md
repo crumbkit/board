@@ -192,7 +192,7 @@ Write the record on stdin at a path or --new name, or a .md file or one with --f
   A path ending .md needs no --file.
 
   With a `store` setting, --file uploads bytes over 1 MiB or not UTF-8 under their digest and writes a board/attachment/v1 record.
-- `--approved <ANSWER>`: The owner's answer approving an edit of `signing` while signing is off
+- `--approved <ANSWER>`: The owner's answer approving an edit of `signing` while signing is off.
 
   A plans/answer/v1 whose question names the `sha256:` digest that the put's refusal without it gives. With signing on, an edit of `signing` in .board/board.json needs Touch ID, and an edit of `signing.configured` always does.
 - `--wait <DURATION>`: How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h. Default: `5s`.
