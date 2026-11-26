@@ -42,9 +42,11 @@ command fits. A first word `cat` or `show` runs `get`, `list` runs `ls`, and
 `schema` runs `schemas`, unless an enabled plugin's name or alias is that
 word. A long flag spelled with hyphens where the flag has underscores, or the
 reverse, such as `--task-repo` for `--task_repo`, runs with the flag's own
-spelling when clap names that flag as the similar one. A `--path` given to a
-built-in command whose path is positional, such as `board get --path /a`, is
-read as that path. Words after `--` are never changed. Any other refused line
+spelling when clap names that flag as the similar one. A `--path` given to
+`get`, `ls`, `check`, `log`, `refs`, `uri` or `mount update`, such as
+`board get --path /a`, is read as the path; each only reads and takes the
+path as its one positional argument, so `put`, `rm` and `mount add` still
+refuse it. Words after `--` are never changed. Any other refused line
 keeps clap's refusal.
 
 ## Renamed plugins

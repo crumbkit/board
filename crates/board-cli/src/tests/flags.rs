@@ -949,3 +949,18 @@ fn a_flag_spelled_with_the_other_separator_sends_its_property_and_no_such_flag_i
     );
     assert_eq!(code(&refused), "board::cli::usage");
 }
+
+#[test]
+fn a_flag_after_a_double_dash_is_never_respelled_and_before_it_is() {
+    let (board, data) = flagged();
+    let before = call(&board, &data, &["call", "tasks.due", "--keep_late"], "");
+    assert_eq!(before.code, 0, "{}", text(&before.stderr));
+    assert_eq!(sent(&data), json!({"keep-late": true}));
+    let after = call(
+        &board,
+        &data,
+        &["--json", "call", "tasks.due", "--", "--keep_late"],
+        "",
+    );
+    assert_eq!(code(&after), "board::cli::usage");
+}

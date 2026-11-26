@@ -1499,7 +1499,7 @@ fn a_guessed_first_word_runs_the_command_it_means_and_an_unknown_word_is_refused
 }
 
 #[test]
-fn a_path_given_as_path_flag_to_a_command_whose_path_is_positional_is_read_as_the_path() {
+fn a_path_flag_given_to_a_read_command_is_read_as_its_path_and_one_given_to_a_write_is_refused() {
     let scenario = board();
     let directory = scenario.workdir();
     for (flagged, positional) in [
@@ -1510,20 +1510,40 @@ fn a_path_given_as_path_flag_to_a_command_whose_path_is_positional_is_read_as_th
         (&["get", "--path=/projects/p"], &["get", "/projects/p"]),
         (&["ls", "--path", "/projects"], &["ls", "/projects"]),
         (&["check", "--path", "/projects"], &["check", "/projects"]),
+        (&["log", "--path", "/projects/p"], &["log", "/projects/p"]),
+        (&["refs", "--path", "/projects/p"], &["refs", "/projects/p"]),
+        (&["uri", "--path", "/projects/p"], &["uri", "/projects/p"]),
+        (
+            &["mount", "update", "--path", "/projects/zz"],
+            &["mount", "update", "/projects/zz"],
+        ),
     ] {
         let ran = board_in(directory, positional);
-        assert_eq!(ran.code, 0, "{positional:?}: {}", text(&ran.stderr));
+        assert_ne!(ran.code, 2, "{positional:?}: {}", text(&ran.stderr));
         assert_eq!(
             printed(&board_in(directory, flagged)),
             printed(&ran),
             "{flagged:?}"
         );
     }
-    let refused = board_in(directory, &["--json", "query", "--path", "/projects"]);
-    assert_eq!(
-        (refused.code, refused.error.as_deref()),
-        (2, Some("board::cli::usage"))
-    );
+    let repository = directory.display().to_string();
+    for refused in [
+        &["--json", "query", "--path", "/projects"][..],
+        &["--json", "rm", "--path", "/projects/p"],
+        &["--json", "put", "--path", "/projects/q"],
+        &["--json", "mount", "add", &repository, "--path", "/team"],
+    ] {
+        let refused = board_in(directory, refused);
+        assert_eq!(
+            (refused.code, refused.error.as_deref()),
+            (2, Some("board::cli::usage")),
+            "{}",
+            text(&refused.stderr)
+        );
+    }
+    assert_eq!(board_in(directory, &["get", "/projects/p"]).code, 0);
+    let removed = board_in(directory, &["rm", "/projects/p"]);
+    assert_eq!(removed.code, 0, "{}", text(&removed.stderr));
 }
 
 #[test]
