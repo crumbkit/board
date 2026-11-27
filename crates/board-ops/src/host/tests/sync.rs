@@ -303,3 +303,47 @@ fn a_mount_update_past_its_deadline_for_the_lock_is_refused_and_one_with_the_loc
     let output = call_base(&board, &Plugins::default()).unwrap().output;
     assert_eq!(output["pinned"], json!(fetched.to_string()));
 }
+
+/// A plugin that syncs the notes clone at `clone` without pushing, unless
+/// it was fetched less than `within` ago, and answers the commit the sync
+/// left HEAD at and, in `count`, how many rounds it ran.
+fn fresh(clone: PathBuf, within: Duration) -> Fixture {
+    answering(
+        "fixture",
+        Box::new(move |host| {
+            let refused = |command, refusal: &Refusal| {
+                PluginError::board_refused("fixture", command, refusal)
+            };
+            let elsewhere = Elsewhere::Directory(clone.clone());
+            let notes = host
+                .board(&elsewhere)
+                .map_err(|refusal| refused("-C", &refusal))?;
+            let synced =
+                (notes.sync_unless_fetched(false, within, Duration::from_secs(30), Duration::ZERO))
+                    .map_err(|error| refused("sync", &error.refusal()))?;
+            Ok(json!({"synced": synced.new.to_string(), "count": synced.attempts}))
+        }),
+    )
+}
+
+impl Notes {
+    fn fresh(&self, within: Duration) -> Value {
+        let mut board = open(&self.board);
+        board.build_in(built(vec![fresh(self.clone.path().into(), within)]));
+        call_base(&board, &Plugins::default()).unwrap().output
+    }
+}
+
+#[test]
+fn a_plugin_sync_of_a_clone_fetched_within_the_window_runs_no_fetch_and_one_past_it_fetches() {
+    let notes = Notes::new();
+    let first = notes.remote_writes("two");
+    let within = Duration::from_secs(60);
+    let fetched = notes.fresh(within);
+    assert_eq!(fetched, json!({"synced": first.to_string(), "count": 1}));
+    let second = notes.remote_writes("three");
+    let skipped = notes.fresh(within);
+    assert_eq!(skipped, json!({"synced": first.to_string(), "count": 0}));
+    let synced = notes.fresh(Duration::ZERO);
+    assert_eq!(synced, json!({"synced": second.to_string(), "count": 1}));
+}

@@ -2,12 +2,12 @@
 
 use std::path::Path;
 
-use board_model::{Code, Fields, LogicalPath};
+use board_model::{Code, Fields, LogicalPath, ObjectId, Source};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
 use serde_json::{Value, json};
 
-use crate::snapshot::Need;
+use crate::snapshot::{Need, Snapshot};
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
 use crate::{Absent, Board, Fielded, RefsError, RefsReport};
 
@@ -927,6 +927,7 @@ fn a_target_that_resolved_to_another_blob_than_the_walk_listed_is_target_changed
             limit: usize::MAX,
             cache: None,
             snapshot: Some(snapshot),
+            lookup: None,
         };
         let report = answering.answer(&path("/tasks/b")).unwrap();
         let fielded = report.from.into_iter().next().unwrap().fields;
@@ -981,6 +982,7 @@ fn a_target_in_a_kept_source_has_its_values_and_one_whose_kept_blob_differs_is_t
             limit: usize::MAX,
             cache: Some(cache.path()),
             snapshot: Some(snapshot),
+            lookup: None,
         };
         let report = answering.answer(&path("/tasks/vendor")).unwrap();
         let fielded = report.from.into_iter().next().unwrap().fields;
@@ -1007,4 +1009,109 @@ fn a_target_in_a_kept_source_has_its_values_and_one_whose_kept_blob_differs_is_t
         ),
         "both references lead into the library"
     );
+}
+
+/// What a scan of every reference, entry and walked file finds for the
+/// object at `source` and `path`: the references it makes and those that
+/// reach it, by their place in `snapshot.references`, its code when it is
+/// degraded, and its blob as the walk listed it.
+type Scanned = (
+    Vec<usize>,
+    Vec<usize>,
+    Option<Code>,
+    Option<Option<ObjectId>>,
+);
+
+fn scanned(snapshot: &Snapshot, source: &Source, path: &str) -> Scanned {
+    let at = |at: &Source, physical: &str| at == source && physical == path;
+    let from = (snapshot.references.iter().enumerate())
+        .filter(|(_, referenced)| at(&referenced.source, &referenced.path))
+        .map(|(n, _)| n)
+        .collect();
+    let to = (snapshot.references.iter().enumerate())
+        .filter(|(_, referenced)| {
+            (referenced.reached.location.as_ref())
+                .is_some_and(|reached| at(&reached.board.source, &reached.path))
+        })
+        .map(|(n, _)| n)
+        .collect();
+    let degraded = (snapshot.report.entries.iter()).find_map(|entry| match entry.status {
+        Status::Degraded(code) if at(&entry.source, &entry.path) => Some(code),
+        _ => None,
+    });
+    let walked = (snapshot.walked.iter())
+        .find(|(walked, _)| walked == source)
+        .and_then(|(_, entries)| entries.iter().find(|entry| entry.path == path))
+        .map(|entry| entry.blob);
+    (from, to, degraded, walked)
+}
+
+#[test]
+fn a_snapshots_lookup_finds_for_each_object_what_a_scan_of_every_reference_and_entry_finds() {
+    let (scenario, _library) = mounted();
+    scenario.write("tasks/broken.json", Item::File("{")).write(
+        "tasks/dangling.json",
+        Item::File(&task(r#", "project": "/projects/gone""#)),
+    );
+    let board = open(&scenario);
+    let snapshot = board
+        .snapshot(board.index(None).unwrap(), None, Need::Refs)
+        .unwrap();
+    let lookup = super::Lookup::new(&snapshot);
+    let mut objects: Vec<(Source, String)> = (snapshot.report.entries.iter())
+        .map(|entry| (entry.source.clone(), entry.path.clone()))
+        .collect();
+    objects.push((Source::WorkingTree, "nothing/here.json".to_owned()));
+    let mut found = [0; 4];
+    for (source, path) in &objects {
+        let looked = (
+            lookup.from(source, path).to_vec(),
+            lookup.to(source, path).to_vec(),
+            lookup.degraded(&snapshot, source, path),
+            lookup
+                .walked(&snapshot, source, path)
+                .map(|entry| entry.blob),
+        );
+        let expected = scanned(&snapshot, source, path);
+        found[0] += usize::from(!expected.0.is_empty());
+        found[1] += usize::from(!expected.1.is_empty());
+        found[2] += usize::from(expected.2.is_some());
+        found[3] += usize::from(expected.3.is_some());
+        assert_eq!(looked, expected, "{source:?} {path}");
+    }
+    assert!(found.iter().all(|count| *count > 0), "{found:?}");
+}
+
+/// Two mounts of one commit, and a second walk of that commit's source
+/// that lists a file the first walk does not: `refs` reads the first walk
+/// of each source only, so the lookup finds that file nowhere, as the scan
+/// does.
+#[test]
+fn a_lookup_reads_only_the_first_walk_of_a_source_two_mounts_share_as_a_scan_does() {
+    let (scenario, _library) = mounted();
+    let mount = std::fs::read_to_string(scenario.workdir().join("vendor.json")).unwrap();
+    scenario.write("again.json", Item::File(&mount));
+    let board = open(&scenario);
+    let mut snapshot = board
+        .snapshot(board.index(None).unwrap(), None, Need::Refs)
+        .unwrap();
+    let (shared, entries) = (snapshot.walked.iter())
+        .find(|(source, _)| matches!(source, Source::Commit(_)))
+        .cloned()
+        .unwrap();
+    let mut only_later = entries[0].clone();
+    only_later.path = "only/in/the/later/walk.json".to_owned();
+    let mut shadowed = entries[0].clone();
+    shadowed.blob = None;
+    snapshot
+        .walked
+        .push((shared.clone(), vec![only_later.clone(), shadowed.clone()]));
+    let lookup = super::Lookup::new(&snapshot);
+    for path in [&only_later.path, &shadowed.path] {
+        let looked = lookup
+            .walked(&snapshot, &shared, path)
+            .map(|entry| entry.blob);
+        assert_eq!(looked, scanned(&snapshot, &shared, path).3, "{path}");
+    }
+    assert_eq!(lookup.walked(&snapshot, &shared, &only_later.path), None);
 }

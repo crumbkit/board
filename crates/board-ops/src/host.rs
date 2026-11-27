@@ -3,14 +3,13 @@
 
 use std::cell::RefCell;
 use std::ffi::OsString;
-use std::fmt;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
 use board_model::{
-    CapabilityName, Code, Fields, LogicalPath, Moved, Order, PluginName, RecordType, Refusal,
+    CapabilityName, Code, Fields, LogicalPath, Order, PluginName, RecordType, Refusal,
 };
 use board_plugin::child::{Exited, ProcessError};
 use board_plugin::{CallReport, Manifest, Signers, Target};
@@ -30,9 +29,11 @@ use crate::refs::{Absent, RefsError, RefsReport};
 use crate::sync::{Guard, SyncError, Synced};
 use crate::{Board, OpenError};
 
+mod built_in;
 mod error;
 mod memo;
 mod settings;
+pub use built_in::BuiltIn;
 pub use error::PluginError;
 pub(crate) use memo::Memo;
 pub use settings::{Settings, Variables};
@@ -160,6 +161,19 @@ pub trait Host {
         _wait: Duration,
     ) -> Result<Synced, SyncError> {
         self.sync(push, deadline)
+    }
+    /// As [`Host::sync_waiting`], but without `push` a clone fetched less
+    /// than `within` ago, whose HEAD holds what that fetch brought, is not
+    /// fetched again, as [`Board::sync_unless_fetched`] does. The default
+    /// always syncs, for a host with no clone of its own.
+    fn sync_unless_fetched(
+        &self,
+        push: bool,
+        _within: Duration,
+        deadline: Duration,
+        wait: Duration,
+    ) -> Result<Synced, SyncError> {
+        self.sync_waiting(push, deadline, wait)
     }
     /// Syncs this host's board as [`Board::sync_guarded`] does, with
     /// `guard`'s checks. A host with no board of its own, such as a test's,
@@ -366,19 +380,6 @@ impl Limit {
 /// [`Host::query`], which takes no parameters.
 pub fn literal(text: &str) -> String {
     format!("'{}'", text.replace('\'', "''"))
-}
-
-/// The plugins built into a Board.
-#[derive(Clone, Copy, Default)]
-pub struct BuiltIn(pub &'static [&'static dyn Plugin]);
-
-impl fmt::Debug for BuiltIn {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_list()
-            .entries(self.0.iter().map(|plugin| plugin.manifest().name))
-            .finish()
-    }
 }
 
 /// The host a built-in plugin sees during one call.
@@ -681,6 +682,17 @@ impl Host for Hosted<'_> {
         self.board.sync_waiting(push, deadline, wait)
     }
 
+    fn sync_unless_fetched(
+        &self,
+        push: bool,
+        within: Duration,
+        deadline: Duration,
+        wait: Duration,
+    ) -> Result<Synced, SyncError> {
+        self.memo.forget();
+        (self.board).sync_unless_fetched(push, within, deadline, wait)
+    }
+
     fn sync_guarded(
         &self,
         push: bool,
@@ -768,30 +780,6 @@ impl Host for Hosted<'_> {
         signature: &str,
     ) -> Result<(), OwnerWriteError> {
         crate::effects::verify_owner_write(&self.plugins.signing, path, record, signature)
-    }
-}
-
-impl Board {
-    /// Builds `plugins` into this board's calls, ahead of installed ones.
-    /// Its resolutions follow the moved prefixes these plugins'
-    /// [`Plugin::moved`] gives. An installed plugin declares none, since its
-    /// manifest may not name `moved`.
-    ///
-    /// # Panics
-    ///
-    /// When a plugin's moved pair is not two logical paths `Moved::new`
-    /// admits. The pairs are constants, so every test that builds the
-    /// plugins in fails on such a bug before a binary ships it.
-    pub fn build_in(&mut self, plugins: &'static [&'static dyn Plugin]) {
-        self.built_in = BuiltIn(plugins);
-        let moved = (plugins.iter().flat_map(|plugin| plugin.moved()))
-            .map(|(from, to)| {
-                let (from, to) = (from.parse().ok(), to.parse().ok());
-                (from.zip(to).and_then(|(from, to)| Moved::new(from, to)))
-                    .expect("a built-in plugin declares a valid moved prefix")
-            })
-            .collect();
-        self.moving(moved);
     }
 }
 

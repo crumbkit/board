@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `board tasks available` does not fetch a notes clone that was fetched
+  less than a minute ago and already holds what that fetch brought, so a
+  sweep of calls in a row fetches once. A task pushed from elsewhere in that
+  minute is listed by the first call after it. `board refs`, and each plugin
+  call that asks `host.refs`, finds each path's references by a lookup built
+  once per run in place of a scan of every reference for each path. The
+  answers are the same as before.
+
 ## 0.1.5 (2026-11-27)
 
 - `board --personal requests threads` returns the thread of every pending

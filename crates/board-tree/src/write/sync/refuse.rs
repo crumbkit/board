@@ -73,7 +73,7 @@ impl Repository {
     }
 
     /// `shallow` or `partial` when the clone lacks history, else `None`.
-    fn incomplete(&self, remote: &str) -> Option<&'static str> {
+    pub(super) fn incomplete(&self, remote: &str) -> Option<&'static str> {
         let git = self.git();
         if git.is_shallow() {
             return Some("shallow");
@@ -88,7 +88,7 @@ impl Repository {
 
     /// Whether `commit` has `ancestor` in its history. A history that
     /// cannot be read (a pruned `ancestor`) does not.
-    fn contains(&self, commit: ObjectId, ancestor: ObjectId) -> bool {
+    pub(super) fn contains(&self, commit: ObjectId, ancestor: ObjectId) -> bool {
         let ids = (
             gix::ObjectId::try_from(commit.as_bytes()),
             gix::ObjectId::try_from(ancestor.as_bytes()),

@@ -37,7 +37,7 @@ pub(crate) enum Race {
 
 pub(crate) struct Real {
     pub(crate) board: Scenario,
-    _remote: Scenario,
+    pub(crate) remote: Scenario,
     pub(crate) clone: Scenario,
     settings: Settings,
     pub(crate) race: Race,
@@ -86,7 +86,7 @@ impl Real {
         }
         Self {
             board,
-            _remote: remote,
+            remote,
             clone,
             settings: Settings {
                 now: SystemTime::now(),
@@ -313,6 +313,17 @@ impl Host for Cloned<'_> {
         let mut board = Board::open(self.0.clone.workdir(), None).unwrap();
         board.built_by("test");
         board.sync_waiting(push, deadline, wait)
+    }
+    fn sync_unless_fetched(
+        &self,
+        push: bool,
+        within: Duration,
+        deadline: Duration,
+        wait: Duration,
+    ) -> Result<Synced, SyncError> {
+        let mut board = Board::open(self.0.clone.workdir(), None).unwrap();
+        board.built_by("test");
+        board.sync_unless_fetched(push, within, deadline, wait)
     }
     fn mount_update(&self, _: &LogicalPath, _: Duration) -> Result<MountUpdateReport, MountError> {
         panic!("only a sync is asked of the clone")

@@ -323,9 +323,24 @@ fn a_call_syncs_the_repos_in_scope_and_an_after_in_a_mount_resolves_in_that_moun
         .unwrap();
     assert_eq!(
         shown(&output),
+        titles_of(&["First"]),
+        "a clone fetched within the minute is read as it is"
+    );
+    fetch_forgotten(&clone);
+    let output = tasks
+        .call("available", &["--repo", "/repos/personal"])
+        .unwrap();
+    assert_eq!(
+        shown(&output),
         ["Second"],
         "the open /tasks/first.md is the board's"
     );
+}
+
+/// Empties `clone`'s `FETCH_HEAD`, as git leaves it after a fetch that
+/// failed, so the next call fetches as one a minute later would.
+fn fetch_forgotten(clone: &Path) {
+    write_file(&clone.join(".git/FETCH_HEAD"), "");
 }
 
 #[test]

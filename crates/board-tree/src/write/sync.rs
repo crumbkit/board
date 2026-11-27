@@ -19,6 +19,7 @@ use crate::transport::{self, Deadline, Pushed, Ssh, Upstream};
 
 mod checkout;
 use checkout::{Recorded, Started};
+mod fresh;
 mod guard;
 use guard::OnConflict;
 mod integrate;
