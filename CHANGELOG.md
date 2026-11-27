@@ -14,6 +14,16 @@
   `board tasks tree` show the repository's tasks once, including after a
   sync moves a pin onto the other mount's commit. Two different
   repositories that both cover the remote still refuse as before.
+- A word an agent guesses after a plugin's name runs the capability it
+  means: `changes show` and `changes status` run `changes next`,
+  `changes list` runs `changes open`, and `tasks list`, `plans list` and
+  `evals list` run `tasks available`, `plans open` and `evals open`, with
+  the same flags. `board call <plugin>.<word>` does the same. Each prints
+  `note: board changes show is board changes next` or the like on stderr.
+  A plugin that offers the word itself still runs its own. `runs run` and
+  `runs record` are still refused, and their hint says to write the run
+  with `board put --new --var suite=<name>` and attach it with
+  `board changes attach --ref`.
 - `board tasks available` does not fetch a notes clone that was fetched
   less than a minute ago and already holds what that fetch brought, so a
   sweep of calls in a row fetches once. A task pushed from elsewhere in that
