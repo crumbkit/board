@@ -22,6 +22,7 @@ mod phases;
 mod plan;
 mod pr;
 mod prototype;
+mod ready;
 mod rechecks;
 mod run;
 mod start;
@@ -815,6 +816,7 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
             "advance",
             "open",
             "owed",
+            "ready",
             "ask",
             "pr",
             "plan",

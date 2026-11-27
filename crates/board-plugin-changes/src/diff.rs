@@ -376,6 +376,38 @@ fn clean_merge(
     Ok(tree.lines().next().map(str::trim) == Some(written.trim()))
 }
 
+/// Whether git reports a conflict when it merges `head` into the branch
+/// the mount follows, read with `git merge-tree --write-tree` within
+/// `deadline`, or why git could not say.
+pub(crate) fn conflicts(
+    host: &dyn Host,
+    at: &Mounted,
+    head: &str,
+    deadline: Duration,
+) -> Result<bool, String> {
+    let merged = [
+        "merge-tree",
+        "--write-tree",
+        "--end-of-options",
+        &at.follow,
+        head,
+    ];
+    let (code, out) =
+        exited(host, &at.repository, &merged, deadline, &[0, 1]).map_err(|failed| failed.why)?;
+    // git also exits 1 when it cannot merge a commit at all; only a conflict
+    // writes the merged tree's id first.
+    let tree = out.lines().next().map_or_default(str::trim);
+    let written = !tree.is_empty() && tree.bytes().all(|byte| byte.is_ascii_hexdigit());
+    match (code, written) {
+        (1, true) => Ok(true),
+        (1, false) => Err(format!(
+            "git merge-tree could not merge {head} into {}",
+            at.follow
+        )),
+        _ => Ok(false),
+    }
+}
+
 /// The commits of `steps`, when each edits only files in `allowed`, is a
 /// clean merge or is one of the `fixed` commits, whole or abbreviated, or
 /// else why the first that does not fails. A commit that edits a file

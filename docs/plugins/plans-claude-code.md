@@ -17,12 +17,12 @@ through `plans.open`. When the call fails, the debug log gives the code.
 
 ## Open questions
 
-When the session starts, the mod runs `plans.open --limit 100` and
-`plans.waiting`; [claude-code/band.md](claude-code/band.md) describes its
-button. After that:
+At session start the mod runs `plans.open --limit 100`, `plans.waiting`
+and `changes.ready`; [claude-code/band.md](claude-code/band.md) describes
+their buttons. Then:
 
-- Each tick runs `plans.waiting` if the band was drawn since the last read.
-- A draw runs it when that read is a minute old.
+- Each tick runs the last two if the band was drawn since.
+- A draw runs them when that read is a minute old.
 - `plans.open` runs for a pane whose list is a minute old, a changed count, an answer, or every read without `plans.waiting`.
 
 An undrawn session reads Board once. A failed refresh is logged, keeps
