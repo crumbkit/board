@@ -107,6 +107,11 @@ impl Control {
             .flatten()
     }
 
+    /// Whether the control names what left it owed, standing or not.
+    pub(crate) fn names_owed_by(&self) -> bool {
+        self.owed_by.is_some()
+    }
+
     /// Whether the control is standing and yet names what left it owed.
     pub(crate) fn owed_though_standing(&self) -> bool {
         self.kind() == Kind::Standing && self.owed_by.is_some()

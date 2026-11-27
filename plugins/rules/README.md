@@ -433,13 +433,17 @@ of the rename deletes them.
     - `rules::report::ci_env_invalid`: `GITHUB_RUN_ID` is set but is not
       a whole number, or another CI variable is missing or malformed, so
       `source_run` is null.
-    - `rules::report::suite_unreadable`: a rule's `judged_by` names no
-      suite Board reads as valid. The row keeps the path.
+    - `rules::report::judged_by_unreadable`: a rule's `judged_by` names no
+      suite Board reads as valid. The row keeps the path and its measured
+      result.
     - `rules::report::owed_by_unreadable`: an obligation's `owed_by` names
       no valid `github/pull/v1`, `review/report/v1` or
       `plans/decision/v1`, or a pull request without its number and page.
-      The row keeps `ref` and `type`, with `number` and `url` null;
-      `board github ref` writes the pull request's record.
+      The row keeps its measured result, `ref` and `type`, with `number`
+      and `url` null; `board github ref` writes the pull request's record.
+      Board marks a rule whose `judged_by` or `owed_by` reaches nothing
+      degraded, but the report measures it, and this warning is its one
+      entry.
 
     A refusal marks a row `unreadable` or leaves a group or suite without
     a row:
@@ -452,7 +456,9 @@ of the rename deletes them.
       the group has no `groups` row.
     - `rules::report::boundary_unreadable`: Board marks a boundary invalid,
       and the rules it checks gain no `body` target from it, so a rule only
-      it reaches has no row. It names the boundary.
+      it reaches has no row. It names the boundary. The report cannot tell
+      whether an invalid boundary reaches the repository, so the refusal
+      shows in the report of every repository.
     - `rules::report::suite_unreadable`: a suite's body does not parse, and
       the suite has no `suites` row. The report reads every suite in the
       board, in every mount, so such a suite shows in the report of every

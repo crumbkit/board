@@ -5,14 +5,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use board_model::{LogicalPath, parse_json};
-use board_ops::{Host, PluginError, literal};
+use board_ops::{Absent, Host, PluginError, literal};
 use serde::Deserialize;
 use serde_json::Value;
 
 use super::place::Place;
 use super::{Refused, Row, Severity, Source};
 use crate::glob::glob;
-use crate::index::{self, readable};
+use crate::index::{self, Control, readable};
 use crate::records::{OWED_BY_TYPES, SUITE_TYPE};
 
 /// The type of a boundary, which the boundary plugin ships.
@@ -127,7 +127,7 @@ struct PullRead {
 
 /// Fills each row's `judged_by` and `owed_by` from the records they name,
 /// read in one query. A `judged_by` that names no valid suite is a
-/// `rules::report::suite_unreadable` warning, and an `owed_by` that names
+/// `rules::report::judged_by_unreadable` warning, and an `owed_by` that names
 /// no valid record of a type it may name, or a pull request without its
 /// number and page, is a `rules::report::owed_by_unreadable` warning; each
 /// row keeps the path. A repository's own rule names paths in the
@@ -157,7 +157,7 @@ pub(crate) fn linked(
             let at = found.get(&lookup(row, suite));
             if !at.is_some_and(|linked| linked.valid && linked.kind == SUITE_TYPE) {
                 refused.push(Refused {
-                    code: "rules::report::suite_unreadable".to_owned(),
+                    code: "rules::report::judged_by_unreadable".to_owned(),
                     severity: Severity::Warning,
                     message: format!(
                         "the rule {}'s judged_by names {suite}, which Board does not read as a \
@@ -204,6 +204,59 @@ pub(crate) fn linked(
         }
     }
     Ok(())
+}
+
+/// The pointers of the references a rule's report fields name, which a
+/// warning reports in place of an unreadable row.
+const LINK_POINTERS: [&str; 2] = ["/judged_by", "/owed_by"];
+
+/// The rules of `degraded`, each with Board's code, that Board marks
+/// degraded only because their `judged_by` or `owed_by` reaches nothing or
+/// a record of the wrong type. Only those two fields of a rule name the
+/// types they accept, so `board::ref::wrong_type` comes from them alone;
+/// for `board::ref::dangling`, `refs` says which references dangle.
+pub(crate) fn only_links_degraded(
+    host: &dyn Host,
+    controls: &BTreeMap<String, Control>,
+    degraded: &[(String, Value)],
+) -> Result<BTreeSet<String>, PluginError> {
+    let mut only = BTreeSet::new();
+    let mut dangling = Vec::new();
+    for (logical, code) in degraded {
+        let Some(control) = controls.get(logical) else {
+            continue;
+        };
+        if control.judged_by.is_none() && !control.names_owed_by() {
+            continue;
+        }
+        match code.as_str() {
+            Some("board::ref::wrong_type") => {
+                only.insert(logical.clone());
+            }
+            Some("board::ref::dangling") => dangling.push(logical),
+            _ => {}
+        }
+    }
+    if dangling.is_empty() {
+        return Ok(only);
+    }
+    let paths = (dangling.iter())
+        .map(|logical| crate::logical(logical))
+        .collect::<Result<Vec<LogicalPath>, PluginError>>()?;
+    let refused = |error: &board_ops::RefsError| {
+        PluginError::board_refused("rules", "refs", &error.refusal())
+    };
+    let answers = (host.refs(&paths, Absent::Refuse, &[])).map_err(|e| refused(&e))?;
+    for (logical, answer) in dangling.into_iter().zip(answers) {
+        let report = answer.map_err(|e| refused(&e))?;
+        let links_alone = (report.from.iter())
+            .filter(|outgoing| outgoing.location.is_none())
+            .all(|outgoing| LINK_POINTERS.contains(&outgoing.pointer.as_str()));
+        if links_alone {
+            only.insert(logical.clone());
+        }
+    }
+    Ok(only)
 }
 
 /// Each record at one of `paths`, by its logical path.

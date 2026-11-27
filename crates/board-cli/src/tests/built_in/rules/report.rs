@@ -414,3 +414,65 @@ fn a_mounted_repository_s_report_gives_body_targets_the_judging_suite_and_the_ow
     assert_eq!(report["refused"], json!([]), "{report}");
     shown(&board, "rules/report/v2").validate(&report).unwrap();
 }
+
+#[test]
+fn a_repository_s_own_rule_looks_up_its_judging_suite_and_owing_pull_request_below_its_mount() {
+    let board = Fixture::enabling(&["rules", "runs", "github"]);
+    let own = json!({
+        "$type": "rules/rule/v1",
+        "requirement": "Review it.",
+        "purpose": "A test.",
+        "paths": ["src/*"],
+        "kind": "obligation",
+        "owed_by": "/gh/owner/app/pulls/7",
+        "judged_by": "/suites/review",
+    });
+    let (repository, commit) = repository(
+        &["rules", "runs", "github"],
+        &[
+            ("src/main.rs", "fn main() {}".to_owned()),
+            ("rules/own.json", own.to_string()),
+            (
+                "suites/review.json",
+                json!({"$type": "runs/suite/v1", "method": "Review the repository."}).to_string(),
+            ),
+            (
+                "gh/owner/app/pulls/7.json",
+                json!({
+                    "$type": "github/pull/v1",
+                    "owner": "owner",
+                    "repo": "app",
+                    "number": 7,
+                    "url": "https://github.com/owner/app/pull/7",
+                })
+                .to_string(),
+            ),
+        ],
+    );
+    mount(&board, "repos/app.json", &repository, commit);
+    let report = reported(&board);
+    let [row] = report["rules"].as_array().unwrap().as_slice() else {
+        panic!("one row: {report}")
+    };
+    assert_eq!(
+        (&row["id"], &row["source"], &row["result"], &row["targets"]),
+        (
+            &json!("/rules/own"),
+            &json!("repository"),
+            &json!("unmeasured"),
+            &json!(["file"])
+        )
+    );
+    assert_eq!(row["judged_by"], "/suites/review");
+    assert_eq!(
+        row["owed_by"],
+        json!({
+            "ref": "/gh/owner/app/pulls/7",
+            "type": "github/pull/v1",
+            "number": 7,
+            "url": "https://github.com/owner/app/pull/7",
+        })
+    );
+    assert_eq!(report["refused"], json!([]), "{report}");
+    shown(&board, "rules/report/v2").validate(&report).unwrap();
+}

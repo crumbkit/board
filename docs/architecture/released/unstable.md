@@ -51,7 +51,10 @@ rewritten too. Board still ships the `rules/report/v1` schema, unchanged,
 for readers that hold a report an earlier Board printed, and released.json
 keeps listing it. A board whose `.board/types/` holds the older copies
 refuses rules calls with `board::plugin::schema_differs` until `board
-plugin enable rules` replaces them.
+plugin enable rules` replaces them. A Board older than this change refuses
+a rule that names `judged_by`, because `rules/rule/v1` admits no field it
+does not list, so no rule should name `judged_by` until every machine that
+reads the board runs a Board with this change.
 
 The `--json` report of `board timing check`, `board/timing-check-report/v2`,
 changes in place while the command timing budgets run silently in their first

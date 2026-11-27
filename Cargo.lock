@@ -471,6 +471,8 @@ dependencies = [
  "board-plugin",
  "board-plugin-boundary",
  "board-plugin-github",
+ "board-plugin-plans",
+ "board-plugin-review",
  "board-plugin-runs",
  "board-scenario",
  "board-validate",

@@ -155,7 +155,7 @@ pub(crate) struct Pinned {
 
 /// A version a file pins, and its line: in `behind`, one older than the
 /// rule's.
-#[derive(Serialize, JsonSchema)]
+#[derive(Clone, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct FileBehind {
     pub(crate) file: String,
@@ -700,18 +700,21 @@ fn pinned(
     unreadable: Vec<Unreadable>,
 ) -> Result<Pinned, PluginError> {
     let expression = version::compile(logical, rule)?;
-    let (mut behind, mut pins) = (Vec::new(), Vec::new());
+    let mut pins = Vec::new();
     for (path, data) in texts {
         let text = String::from_utf8_lossy(data);
-        let at = |pin: version::Pin| FileBehind {
-            file: path.to_string(),
-            line: pin.line,
-            found: pin.found,
-        };
-        let found = version::behind(&expression, &rule.at_least, &text);
-        behind.extend(found.into_iter().map(at));
-        pins.extend(version::every(&expression, &text).into_iter().map(at));
+        pins.extend(
+            (version::every(&expression, &text).into_iter()).map(|pin| FileBehind {
+                file: path.to_string(),
+                line: pin.line,
+                found: pin.found,
+            }),
+        );
     }
+    let behind = (pins.iter())
+        .filter(|pin| version::is_behind(&pin.found, &rule.at_least))
+        .cloned()
+        .collect();
     Ok(Pinned {
         rule: logical.to_owned(),
         requirement: control.requirement.clone(),

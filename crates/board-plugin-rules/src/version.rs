@@ -40,11 +40,16 @@ pub(crate) fn compile(control: &str, rule: &Version) -> Result<Regex, PluginErro
 /// Each version `expression`'s first group captures in `text` that is older
 /// than `at_least`, by line.
 pub(crate) fn behind(expression: &Regex, at_least: &str, text: &str) -> Vec<Pin> {
-    let floor = numbers(at_least).expect("the schema admits only dotted numbers as at_least");
-    (pins(expression, text).into_iter())
-        .filter(|(_, pinned, _)| older(pinned, &floor))
-        .map(|(line, _, found)| Pin { line, found })
+    (every(expression, text).into_iter())
+        .filter(|pin| is_behind(&pin.found, at_least))
         .collect()
+}
+
+/// Whether `found`, a version [`every`] captured, is older than
+/// `at_least`.
+pub(crate) fn is_behind(found: &str, at_least: &str) -> bool {
+    let floor = numbers(at_least).expect("the schema admits only dotted numbers as at_least");
+    numbers(found).is_some_and(|pinned| older(&pinned, &floor))
 }
 
 /// Each version `expression`'s first group captures in `text`, older or

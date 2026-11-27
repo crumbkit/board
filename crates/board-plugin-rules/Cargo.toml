@@ -26,9 +26,12 @@ toml.workspace = true
 [dev-dependencies]
 # The tests run runs.latest, which a zero rule calls, in process.
 board-plugin-runs.workspace = true
-# The report tests read boundaries and pull requests, whose schemas these ship.
+# The report tests read boundaries, pull requests, decisions and review
+# reports, whose schemas these ship.
 board-plugin-boundary.workspace = true
 board-plugin-github.workspace = true
+board-plugin-plans.workspace = true
+board-plugin-review.workspace = true
 board-scenario.workspace = true
 
 [lints]

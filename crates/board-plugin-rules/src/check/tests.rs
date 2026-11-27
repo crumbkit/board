@@ -176,6 +176,8 @@ pub(crate) fn enabling_in(
         &board_plugin_runs::Runs,
         &board_plugin_boundary::Boundary,
         &board_plugin_github::Github,
+        &board_plugin_plans::Plans,
+        &board_plugin_review::Review,
     ]);
     for plugin in plugins {
         (board.plugin_enable(None, None, &plugin.parse().unwrap(), &[])).unwrap();

@@ -345,13 +345,20 @@ fn imposed_set<'a>(
 
 /// The imposed rules `report` cannot measure, each with its code and why:
 /// those Board marks degraded, and those whose version capture is invalid.
+/// A rule Board marks degraded only because its `judged_by` or `owed_by`
+/// reaches nothing or the wrong type is measured, and its row carries the
+/// one warning [`links::linked`] gives.
 fn unreadable_rules(
     host: &dyn Host,
     controls: &BTreeMap<String, Control>,
     in_set: &dyn Fn(&str) -> bool,
 ) -> Result<BTreeMap<String, (String, String)>, PluginError> {
-    let mut unreadable: BTreeMap<String, (String, String)> = (index::degraded(host)?.into_iter())
+    let degraded: Vec<(String, Value)> = (index::degraded(host)?.into_iter())
         .filter(|(logical, _)| in_set(logical))
+        .collect();
+    let only_links = links::only_links_degraded(host, controls, &degraded)?;
+    let mut unreadable: BTreeMap<String, (String, String)> = (degraded.into_iter())
+        .filter(|(logical, _)| !only_links.contains(logical))
         .map(|(logical, code)| {
             let code = code.as_str().unwrap_or("rules::rule::degraded").to_owned();
             let message = format!(
@@ -413,22 +420,13 @@ fn version_row(
     } else {
         Outcome::Behind
     };
-    let behind: Vec<Pin> = (pinned.behind.iter())
-        .map(|pin| Pin {
-            file: place.relative(&pin.file),
-            line: u64::try_from(pin.line).expect("a line number fits in u64"),
-            found: pin.found.clone(),
-        })
-        .collect();
-    (row.behind, row.omitted.behind) = cut(behind);
-    let pins: Vec<Pin> = (pinned.pins.iter())
-        .map(|pin| Pin {
-            file: place.relative(&pin.file),
-            line: u64::try_from(pin.line).expect("a line number fits in u64"),
-            found: pin.found.clone(),
-        })
-        .collect();
-    (row.pins, row.omitted.pins) = cut(pins);
+    let at = |pin: &check::FileBehind| Pin {
+        file: place.relative(&pin.file),
+        line: u64::try_from(pin.line).expect("a line number fits in u64"),
+        found: pin.found.clone(),
+    };
+    (row.behind, row.omitted.behind) = cut(pinned.behind.iter().map(at).collect());
+    (row.pins, row.omitted.pins) = cut(pinned.pins.iter().map(at).collect());
     (row.files, row.omitted.files) = cut(place.all_relative(&pinned.files));
     unreadable_row(&mut row, &pinned.unreadable, refused);
     row

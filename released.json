@@ -18982,6 +18982,7 @@
     "rules::report::ci_env_invalid",
     "rules::report::file_unreadable",
     "rules::report::group_unreadable",
+    "rules::report::judged_by_unreadable",
     "rules::report::member_unmatched",
     "rules::report::no_git",
     "rules::report::no_repository",
