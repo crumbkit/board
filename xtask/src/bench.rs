@@ -84,16 +84,22 @@ pub(crate) struct Options {
     pub(crate) against: Option<PathBuf>,
     /// The rounds `--against` runs, if `--runs` sets them.
     pub(crate) runs: Option<usize>,
+    /// Whether to time the hot commands, and print their run as JSON.
+    pub(crate) hot: bool,
+    pub(crate) json: bool,
 }
 
 impl Options {
-    /// Reads `[--board <dir>] [--records <n>] [--against <board> [--runs <n>]]`.
+    /// Reads `[--board <dir>] [--records <n>] [--against <board> [--runs <n>]]`,
+    /// or `--hot [--records <n>] [--json]`.
     pub(crate) fn parse(mut arguments: impl Iterator<Item = String>) -> Option<Self> {
         let mut options = Self {
             board: None,
             records: RECORDS,
             against: None,
             runs: None,
+            hot: false,
+            json: false,
         };
         while let Some(flag) = arguments.next() {
             match flag.as_str() {
@@ -103,10 +109,14 @@ impl Options {
                 "--runs" => {
                     options.runs = Some(arguments.next()?.parse().ok().filter(|runs| *runs > 0)?);
                 }
+                "--hot" => options.hot = true,
+                "--json" => options.json = true,
                 _ => return None,
             }
         }
-        Some(options)
+        let other = options.board.is_some() || options.against.is_some() || options.runs.is_some();
+        let fits = if options.hot { !other } else { !options.json };
+        fits.then_some(options)
     }
 
     /// The base binary `--against` names and the rounds to run, if it names
@@ -502,6 +512,7 @@ impl BenchError {
 }
 
 pub(crate) mod against;
+pub(crate) mod hot;
 
 #[cfg(test)]
 mod tests;

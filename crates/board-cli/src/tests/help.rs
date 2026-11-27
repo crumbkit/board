@@ -133,6 +133,11 @@ const ALLOW: &[Allow] = &[
         &["--record"],
         "the check reads the personal board and this machine's timing log, which the fixture does not hold",
     ),
+    Allow::example(
+        "timing check",
+        &["--record", "--session", "local_0a1b-2c3d"],
+        "the check reads the personal board and this machine's timing log, which the fixture does not hold",
+    ),
     Allow::example("serve", &[], SERVES),
     Allow::example("serve", &["--idle", "2m"], SERVES),
     Allow::example("ui open", &["/bindings/review"], SERVES),

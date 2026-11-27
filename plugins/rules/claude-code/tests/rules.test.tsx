@@ -56,6 +56,8 @@ type Answers = {
   repository?: string
   /** 'fails' when the shell that starts the speed check cannot run. */
   speed?: 'fails'
+  /** The session id the desktop app names, CLAUDE_CODE_HOST_SESSION_ID. */
+  host?: string
   /** What the mod's store holds at the start. */
   stored?: Record<string, unknown>
   /** The clock's time at the start. */
@@ -83,7 +85,7 @@ function engine(on: On, answers: Answers) {
   const run = (exitCode: number, stdout: string) => ({
     value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   })
-  on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/me' : undefined }))
+  on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/me' : e.name === 'CLAUDE_CODE_HOST_SESSION_ID' ? answers.host : undefined }))
   on('fs.exists', (_, e) => ({ value: e.path === BADGES ? answers.badges !== undefined : e.path === CONFIG && answers.config !== undefined }))
   on('fs.read', (_, e) => {
     if (e.path === CONFIG && answers.config !== undefined) return { value: answers.config }
@@ -260,6 +262,21 @@ test('session start starts the speed check detached at the repository root, once
   expect(detached[0]).toContain(`${SPEED_CHECK} in ${ROOT}`)
   expect(detached[0]).toContain('$HOME/.local/bin')
   expect(SPEED_CHECK).toMatch(/nohup board timing check --record.*setsid -f.*set -m/)
+  expect(detached[0]).not.toContain('session=')
+})
+
+test('the speed check names the session the desktop app names, so a question it files says who asked', async ($, on) => {
+  const { clock, detached } = engine(on, { host: 'local_0a1b-2c3d' })
+  await start($, clock)
+  expect(detached[0]).toContain(`session=local_0a1b-2c3d; PATH=`)
+  expect(SPEED_CHECK).toContain('${session:+ --session $session}')
+})
+
+test('a host session id that is not a local_ id is not passed to the shell', async ($, on) => {
+  const { clock, detached } = engine(on, { host: 'local_0a; rm -rf /' })
+  await start($, clock)
+  expect(detached).toHaveLength(1)
+  expect(detached[0]).not.toContain('session=')
 })
 
 test('a speed check that cannot start is logged and the session starts with its rules', async ($, on) => {

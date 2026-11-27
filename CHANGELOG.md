@@ -9,6 +9,24 @@
   call that asks `host.refs`, finds each path's references by a lookup built
   once per run in place of a scan of every reference for each path. The
   answers are the same as before.
+- `board timing check` goes live one command at a time. A command turns
+  live once it has 100 judged local results, 14 CI results once CI has
+  timed it, and under 1 in 10 of its over-budget results cleared at the
+  next one, and it never turns silent again. Only a live command over
+  budget opens `/tasks/board-speed-<command>.md`. The first live command
+  writes the zero rules `/rules/board/speed-budgets` and
+  `/rules/board/speed-budgets-ci`, so the rules badge shows a live command
+  over budget in every session. Once the lines changed in `/repos/board`
+  since the task opened pass `overflow-agent-grace` (200 by default), a
+  check run with `--session <local_ id>` files one question for the owner,
+  named as that session's; the rules mod now passes it. The check also
+  judges a median budget, prints each command's median budget and mode,
+  and gains budgets for `ls`, `changes.advance` and `changes.brief`.
+- On each push to main, timing.yml times every budgeted command on Linux
+  with `cargo xtask bench --hot` on a generated board with 100 open
+  changes, reporting only, and uploads the run. `board timing check
+  --record` imports the newest one into `/suites/board-speed-ci` through
+  gh; when gh cannot, it warns and still records the local run.
 
 ## 0.1.5 (2026-11-27)
 

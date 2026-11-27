@@ -3,7 +3,8 @@
 //! `--record` a run of `/suites/board-speed-local`
 //! (docs/architecture/performance/timing.md, The speed check).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use board_model::{LogicalPath, Object};
 use board_ops::{Board, Expect, PutError, Timings};
@@ -20,8 +21,7 @@ const KILLED_WITHIN_MS: u64 = 24 * 3_600_000;
 pub(crate) const LOCAL_SUITE: &str = "/suites/board-speed-local";
 
 /// Whether an over-budget command opens a task and, after the grace, a
-/// question. The check stays silent until the owner lands the change that
-/// makes it live, once the silent runs show the budgets hold
+/// question. A command is silent until it is ready, then live for good
 /// (docs/architecture/performance/timing.md, Silent and live).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Mode {
@@ -29,7 +29,22 @@ pub(crate) enum Mode {
     Live,
 }
 
-pub(crate) const MODE: Mode = Mode::Silent;
+impl Mode {
+    pub(crate) fn of(command: &str, live: &BTreeSet<String>) -> Self {
+        if live.contains(command) {
+            Self::Live
+        } else {
+            Self::Silent
+        }
+    }
+
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Silent => "silent",
+            Self::Live => "live",
+        }
+    }
+}
 
 /// One command's recent runs: the judged times in the order they ran, the
 /// most the check reads, how many were judged in all, and how many runs
@@ -133,18 +148,30 @@ pub(crate) fn judge(budget: Budget, history: Option<&History>) -> Judged {
     let empty = History::default();
     let history = history.unwrap_or(&empty);
     let p90_us = percentile(&history.judged_us, 90);
-    let limit = budget.ms * 1000;
-    let state = match p90_us {
-        _ if budget.session_start && history.killed > 0 => State::Thrice,
-        _ if (history.judged_us.len() as u64) < UNJUDGED_BELOW => State::Unjudged,
-        Some(p90) if p90 > 3 * limit => State::Thrice,
-        Some(p90) if p90 > limit => State::Over,
-        _ => State::Within,
+    let p50_us = percentile(&history.judged_us, 50);
+    // Whether the p90, or the median where it has a budget, is over
+    // `times` its budget.
+    let past = |times: u64| {
+        let over = |us: Option<u64>, ms: Option<u64>| {
+            us.zip(ms).is_some_and(|(us, ms)| us > times * ms * 1000)
+        };
+        over(p90_us, Some(budget.ms)) || over(p50_us, budget.median_ms)
+    };
+    let state = if budget.session_start && history.killed > 0 {
+        State::Thrice
+    } else if (history.judged_us.len() as u64) < UNJUDGED_BELOW {
+        State::Unjudged
+    } else if past(3) {
+        State::Thrice
+    } else if past(1) {
+        State::Over
+    } else {
+        State::Within
     };
     Judged {
         budget,
         runs: history.judged,
-        p50_us: percentile(&history.judged_us, 50),
+        p50_us,
         p90_us,
         killed: history.killed,
         state,
@@ -165,17 +192,20 @@ pub(crate) fn ms(us: u64) -> f64 {
     (us / 100.0).round() / 10.0
 }
 
-/// One result of the run record: the command's case and what it measured.
-fn result(judged: &Judged) -> Value {
+/// One result of the run record: the command's case, its mode and what it
+/// measured.
+fn result(judged: &Judged, mode: Mode) -> Value {
     let budget = judged.budget;
-    let mut measures =
-        json!({"budget_ms": budget.ms, "judged": judged.runs, "killed": judged.killed});
+    let mut measures = json!({"budget_ms": budget.ms, "judged": judged.runs,
+        "killed": judged.killed, "mode": mode.name()});
+    if let Some(median) = budget.median_ms {
+        measures["median_budget_ms"] = json!(median);
+    }
     for (name, us) in [("p50_ms", judged.p50_us), ("p90_ms", judged.p90_us)] {
         if let Some(us) = us {
             measures[name] = json!(ms(us));
         }
     }
-    let p90 = judged.p90_us.map_or(0.0, ms);
     let (outcome, note) = match judged.state {
         State::Within => ("pass", None),
         State::Unjudged => (
@@ -185,10 +215,7 @@ fn result(judged: &Judged) -> Value {
                 judged.runs
             )),
         ),
-        State::Over => (
-            "fail",
-            Some(format!("p90 {p90} ms is over the {} ms budget", budget.ms)),
-        ),
+        State::Over => ("fail", Some(over(judged))),
         State::Thrice => ("fail", Some(thrice(judged))),
     };
     let mut result = json!({"case": budget.command, "outcome": outcome, "measures": measures});
@@ -198,25 +225,53 @@ fn result(judged: &Judged) -> Value {
     result
 }
 
+/// The measure over its budget, `times` over: its name, its value in ms
+/// and the budget's own name. The p90 when it is over, else the median.
+fn measure_over(judged: &Judged, times: u64) -> (&'static str, f64, String) {
+    let budget = judged.budget;
+    let p90_over = judged
+        .p90_us
+        .is_some_and(|us| us > times * budget.ms * 1000);
+    match budget.median_ms {
+        Some(median) if !p90_over => (
+            "p50",
+            judged.p50_us.map_or(0.0, ms),
+            format!("{median} ms median budget"),
+        ),
+        _ => (
+            "p90",
+            judged.p90_us.map_or(0.0, ms),
+            format!("{} ms budget", budget.ms),
+        ),
+    }
+}
+
+fn over(judged: &Judged) -> String {
+    let (name, value, budget) = measure_over(judged, 1);
+    format!("{name} {value} ms is over the {budget}")
+}
+
 fn thrice(judged: &Judged) -> String {
     let budget = judged.budget;
     if budget.session_start && judged.killed > 0 {
         format!("{} runs were killed at a session's start", judged.killed)
     } else {
-        format!(
-            "p90 {} ms is over three times the {} ms budget",
-            judged.p90_us.map_or(0.0, ms),
-            budget.ms
-        )
+        let (name, value, budget) = measure_over(judged, 3);
+        format!("{name} {value} ms is over three times the {budget}")
     }
 }
 
-/// How many commands are over budget, and how many runs were killed.
-pub(crate) fn counts(judged: &[Judged]) -> (u64, u64) {
-    let over = (judged.iter())
+/// How many live commands are over budget, and how many of their runs were
+/// killed. A silent command counts in neither, so a zero rule on them
+/// fails only for a live command.
+pub(crate) fn counts(judged: &[Judged], live: &BTreeSet<String>) -> (u64, u64) {
+    let live: Vec<&Judged> = (judged.iter())
+        .filter(|judged| live.contains(judged.budget.command))
+        .collect();
+    let over = (live.iter())
         .filter(|judged| matches!(judged.state, State::Over | State::Thrice))
         .count() as u64;
-    (over, judged.iter().map(|judged| judged.killed).sum())
+    (over, live.iter().map(|judged| judged.killed).sum())
 }
 
 /// The machine a run was on, as a run record names it.
@@ -231,8 +286,16 @@ pub(crate) struct Host {
 
 /// The `runs/run/v1` record of a check judged at `at`, an RFC 3339 time, as
 /// the build `build`.
-pub(crate) fn run_record(judged: &[Judged], at: &str, build: &str, host: &Host) -> Value {
-    let (over, killed) = counts(judged);
+pub(crate) fn run_record(
+    judged: &[Judged],
+    live: &BTreeSet<String>,
+    at: &str,
+    build: &str,
+    host: &Host,
+) -> Value {
+    let (over, killed) = counts(judged, live);
+    let (all_over, all_killed) = counts(judged, &all(judged));
+    let (silent_over, silent_killed) = (all_over - over, all_killed - killed);
     let on = host.name.as_ref().map_or_else(
         || "an unnamed machine".to_owned(),
         |name| format!("the machine {name}"),
@@ -246,11 +309,22 @@ pub(crate) fn run_record(judged: &[Judged], at: &str, build: &str, host: &Host) 
         "scope": "full",
         "host": {"os": host.os, "arch": host.arch, "logical_cpus": host.cpus},
         "versions": {"board": build},
-        "measures": {"over_budget": over, "killed": killed},
-        "results": judged.iter().map(result).collect::<Vec<_>>(),
-        "summary": format!("{over} commands over budget, {killed} runs killed in the last day"),
+        "dirty": build.contains(".dirty."),
+        "measures": {"over_budget": over, "killed": killed,
+            "silent_over_budget": silent_over, "silent_killed": silent_killed},
+        "results": (judged.iter())
+            .map(|judged| result(judged, Mode::of(judged.budget.command, live)))
+            .collect::<Vec<_>>(),
+        "summary": format!("{over} live commands over budget and {killed} of their runs killed in the last day; {silent_over} silent commands over budget"),
         "written_by": "board/timing-check",
     })
+}
+
+/// Every command `judged` names.
+fn all(judged: &[Judged]) -> BTreeSet<String> {
+    (judged.iter())
+        .map(|judged| judged.budget.command.to_owned())
+        .collect()
 }
 
 /// The suite every local check records a run of.
@@ -258,12 +332,14 @@ pub(crate) fn local_suite() -> Value {
     json!({
         "$type": "runs/suite/v1",
         "kind": "benchmark",
-        "method": "board timing check --record judges each hot command's p90 over its last 20 top-level runs on the personal board, at a load no higher than the core count, against its budget in docs/architecture/performance/budgets.md.",
+        "method": "board timing check --record judges each hot command's p90, and its median where it has a median budget, over its last 20 top-level runs on the personal board, at a load no higher than the core count, against its budget in docs/architecture/performance/budgets.md. Each result names the command's mode; the run's measures count only live commands, and the silent_ measures the rest.",
         "command": "board timing check --record",
         "subjects": ["crumbkit/board"],
         "measures": [
-            {"name": "over_budget", "unit": "commands", "description": "Commands whose p90 is over their budget."},
-            {"name": "killed", "unit": "runs", "description": "Runs killed in the last day."}
+            {"name": "over_budget", "unit": "commands", "description": "Live commands over their budget."},
+            {"name": "killed", "unit": "runs", "description": "Runs of live commands killed in the last day."},
+            {"name": "silent_over_budget", "unit": "commands", "description": "Silent commands over their budget."},
+            {"name": "silent_killed", "unit": "runs", "description": "Runs of silent commands killed in the last day."}
         ]
     })
 }
@@ -272,23 +348,17 @@ pub(crate) fn local_suite() -> Value {
 /// opened, and how many may change before the owner is asked.
 pub(crate) trait Grace {
     fn allowed(&self) -> u64;
-    /// The lines changed since `run`, the run the task names, when known.
-    fn changed_since(&self, run: &LogicalPath) -> Option<u64>;
+    /// The lines changed since `opened`, when the run the task names
+    /// started, when known.
+    fn changed_since(&self, opened: jiff::Timestamp) -> Option<u64>;
 }
 
-/// The grace while nothing measures the lines changed: no question is
-/// filed. The change that makes the check live measures them, and names the
-/// session that asks.
-pub(crate) struct Unmeasured;
-
-impl Grace for Unmeasured {
-    fn allowed(&self) -> u64 {
-        u64::MAX
-    }
-
-    fn changed_since(&self, _: &LogicalPath) -> Option<u64> {
-        None
-    }
+/// When a check asks, the session it asks as, when it has one, and the
+/// cache its reads use.
+pub(crate) struct Asker<'a> {
+    pub(crate) at: &'a str,
+    pub(crate) session: Option<&'a str>,
+    pub(crate) cache: Option<&'a Path>,
 }
 
 /// What a live check wrote: tasks opened or retitled, and questions filed.
@@ -306,9 +376,16 @@ fn task_path(command: &str) -> String {
     format!("/tasks/board-speed-{}.md", slug(command))
 }
 
-fn question_path(command: &str) -> String {
-    format!("/projects/board/questions/board-speed-{}", slug(command))
+/// The question of one overflow: the command's, named by the run that
+/// opened or reopened its task, so each overflow can ask once.
+fn question_path(command: &str, opened: &LogicalPath) -> String {
+    let run = opened.as_str().rsplit('/').next().unwrap_or_default();
+    format!("{QUESTIONS}/{PREFIX}{}-{run}", slug(command))
 }
+
+/// Where speed questions are filed, and the start of each one's name.
+const QUESTIONS: &str = "/projects/board/questions";
+const PREFIX: &str = "board-speed-";
 
 fn title(judged: &Judged) -> String {
     let budget = judged.budget;
@@ -335,9 +412,10 @@ fn task(judged: &Judged, run: &LogicalPath) -> String {
     )
 }
 
-fn question(judged: &Judged, run: &LogicalPath, asked: &str, by: &Value) -> Value {
+fn question(judged: &Judged, run: &LogicalPath, asked: &str, by: &Value, task: &str) -> Value {
     let budget = judged.budget;
     json!({
+        "blocks": task,
         "$type": "plans/question/v1",
         "question": format!("Board's {} is still over its {} ms budget after the grace. Should its budget change, or should it be retired?", budget.command, budget.ms),
         "why": format!("{run} found it over budget, and the lines changed in /repos/board since its task opened are past overflow-agent-grace."),
@@ -346,6 +424,42 @@ fn question(judged: &Judged, run: &LogicalPath, asked: &str, by: &Value) -> Valu
         "status": "open",
         "mount": "/repos/board",
     })
+}
+
+/// Whether any speed question is open: its status is open and no answer,
+/// which plans keeps at the question's id under answers/, names it.
+fn asking(board: &Board, cache: Option<&Path>) -> bool {
+    let held = |path: &str| (logical(path).ok()).and_then(|path| board.get(&path).ok());
+    let Ok(listed) = (logical(QUESTIONS)).map(|questions| board.ls(&questions, cache)) else {
+        return false;
+    };
+    let Ok(listed) = listed else {
+        return false;
+    };
+    (listed.listed.iter()).any(|listed| {
+        let board_ops::Listed::Entry {
+            logical: Some(logical),
+            ..
+        } = listed
+        else {
+            return false;
+        };
+        let name = logical.as_str().rsplit('/').next().unwrap_or_default();
+        if !name.starts_with(PREFIX) {
+            return false;
+        }
+        let open = held(&format!("{QUESTIONS}/{name}"))
+            .and_then(|got| serde_json::from_slice::<Value>(&got.bytes).ok())
+            .is_some_and(|question| question["status"] == "open");
+        open && held(&format!("/projects/board/answers/{name}")).is_none()
+    })
+}
+
+/// When the run at `run` started, when it reads.
+fn started(board: &Board, run: &LogicalPath) -> Option<jiff::Timestamp> {
+    let got = board.get(run).ok()?;
+    let record: Value = serde_json::from_slice(&got.bytes).ok()?;
+    record["started"].as_str()?.parse().ok()
 }
 
 /// The task's bytes and blob, when it exists.
@@ -362,33 +476,55 @@ fn logical(path: &str) -> Result<LogicalPath, PutError> {
     Ok(path.parse()?)
 }
 
-/// Opens a task for each command over budget, only where none exists; gives
-/// an open task the title of a command now far too slow; and files one
-/// question for each command still over once `grace` has passed since its
-/// task opened, only where none exists, asked by `by` at `asked`. `run` is
-/// the run that judged them.
+/// Whether the task text `held` is open, as its front matter says.
+fn is_open(held: &str) -> bool {
+    (held.lines())
+        .find_map(|line| line.strip_prefix("status: "))
+        .is_some_and(|status| status.trim().trim_matches('"') == "open")
+}
+
+/// For each command in `live` over budget: opens a task, where none exists
+/// or reopens one that is closed, naming this run; gives an open task the
+/// title of a command now far too slow; and once `grace` has passed since
+/// the run that opened or reopened the task, files that overflow's one
+/// question, asked as `asker`'s session, and only while no other speed
+/// question is open. A check with no session files none. `run` is the run
+/// that judged them.
 pub(crate) fn alert(
     board: &Board,
     judged: &[Judged],
+    live: &BTreeSet<String>,
     run: &LogicalPath,
-    (asked, by): (&str, &Value),
+    asker: &Asker<'_>,
     grace: &dyn Grace,
 ) -> Result<Alerted, PutError> {
     let mut alerted = Alerted::default();
     for judged in judged {
-        if !matches!(judged.state, State::Over | State::Thrice) {
+        let over = matches!(judged.state, State::Over | State::Thrice);
+        if !over || !live.contains(judged.budget.command) {
             continue;
         }
         let command = judged.budget.command;
         let path = logical(&task_path(command))?;
         let text = task(judged, run);
-        let Some((held, blob)) = existing(board, &path) else {
-            match board.put_file(&path, Expect::Absent, text.as_bytes()) {
+        let held = existing(board, &path);
+        let reopen = match &held {
+            None => Some(Expect::Absent),
+            Some((held, Some(blob))) if !is_open(&String::from_utf8_lossy(held)) => {
+                Some(Expect::Blob(*blob))
+            }
+            Some(_) => None,
+        };
+        if let Some(expect) = reopen {
+            match board.put_file(&path, expect, text.as_bytes()) {
                 Ok(_) => alerted.tasks.push(path.to_string()),
-                // Another check opened it first.
+                // Another check opened or reopened it first.
                 Err(PutError::Stale { .. }) => {}
                 Err(error) => return Err(error),
             }
+            continue;
+        }
+        let Some((held, blob)) = held else {
             continue;
         };
         let titled = format!(
@@ -416,17 +552,25 @@ pub(crate) fn alert(
                 alerted.tasks.push(path.to_string());
             }
         }
-        let opened_by = (held.lines())
+        let Some(session) = asker.session else {
+            continue;
+        };
+        let Some(opened) = (held.lines())
             .find_map(|line| line.strip_prefix("refs: "))
             .and_then(|refs| serde_json::from_str::<Vec<String>>(refs).ok())
             .and_then(|refs| refs.into_iter().next())
-            .and_then(|run| run.parse::<LogicalPath>().ok());
-        let past = opened_by
-            .and_then(|opened| grace.changed_since(&opened))
+            .and_then(|run| run.parse::<LogicalPath>().ok())
+        else {
+            continue;
+        };
+        let past = started(board, &opened)
+            .and_then(|at| grace.changed_since(at))
             .is_some_and(|changed| changed > grace.allowed());
-        if past {
-            let path = logical(&question_path(command))?;
-            let record = question(judged, run, asked, by).to_string();
+        let path = logical(&question_path(command, &opened))?;
+        if past && board.get(&path).is_err() && !asking(board, asker.cache) {
+            let by = json!({"program": "board", "session": session});
+            let task = task_path(command);
+            let record = question(judged, run, asker.at, &by, &task).to_string();
             match board.put(&path, Expect::Absent, record.as_bytes()) {
                 Ok(_) => alerted.questions.push(path.to_string()),
                 Err(PutError::Stale { .. }) => {}
