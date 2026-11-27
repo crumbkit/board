@@ -211,7 +211,7 @@ fn a_decision_the_plan_only_uses_approves_nothing_and_attaching_it_does() {
     let board = Changes::new();
     board.write(
         "decisions/owner.json",
-        &decision(&json!({"refs": [CHANGE, "/changes/t/plans/1"]})),
+        &decision(&json!({"refs": [CHANGE], "decides": "/changes/t/plans/1"})),
     );
     let data = signed_data(&board);
     board.change_at(

@@ -99,6 +99,63 @@ fn the_panes_answer_to_an_option_naming_the_change_passes_owner_approval_and_its
     assert_eq!(approval(&twin).0, "missing");
 }
 
+/// Records the owner's decision with `board plans decide` and `flags`, and
+/// attaches it to the change.
+fn decided(personal: &Personal, flags: &[&str]) {
+    let mut given = vec![
+        "plans",
+        "decide",
+        "--project",
+        "a",
+        "--decision",
+        "pat approves the plan.",
+        "--why",
+        "Asked whether he approves the plan, pat answered \"Approve\".",
+        "--person",
+        "pat",
+        "--session",
+        "local_0a1b",
+    ];
+    given.extend(flags);
+    let ran = personal.run(&[["--json"].as_slice(), &given].concat());
+    assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
+    let path = json(&ran)["data"]["output"]["path"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let attach = [
+        "call",
+        "changes.attach",
+        "--path",
+        "/changes/t",
+        "--ref",
+        &path,
+    ];
+    let attached = personal.run(&attach);
+    assert_eq!(attached.code, 0, "{}", text(&attached.stderr));
+}
+
+/// The owner's decision that `board plans decide` writes with `--decides`
+/// naming the current revision and `--refs` naming the change passes
+/// owner-approval; its twin that names the revision only in `--refs`
+/// decides nothing and does not.
+#[test]
+fn a_decision_written_with_decides_naming_the_revision_passes_owner_approval_and_its_twin_does_not()
+{
+    let personal = asked("Approve /changes/t as planned in /changes/t/plans/1.");
+    decided(
+        &personal,
+        &["--decides", "/changes/t/plans/1", "--refs", "/changes/t"],
+    );
+    assert_eq!(approval(&personal).0, "pass");
+    let twin = asked("Approve /changes/t as planned in /changes/t/plans/1.");
+    decided(
+        &twin,
+        &["--refs", "/changes/t", "--refs", "/changes/t/plans/1"],
+    );
+    assert_eq!(approval(&twin).0, "missing");
+}
+
 #[test]
 #[expect(
     clippy::disallowed_methods,

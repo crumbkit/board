@@ -26,6 +26,10 @@ released test skips, are not listed. The index may change freely.
 After 0.1.1, `runs/suite/v1` gained an optional `kind` in place, because
 the release had few users. `runs.migrate` adds it to existing suites.
 
+After 0.1.5, `plans/decision/v1` gained an optional `decides` in place,
+because the release had few users. A decision without it decides no
+single entry, so an approval written before it lapses and is asked again.
+
 After 0.1.1, the `blocks` of `plans/question/v1` and the `subject` of
 `artifacts/artifact/v1` gained `tasks/task/v3` in place, beside
 `tasks/task/v2`, because `tasks add` writes v3 tasks and the release had few

@@ -37,10 +37,13 @@ so it is written at its path. Its schema declares its folder too, so
   plugin and hook, or the client and surface, that wrote the answer, such as
   `plans/pane-answer` or `board-app/phone`.
 - `plans/decision/v1` at `/projects/<project>/decisions/<id>`. `decision`,
-  `why`, `by` (the deciding `Actor`) and `decided` are required; `alternatives`, `refs`,
-  `urls`, `review` (`wanted`, or left out when no review is wanted) and `written_by` are optional. `refs` lists board
-  entries the decision concerns, such as an answer; `urls` lists web pages,
-  such as a pull request.
+  `why`, `by` (the deciding `Actor`) and `decided` are required;
+  `alternatives`, `refs`, `decides`, `urls`, `review` (`wanted`, or left out
+  when no review is wanted) and `written_by` are optional. `refs` lists
+  board entries the decision concerns, such as an answer; `decides` names
+  the one board entry the decision decides, such as the plan revision it
+  approves, the question it settles or the understanding check it signs
+  off; `urls` lists web pages, such as a pull request.
 
 ```json
 {
@@ -66,16 +69,20 @@ writer can set it, and any writer can set `written_by` too. Only the owner's
 Touch ID approval of `changes.approve` proves the owner chose; the questions
 pane asks for it after an answer whose chosen option names the change it was
 attached to. An option that names `<change>#<check id>` names a check,
-not the change, so it waives that check and asks for no approval. An agent that
-records an approval the owner gave in chat names the owner as `person` and
-quotes the owner's words in `why`:
+not the change, so it waives that check and asks for no approval. A
+decision approves a change's plan only when its `decides` is the plan
+revision it approves, or the approval question `changes ask` filed for the
+change, and its `refs` name the change; what its words say never decides
+it. An agent that records an approval the owner gave in chat names the
+owner as `person` and quotes the owner's words in `why`:
 
 ```json
 {
   "$type": "plans/decision/v1",
   "decision": "The owner approves the plan /changes/timeout/plans/1.",
   "why": "Asked whether he approves the plan, the owner answered \"Approve\".",
-  "refs": ["/changes/timeout/plans/1"],
+  "decides": "/changes/timeout/plans/1",
+  "refs": ["/changes/timeout"],
   "by": {"person": "pat", "session": "local_335a90f9-0c1d-4e2f-8a9b-7c6d5e4f3a2b"},
   "decided": "2026-11-15T22:30:00Z"
 }
@@ -155,7 +162,8 @@ to ask again. `plans.open` lists each question's merged sessions in
 --session <local_ id>` writes a `plans/decision/v1` under
 `/projects/<project>/decisions/`, named as `put --new` names a new record.
 It fills in `$type`, `decided` with the time of the call, and `by` from
-`--session`, `--person` and `--program`. `--alternatives`, `--refs` and
+`--session`, `--person` and `--program`. `--decides` names the one board
+path the decision decides. `--alternatives`, `--refs` and
 `--urls` are repeated once for each item, and `--review` given bare records
 `review: wanted`. JSON on stdin with the same property names works too. The
 output gives the `path` written and a `line` that says "Recorded <path>.".

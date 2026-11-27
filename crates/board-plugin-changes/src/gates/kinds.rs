@@ -21,7 +21,7 @@ use crate::rules::current;
 /// The most paths a detail names (STANDARDS 23); it counts the rest.
 const SHOWN: usize = 10;
 pub(crate) const ANSWER_TYPE: &str = "plans/answer/v1";
-const QUESTION_TYPE: &str = "plans/question/v1";
+pub(super) const QUESTION_TYPE: &str = "plans/question/v1";
 
 /// Whether `each` also counts the owner's answer whose chosen option names
 /// the change: it counts decisions the owner signed, names no head, and

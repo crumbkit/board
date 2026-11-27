@@ -2,23 +2,22 @@
 //! whether the current plan differs from it in substance.
 //!
 //! Only an explicit approval of the plan counts, and it names the revision
-//! it approves: a decision whose refs name the change and a revision, and
-//! that signs off no other owner check's record, an answer whose chosen
-//! option names the change and a revision, as the option `changes ask`
-//! writes does, or a Touch ID approval of the revision it signed. A
-//! decision or answer that names no revision is about the plan's content
-//! and approves nothing. An approval of a revision Board no longer reads
-//! lapses. The plan differs in substance when its typed answers differ, or
-//! the text of its Outcome, Out of scope, UX or Data section differs once
+//! it approves: a decision whose refs name the change and that decides a
+//! revision, or the approval question `changes ask` filed; an answer whose
+//! chosen option names the change and a revision, as the option `changes
+//! ask` writes does; or a Touch ID approval of the revision it signed. Any
+//! other decision or answer is about the plan's content and approves
+//! nothing. An approval of a revision Board no longer reads lapses. The
+//! plan differs in substance when its typed answers differ, or the text of
+//! its Outcome, Out of scope, UX or Data section differs once
 //! runs of whitespace are collapsed; anything else is routine.
 
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value};
 
-use super::design::{artifact_of, mockups};
-use super::kinds::{ANSWER_TYPE, answers_count, chosen_text, meets};
-use super::{Approval, HEADING, Observed, Revision, UNDERSTANDING_TYPE, sections, strings};
+use super::kinds::{ANSWER_TYPE, QUESTION_TYPE, answers_count, chosen_text, meets, names_whole};
+use super::{Approval, HEADING, Observed, Revision, sections};
 use crate::flow::{self, Where};
 
 /// The sections whose text an approval covers, by heading in lower case,
@@ -33,6 +32,9 @@ const SUBSTANCE: [(&str, &str); 4] = [
 const ANSWERS: [&str; 3] = ["ux", "data", "lifecycle"];
 /// The plan record's fields that change routinely.
 const ROUTINE: [&str; 5] = ["paths", "owed", "uses", "considered", "lifecycle"];
+/// The id of the option that approves the plan in the question `changes
+/// ask` files.
+pub(crate) const APPROVE: &str = "approve";
 /// What a detail names the owner's Touch ID approval by.
 pub(crate) const TOUCH_ID: &str = "Touch ID";
 
@@ -65,23 +67,31 @@ impl Standing {
     }
 }
 
-/// Whether the decision `body` approves the plan explicitly: its refs name
-/// a revision of the plan, and it signs off no other owner check's record.
-/// A decision whose refs name an understanding check, a waiver of one of
-/// the change's checks, or a mockup the plan lists or its artifact, in its
-/// refs or urls, is that check's sign-off and approves no plan.
-pub(crate) fn explicit(observed: &Observed, body: &Map<String, Value>) -> bool {
-    let understood =
-        |each: &str| (observed.records.of_type(UNDERSTANDING_TYPE)).any(|(path, _)| path == each);
-    let waiver = format!("{}#", observed.path);
-    let listed = mockups(&sections(observed.plan.as_deref().unwrap_or_default()));
-    let mockup = |each: &str| {
-        (listed.iter()).any(|mockup| each == mockup || artifact_of(mockup) == Some(each))
-    };
-    let other = strings(body, "refs")
-        .any(|each| understood(each) || each.starts_with(&waiver) || mockup(each))
-        || strings(body, "urls").any(mockup);
-    !other && strings(body, "refs").any(|each| named_in(observed, each).is_some())
+/// The revision the decision `body` approves: the one its `decides`
+/// names, as a `<change>/plans/<id>` record or its `.md` file, or the one
+/// the approving option names of the approval question `board changes ask`
+/// filed for the change when `decides` names that question. A decision
+/// that decides anything else, such as a section of the plan, another
+/// question or an understanding check, approves no revision.
+pub(crate) fn decided(observed: &Observed, body: &Map<String, Value>) -> Option<String> {
+    let decides = body.get("decides").and_then(Value::as_str)?;
+    if let Some(revision) = named_in(observed, decides)
+        && decides.strip_suffix(".md").unwrap_or(decides) == revision
+    {
+        return Some(revision);
+    }
+    let (_, question) =
+        (observed.records.of_type(QUESTION_TYPE)).find(|(path, _)| *path == decides)?;
+    if question.get("blocks").and_then(Value::as_str) != Some(observed.path.as_str()) {
+        return None;
+    }
+    (question.get("options").and_then(Value::as_array))
+        .into_iter()
+        .flatten()
+        .filter(|option| option.get("id").and_then(Value::as_str) == Some(APPROVE))
+        .filter_map(|option| option.get("text").and_then(Value::as_str))
+        .filter(|text| names_whole(text, &observed.path))
+        .find_map(|text| named_in(observed, text))
 }
 
 /// The revision of the change's plan `text` names as a whole path: a
@@ -104,15 +114,13 @@ pub(crate) fn named_in(observed: &Observed, text: &str) -> Option<String> {
         .last()
 }
 
-/// The revision an approval approved: for a decision, the one its refs
-/// name, and for an answer, the one `chosen`, the text of the option it
+/// The revision an approval approved: for a decision, the one it
+/// decides, and for an answer, the one `chosen`, the text of the option it
 /// chose, names. A counted approval always names one.
 fn bound(observed: &Observed, body: &Map<String, Value>, chosen: Option<&str>) -> Option<String> {
     match chosen {
         Some(text) => named_in(observed, text),
-        None => strings(body, "refs")
-            .filter_map(|each| named_in(observed, each))
-            .last(),
+        None => decided(observed, body),
     }
 }
 
@@ -297,7 +305,7 @@ pub(super) fn meeting<'a>(
     let answers = owners.then(|| observed.records.of_type(ANSWER_TYPE));
     (observed.records.of_type(kind))
         .filter(move |(_, body)| meets(observed, body, rules, head, false))
-        .filter(move |(_, body)| !owners || explicit(observed, body))
+        .filter(move |(_, body)| !owners || decided(observed, body).is_some())
         .map(|(path, body)| (path, body, false))
         .chain(
             (answers.into_iter().flatten())
@@ -345,11 +353,12 @@ pub(super) fn unmet(observed: &Observed) -> String {
         Approval::None | Approval::Signed(_) => String::new(),
     };
     format!(
-        "no plans/decision/v1 that the owner signed with by.person whose refs name {path} and a \
-         revision of the plan, such as {plan}, and that signs off no other owner check, is \
-         attached, nor a {ANSWER_TYPE} from the owner (one that names `by.person`, or was \
-         written through the owner's questions pane, Board.app or /ask) whose chosen option, in \
-         its attached question, names {path} and a revision of the plan, nor the owner's Touch \
+        "no plans/decision/v1 that the owner signed with by.person whose refs name {path} and \
+         that decides a revision of the plan, such as {plan}, or the approval question `board \
+         changes ask` filed, is attached, nor a {ANSWER_TYPE} from the owner (one that names \
+         `by.person`, or was written through the owner's questions pane, Board.app or /ask) \
+         whose chosen option, in its attached question, names {path} and a revision of the \
+         plan, nor the owner's Touch \
          ID approval of changes.approve for the current plan{unread}"
     )
 }

@@ -995,13 +995,14 @@ names the change it was attached to.
 
 Only an explicit approval of the plan counts, and each names the revision
 of the plan it approves, a record under `<change>/plans/`. A decision
-approves the plan only when its refs name the change and a revision, such
-as the current plan's path or its `.md` file, and it signs off no other
-owner check: its refs name no understanding check, no waiver of the
-change's checks and no mockup the plan lists or its artifact, and its
-`urls` name no such mockup. A Data sign-off whose refs also name the
-current revision therefore approves no plan. A decision whose refs name
-only the change is about the plan's content and approves nothing. An
+approves the plan only when its refs name the change and its `decides`
+names what it approves: a revision, such as the current plan's path or its
+`.md` file, or the approval question `changes ask` filed for the change,
+whose `blocks` is the change and whose `approve` option names the revision.
+A decision that decides anything else, such as a section of the plan,
+another question or an understanding check, approves nothing, though its
+refs or words name the current revision, and so does a decision with no
+`decides`. An
 answer approves the plan only when its chosen option names the change and
 a revision, as the option `changes ask` writes does ("Approve <change> as
 planned in <change>/plans/<id>"); an answer whose option names no revision
@@ -1060,6 +1061,10 @@ These routes still pass a gate without the owner:
    now, so editing an option's text after the owner answered changes what
    the answer counts for. Rewriting an answered option to name the current
    revision binds the old answer to the current plan.
+6. A decision that decides the approval question `changes ask` filed.
+   A decision names no option, so the gate counts it as approval of the
+   revision the question's `approve` option names, even when the owner
+   chose to revise.
 
 Instructions, remedies and the rules of a `rule-paths` or
 `planned-rule-paths` check may name

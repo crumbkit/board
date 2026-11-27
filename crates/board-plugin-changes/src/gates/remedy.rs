@@ -151,9 +151,9 @@ fn default(each: &flow::Check) -> String {
              revision {plan}; an answer whose option names no revision approves nothing. Then \
              attach the question and the owner's answer, each with `board changes attach --path \
              {change} --ref <path>`. A plans/decision/v1 the owner signs with by.person whose \
-             refs name {change} and the plan revision it approves, such as {plan}, also counts, \
-             unless it signs off another owner check, such as the data understanding check or a \
-             mockup. The owner's Touch ID approval of changes.approve for the current plan also \
+             refs name {change} and whose `decides` is the plan revision it approves, such as \
+             {plan}, also counts; `board plans decide` writes it given `--decides {plan}` and \
+             `--refs {change}`. The owner's Touch ID approval of changes.approve for the current plan also \
              counts: run `board call changes.approve --path {change}` and approve the effect it \
              names."
             .to_owned(),

@@ -276,7 +276,7 @@ pub(crate) fn passed(observed: &Observed, found: &BTreeMap<String, String>) -> S
 
 /// The artifact a `/artifacts/<id>/versions/<id>` path names a version of,
 /// which a decision may name in place of the version.
-pub(crate) fn artifact_of(path: &str) -> Option<&str> {
+fn artifact_of(path: &str) -> Option<&str> {
     let (artifact, _) = path.split_once("/versions/")?;
     artifact.starts_with("/artifacts/").then_some(artifact)
 }

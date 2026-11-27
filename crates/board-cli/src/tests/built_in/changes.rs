@@ -425,8 +425,8 @@ impl Changes {
         self.write(file, &change(phase, &Value::Object(kept)));
     }
 
-    /// Writes the owner's decision whose refs name /changes/t and its plan
-    /// revision /changes/t/plans/1 and whose `by` names a person, which the
+    /// Writes the owner's decision whose refs name /changes/t, which decides
+    /// its plan revision /changes/t/plans/1 and whose `by` names a person, which the
     /// plan gate's owner-approval check needs, and returns its path for a
     /// plan record to attach.
     fn approved(&self) -> &'static str {
@@ -434,7 +434,10 @@ impl Changes {
             "changes/t/approved.json",
             &typed(
                 "plans/decision/v1",
-                &json!({"refs": ["/changes/t", "/changes/t/plans/1"], "by": {"person": PERSON}}),
+                &json!({
+                    "refs": ["/changes/t"], "decides": "/changes/t/plans/1",
+                    "by": {"person": PERSON},
+                }),
             ),
         );
         APPROVED

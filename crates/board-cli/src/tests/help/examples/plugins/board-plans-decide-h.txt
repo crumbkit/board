@@ -4,6 +4,7 @@ Usage: board call plans.decide [OPTIONS]
 
 Options:
       --alternatives <alternatives>  What was not chosen; repeat the flag for each value, or give none alone for an empty list.
+      --decides <decides>            The one board path the decision decides, such as the plan revision /changes/<name>/plans/<id> it approves.
       --decision <decision>          What was chosen.
       --person <person>              The person who decided, such as ana; give it only for a decision that person made.
       --program <program>            The program that decided, such as claude-code.

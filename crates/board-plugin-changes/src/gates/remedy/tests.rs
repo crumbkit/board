@@ -113,10 +113,10 @@ fn an_owner_approval_check_says_to_attach_the_owners_answer_and_one_with_type_re
          names /changes/t and its current plan revision /changes/t/plans/1; an answer whose \
          option names no revision approves nothing. Then attach the question and the owner's \
          answer, each with `board changes attach --path /changes/t --ref <path>`. A \
-         plans/decision/v1 the owner signs with by.person whose refs name /changes/t and the \
-         plan revision it approves, such as /changes/t/plans/1, also counts, unless it signs \
-         off another owner check, such as the data understanding check or a mockup. The \
-         owner's Touch ID approval of changes.approve for the current plan also counts: run \
+         plans/decision/v1 the owner signs with by.person whose refs name /changes/t and whose \
+         `decides` is the plan revision it approves, such as /changes/t/plans/1, also counts; \
+         `board plans decide` writes it given `--decides /changes/t/plans/1` and `--refs \
+         /changes/t`. The owner's Touch ID approval of changes.approve for the current plan also counts: run \
          `board call changes.approve --path /changes/t` and approve the effect it names."
     );
     let typed = of(

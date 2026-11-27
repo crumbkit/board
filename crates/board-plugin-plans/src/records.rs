@@ -200,6 +200,10 @@ pub struct DecisionRecord {
     /// Entries in the board the decision concerns, such as an answer.
     #[serde(default)]
     pub refs: Vec<Ref>,
+    /// The one entry in the board the decision decides, such as the plan
+    /// revision it approves, the question it settles or the understanding
+    /// check it signs off; absent when it decides no single entry.
+    pub decides: Option<Ref>,
     /// Web pages the decision concerns, such as a pull request.
     #[serde(default)]
     #[schemars(with = "Vec<Url>")]

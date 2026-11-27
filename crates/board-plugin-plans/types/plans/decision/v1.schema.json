@@ -61,6 +61,11 @@
       "format": "date-time",
       "type": "string"
     },
+    "decides": {
+      "description": "The one entry in the board the decision decides, such as the plan\nrevision it approves, the question it settles or the understanding\ncheck it signs off; absent when it decides no single entry.",
+      "format": "board-ref",
+      "type": "string"
+    },
     "decision": {
       "description": "The decision.",
       "type": "string"

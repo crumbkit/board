@@ -222,44 +222,115 @@ fn a_whitespace_reflow_of_the_outcome_keeps_the_answer_and_a_changed_data_answer
     );
 }
 
-/// The owner's decision whose refs name the change and `named`.
-fn decision(named: &[&str]) -> Records {
-    let refs: Vec<&str> = std::iter::once(PATH).chain(named.iter().copied()).collect();
-    vec![(
-        "/d/1",
-        (
-            "plans/decision/v1",
-            json!({"refs": refs, "by": {"person": PERSON}}),
-        ),
-    )]
+/// The owner's decision whose refs name the change and `refs`, and that
+/// decides `decides` when given.
+fn decision(refs: &[&str], decides: Option<&str>) -> Records {
+    let refs: Vec<&str> = std::iter::once(PATH).chain(refs.iter().copied()).collect();
+    let mut body = json!({"refs": refs, "by": {"person": PERSON}});
+    if let Some(decides) = decides {
+        body["decides"] = json!(decides);
+    }
+    vec![("/d/1", ("plans/decision/v1", body))]
 }
 
-/// "Explicit only": a decision about the plan's content, whose refs name
-/// the change but no revision of its plan, approves nothing, though it is
-/// attached under the current revision; one naming the current revision
-/// approves it.
+/// The owner's decision whose refs name the change and that decides
+/// `decides`.
+fn deciding(decides: &str) -> Records {
+    decision(&[], Some(decides))
+}
+
+/// "Explicit only": a decision whose refs name the change and the current
+/// revision but that decides nothing approves nothing, and its twin that
+/// decides the current revision approves it.
 #[test]
-fn a_decision_naming_no_plan_revision_does_not_approve_and_one_naming_the_current_revision_does() {
-    let content = revised(decision(&[]), &[], PLAN, PLAN, &stores(), &json!({}));
+fn a_decision_whose_refs_name_the_current_revision_approves_only_when_it_decides_it() {
+    let content = revised(
+        decision(&[CURRENT], None),
+        &[],
+        PLAN,
+        PLAN,
+        &stores(),
+        &json!({}),
+    );
     let (status, detail) = owner_approval(&content);
     assert_eq!(status, Status::Missing);
     assert!(
         detail.starts_with(
             "no plans/decision/v1 that the owner signed with by.person whose refs name \
-             /changes/t and a revision of the plan, such as /changes/t/plans/1, and that signs \
-             off no other owner check, is attached"
+             /changes/t and that decides a revision of the plan, such as /changes/t/plans/1, \
+             or the approval question `board changes ask` filed, is attached"
         ),
         "{detail}"
     );
-    let approving = revised(decision(&[CURRENT]), &[], PLAN, PLAN, &stores(), &json!({}));
+    let approving = revised(deciding(CURRENT), &[], PLAN, PLAN, &stores(), &json!({}));
     assert_eq!(owner_approval(&approving), (Status::Pass, String::new()));
+}
+
+/// A decision that decides another change's revision, or a section of this
+/// change's plan, approves nothing.
+#[test]
+fn a_decision_deciding_another_change_s_revision_or_a_section_approves_nothing() {
+    for decides in [
+        "/changes/other/plans/1",
+        "/changes/t/plans/1#data",
+        "/changes/t",
+    ] {
+        let given = revised(deciding(decides), &[], PLAN, PLAN, &stores(), &json!({}));
+        assert_eq!(owner_approval(&given).0, Status::Missing, "{decides}");
+    }
+}
+
+/// The approval question `changes ask` filed for the change.
+fn asked(revision: &str, blocks: &str) -> (&'static str, (&'static str, Value)) {
+    let options = json!([
+        {"id": "approve", "text": format!("Approve {PATH} as planned in {revision}.")},
+        {"id": "revise", "text": "Revise the plan, then ask again."},
+    ]);
+    let question = json!({
+        "question": format!("Do you approve the plan {revision} of {PATH} (T)?"),
+        "options": options, "blocks": blocks,
+    });
+    ("/q/ask", ("plans/question/v1", question))
+}
+
+/// A decision that decides the approval question `changes ask` filed for
+/// the change approves the revision its approving option names. One that
+/// decides a question about the plan's content, or an approval question
+/// filed for another change, approves nothing.
+#[test]
+fn a_decision_deciding_the_approval_question_approves_the_revision_its_option_names() {
+    let mut records = deciding("/q/ask");
+    records.push(asked(EARLIER, PATH));
+    let text = PLAN.replace("A suite stops.", "A suite stops and retries.");
+    let lapsed = revised(records.clone(), &[], PLAN, &text, &stores(), &json!({}));
+    let (status, detail) = owner_approval(&lapsed);
+    assert_eq!(status, Status::Missing);
+    assert!(
+        detail.starts_with("the owner approved plans/0 in /d/1,"),
+        "{detail}"
+    );
+    let held = revised(records, &[], PLAN, PLAN, &stores(), &json!({}));
+    assert_eq!(owner_approval(&held).0, Status::Pass);
+    let mut other = deciding("/q/ask");
+    other.push(asked(EARLIER, "/changes/other"));
+    let given = revised(other, &[], PLAN, PLAN, &stores(), &json!({}));
+    assert_eq!(owner_approval(&given).0, Status::Missing);
+    let options = json!([
+        {"id": "a", "text": format!("Store runs as rows under {PATH}, as {CURRENT} says.")},
+        {"id": "b", "text": "Store runs as files."},
+    ]);
+    let content = json!({"question": "Rows or files?", "options": options, "blocks": PATH});
+    let mut about = deciding("/q/ask");
+    about.push(("/q/ask", ("plans/question/v1", content)));
+    let given = revised(about, &[], PLAN, PLAN, &stores(), &json!({}));
+    assert_eq!(owner_approval(&given).0, Status::Missing);
 }
 
 #[test]
 fn a_decision_approving_the_earlier_revision_lapses_on_a_data_change() {
     let text = PLAN.replace("## Data\n\nNone.", "## Data\n\nOne row per run.");
     let earlier = revised(
-        decision(&[EARLIER]),
+        deciding(EARLIER),
         &["/d/1"],
         PLAN,
         &text,
@@ -277,15 +348,9 @@ fn a_decision_approving_the_earlier_revision_lapses_on_a_data_change() {
 }
 
 #[test]
-fn a_decision_whose_refs_name_a_revision_approves_that_revision_wherever_it_is_attached() {
+fn a_decision_deciding_a_revision_s_text_file_approves_that_revision_wherever_it_is_attached() {
     let text = PLAN.replace("A suite stops.", "A suite stops and retries.");
-    let named = vec![(
-        "/d/1",
-        (
-            "plans/decision/v1",
-            json!({"refs": [PATH, "/changes/t/plans/0.md"], "by": {"person": PERSON}}),
-        ),
-    )];
+    let named = deciding("/changes/t/plans/0.md");
     let given = revised(named, &[], PLAN, &text, &stores(), &json!({}));
     let (status, detail) = owner_approval(&given);
     assert_eq!(status, Status::Missing);
@@ -322,7 +387,7 @@ fn an_answer_whose_option_names_a_revision_approves_that_revision() {
 #[test]
 fn an_approval_naming_a_revision_board_cannot_read_lapses_and_its_twin_passes() {
     let gone = revised(
-        decision(&["/changes/t/plans/gone"]),
+        deciding("/changes/t/plans/gone"),
         &[],
         PLAN,
         PLAN,
@@ -339,7 +404,7 @@ fn an_approval_naming_a_revision_board_cannot_read_lapses_and_its_twin_passes() 
                 .to_owned()
         )
     );
-    let held = revised(decision(&[EARLIER]), &[], PLAN, PLAN, &stores(), &json!({}));
+    let held = revised(deciding(EARLIER), &[], PLAN, PLAN, &stores(), &json!({}));
     assert_eq!(owner_approval(&held).0, Status::Pass);
 }
 
@@ -435,9 +500,9 @@ fn an_answer_naming_the_change_but_no_revision_does_not_approve_and_its_twin_doe
 }
 
 /// A Data sign-off whose refs name the change, its understanding check and
-/// the current revision, as on the live board, signs off data-signed and
-/// approves no plan; the same decision without the understanding check
-/// approves it.
+/// the current revision, as on the live board, and that decides the
+/// understanding check, signs off data-signed and approves no plan; the
+/// same decision deciding the current revision approves it.
 #[test]
 fn a_data_sign_off_naming_the_current_revision_does_not_approve_the_plan() {
     let data = PLAN.replace("## Data\n\nNone.", "## Data\n\nOne row per run.");
@@ -450,6 +515,7 @@ fn a_data_sign_off_naming_the_current_revision_does_not_approve_the_plan() {
                 json!({
                     "decision": "The data the comments store is signed off.",
                     "refs": [PATH, UNDERSTOOD, CURRENT], "by": {"person": PERSON},
+                    "decides": UNDERSTOOD,
                 }),
             ),
         ),
@@ -460,14 +526,7 @@ fn a_data_sign_off_naming_the_current_revision_does_not_approve_the_plan() {
         (statuses["owner-approval"], statuses["data-signed"]),
         ("missing", "pass")
     );
-    let plain = revised(
-        decision(&[CURRENT]),
-        &[],
-        &data,
-        &data,
-        &stores(),
-        &json!({}),
-    );
+    let plain = revised(deciding(CURRENT), &[], &data, &data, &stores(), &json!({}));
     assert_eq!(plain.statuses()["owner-approval"], "pass");
 }
 
