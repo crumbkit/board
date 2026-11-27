@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- A word an agent guesses after a plugin's name runs the capability it
+  means: `changes show` and `changes status` run `changes next`,
+  `changes list` runs `changes open`, and `tasks list`, `plans list` and
+  `evals list` run `tasks available`, `plans open` and `evals open`, with
+  the same flags. `board call <plugin>.<word>` does the same. Each prints
+  `note: board changes show is board changes next` or the like on stderr.
+  A plugin that offers the word itself still runs its own. `runs run` and
+  `runs record` are still refused, and their hint says to write the run
+  with `board put --new --var suite=<name>` and attach it with
+  `board changes attach --ref`.
 - `board changes plan` writes a plan it used to refuse for a fault the
   gates catch at `advance`, and lists the fault in `warnings`. A plan over
   3,000 words warns `changes::plan::too_long` and used documents over

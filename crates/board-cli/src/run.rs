@@ -375,9 +375,31 @@ pub(crate) fn run(
     stdin: &mut dyn Stdin,
     ran: &mut Ran,
 ) -> Output {
+    run_typed(arguments, None, context, stdin, ran)
+}
+
+/// [`run`] for a `board call` line that `typed`, a plugin's name or alias
+/// given as the first word, stands for, when there is one, so a note on a
+/// guessed word names the line as given.
+pub(super) fn run_typed(
+    arguments: impl IntoIterator<Item = OsString>,
+    typed: Option<&str>,
+    context: &Context,
+    stdin: &mut dyn Stdin,
+    ran: &mut Ran,
+) -> Output {
     // Every exit prints the warnings for the undated writes it made.
     board_ops::take_undated_gate_notes();
-    run_command(arguments, context, stdin, ran).warned()
+    let arguments: Vec<OsString> = arguments.into_iter().collect();
+    let plugins = context.plugins.as_deref();
+    let output = match crate::guessed::called(&arguments, context.built_in, plugins) {
+        Some(called) => {
+            let note = called.note(typed);
+            crate::guessed::noted(run_command(called.line, context, stdin, ran), &note)
+        }
+        None => run_command(arguments, context, stdin, ran),
+    };
+    output.warned()
 }
 
 fn run_command(
