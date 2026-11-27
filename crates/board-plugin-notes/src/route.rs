@@ -4,7 +4,7 @@
 
 use board_model::shown_remote;
 use board_ops::{Host, PluginError};
-use board_repos::{RECORD, Repo, covering, listed, record, root};
+use board_repos::{RECORD, Repo, covering, listed, record, root, scope};
 use serde_json::json;
 
 use crate::{PLUGIN, refusal};
@@ -61,12 +61,18 @@ pub(crate) fn choose(
     if let [one] = &matched[..] {
         return Ok(at(one, None));
     }
+    // Roots that read one clone are one repo, read at the root `scope`
+    // keeps for it.
+    let kept = scope(PLUGIN, &found, None, None, None)?;
+    let once: Vec<_> = (found.iter())
+        .filter(|listed| kept.contains(&listed.root))
+        .collect();
     // No remote may mean a missing origin, so a repo that covers something
     // waits for one.
-    if roots.len() == 1
-        && (!personal.is_empty() || (remote.is_none() && record(PLUGIN, &found[0])?.is_none()))
+    if let [only] = &once[..]
+        && (!personal.is_empty() || (remote.is_none() && record(PLUGIN, only)?.is_none()))
     {
-        return Ok(at(&roots[0], None));
+        return Ok(at(&only.root, None));
     }
     if !inbox && remote.is_none() && personal.len() == 1 {
         return Ok(at(&personal[0], None));

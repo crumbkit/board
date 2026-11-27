@@ -19,8 +19,9 @@ pub const RECORD_TYPE: &str = "notes/repo/v1";
 
 /// What [`query`] reads of each notes repo: its root, the commit its
 /// mount pins and the clone Board read it from (`worktree` and the board's
-/// own root for `/`), and its record's type, status, Board code and body.
-pub const COLUMNS: [&str; 7] = [
+/// own root for `/`), its record's type, status, Board code and body, and
+/// whether the board's own tree holds the pointer that mounts it there.
+pub const COLUMNS: [&str; 8] = [
     "n.root",
     "n.source",
     "s.repository",
@@ -28,6 +29,8 @@ pub const COLUMNS: [&str; 7] = [
     "e.status",
     "e.code",
     "r.body",
+    "EXISTS (SELECT 1 FROM mounts AS m WHERE m.source = 'worktree' \
+     AND '/' || substr(m.path, 1, length(m.path) - 5) || '/' = n.root)",
 ];
 
 /// The query that finds every notes repo, by root, in [`COLUMNS`], for a
@@ -48,13 +51,15 @@ ORDER BY n.root",
 }
 
 /// A repo: its root, the commit its mount pins and the clone Board read it
-/// from (both none for the board's own tree), and its record's type,
-/// status, Board code and body, each null without one.
+/// from (both none for the board's own tree), whether the board's own tree
+/// holds its mount's pointer, so a put can write through it, and its
+/// record's type, status, Board code and body, each null without one.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Listed {
     pub root: String,
     pub source: Option<String>,
     pub clone: Option<String>,
+    pub direct: bool,
     pub row: [Value; 4],
 }
 
@@ -113,6 +118,7 @@ pub fn parsed(plugin: &str, rows: &[&[Value]]) -> Result<Vec<Listed>, PluginErro
             root: at,
             source: mounted.then(|| shown(&row[1])),
             clone,
+            direct: row[7] == Value::Bool(true) || row[7].as_i64() == Some(1),
             row: [
                 row[3].clone(),
                 row[4].clone(),
@@ -206,15 +212,36 @@ fn personal(record: Option<&Map<String, Value>>) -> bool {
     record.and_then(|record| record.get("personal")) == Some(&Value::Bool(true))
 }
 
-/// Each listed repo's root and record, refused when one is not valid.
+/// The repos of `found`, each once: roots that read the same clone are
+/// one repository reached through more than one mount, such as a notes
+/// repo the board mounts and a board it mounts mounts again. A root whose
+/// pointer the board's own tree holds stands for it, since a put writes
+/// through only such a mount; among the rest, the root shortest in bytes,
+/// then the first by name, as the index lists a commit two routes reach.
+/// A root whose clone is unknown, such as the board's own tree, is its own.
+fn distinct(found: &[Listed]) -> Vec<&Listed> {
+    let rank = |listed: &Listed| (!listed.direct, listed.root.len(), listed.root.clone());
+    let stands = |listed: &Listed| {
+        let Some(clone) = &listed.clone else {
+            return true;
+        };
+        !(found.iter())
+            .any(|other| other.clone.as_ref() == Some(clone) && rank(other) < rank(listed))
+    };
+    found.iter().filter(|listed| stands(listed)).collect()
+}
+
+/// Each repo's root and record, once per [`distinct`] repo, refused when
+/// one is not valid.
 fn records(plugin: &str, found: &[Listed]) -> Result<Vec<(String, Option<Record>)>, PluginError> {
-    (found.iter())
+    (distinct(found).into_iter())
         .map(|listed| Ok((listed.root.clone(), record(plugin, listed)?)))
         .collect()
 }
 
 /// The roots of the listed repos whose record covers `remote`, and of
-/// those whose record says `personal: true`.
+/// those whose record says `personal: true`, each repo once by its
+/// `distinct` root.
 pub fn covering(
     plugin: &str,
     found: &[Listed],
@@ -234,7 +261,8 @@ pub fn covering(
 /// named; else every repo outside a git repository; else `/`, the personal
 /// repo and the repos whose record covers the remote. Inside a git
 /// repository whose origin is `unread`, no repo is covered, so they are `/`
-/// and the personal repo.
+/// and the personal repo. Unless named, a repo is read once, at its
+/// `distinct` root.
 pub fn scope(
     plugin: &str,
     found: &[Listed],
@@ -263,6 +291,8 @@ pub fn scope(
         }
         return Ok(vec![root(name)]);
     }
+    let once: Vec<&Listed> = distinct(found);
+    roots.retain(|at| at == "/" || once.iter().any(|listed| &listed.root == at));
     if remote.is_none() && unread.is_none() {
         return Ok(roots);
     }

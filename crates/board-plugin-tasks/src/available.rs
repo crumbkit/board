@@ -170,7 +170,7 @@ pub(crate) fn available(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     let (name, remote) = (given.repo.as_deref(), given.remote.as_deref());
     let (remote, unread) = chosen_by(host, name, remote);
     let (found, mut rows) = listing(host)?;
-    let roots = scope(PLUGIN, &found, name, remote.as_deref(), unread.as_deref())?;
+    let mut roots = scope(PLUGIN, &found, name, remote.as_deref(), unread.as_deref())?;
     let clones = Through::new(host);
     let writer = writer(host, &clones);
     let mut unsynced = Vec::new();
@@ -203,7 +203,14 @@ pub(crate) fn available(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         }
     }
     if moved {
-        rows = listing(host)?.1;
+        let found;
+        (found, rows) = listing(host)?;
+        // A moved pin can land on a commit a twin mount pins, which the
+        // index then lists under one of the two roots, so the repos in
+        // scope are worked out again. A named repo stays named.
+        if name.is_none() {
+            roots = scope(PLUGIN, &found, name, remote.as_deref(), unread.as_deref())?;
+        }
     }
     let settings = host.settings();
     let (tasks, degraded) = read(&rows, &roots, settings.utc_offset);

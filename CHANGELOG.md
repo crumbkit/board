@@ -24,6 +24,18 @@
   mockup version only for that version. It reads the version anywhere in
   the agreement's words when the agreement names one mockup, and only right
   after each mockup's name when it names several.
+- A notes repository that the board reaches through two mounts, such as
+  `/repos/notes-personal` and the same repository mounted again by a board
+  mounted at `/repos/team`, counts as one repository. `board tasks add`,
+  `board changes start` and `board notes daily` used to refuse with
+  `tasks::repo::ambiguous` or `notes::repo::ambiguous`, naming both mounts.
+  They now write to the mount whose pointer is in the board's own tree,
+  and the output's `about` names it. Among nested mounts, the one with the
+  shortest path stands for the repository. Mounts count as one repository
+  when Board read them from the same clone. `board tasks available` and
+  `board tasks tree` show the repository's tasks once, including after a
+  sync moves a pin onto the other mount's commit. Two different
+  repositories that both cover the remote still refuse as before.
 - The `board-changes` mod's edit guard remembers the last verdict on each
   agent's edits of each repository, counting an edit that needed no advice.
   A later edit by the same agent whose line would say what that verdict
