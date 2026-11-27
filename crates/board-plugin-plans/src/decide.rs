@@ -59,7 +59,7 @@ pub(crate) struct Input {
     #[serde(default)]
     #[schemars(with = "Vec<Url>")]
     urls: Vec<String>,
-    /// The one board path the decision decides, such as the plan revision /changes/<name>/plans/<id> it approves.
+    /// The one board path the decision decides, such as the plan revision `/changes/<name>/plans/<id>` it approves.
     #[schemars(with = "Option<Ref>")]
     decides: Option<String>,
 }
