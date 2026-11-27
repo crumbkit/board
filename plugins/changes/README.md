@@ -1314,7 +1314,15 @@ plan's text, `changes/<name>/plans/<stamp>.md`, stays writable.
 Only `board_record` refuses, and `unknown` in a board's checkout. Every other
 code is advice: the edit runs and
 the guard adds one line to the tool result that starts with the code, says
-the edit ran, and names what to do:
+the edit ran, and names what to do. The guard remembers the last verdict on
+each agent's edits of each mount, counting an edit that needed no advice. A
+later edit by the same agent whose line would say what that verdict said,
+apart from the file, runs with no line. A line that says something new, such
+as another phase, branch or change, is given in full, and so is advice that
+returns after an edit that needed none, such as a change paused again after
+an edit in build. `unknown` advice and every refusal are given on every
+edit. The guard keeps these verdicts until the mod reloads, and `/clear` or
+`/resume` starts over:
 
 - `changes::guard::board_record`: the file is the board config, a change
   record or a mount record. The refusal names the board command to use.
@@ -1353,7 +1361,10 @@ line. It cannot see:
   reloads, and `/clear` or `/resume` starts over. With no brief kept and a
   full window of 4,096 entries, the guard advises with
   `changes::guard::unknown`, since the oldest row left may be one another
-  agent wrote.
+  agent wrote;
+- an agent that lost a line of advice in a compaction. The guard has
+  already given that line to the agent, so it is not given again for that
+  mount until the verdict changes.
 
 The guard advises on an edit of every mounted repository that is not itself a
 known board, including the notes repositories a personal board mounts, such
