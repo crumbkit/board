@@ -40,3 +40,19 @@ version, pending or answered.
   not in a mounted one.
 - An id that is not 64 lowercase hex digits, or names no effect there, is
   refused with `requests::effect::not_found`.
+
+## `requests.threads`
+
+`board --personal requests threads` takes no input and returns
+`{"threads": [...]}`, for a caller such as Board.app's request relay that
+shows every pending request.
+
+- A request is listed when at least one of its versions is `pending`. Each
+  item is what `requests.thread` returns for any of its versions' ids.
+- The threads are ordered by `board`, `plugin`, `op` and `path`, compared
+  as strings. With no pending effect the list is empty.
+- The call reads the effects once and the replies at most once, however
+  many threads it lists.
+- An input property is refused: Board's schema check refuses it with
+  `board::plugin::bad_input`, and the plugin refuses one that reaches it
+  with `requests::call::bad_input`.

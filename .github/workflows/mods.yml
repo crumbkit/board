@@ -51,6 +51,14 @@ jobs:
             cmp -s plugins/attention/claude-code/hooks/band.ts "$copy" \
               || { echo "::error file=$copy::$copy differs from plugins/attention/claude-code/hooks/band.ts"; exit 1; }
           done
+      # Each mod that polls the board keeps a copy of the plans mod's
+      # stamp.ts, whose tests only the plans mod runs.
+      - name: every stamp.ts matches the plans mod's
+        run: |
+          for copy in plugins/*/claude-code/hooks/stamp.ts; do
+            cmp -s plugins/plans/claude-code/hooks/stamp.ts "$copy" \
+              || { echo "::error file=$copy::$copy differs from plugins/plans/claude-code/hooks/stamp.ts"; exit 1; }
+          done
       # Every mod has an entry whose name is its plugin.json name and whose
       # source is its directory, so `claude plugin install <name>@board`
       # finds it.

@@ -17,13 +17,84 @@
   a text in any Unicode case; a shorter word scans the prose. The index
   directory is created with mode 0700 and the index file and its journals
   with mode 0600, because the index keeps the board's prose. The index
-  format is 31, so the first run of this build builds a new index.
+  format is 32, so the first run of this build builds a new index.
+- `board tasks available` does not fetch a notes clone that was fetched
+  less than a minute ago and already holds what that fetch brought, so a
+  sweep of calls in a row fetches once. A task pushed from elsewhere in that
+  minute is listed by the first call after it. `board refs`, and each plugin
+  call that asks `host.refs`, finds each path's references by a lookup built
+  once per run in place of a scan of every reference for each path. The
+  answers are the same as before.
+- `board timing check` goes live one command at a time. A command turns
+  live once it has 100 judged local results, 14 CI results once CI has
+  timed it, and under 1 in 10 of its over-budget results cleared at the
+  next one, and it never turns silent again. Only a live command over
+  budget opens `/tasks/board-speed-<command>.md`. The first live command
+  writes the zero rules `/rules/board/speed-budgets` and
+  `/rules/board/speed-budgets-ci`, so the rules badge shows a live command
+  over budget in every session. Once the lines changed in `/repos/board`
+  since the task opened pass `overflow-agent-grace` (200 by default), a
+  check run with `--session <local_ id>` files one question for the owner,
+  named as that session's; the rules mod now passes it. The check also
+  judges a median budget, prints each command's median budget and mode,
+  and gains budgets for `ls`, `changes.advance` and `changes.brief`.
+- On each push to main, timing.yml times every budgeted command on Linux
+  with `cargo xtask bench --hot` on a generated board with 100 open
+  changes, reporting only, and uploads the run. `board timing check
+  --record` imports the newest one into `/suites/board-speed-ci` through
+  gh; when gh cannot, it warns and still records the local run.
+
+## 0.1.5 (2026-11-27)
+
+- `board --personal requests threads` returns the thread of every pending
+  request in one call, as `{"threads": [...]}`, each item shaped as
+  `requests.thread` returns it. It reads the effects once and the replies at
+  most once, however many threads it lists, so a caller such as Board.app's
+  request relay need not run `requests.thread` once per request.
+- The Board band draws a green `Ready to land N` button before Waiting when
+  at least one change stands in its flow's last phase and waits only on the
+  owner's checks, or is done with rechecks still owed. Pressing it opens a
+  pane that lists each change with the check it waits on and the step that
+  clears it. A new read-only capability, `changes.ready`, lists these rows,
+  and the band's Waiting button leaves out the questions these rows name,
+  so each check is counted once. Rows that fail CI, conflict with the
+  branch or have a stale review still count in N; the red `· N failing`
+  part stays off by default.
+- `board changes plan-amend --path /changes/<name>` writes a new plan
+  version that only adds text under the "What the tests prove" and "What
+  the tests do not prove" headings of the change's current plan, so an
+  agent no longer resends the whole plan at land for those sections. It
+  takes no paths and no owed entries, which still need the owner's resend.
+  It records each addition in a `changes/amendment/v1`, which `changes
+  next` lists as `amended` and the pull request body lists under "Plan
+  amendments". At land, `changes next` and the `test-sections` check's
+  remedy name `changes plan-amend` in place of a whole-plan resend.
+- The plans and effects Claude Code mods run `board` on their minute's tick
+  only when the board's HEAD commit or Git index changed since their last
+  read that worked. They read both as files, with no process. On a board
+  with no new commit, a session's two mods run no `board` between the
+  owner's own reads, where they ran about 1 s of `board` each minute. The
+  pane and an answer still read at once, and a new commit shows within one
+  tick.
+- A query that looks entries or records up by logical path, blob or record
+  type reads an index in place of every entry, so plugin calls that look
+  records up, such as `plans open` and `changes next`, answer faster. The
+  rows every view returns are the same as before. The index format moves to
+  31, so the first run after the upgrade builds a new index from scratch.
+
+## 0.1.4 (2026-11-26)
+
 - A warm `board refs`, and each plugin call that asks `host.refs`, reads the
   references of each source the index keeps a decision for, with where they
   resolved, from a new `resolutions` table, and decides only the sources
   whose decision it does not hold. The answers are the same as before. The
   index format moves to 30, so the first run after the upgrade builds a new
   index from scratch.
+- `board changes open` and `board changes owed` choose which recently done
+  changes may still owe a check from their flows and plan answers, read in
+  a few queries, and observe only the changes left. On a board with about
+  600 changes done in the last 14 days, `changes open` takes about 2.6 s in
+  place of 84 s. The output is the same as before.
 - `board plans decide --project <project> --decision <text> --why <text>
   --session <local_ id>` records a `plans/decision/v1` under the project's
   decisions folder and prints its path. It fills in `$type`, `decided` and
@@ -33,7 +104,6 @@
   project held nothing before, it still writes the decision and warns with
   the three nearest project names. The plans skill now records decisions
   with it in place of a hand-built record and `put --new`.
-
 - `board put`, `put --new` and `put --batch` fill a field Board knows when
   the record leaves it out: a question's or a decision's `by`, from
   `BOARD_SESSION` or a `local_` Claude Code session id, its `asked` or
@@ -52,7 +122,8 @@
   for underscores, or the reverse, such as `--task-repo` or `--dry-run`,
   runs with the flag's own spelling; and `--path` given to `get`, `ls`,
   `check`, `log`, `refs`, `uri` or `mount update`, such as
-  `board get --path /a`, is read as the path. `board cat` used to be refused with a hint to run `get`.
+  `board get --path /a`, is read as the path. `board cat` used to be
+  refused with a hint to run `get`.
 - The rules plugin's README lists each code `board rules report` can put
   in `refused`, says which are warnings that leave every row as it is, and
   says that `rules::report::run_commit_unnamed` also covers a malformed

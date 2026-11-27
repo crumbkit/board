@@ -47,6 +47,11 @@ interface for agents' SQL; changing one changes the index format. A
 commit mounted in several places appears once, with `logical` through the
 shortest display path, then the first lexically.
 
+`decided` has indexes on `logical` and on `blob` and `role`, and `blobs` on
+`type`. Each view checks its rows against the kept and the fresh entries
+separately, so a query that filters on a logical path, a blob or a record
+type reads those rows through an index and never every entry.
+
 ## Refresh
 
 Each command refreshes the index first, doing work in proportion to what

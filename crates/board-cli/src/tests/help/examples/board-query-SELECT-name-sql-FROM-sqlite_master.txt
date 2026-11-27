@@ -27,3 +27,6 @@
 ["decided","CREATE TABLE decided (\n    key TEXT NOT NULL,\n    path TEXT NOT NULL,\n    logical TEXT,\n    blob TEXT,\n    size INTEGER,\n    role TEXT,\n    schema TEXT,\n    kind TEXT NOT NULL,\n    code TEXT,\n    detail TEXT,\n    change TEXT,\n    PRIMARY KEY (key, path)\n) WITHOUT ROWID"]
 ["resolutions","CREATE TABLE resolutions (\n    key TEXT NOT NULL,\n    path TEXT NOT NULL,\n    reached TEXT NOT NULL,\n    UNIQUE (key, path)\n)"]
 ["sqlite_autoindex_resolutions_1",null]
+["decided_logical","CREATE INDEX decided_logical ON decided (logical)"]
+["decided_blob","CREATE INDEX decided_blob ON decided (blob, role)"]
+["blobs_type","CREATE INDEX blobs_type ON blobs (type)"]

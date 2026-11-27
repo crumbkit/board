@@ -1620,6 +1620,33 @@ fn next_names_the_plan_input_where_its_instruction_asks_for_a_plan_and_nowhere_e
     assert!(!said.as_str().unwrap().contains("changes.plan"), "{said}");
 }
 
+/// `changes plan-amend` adds the test sections without replacing the plan,
+/// so the land instruction that names it carries no whole-plan resend.
+#[test]
+fn next_at_land_names_plan_amend_and_not_the_whole_plan_resend_that_review_names() {
+    let board = Changes::new();
+    board.change_at("changes/t.json", "land", &json!({}));
+    board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
+    let said = board.call("next", &path())["instruction"].clone();
+    let said = said.as_str().unwrap();
+    assert!(
+        said.contains("`board changes plan-amend --path /changes/t`"),
+        "{said}"
+    );
+    assert!(
+        !said.contains(&revised_plan_usage(CHANGE, "/repos/x")),
+        "{said}"
+    );
+    board.change_at("changes/t.json", "review", &json!({}));
+    let said = board.call("next", &path())["instruction"].clone();
+    assert!(
+        said.as_str()
+            .unwrap()
+            .contains(&revised_plan_usage(CHANGE, "/repos/x")),
+        "{said}"
+    );
+}
+
 #[test]
 fn next_in_review_says_to_resend_a_plan_without_paths_and_asks_a_change_without_one_for_a_new_one()
 {

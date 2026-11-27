@@ -36,5 +36,5 @@ its capability.
 
 A release writes the file by running that test with `SNAPSHOTS=overwrite`,
 then checks it with `RELEASED=all`, which fails unless the file lists
-everything the checkout ships. It lists 0.1.3, except the
+everything the checkout ships. It lists 0.1.5, except the
 [unstable interfaces](released/unstable.md).

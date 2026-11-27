@@ -3,7 +3,7 @@
 
 /// The index format, which names the index file. `open.rs` and
 /// docs/architecture/index.md say what a new format does to older files.
-pub const INDEX_VERSION: u32 = 31;
+pub const INDEX_VERSION: u32 = 32;
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
@@ -201,6 +201,11 @@ CREATE TABLE resolutions (
     reached TEXT NOT NULL,
     UNIQUE (key, path)
 );
+-- What the views look entries up by, so a query that names a logical path,
+-- a blob or a record type reads those rows alone.
+CREATE INDEX decided_logical ON decided (logical);
+CREATE INDEX decided_blob ON decided (blob, role);
+CREATE INDEX blobs_type ON blobs (type);
 ";
 
 /// Each source a run reached: the key its decision is kept under when the
@@ -272,15 +277,25 @@ UNION SELECT blob FROM main.worktree WHERE blob IS NOT NULL;
 ";
 
 /// What one run decides about each entry, the view agents query, and each
-/// fact table filtered to what the current entries reach. `resolved` is
-/// every entry: each reached source's rows the index keeps, in source
-/// order, then `fresh`, the rows decided this run and not kept. All live on
+/// fact table filtered to what the current entries reach. `held` is each
+/// reached source's rows the index keeps, and `resolved` is every entry:
+/// `held` in source order, then `fresh`, the rows decided this run and not
+/// kept. All live on
 /// the connection that made them. An unqualified name finds a temporary
 /// view before a table, so a query sees the same rows warm as cold. A body shows only while an entry holds its
 /// blob as a record: the cache keeps it after the same bytes move to a path
 /// where they are not one. `main.<table>` is the whole cache, which keeps
 /// facts about content no longer in the tree so branches share them, until a
 /// prune deletes what nothing current reaches.
+///
+/// SQLite runs a UNION ALL view again inside each statement that reads it,
+/// and pushes a filter into each arm only when the filtered column comes
+/// from that arm. So `entries` joins `blobs` inside each arm, and each fact
+/// table tests its rows against each arm with EXISTS, so that a filter on a
+/// logical path, a blob or a type reads an index instead of every entry.
+/// `ANALYZE` tells the planner `reached` holds a few rows, so it starts from
+/// whichever index a filter names; it runs after the run has reached its
+/// sources, as [`crate::store::Decided::view`] runs this.
 pub(crate) const RESOLVED: &str = "
 CREATE TEMP TABLE IF NOT EXISTS fresh (
     source TEXT NOT NULL,
@@ -295,11 +310,18 @@ CREATE TEMP TABLE IF NOT EXISTS fresh (
     change TEXT NOT NULL,
     PRIMARY KEY (source, path)
 ) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS temp.fresh_logical ON fresh (logical);
+CREATE INDEX IF NOT EXISTS temp.fresh_blob ON fresh (blob, role);
+CREATE INDEX IF NOT EXISTS temp.reached_key ON reached (key);
 DELETE FROM temp.fresh;
+ANALYZE temp.reached;
+CREATE TEMP VIEW IF NOT EXISTS held AS
+SELECT r.source, d.path, d.logical, d.blob, d.size, d.role, d.schema, d.kind, d.code, d.change
+FROM temp.reached AS r JOIN main.decided AS d ON d.key = r.key;
 CREATE TEMP VIEW IF NOT EXISTS resolved AS
-SELECT r.source, d.path, d.logical, d.blob, d.size, d.role, d.schema, d.kind, d.code,
+SELECT d.source, d.path, d.logical, d.blob, d.size, d.role, d.schema, d.kind, d.code,
     coalesce(d.change, 'committed') AS change
-FROM temp.reached AS r CROSS JOIN main.decided AS d ON d.key = r.key
+FROM temp.held AS d
 UNION ALL
 SELECT * FROM temp.fresh;
 CREATE TEMP VIEW IF NOT EXISTS decided AS
@@ -311,43 +333,65 @@ CREATE TEMP VIEW IF NOT EXISTS pointers AS
 SELECT * FROM main.pointers WHERE scan IN (SELECT scan FROM temp.reached);
 CREATE TEMP VIEW IF NOT EXISTS entries AS
 SELECT
-    r.source,
-    r.path,
-    r.logical,
-    r.blob,
-    r.size,
-    r.kind,
+    d.source,
+    d.path,
+    d.logical,
+    d.blob,
+    d.size,
+    d.kind,
     b.type,
-    CASE WHEN r.code IS NULL THEN 'ok' ELSE 'degraded' END AS status,
-    r.code,
-    r.change,
-    r.role,
-    r.schema
-FROM temp.resolved AS r
-LEFT JOIN main.blobs AS b ON b.blob = r.blob AND b.role = r.role;
+    CASE WHEN d.code IS NULL THEN 'ok' ELSE 'degraded' END AS status,
+    d.code,
+    coalesce(d.change, 'committed') AS change,
+    d.role,
+    d.schema
+FROM temp.held AS d
+LEFT JOIN main.blobs AS b ON b.blob = d.blob AND b.role = d.role
+UNION ALL
+SELECT
+    f.source,
+    f.path,
+    f.logical,
+    f.blob,
+    f.size,
+    f.kind,
+    b.type,
+    CASE WHEN f.code IS NULL THEN 'ok' ELSE 'degraded' END AS status,
+    f.code,
+    f.change,
+    f.role,
+    f.schema
+FROM temp.fresh AS f
+LEFT JOIN main.blobs AS b ON b.blob = f.blob AND b.role = f.role;
 CREATE TEMP VIEW IF NOT EXISTS blobs AS
-SELECT * FROM main.blobs
-WHERE (blob, role) IN (SELECT blob, role FROM temp.resolved);
+SELECT * FROM main.blobs AS o
+WHERE EXISTS (SELECT 1 FROM temp.held AS d WHERE d.blob = o.blob AND d.role = o.role)
+   OR EXISTS (SELECT 1 FROM temp.fresh AS f WHERE f.blob = o.blob AND f.role = o.role);
 CREATE TEMP VIEW IF NOT EXISTS bodies AS
-SELECT * FROM main.bodies
-WHERE blob IN (SELECT blob FROM temp.resolved WHERE kind = 'record');
+SELECT * FROM main.bodies AS o
+WHERE EXISTS (SELECT 1 FROM temp.held AS d WHERE d.blob = o.blob AND d.kind = 'record')
+   OR EXISTS (SELECT 1 FROM temp.fresh AS f WHERE f.blob = o.blob AND f.kind = 'record');
 CREATE TEMP VIEW IF NOT EXISTS texts AS
-SELECT * FROM main.texts
-WHERE blob IN (SELECT blob FROM temp.resolved WHERE role IN ('markdown', 'json'));
+SELECT * FROM main.texts AS o
+WHERE EXISTS (SELECT 1 FROM temp.held AS d WHERE d.blob = o.blob AND d.role IN ('markdown', 'json'))
+   OR EXISTS (SELECT 1 FROM temp.fresh AS f WHERE f.blob = o.blob AND f.role IN ('markdown', 'json'));
 CREATE TEMP VIEW IF NOT EXISTS records AS
 SELECT e.source, e.path, e.logical, e.blob, e.type, e.status, e.code, b.body
 FROM temp.entries AS e
 LEFT JOIN main.bodies AS b ON b.blob = e.blob
 WHERE e.kind = 'record';
 CREATE TEMP VIEW IF NOT EXISTS validations AS
-SELECT * FROM main.validations
-WHERE (record, schema) IN (SELECT blob, schema FROM temp.resolved);
+SELECT * FROM main.validations AS o
+WHERE EXISTS (SELECT 1 FROM temp.held AS d WHERE d.blob = o.record AND d.schema = o.schema)
+   OR EXISTS (SELECT 1 FROM temp.fresh AS f WHERE f.blob = o.record AND f.schema = o.schema);
 CREATE TEMP VIEW IF NOT EXISTS refs AS
-SELECT * FROM main.refs
-WHERE (record, schema) IN (SELECT blob, schema FROM temp.resolved);
+SELECT * FROM main.refs AS o
+WHERE EXISTS (SELECT 1 FROM temp.held AS d WHERE d.blob = o.record AND d.schema = o.schema)
+   OR EXISTS (SELECT 1 FROM temp.fresh AS f WHERE f.blob = o.record AND f.schema = o.schema);
 CREATE TEMP VIEW IF NOT EXISTS links AS
-SELECT * FROM main.links
-WHERE blob IN (SELECT blob FROM temp.resolved WHERE role = 'markdown');
+SELECT * FROM main.links AS o
+WHERE EXISTS (SELECT 1 FROM temp.held AS d WHERE d.blob = o.blob AND d.role = 'markdown')
+   OR EXISTS (SELECT 1 FROM temp.fresh AS f WHERE f.blob = o.blob AND f.role = 'markdown');
 CREATE TEMP VIEW IF NOT EXISTS trees AS
 WITH RECURSIVE reached (tree) AS (
     SELECT tree FROM main.sources WHERE tree IS NOT NULL

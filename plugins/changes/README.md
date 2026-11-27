@@ -386,7 +386,9 @@ of `changes` still fails `review`.
   fields must be resent, with `considered` and `owed` when it has them. When
   every missing check that blocks is the owner's or a reviewer's,
   `waiting_on` names them and `ask` holds the question to put to them,
-  built from those checks' details and remedies.
+  built from those checks' details and remedies. `amended` lists the headings each
+  `plan-amend` since the last full plan filled, and is left out when there
+  is none.
 - `sync` in the output of `open` and `next` is `{synced, stale, code,
   command}`: the day of the last sync, or null; `stale` when that is
   before today in UTC or null and sync has a pull request to read, with
@@ -565,6 +567,29 @@ of `changes` still fails `review`.
   separated by whitespace. The last limit comes from
   `/evals/board-standards-selection` in the owner's board: agents that chose
   standards from each directory's `index.md` stayed within it.
+- `plan-amend --path /changes/<name> [--proves <text>] [--does-not-prove <text>]`
+  writes a new plan version that only adds text under the
+  headings "What the tests prove" (`proves`) and "What the tests do not
+  prove" (`does_not_prove`) of the change's current plan. It takes no paths
+  and no owed entries: those widen the scope the owner approved, so they
+  still need the owner's resend with `plan`. Text goes under the heading
+  when the plan's text has it with nothing under it, or after the text
+  under a new `##` heading when it has none; every other byte of the text
+  is kept. The new plan copies `uses`, `paths`, `considered`, `owed`,
+  `answers`, `lifecycle` and `records`, and becomes the change's plan. The
+  same write puts a `changes/amendment/v1` at
+  `/changes/<name>/amendments/<stamp>`: `plan`, the version it wrote,
+  `from`, the version it added to, and `sections`, the headings it filled.
+  `next` lists, as `amended`, each amendment since the last plan `plan`
+  wrote, oldest first, and the pull request body lists them under "Plan
+  amendments", so the owner sees what was added after the plan was
+  approved. It refuses an input that fills no heading
+  (`changes::amend::nothing`), a heading that already holds text
+  (`changes::amend::section_held`, whose `sections` names them), and a
+  change with no plan record (`changes::amend::no_plan`). Like `plan`, it
+  refuses a done or dropped change (`changes::phase::final`) and a text
+  over 3,000 words (`changes::plan::too_long`). It writes nothing when it
+  refuses.
 - `lifecycle`, given as JSON on stdin with `path`, `text`, `doc` and
   `external`, since `external` is a list, writes the change's
   `changes/lifecycle/v1` and its text and sets the plan's `lifecycle`. A
@@ -1187,6 +1212,7 @@ broken reference of its own is still read.
 | Review | Each attached `review/report/v1`: verdict, author, range, findings by severity. |
 | Evidence | The change, the plan, and every reference with its type (`file` for a file that is not a record, `directory` for a directory), or the code that hid it. |
 | Work in progress | The change's `over_limit`, when set. |
+| Plan amendments | Each `changes/amendment/v1` since the last plan `plan` wrote, oldest first, with the headings it filled, when there are any. |
 | Files added to the plan's paths | Each file the change's diff edits that no path of its plan matches, when there are any, as the review gate's `paths` check names them, at most 50 with a count of the rest. When the change has no head or git cannot list the diff, it says why instead. |
 | `Closes <issue>` | The `url` of each `github/issue/v1` in `tickets`. |
 
@@ -1400,6 +1426,37 @@ last phase has a missing check that does not block, with its detail and
 remedy and the predict and edge questions of its understanding checks to ask
 again. `changes.open` warns `changes::owed::rechecks` with the count while
 that list is not empty.
+
+`changes.ready` lists the changes that wait only on the owner. A change is
+listed when it stands in its flow's last phase, every missing check there
+that blocks is the owner's, and the owner has something to do: a missing
+check of his, or an open question whose `blocks` names the change and that no
+answer names. A change done in the last 14 days that still misses a check
+of the owner's in its last phase that does not block is listed too, as
+`changes.owed` would list it. To stay cheap, `changes.ready` reads the gate
+only of a change an open question blocks, or one with a check of the
+owner's in its last phase that can apply: a check whose `when` names a
+`route` or `answers` that the change and its plan record do not give is
+passed over before any gate is read. Each row has the change's `path`,
+`title`, newest `pull`, `head`, its `kind`, the `check` it waits on (null
+when only a question holds it), `waits_on`, what that check or question
+asks, the `questions` that block it, the `days` since it was touched,
+`failing`, and `done`, true for a done change that owes a recheck. `kind` is
+`recheck` for an understanding check that does not block, `data-sign-off`
+for one that does, `deviation` for a `mockups` check, and `land-choice` for
+any other check or a question alone. Only a flow whose last phase has such
+checks gives `data-sign-off` or `deviation`; the shipped development flow
+gives `recheck` and `land-choice`. `failing` is `ci_failed` when the newest
+attached run at the head failed, `conflict` when `git merge-tree
+--write-tree` of the head against the branch the mount follows reports a
+conflict, `stale` when reviews are attached and none covers the head, and
+null otherwise. A branch that is only behind is not failing. A merge check
+that git cannot answer within 2 seconds, or that would start after the
+read's merge checks have spent 2 seconds in all, leaves `failing` null and
+adds a `changes::ready::merge_unread` warning naming the change. Rows come
+oldest first, with the failing ones last. `failing false` runs no merge
+check and leaves every `failing` null. `questions` takes question paths and
+lists only the changes those questions block.
 
 A change in flight keeps the flow version it stored; `changes reflow --path
 <change> --flow development` takes up these gates. A board that wants the

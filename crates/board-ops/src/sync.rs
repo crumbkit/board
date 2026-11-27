@@ -54,6 +54,26 @@ impl Board {
             .map_err(board_tree::SyncError::from)?;
         Ok(self.repository().sync(push, deadline, wait)?)
     }
+
+    /// As [`Self::sync_waiting`], but without `push` a clone fetched less
+    /// than `within` ago whose HEAD holds what that fetch brought is not
+    /// fetched again; HEAD is returned as synced, with zero `attempts`
+    /// (`board_tree`'s `Repository::sync_unless_fetched`).
+    pub fn sync_unless_fetched(
+        &self,
+        push: bool,
+        within: Duration,
+        deadline: Duration,
+        wait: Duration,
+    ) -> Result<Synced, SyncError> {
+        let deadline = Deadline::after(deadline);
+        (self.repositories())
+            .writable()
+            .map_err(board_tree::SyncError::from)?;
+        Ok(self
+            .repository()
+            .sync_unless_fetched(push, within, deadline, wait)?)
+    }
 }
 
 impl Board {

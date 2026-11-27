@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value, json};
 
 use super::design::mockups;
-use super::{Observed, Read, Status, gate, reads, sections};
+use super::{Observed, Read, Status, applies, fails_unread, gate, reads, sections};
 use crate::change::Referenced;
 use crate::flow::development;
 use crate::records::Kind;
@@ -1324,6 +1324,83 @@ fn a_check_with_absent_and_a_section_applies_only_when_both_hold() {
     assert!(!applies(&observed(&none, vec!["/changes/t/lifecycle"])));
 }
 
+/// `changes.owed` skips a check on `fails_unread` alone, so it must fail
+/// exactly the checks whose route or answers make `applies` false, and
+/// leave a `when` with a section pattern to the gate.
+#[test]
+fn fails_unread_fails_a_when_exactly_where_the_gate_finds_it_does_not_apply() {
+    let whens = [
+        json!({}),
+        json!({"route": ["owner"]}),
+        json!({"route": ["owner", "ask-first"]}),
+        json!({"answers": {"data": "stored"}}),
+        json!({"answers": {"ux": "mockups", "data": "stored"}}),
+        json!({"answers_not": {"data": "none"}}),
+        json!({"answers_not": {"data": "none", "lifecycle": "none"}}),
+        json!({"route": ["unowned"], "answers": {"data": "stored"}}),
+        json!({"route": ["owner"], "answers_not": {"ux": "none"}}),
+    ];
+    let routes = [None, Some("owner"), Some("ask-first"), Some("unowned")];
+    let answers = [
+        json!({}),
+        json!({"data": "none"}),
+        json!({"data": "stored"}),
+        json!({"ux": "mockups", "data": "stored", "lifecycle": "none"}),
+        json!({"ux": "none", "data": "none", "lifecycle": "none"}),
+    ];
+    let mut compared = 0;
+    for when in &whens {
+        let check: crate::flow::Check =
+            serde_json::from_value(json!({"id": "c", "kind": "tasks", "when": when})).unwrap();
+        for route in routes {
+            for given in &answers {
+                let mut observed = given_route(route);
+                observed.answers = serde_json::from_value(given.clone()).unwrap();
+                let skipped = fails_unread(&check, observed.change.route, Some(observed.answers));
+                let gated = applies(&observed, &BTreeMap::new(), &check) == Ok(false);
+                assert_eq!(
+                    skipped, gated,
+                    "when {when}, route {route:?}, answers {given}"
+                );
+                compared += 1;
+            }
+        }
+    }
+    assert_eq!(compared, 9 * 4 * 5);
+}
+
+/// The twin: a `when` with a section pattern fails unread only off its
+/// route, whatever the answers, and with no answers only the route is read.
+#[test]
+fn fails_unread_leaves_a_when_with_a_section_pattern_or_no_answers_to_the_gate_on_its_route() {
+    let check = |when: Value| -> crate::flow::Check {
+        serde_json::from_value(json!({"id": "c", "kind": "tasks", "when": when})).unwrap()
+    };
+    let stored = serde_json::from_value(json!({"data": "stored"})).unwrap();
+    let sectioned = check(json!({
+        "route": ["owner"],
+        "section": {"Data": "stored"},
+        "answers": {"data": "none"},
+    }));
+    let owner = given_route(Some("owner")).change.route;
+    let unowned = given_route(Some("unowned")).change.route;
+    assert!(!fails_unread(&sectioned, owner, Some(stored)));
+    assert!(fails_unread(&sectioned, unowned, Some(stored)));
+    let answered = check(json!({"route": ["owner"], "answers": {"data": "none"}}));
+    assert!(!fails_unread(&answered, owner, None));
+    assert!(fails_unread(&answered, owner, Some(stored)));
+    assert!(fails_unread(&answered, unowned, None));
+}
+
+/// A change in review with `route`, or none.
+fn given_route(route: Option<&str>) -> Observed {
+    let change = given("review");
+    match route {
+        Some(route) => change.with(json!({"route": route})).observed(),
+        None => change.observed(),
+    }
+}
+
 #[test]
 fn the_lifecycle_paths_remedy_says_to_write_the_record_or_revert_the_edit() {
     let mut change = lifecycle_change("review", "None: nothing changes state.");
@@ -1473,3 +1550,32 @@ mod design;
 mod owner_answers;
 mod rechecks;
 mod review_head;
+
+/// At land, a plan that lacks the test sections takes them through
+/// `changes plan-amend`, which adds only those headings, so the land gate's
+/// remedy and instruction name it and not the whole-plan resend; the plan
+/// phase's missing sections still take `changes plan`.
+#[test]
+fn the_land_test_sections_remedy_names_plan_amend_and_the_plan_sections_remedy_names_changes_plan()
+{
+    let land = given("land").remedy("test-sections");
+    assert!(
+        land.contains(
+            "`board changes plan-amend --path /changes/t --proves <text> --does-not-prove <text>`"
+        ),
+        "{land}"
+    );
+    assert!(!land.contains("changes plan --path"), "{land}");
+    let plan = given("plan").plan(Some("# T\n")).remedy("plan-sections");
+    assert!(
+        plan.contains("`board changes plan --path /changes/t`"),
+        "{plan}"
+    );
+    assert!(!plan.contains("plan-amend"), "{plan}");
+    let flow = development();
+    let instruction = &flow.phase("land").unwrap().instruction;
+    assert!(
+        instruction.contains("`board changes plan-amend --path {change}`"),
+        "{instruction}"
+    );
+}

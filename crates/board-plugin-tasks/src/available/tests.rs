@@ -409,3 +409,30 @@ fn a_repo_whose_clone_is_being_synced_is_waited_for_and_synced_once_the_other_sy
     assert!(started.elapsed() >= Duration::from_millis(300));
     release.join().unwrap();
 }
+
+/// A commit on the notes remote that keeps its files and writes `text` to
+/// `other.txt`, as another clone pushing would make.
+fn pushed(real: &crate::tests::real::Real, text: &str) -> String {
+    let mut files: Vec<(String, String)> = (real.remote.head().unwrap().files.into_iter())
+        .map(|(path, bytes)| (path, String::from_utf8(bytes).unwrap()))
+        .filter(|(path, _)| path != "other.txt")
+        .collect();
+    files.push(("other.txt".to_owned(), text.to_owned()));
+    let pairs: Vec<(&str, &str)> = (files.iter())
+        .map(|(path, text)| (path.as_str(), text.as_str()))
+        .collect();
+    real.remote.commit(&pairs).to_string()
+}
+
+/// A clone fetched less than a minute ago is not fetched again: a commit
+/// pushed to the notes remote since then is left for a later call. A
+/// clone never fetched is fetched.
+#[test]
+fn a_repo_whose_clone_was_fetched_within_the_minute_is_not_fetched_again_and_one_never_fetched_is()
+{
+    let real = crate::tests::real::Real::new(crate::tests::real::Race::Alone, &[], &[]);
+    let first = pushed(&real, "Elsewhere.\n");
+    assert_eq!(sync(&real, &real.clone.path()), Ok(first.clone()));
+    pushed(&real, "Later.\n");
+    assert_eq!(sync(&real, &real.clone.path()), Ok(first));
+}

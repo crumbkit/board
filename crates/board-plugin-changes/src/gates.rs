@@ -140,6 +140,9 @@ pub(crate) struct Observed {
     /// when each edits only paths a check's `unchanged_by` allows or
     /// cleanly merges main, or else why not.
     pub(crate) after_review: BTreeMap<String, Result<Vec<String>, String>>,
+    /// The amendments since the last plan `changes.plan` wrote, oldest
+    /// first, which the pull request body lists.
+    pub(crate) amended: Vec<crate::amend::Amended>,
 }
 
 /// What `Host::decided` found of the owner's approval of `changes.approve`
@@ -186,6 +189,7 @@ impl Observed {
             held: BTreeSet::new(),
             approval: Approval::None,
             after_review: BTreeMap::new(),
+            amended: Vec::new(),
         }
     }
 
@@ -470,9 +474,7 @@ fn applies(
     let Some(when) = &each.when else {
         return Ok(true);
     };
-    if let Some(routes) = &when.route
-        && !(observed.change.route).is_some_and(|route| routes.contains(&route))
-    {
+    if off_route(when, observed.change.route) {
         return Ok(false);
     }
     for (heading, text) in when.section.iter().flatten() {
@@ -485,14 +487,7 @@ fn applies(
             return Ok(false);
         }
     }
-    if let Some(wanted) = when.answers
-        && !observed.answers.meet(wanted)
-    {
-        return Ok(false);
-    }
-    if let Some(unless) = when.answers_not
-        && hold(observed.answers, unless)
-    {
+    if unanswered(when, observed.answers) {
         return Ok(false);
     }
     if let Some(absent) = &when.absent
@@ -503,14 +498,6 @@ fn applies(
         return Ok(false);
     }
     Ok(true)
-}
-
-/// Whether the plan gives each answer `wanted` names, equal to it; an
-/// answer the plan leaves out does not hold.
-fn hold(given: Answers, wanted: Answers) -> bool {
-    (wanted.ux.is_none() || given.ux == wanted.ux)
-        && (wanted.data.is_none() || given.data == wanted.data)
-        && (wanted.lifecycle.is_none() || given.lifecycle == wanted.lifecycle)
 }
 
 /// Whether the text under the plan's `heading` matches `text`, a pattern,
@@ -773,6 +760,9 @@ pub(crate) use design::{mockups, ux_missing};
 pub(crate) mod kinds;
 mod paths;
 pub(crate) mod remedy;
+mod when;
+pub(crate) use when::fails_unread;
+use when::{off_route, unanswered};
 
 #[cfg(test)]
 mod tests;

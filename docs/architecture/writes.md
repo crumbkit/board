@@ -112,3 +112,5 @@ stay for the next sync. The report is
 the first commit), `new`, `merged`, `conflicts`, `pins`, `failing` (these four
 are in [merging.md](writes/merging.md)), `pushed`, `attempts` and `kept` (each
 kept file's `path`, `code` and `hint`).
+A plugin can run a sync that skips the fetch when the clone was fetched
+less than a window ago ([fresh.md](writes/sync/fresh.md)).

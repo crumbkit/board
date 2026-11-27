@@ -63,6 +63,13 @@ blocks is missing.
    leaves owed go in `owed`, as `[{"rule": "<path>", "why": "<reason>"}]`.
    Both fields take paths, and the gates do not read paths in the text.
    Keep the plan near 900 words; `plan` refuses one over 3,000.
+   To add the "What the tests prove" or "What the tests do not prove"
+   section to an existing plan, such as at land, run `board -C <board>
+   changes plan-amend --path /changes/<name>` with `--proves` or
+   `--does-not-prove` in place of resending the whole plan. It only adds
+   those sections, and `next` and the pull request body list each one for
+   the owner. A new path or owed entry still needs the owner to resend the
+   plan.
    Failure paths has one row per step that can fail: what fails, the state
    it leaves, the recovery, and the order of the check against the
    destructive step it guards. Consumers lists every caller and reader of
@@ -119,6 +126,8 @@ blocks is missing.
    passes `owner-approval`, `data-signed` and `mockups`. A plan that
    answers `ux` none and `data` none needs no approval. After a change
    lands, `board -C <board> changes owed` lists the rechecks it still owes.
+   `board -C <board> changes ready` lists the changes that wait only on the
+   owner, with the kind of check each waits on and why one is failing.
 4. Run `board -C <board> changes advance --path /changes/<name>`
    when every check passes. A change that records a pull request moves
    into `done` only once GitHub reports it merged, so land it with

@@ -69,8 +69,15 @@ fn bench_reads_a_board_or_a_record_count() {
             records: 50,
             against: None,
             runs: None,
+            hot: false,
+            json: false,
         })
     );
+    let hot = parse("--hot --records 20 --json").unwrap();
+    assert_eq!((hot.hot, hot.json, hot.records), (true, true, 20));
+    assert_eq!(parse("--json"), None);
+    assert_eq!(parse("--hot --board /b"), None);
+    assert_eq!(parse("--hot --against /old/board"), None);
     assert_eq!(parse("--board /b").unwrap().board, Some("/b".into()));
     let against = parse("--against /old/board --runs 3").unwrap();
     assert_eq!(
@@ -92,6 +99,8 @@ fn against_names_an_existing_base_and_takes_runs_only_with_it_or_is_refused() {
         records: 1,
         against,
         runs,
+        hot: false,
+        json: false,
     };
     let missing = options(Some(fixture.path().join("nothing")), None);
     assert_eq!(
@@ -284,4 +293,60 @@ fn settling_waits_over_a_second() {
     let started = Instant::now();
     settle();
     assert!(started.elapsed() > Duration::from_secs(1));
+}
+
+const COMMANDS: &str = "## Command budgets
+
+| Command | Budget (p90) | Budget (median) | Session start |
+| --- | --- | --- | --- |
+| `get` | 25 ms | - | no |
+| `changes.next` | 10,000 ms | 2,000 ms | no |
+
+A session-start command whose run is killed counts as far too slow.
+";
+
+#[test]
+fn the_command_budgets_are_read_from_the_docs_table_with_their_medians() {
+    assert_eq!(
+        hot::budgets(COMMANDS).unwrap(),
+        [
+            hot::Budget {
+                command: "get".to_owned(),
+                p90: Duration::from_millis(25),
+                median: None,
+            },
+            hot::Budget {
+                command: "changes.next".to_owned(),
+                p90: Duration::from_secs(10),
+                median: Some(Duration::from_secs(2)),
+            },
+        ]
+    );
+    assert!(matches!(
+        hot::budgets(&COMMANDS.replace("| 25 ms |", "| 25 |")),
+        Err(BenchError::Budget { .. })
+    ));
+    assert!(matches!(hot::budgets(DOCS), Err(BenchError::NoBudgets)));
+}
+
+#[test]
+fn a_hot_row_passes_when_its_p90_and_median_are_within_their_budgets() {
+    let budget = hot::Budget {
+        command: "changes.next".to_owned(),
+        p90: Duration::from_secs(10),
+        median: Some(Duration::from_secs(2)),
+    };
+    let ms = Duration::from_millis;
+    let row = |p50, p90| hot::Row {
+        budget: budget.clone(),
+        timed: Ok((ms(p50), ms(p90))),
+    };
+    assert_eq!(row(1_000, 9_000).outcome(), "pass");
+    assert_eq!(row(2_001, 9_000).outcome(), "fail");
+    assert_eq!(row(1_000, 10_001).outcome(), "fail");
+    let refused = hot::Row {
+        budget,
+        timed: Err("changes::path::missing".to_owned()),
+    };
+    assert_eq!(refused.outcome(), "error");
 }

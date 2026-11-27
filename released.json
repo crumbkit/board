@@ -355,6 +355,15 @@
       "data.put",
       "data.put.absent",
       "data.put.commit",
+      "data.put.dropped",
+      "data.put.dropped[].line",
+      "data.put.dropped[].near",
+      "data.put.dropped[].path",
+      "data.put.dropped[].pointer",
+      "data.put.filled",
+      "data.put.filled[].line",
+      "data.put.filled[].path",
+      "data.put.filled[].pointer",
       "data.put.removed",
       "data.put.removed[].blob",
       "data.put.removed[].path",
@@ -1143,6 +1152,15 @@
       "data",
       "data.absent",
       "data.commit",
+      "data.dropped",
+      "data.dropped[].line",
+      "data.dropped[].near",
+      "data.dropped[].path",
+      "data.dropped[].pointer",
+      "data.filled",
+      "data.filled[].line",
+      "data.filled[].path",
+      "data.filled[].pointer",
       "data.kept",
       "data.kept[].records",
       "data.kept[].schema",
@@ -1305,6 +1323,15 @@
       "data",
       "data.absent",
       "data.commit",
+      "data.dropped",
+      "data.dropped[].line",
+      "data.dropped[].near",
+      "data.dropped[].path",
+      "data.dropped[].pointer",
+      "data.filled",
+      "data.filled[].line",
+      "data.filled[].path",
+      "data.filled[].pointer",
       "data.removed",
       "data.removed[].blob",
       "data.removed[].path",
@@ -4827,6 +4854,47 @@
           ]
         ]
       },
+      "output.amended": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.amended[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "from",
+            "path",
+            "sections"
+          ]
+        ]
+      },
+      "output.amended[].from": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.amended[].path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.amended[].sections": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.amended[].sections[]": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "What the tests prove",
+          "What the tests do not prove"
+        ]
+      },
       "output.ask": {
         "type": [
           "string"
@@ -5815,6 +5883,81 @@
         ]
       }
     },
+    "changes.plan-amend": {
+      "input": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "path"
+          ]
+        ]
+      },
+      "input.does_not_prove": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.proves": {
+        "type": [
+          "string"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "amendment",
+            "from",
+            "path",
+            "sections",
+            "text"
+          ]
+        ]
+      },
+      "output.amendment": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.from": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.sections": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.sections[]": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "What the tests prove",
+          "What the tests do not prove"
+        ]
+      },
+      "output.text": {
+        "type": [
+          "string"
+        ]
+      }
+    },
     "changes.pr": {
       "input": {
         "type": [
@@ -6313,6 +6456,188 @@
         ]
       },
       "output.warning.unread.*": {
+        "type": [
+          "string"
+        ]
+      }
+    },
+    "changes.ready": {
+      "input": {
+        "type": [
+          "object"
+        ]
+      },
+      "input.failing": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "input.limit": {
+        "type": [
+          "integer"
+        ]
+      },
+      "input.questions": {
+        "type": [
+          "array"
+        ]
+      },
+      "input.questions[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "changes",
+            "total",
+            "truncated",
+            "unreadable"
+          ]
+        ]
+      },
+      "output.changes": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.changes[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "check",
+            "days",
+            "done",
+            "failing",
+            "head",
+            "kind",
+            "path",
+            "pull",
+            "questions",
+            "title",
+            "waits_on"
+          ]
+        ]
+      },
+      "output.changes[].check": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.changes[].days": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "output.changes[].done": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.changes[].failing": {
+        "type": [
+          "null",
+          "string"
+        ],
+        "enum": [
+          "ci_failed",
+          "conflict",
+          "stale"
+        ]
+      },
+      "output.changes[].head": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.changes[].kind": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "recheck",
+          "data-sign-off",
+          "deviation",
+          "land-choice"
+        ]
+      },
+      "output.changes[].path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.changes[].pull": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.changes[].questions": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.changes[].questions[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.changes[].title": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.changes[].waits_on": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.total": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.truncated": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.unreadable": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.warnings": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.warnings[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "code",
+            "detail"
+          ]
+        ]
+      },
+      "output.warnings[].code": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.warnings[].detail": {
         "type": [
           "string"
         ]
@@ -10714,6 +11039,127 @@
         ]
       }
     },
+    "plans.decide": {
+      "input": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "decision",
+            "project",
+            "why"
+          ]
+        ]
+      },
+      "input.alternatives": {
+        "type": [
+          "array"
+        ]
+      },
+      "input.alternatives[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.decision": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.person": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.program": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.project": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.refs": {
+        "type": [
+          "array"
+        ]
+      },
+      "input.refs[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.review": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "input.session": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.urls": {
+        "type": [
+          "array"
+        ]
+      },
+      "input.urls[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.why": {
+        "type": [
+          "string"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "line",
+            "path"
+          ]
+        ]
+      },
+      "output.line": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.warning": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "code",
+            "message"
+          ]
+        ]
+      },
+      "output.warning.code": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.warning.message": {
+        "type": [
+          "string"
+        ]
+      }
+    },
     "plans.migrate": {
       "input": {
         "type": [
@@ -12209,6 +12655,171 @@
       },
       "output.versions[].record": {},
       "output.versions[].text": {
+        "type": [
+          "null",
+          "string"
+        ]
+      }
+    },
+    "requests.threads": {
+      "input": {
+        "type": [
+          "object"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "threads"
+          ]
+        ]
+      },
+      "output.threads": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.threads[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "board",
+            "op",
+            "path",
+            "plugin",
+            "replies",
+            "versions"
+          ]
+        ]
+      },
+      "output.threads[].board": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.threads[].op": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.threads[].path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.threads[].plugin": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.threads[].replies": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.threads[].replies[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "effect",
+            "path",
+            "text"
+          ]
+        ]
+      },
+      "output.threads[].replies[].effect": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.threads[].replies[].path": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.threads[].replies[].text": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.threads[].versions": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.threads[].versions[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "answer",
+            "asked",
+            "id",
+            "latest",
+            "pending",
+            "record",
+            "text"
+          ]
+        ]
+      },
+      "output.threads[].versions[].answer": {
+        "type": [
+          "null",
+          "object"
+        ],
+        "requires": [
+          [
+            "answer",
+            "reason"
+          ]
+        ]
+      },
+      "output.threads[].versions[].answer.answer": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "approve",
+          "refuse"
+        ]
+      },
+      "output.threads[].versions[].answer.reason": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.threads[].versions[].asked": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.threads[].versions[].id": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.threads[].versions[].latest": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.threads[].versions[].pending": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.threads[].versions[].record": {},
+      "output.threads[].versions[].text": {
         "type": [
           "null",
           "string"
@@ -17883,6 +18494,9 @@
     "changes::agent::not_set",
     "changes::agent::not_started",
     "changes::agent::timeout",
+    "changes::amend::no_plan",
+    "changes::amend::nothing",
+    "changes::amend::section_held",
     "changes::approve::not_chosen",
     "changes::ask::no_plan",
     "changes::attach::no_plan",
@@ -17939,6 +18553,7 @@
     "changes::plan::uses_too_long",
     "changes::prototype::never_lands",
     "changes::prototype::not_prototype",
+    "changes::ready::merge_unread",
     "changes::ref::dangling",
     "changes::ref::wrong_type",
     "changes::reflow::no_phase",
@@ -18097,6 +18712,8 @@
     "plans::board::refused",
     "plans::call::bad_input",
     "plans::call::unknown_capability",
+    "plans::decide::new_project",
+    "plans::decide::no_author",
     "plans::migrate::over_budget",
     "plans::migrate::unread",
     "plans::stale::no_session",

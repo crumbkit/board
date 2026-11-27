@@ -16,8 +16,9 @@ lists effects and runs `board answer` for the owner.
   counts only those whose status is `ok`. The query is in `hooks/query.ts`, and
   crates/board-cli/src/tests/effects_mod.rs runs it against a real board. It
   returns the board, plugin, op and path of each. The mod reads the list when a
-  session starts and after each answer. It also reads it every 60 seconds
-  from the first time the band is drawn, which a `claude -p` run never does.
+  session starts and after each answer. Once the band is drawn, which a
+  `claude -p` run never does, it reads it each minute its own
+  [stamp](plans-claude-code.md#open-questions) of the personal board changed.
 - The mod's button in the band above the prompt is described in
   [claude-code/band.md](claude-code/band.md). A failed read goes to the
   debug log.
@@ -42,8 +43,7 @@ lists effects and runs `board answer` for the owner.
   answer was sent. `board answer` overwrites an earlier answer, so without
   this check a stale row or dialog could replace a refusal with an approval.
   A second press while an answer runs runs nothing, and a toast says the
-  answer is already running. The re-read can go once Board refuses a second
-  answer.
+  answer is already running.
 - `board answer` has 30 seconds to finish. When Board reports a failure, a
   toast says that Board recorded no answer and gives Board's reason. When the
   run times out or is killed, a toast says that whether the answer was
@@ -66,9 +66,7 @@ lists effects and runs `board answer` for the owner.
   nothing.
 
 The mod passes each id to `board` as its own argument, and an id is 64
-lowercase hex digits before it reaches the query. Once `board answer` removes
-the answered effect from `/effects/pending/`, the query no longer needs its
-seen-record check.
+lowercase hex digits before it reaches the query.
 
 An approval runs Board's signer, which shows the effect and waits up to 20
 seconds for the owner's Touch ID (docs/architecture/writes/signing.md),

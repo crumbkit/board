@@ -5,6 +5,8 @@ import type { Effect, Pending } from '../types'
 import type { Listed } from './effects'
 import { SLOT, drawsInto, joinBand, keepOneBand } from './band'
 import { askedIds, boardFailure, effectsBadge, failure, headline, outputText, parsePending, pendingSql, question, standing, told, visible } from './effects'
+import { unseen, whenChanged } from './stamp'
+import type { Seen } from './stamp'
 
 // The mod lists the owner's pending effects from the personal board and
 // answers one with `board answer`. Board makes every decision and checks
@@ -37,6 +39,8 @@ type Local = {
   opening: Set<string>
   /** The ids whose answer is running, so a second press runs nothing. */
   answering: Set<string>
+  /** The personal board's stamp the last read that worked saw. */
+  seen: Seen
 }
 
 const board = ($: EngineInterface, args: string[], timeoutMs = READ_MS) =>
@@ -54,8 +58,8 @@ async function query($: EngineInterface, id?: string): Promise<Listed | string> 
   }
 }
 
-/** Reads the pending effects again. A failure keeps the last list and says why. */
-async function refresh($: EngineInterface) {
+/** Reads the pending effects again, and says whether the read worked. A failure keeps the last list and says why. */
+async function refresh($: EngineInterface): Promise<boolean> {
   const found = await query($)
   if (typeof found === 'string') $.ui.log(`board: pending effects could not be read: ${found}`, { to: 'debug' })
   await update($, pending, last =>
@@ -63,7 +67,16 @@ async function refresh($: EngineInterface) {
       ? { effects: last?.effects ?? [], truncated: last?.truncated ?? false, failed: found, worked: last?.worked ?? false }
       : { ...found, failed: null, worked: true },
   )
+  return typeof found !== 'string'
 }
+
+/**
+ * Reads the pending effects again, unless the personal board's stamp is the
+ * one the last read that worked saw; `always` reads regardless, as a session
+ * start and an answer do. So the minute's tick on an unchanged board runs no
+ * `board`.
+ */
+const reread = ($: EngineInterface, local: Local, always = false) => whenChanged($, '', local.seen, () => refresh($), always)
 
 /**
  * Runs `board answer`; true when Board recorded it, else the owner is told
@@ -80,7 +93,7 @@ async function answer($: EngineInterface, local: Local, e: Effect, said: Answer)
     return await answerOnce($, e, said)
   } finally {
     local.answering.delete(e.id)
-    await refresh($)
+    await reread($, local, true)
   }
 }
 
@@ -164,14 +177,14 @@ async function askOwner($: EngineInterface, local: Local, output: string): Promi
 }
 
 export const register: Register = on => {
-  const local: Local = { asked: new Set(), opening: new Set(), answering: new Set() }
+  const local: Local = { asked: new Set(), opening: new Set(), answering: new Set(), seen: unseen() }
   // The minute's refresh starts with the first band drawn, which a `-p` run
   // never draws, and it starts once however many sessions start.
   let polling = false
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-    void refresh($)
+    void reread($, local, true)
     return started
   })
 
@@ -196,7 +209,7 @@ export const register: Register = on => {
     const below = await next(e)
     if (!polling) {
       polling = true
-      $.clock.every(REFRESH_MS, () => void refresh($))
+      $.clock.every(REFRESH_MS, () => void reread($, local))
     }
     const found = await read($, pending)
     const badge = e.props.hasSurvey || !drawsInto(e.plugin) || found === null ? null : effectsBadge(found)

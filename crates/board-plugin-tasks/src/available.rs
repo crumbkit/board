@@ -27,6 +27,10 @@ pub(crate) const SHOWN: usize = 100;
 /// How long one repo's sync may take. A sync still running then is
 /// stopped, and the repo is read at its pin.
 const SYNC_DEADLINE: Duration = Duration::from_secs(5);
+/// How recent a clone's last fetch must be for a call to read it without
+/// fetching again. A task pushed from elsewhere within it is listed by the
+/// first call after it.
+const FETCHED_WITHIN: Duration = Duration::from_secs(60);
 const SYNC_TIMEOUT: &str = "tasks::repo::sync_timeout";
 
 /// The tasks to sweep now, in the repos the caller's remote chooses.
@@ -157,7 +161,8 @@ pub(crate) struct Output {
 }
 
 /// Syncs the repos in scope, then sorts their open tasks into the sweep's
-/// sections. The repos sync one after another, each within five seconds.
+/// sections. The repos sync one after another, each within five seconds,
+/// and a repo fetched within the last minute is not fetched again.
 /// Only when a sync moves a clone past its pin does the call move that pin
 /// and read the tasks again.
 pub(crate) fn available(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
@@ -244,12 +249,14 @@ pub(crate) fn available(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     }))
 }
 
-/// Syncs the clone without pushing: HEAD after it, or the code of a sync
-/// that failed or ran past its deadline.
+/// Syncs the clone without pushing, unless it was fetched within
+/// [`FETCHED_WITHIN`] and HEAD holds what that fetch brought: HEAD after it,
+/// or the code of a sync that failed or ran past its deadline.
 fn sync(host: &dyn Host, clone: &str) -> Result<String, String> {
     let board = (host.board(&Elsewhere::Directory(PathBuf::from(clone))))
         .map_err(|refusal| refusal.code.as_str().to_owned())?;
-    match board.sync_waiting(false, SYNC_DEADLINE, board_ops::LOCK_WAIT) {
+    let wait = board_ops::LOCK_WAIT;
+    match board.sync_unless_fetched(false, FETCHED_WITHIN, SYNC_DEADLINE, wait) {
         Ok(synced) => Ok(synced.new.to_string()),
         Err(error) if error.code() == Code::SyncTimeout => Err(SYNC_TIMEOUT.to_owned()),
         Err(error) => Err(error.code().as_str().to_owned()),

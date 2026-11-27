@@ -12,8 +12,10 @@ board-model.workspace = true
 board-ops.workspace = true
 board-plugin.workspace = true
 board-plugin-tasks.workspace = true
+board-plugins = { workspace = true, features = ["changes", "orders", "plans", "rules", "runs", "tasks"] }
 board-tree.workspace = true
 board-validate.workspace = true
+jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
