@@ -4,6 +4,7 @@
 //! (docs/architecture/performance/timing.md, The speed check).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use board_model::{LogicalPath, Object};
 use board_ops::{Board, Expect, PutError, Timings};
@@ -352,10 +353,12 @@ pub(crate) trait Grace {
     fn changed_since(&self, opened: jiff::Timestamp) -> Option<u64>;
 }
 
-/// When a check asks, and the session it asks as, when it has one.
+/// When a check asks, the session it asks as, when it has one, and the
+/// cache its reads use.
 pub(crate) struct Asker<'a> {
     pub(crate) at: &'a str,
     pub(crate) session: Option<&'a str>,
+    pub(crate) cache: Option<&'a Path>,
 }
 
 /// What a live check wrote: tasks opened or retitled, and questions filed.
@@ -373,9 +376,16 @@ fn task_path(command: &str) -> String {
     format!("/tasks/board-speed-{}.md", slug(command))
 }
 
-fn question_path(command: &str) -> String {
-    format!("/projects/board/questions/board-speed-{}", slug(command))
+/// The question of one overflow: the command's, named by the run that
+/// opened or reopened its task, so each overflow can ask once.
+fn question_path(command: &str, opened: &LogicalPath) -> String {
+    let run = opened.as_str().rsplit('/').next().unwrap_or_default();
+    format!("{QUESTIONS}/{PREFIX}{}-{run}", slug(command))
 }
+
+/// Where speed questions are filed, and the start of each one's name.
+const QUESTIONS: &str = "/projects/board/questions";
+const PREFIX: &str = "board-speed-";
 
 fn title(judged: &Judged) -> String {
     let budget = judged.budget;
@@ -416,20 +426,32 @@ fn question(judged: &Judged, run: &LogicalPath, asked: &str, by: &Value, task: &
     })
 }
 
-fn answer_path(command: &str) -> String {
-    format!("/projects/board/answers/board-speed-{}", slug(command))
-}
-
-/// Whether any command's speed question is open: its status is open and
-/// no answer, which plans keeps at the question's id under answers/, names
-/// it.
-fn asking(board: &Board) -> bool {
+/// Whether any speed question is open: its status is open and no answer,
+/// which plans keeps at the question's id under answers/, names it.
+fn asking(board: &Board, cache: Option<&Path>) -> bool {
     let held = |path: &str| (logical(path).ok()).and_then(|path| board.get(&path).ok());
-    (super::budgets::BUDGETS.iter()).any(|budget| {
-        let open = held(&question_path(budget.command))
+    let Ok(listed) = (logical(QUESTIONS)).map(|questions| board.ls(&questions, cache)) else {
+        return false;
+    };
+    let Ok(listed) = listed else {
+        return false;
+    };
+    (listed.listed.iter()).any(|listed| {
+        let board_ops::Listed::Entry {
+            logical: Some(logical),
+            ..
+        } = listed
+        else {
+            return false;
+        };
+        let name = logical.as_str().rsplit('/').next().unwrap_or_default();
+        if !name.starts_with(PREFIX) {
+            return false;
+        }
+        let open = held(&format!("{QUESTIONS}/{name}"))
             .and_then(|got| serde_json::from_slice::<Value>(&got.bytes).ok())
             .is_some_and(|question| question["status"] == "open");
-        open && held(&answer_path(budget.command)).is_none()
+        open && held(&format!("/projects/board/answers/{name}")).is_none()
     })
 }
 
@@ -454,12 +476,20 @@ fn logical(path: &str) -> Result<LogicalPath, PutError> {
     Ok(path.parse()?)
 }
 
-/// For each command in `live` over budget: opens a task, only where none
-/// exists; gives an open task the title of a command now far too slow; and
-/// once `grace` has passed since the run that opened the task, files one
-/// question, only where none exists, asked as `asker`'s session, and only
-/// while no other speed question is open. A check with no session files
-/// none. `run` is the run that judged them.
+/// Whether the task text `held` is open, as its front matter says.
+fn is_open(held: &str) -> bool {
+    (held.lines())
+        .find_map(|line| line.strip_prefix("status: "))
+        .is_some_and(|status| status.trim().trim_matches('"') == "open")
+}
+
+/// For each command in `live` over budget: opens a task, where none exists
+/// or reopens one that is closed, naming this run; gives an open task the
+/// title of a command now far too slow; and once `grace` has passed since
+/// the run that opened or reopened the task, files that overflow's one
+/// question, asked as `asker`'s session, and only while no other speed
+/// question is open. A check with no session files none. `run` is the run
+/// that judged them.
 pub(crate) fn alert(
     board: &Board,
     judged: &[Judged],
@@ -477,13 +507,24 @@ pub(crate) fn alert(
         let command = judged.budget.command;
         let path = logical(&task_path(command))?;
         let text = task(judged, run);
-        let Some((held, blob)) = existing(board, &path) else {
-            match board.put_file(&path, Expect::Absent, text.as_bytes()) {
+        let held = existing(board, &path);
+        let reopen = match &held {
+            None => Some(Expect::Absent),
+            Some((held, Some(blob))) if !is_open(&String::from_utf8_lossy(held)) => {
+                Some(Expect::Blob(*blob))
+            }
+            Some(_) => None,
+        };
+        if let Some(expect) = reopen {
+            match board.put_file(&path, expect, text.as_bytes()) {
                 Ok(_) => alerted.tasks.push(path.to_string()),
-                // Another check opened it first.
+                // Another check opened or reopened it first.
                 Err(PutError::Stale { .. }) => {}
                 Err(error) => return Err(error),
             }
+            continue;
+        }
+        let Some((held, blob)) = held else {
             continue;
         };
         let titled = format!(
@@ -514,17 +555,19 @@ pub(crate) fn alert(
         let Some(session) = asker.session else {
             continue;
         };
-        let opened_by = (held.lines())
+        let Some(opened) = (held.lines())
             .find_map(|line| line.strip_prefix("refs: "))
             .and_then(|refs| serde_json::from_str::<Vec<String>>(refs).ok())
             .and_then(|refs| refs.into_iter().next())
-            .and_then(|run| run.parse::<LogicalPath>().ok());
-        let past = (opened_by.as_ref())
-            .and_then(|opened| started(board, opened))
-            .and_then(|opened| grace.changed_since(opened))
+            .and_then(|run| run.parse::<LogicalPath>().ok())
+        else {
+            continue;
+        };
+        let past = started(board, &opened)
+            .and_then(|at| grace.changed_since(at))
             .is_some_and(|changed| changed > grace.allowed());
-        let path = logical(&question_path(command))?;
-        if past && board.get(&path).is_err() && !asking(board) {
+        let path = logical(&question_path(command, &opened))?;
+        if past && board.get(&path).is_err() && !asking(board, asker.cache) {
             let by = json!({"program": "board", "session": session});
             let task = task_path(command);
             let record = question(judged, run, asker.at, &by, &task).to_string();

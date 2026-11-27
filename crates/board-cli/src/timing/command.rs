@@ -92,6 +92,7 @@ pub(crate) fn timing(command: &TimingCommand, context: &Context, printer: Printe
             let asker = Asker {
                 at: &now.round(jiff::Unit::Second).unwrap_or(now).to_string(),
                 session: session.as_deref(),
+                cache: Some(cache),
             };
             match recorded(context, &personal, cache, &judged, &asker, &mut warnings) {
                 Ok(recorded) => recorded,
@@ -111,14 +112,18 @@ pub(crate) fn timing(command: &TimingCommand, context: &Context, printer: Printe
     )
 }
 
-/// The commands the newest local run names live, for a check that records
-/// none; none when the personal board cannot be read.
+/// The commands the newest local run that names modes names live, for a
+/// check that records none; none when the personal board cannot be read.
 fn shown_live(context: &Context, personal: &Path) -> BTreeSet<String> {
     let Ok((board, _)) = context.open(personal, MountsAt::Pins) else {
         return BTreeSet::new();
     };
-    let newest = ready::runs(&board, LOCAL_SUITE, context.cache.as_deref(), 1);
-    newest.last().map_or_default(ready::live_in)
+    let cache = context.cache.as_deref();
+    let newest = ready::runs(&board, LOCAL_SUITE, cache, 1);
+    if let Some(live) = newest.last().and_then(ready::live_in) {
+        return live;
+    }
+    ready::Past::of(&ready::runs(&board, LOCAL_SUITE, cache, ready::READ), &[]).live
 }
 
 /// The variables `names` from the environment Board inherited, beside
@@ -166,10 +171,11 @@ fn recorded(
     }
     // Once every command is live, the newest run alone says so.
     let mut local = ready::runs(&board, LOCAL_SUITE, Some(cache), 1);
-    let before = local.last().map_or_default(ready::live_in);
+    let mut before = local.last().and_then(ready::live_in).unwrap_or_default();
     let every = (check::budgets().iter()).all(|budget| before.contains(budget.command));
     if !every {
         local = ready::runs(&board, LOCAL_SUITE, Some(cache), ready::READ);
+        before = ready::Past::of(&local, &[]).live;
     }
     warnings.extend(imported(&board, context, cache, &before));
     let ci = if every {

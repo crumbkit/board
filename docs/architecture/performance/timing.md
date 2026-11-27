@@ -188,10 +188,12 @@ still written.
 A command is silent until it is ready, then live. It is ready when it has
 100 judged results in local runs, this check's included, and, once CI has
 timed it at all, 14 judged results in CI runs, and fewer than 1 in 10 of
-its over-budget results were cleared by its next judged result. The check
-reads the newest 120 runs of each suite, so flapping only in older runs is
-missed. A command the newest local run names live stays live, so live holds
-across Macs, and no event makes it silent.
+its over-budget results were cleared by its next judged result. A command
+whose newest CI result is an `error` waits until CI times it again. The
+check reads the newest 120 runs of each suite, so flapping only in older
+runs is missed. A command the newest local run that names modes names live
+stays live, so live holds across Macs and across a run from a build that
+names no modes, and no event makes it silent.
 
 When the first command goes live the check writes `/rules/board/speed-budgets`
 and `/rules/board/speed-budgets-ci` if absent: zero rules on each suite's
@@ -199,17 +201,20 @@ and `/rules/board/speed-budgets-ci` if absent: zero rules on each suite's
 so the rules badge counts a live command over budget in every session.
 
 For each live command over budget the check opens a task at
-`/tasks/board-speed-<command>.md`, only if absent, naming the run; gives an
-open task a title that says so when the command is far too slow, which the
-lead names in its next status to the owner; and files a `plans/question/v1`
-at `/projects/board/questions/board-speed-<command>`, only if absent, once
-the grace has passed.
+`/tasks/board-speed-<command>.md` naming the run, if absent; reopens a task
+whose status is not `open` in place, naming this run, so each overflow has
+its own opening run; gives an open task a title that says so when the
+command is far too slow, which the lead names in its next status to the
+owner; and files a `plans/question/v1` at
+`/projects/board/questions/board-speed-<command>-<opening run>`, only if
+absent, once the grace has passed. Each overflow asks at most once.
 
 ### The grace
 
 The grace is the lines added plus removed (`git log --numstat`) on the
 branch the `/repos/board` mount follows, in the clone it names, since the
-run the task names started. It passes when they exceed the
+run that opened or reopened the task started. The check never fetches that
+clone, so the count grows only as something else fetches it. It passes when they exceed the
 `overflow-agent-grace` param for `/repos/board`, read through
 `params.get`, or its default of 200 lines. The question names the session
 in `--session` as its `by`, and `blocks` the task. No question is filed
@@ -241,7 +246,8 @@ status is `open` and whose id has no answer.
 | no speed rules | the first command goes live | both rules, if absent | the check |
 | live, over, no task | a check | its task, if absent | the check |
 | task open | far too slow | the task retitled | the check; the lead names it |
-| task open | the grace passes, a session asks, no speed question open | its question, if absent | the check |
+| task done or dropped | the live command is over again | the task reopened in place, naming this run; no question this check | the check |
+| task open | the grace passes since its opening run, a session asks, no speed question open | that overflow's question, if absent | the check |
 | task open | the grace passes without those | no question; the next check tries | the check |
 | question open | the owner answers | the budget changed or retired in budgets.rs | the owner |
 | task open | the fix lands and the command is within | done through `tasks.done` | the session that lands it |
@@ -258,7 +264,8 @@ command and before the rules, a task or a question leaves those absent,
 and the next check writes them. One killed after the run and before the
 stamp records one more run within the hour. Two checks at once may both
 record a run, or both import or ask; each import, task, rule and question
-has one fixed path and is written only if absent, though two different
+has one path, a question one per overflow, and is written only if absent
+or, for a closed task, only over the blob it read, though two different
 commands' questions may then open together.
 
 ## Reading the log and profiling

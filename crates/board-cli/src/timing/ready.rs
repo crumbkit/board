@@ -36,6 +36,8 @@ pub(crate) enum Outcome {
     Within,
     Over,
     Unjudged,
+    /// Board refused the command in a CI run.
+    Refused,
 }
 
 /// What earlier runs say: the commands the newest local run names live,
@@ -48,22 +50,28 @@ pub(crate) struct Past {
 }
 
 impl Past {
-    /// The past of `local` and `ci` runs, each oldest first.
+    /// The past of `local` and `ci` runs, each oldest first. The live
+    /// commands are those of the newest local run that names modes, so a
+    /// run from a build that names none leaves them live.
     pub(crate) fn of(local: &[Value], ci: &[Value]) -> Self {
         Self {
-            live: local.last().map_or_default(live_in),
+            live: local.iter().rev().find_map(live_in).unwrap_or_default(),
             local: outcomes(local),
             ci: outcomes(ci),
         }
     }
 }
 
-/// The commands `run` names live.
-pub(crate) fn live_in(run: &Value) -> BTreeSet<String> {
-    (results(run))
-        .filter(|result| result["measures"]["mode"] == Mode::Live.name())
-        .filter_map(|result| result["case"].as_str().map(str::to_owned))
-        .collect()
+/// The commands `run` names live, or none when it names no command's mode.
+pub(crate) fn live_in(run: &Value) -> Option<BTreeSet<String>> {
+    let mut modes = results(run).filter(|result| result["measures"]["mode"].is_string());
+    modes.next()?;
+    Some(
+        (results(run))
+            .filter(|result| result["measures"]["mode"] == Mode::Live.name())
+            .filter_map(|result| result["case"].as_str().map(str::to_owned))
+            .collect(),
+    )
 }
 
 fn results(run: &Value) -> impl Iterator<Item = &Value> {
@@ -80,6 +88,7 @@ fn outcomes(runs: &[Value]) -> BTreeMap<String, Vec<Outcome>> {
         let outcome = match result["outcome"].as_str() {
             Some("pass") => Outcome::Within,
             Some("fail") => Outcome::Over,
+            Some("error") => Outcome::Refused,
             _ => Outcome::Unjudged,
         };
         outcomes.entry(case.to_owned()).or_default().push(outcome);
@@ -99,7 +108,7 @@ fn outcome(judged: &Judged) -> Outcome {
 /// those the next judged result cleared.
 fn tally(outcomes: &[Outcome]) -> (usize, usize, usize) {
     let judged: Vec<Outcome> = (outcomes.iter().copied())
-        .filter(|outcome| *outcome != Outcome::Unjudged)
+        .filter(|outcome| matches!(outcome, Outcome::Within | Outcome::Over))
         .collect();
     let over = judged.iter().filter(|o| **o == Outcome::Over).count();
     let cleared = (judged.windows(2))
@@ -120,10 +129,12 @@ pub(crate) fn live(past: &Past, judged: &[Judged], thresholds: &Thresholds) -> B
         let (local_judged, local_over, local_cleared) = tally(&local);
         let (ci_judged, ci_over, ci_cleared) = tally(ci);
         let enough_ci = ci_judged == 0 || ci_judged >= thresholds.ci;
+        // A command CI's newest run refused waits until CI times it again.
+        let refused = ci.last() == Some(&Outcome::Refused);
         let over = local_over + ci_over;
         // Under 1 in 10 of the over-budget results cleared at the next one.
         let steady = (local_cleared + ci_cleared) * 10 < over || over == 0;
-        if local_judged >= thresholds.local && enough_ci && steady {
+        if local_judged >= thresholds.local && enough_ci && steady && !refused {
             live.insert(command.to_owned());
         }
     }

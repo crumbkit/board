@@ -44,6 +44,7 @@ impl Grace for ChangedLines {
             "--format=",
             "--no-renames",
             &format!("--since={}", opened.strftime("%Y-%m-%d %H:%M:%S +0000")),
+            "--end-of-options",
             &self.follow,
             "--",
         ]

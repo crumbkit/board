@@ -461,6 +461,7 @@ fn session() -> Asker<'static> {
     Asker {
         at: STARTED,
         session: Some("local_0a1b"),
+        cache: None,
     }
 }
 
@@ -561,11 +562,11 @@ fn a_command_still_over_after_the_grace_files_one_question_and_one_within_the_gr
     assert_eq!(alert("b", 100).questions, Vec::<String>::new());
     assert_eq!(
         alert("c", 101).questions,
-        ["/projects/board/questions/board-speed-plans-open"]
+        ["/projects/board/questions/board-speed-plans-open-a"]
     );
     assert_eq!(alert("d", 500).questions, Vec::<String>::new());
     let question: Value = serde_json::from_str(
-        &text(&board, "/projects/board/questions/board-speed-plans-open").unwrap(),
+        &text(&board, "/projects/board/questions/board-speed-plans-open-a").unwrap(),
     )
     .unwrap();
     assert_eq!(question["status"], "open");
@@ -583,6 +584,7 @@ fn a_question_names_the_asking_session_and_a_check_without_one_or_with_a_speed_q
     let anonymous = Asker {
         at: STARTED,
         session: None,
+        cache: None,
     };
     let none = check::alert(
         &board,
@@ -628,16 +630,147 @@ fn a_question_names_the_asking_session_and_a_check_without_one_or_with_a_speed_q
     );
     assert_eq!(
         asked.unwrap().questions,
-        ["/projects/board/questions/board-speed-plans-open"]
+        ["/projects/board/questions/board-speed-plans-open-a"]
     );
     let question: Value = serde_json::from_str(
-        &text(&board, "/projects/board/questions/board-speed-plans-open").unwrap(),
+        &text(&board, "/projects/board/questions/board-speed-plans-open-a").unwrap(),
     )
     .unwrap();
     assert_eq!(
         question["by"],
         json!({"program": "board", "session": "local_0a1b"})
     );
+}
+
+/// The local run `name`, which started at `at`, written to `board`.
+fn run_at(board: &Board, name: &str, at: &str) -> LogicalPath {
+    let path: LogicalPath = format!("/suites/board-speed-local/runs/{name}")
+        .parse()
+        .unwrap();
+    let run = check::run_record(&[], &BTreeSet::new(), at, "0.0.0", &host());
+    board
+        .put(&path, Expect::Absent, run.to_string().as_bytes())
+        .unwrap();
+    path
+}
+
+/// A grace past at every count, which keeps each time it was asked about.
+#[derive(Default)]
+struct Since(std::cell::RefCell<Vec<jiff::Timestamp>>);
+
+impl Grace for Since {
+    fn allowed(&self) -> u64 {
+        100
+    }
+
+    fn changed_since(&self, opened: jiff::Timestamp) -> Option<u64> {
+        self.0.borrow_mut().push(opened);
+        Some(500)
+    }
+}
+
+/// Closes the task at `path` as tasks.done does: its status set to done.
+fn done(board: &Board, path: &str) {
+    let path: LogicalPath = path.parse().unwrap();
+    let got = board.get(&path).unwrap();
+    let board_model::Object::Blob(blob) = got.location.object else {
+        panic!("{path} is a directory");
+    };
+    let closed = String::from_utf8(got.bytes)
+        .unwrap()
+        .replace("status: \"open\"", "status: \"done\"");
+    board
+        .put_file(&path, Expect::Blob(blob), closed.as_bytes())
+        .unwrap();
+}
+
+#[test]
+fn a_done_task_whose_command_goes_over_again_reopens_and_asks_only_after_the_grace_from_the_new_overflow()
+ {
+    let scenario = personal();
+    let board = open(&scenario);
+    let path = "/tasks/board-speed-plans-open.md";
+    let grace = Since::default();
+    let alert = |p90: u64, run: &LogicalPath| {
+        check::alert(
+            &board,
+            &[judged("plans.open", p90)],
+            &all_live(),
+            run,
+            &session(),
+            &grace,
+        )
+        .unwrap()
+    };
+    let a = run_at(&board, "a", STARTED);
+    alert(300, &a);
+    let first = "/projects/board/questions/board-speed-plans-open-a";
+    assert_eq!(alert(300, &run_at(&board, "b", STARTED)).questions, [first]);
+    let answer: LogicalPath = "/projects/board/answers/board-speed-plans-open-a"
+        .parse()
+        .unwrap();
+    let answered = json!({"$type": "plans/answer/v1", "question": first,
+        "choice": "a", "words": "Keep it", "by": {"person": "owner"}, "answered": STARTED});
+    board
+        .put(&answer, Expect::Absent, answered.to_string().as_bytes())
+        .unwrap();
+    done(&board, path);
+
+    // Over again, now far too slow: the done task reopens in place, named
+    // by this run, and no question is filed in the check that reopens it.
+    let reopened_at = "2026-11-25T09:00:00Z";
+    let c = run_at(&board, "c", reopened_at);
+    let reopened = alert(900, &c);
+    assert_eq!(reopened.tasks, [path]);
+    assert_eq!(reopened.questions, Vec::<String>::new());
+    let task = text(&board, path).unwrap();
+    assert!(task.contains("status: \"open\""), "{task}");
+    assert!(task.contains("far too slow"), "{task}");
+    assert!(task.contains("/suites/board-speed-local/runs/c"), "{task}");
+    assert!(!task.contains("/suites/board-speed-local/runs/a"), "{task}");
+
+    // The grace is measured from the run that reopened it, and this
+    // overflow asks its own question.
+    grace.0.borrow_mut().clear();
+    let asked = alert(900, &run_at(&board, "d", reopened_at));
+    assert_eq!(
+        asked.questions,
+        ["/projects/board/questions/board-speed-plans-open-c"]
+    );
+    let measured: jiff::Timestamp = reopened_at.parse().unwrap();
+    assert_eq!(*grace.0.borrow(), [measured]);
+    assert_eq!(
+        alert(900, &run_at(&board, "e", reopened_at)).questions,
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_done_task_is_never_retitled_and_a_task_closed_any_other_way_reopens_too() {
+    let scenario = personal();
+    let board = open(&scenario);
+    let path = "/tasks/board-speed-plans-open.md";
+    let alert = |p90: u64, run: &str| {
+        check::alert(
+            &board,
+            &[judged("plans.open", p90)],
+            &all_live(),
+            &run_path(&board, run),
+            &session(),
+            &Lines(None),
+        )
+        .unwrap()
+    };
+    alert(300, "a");
+    done(&board, path);
+    let closed = text(&board, path).unwrap();
+    // Within budget: the done task is left as it is.
+    assert_eq!(alert(5, "b").tasks, Vec::<String>::new());
+    assert_eq!(text(&board, path).unwrap(), closed);
+    alert(900, "c");
+    let task = text(&board, path).unwrap();
+    assert!(task.contains("status: \"open\""), "{task}");
+    assert!(!task.contains("status: \"done\""), "{task}");
 }
 
 /// The environment a test's git or gh runs with: no user configuration.
@@ -702,7 +835,7 @@ fn an_allowance_of_ten_files_one_question_at_eleven_changed_lines_and_none_at_te
     let at_eleven = check::alert(&board, &over, &all_live(), &run, &session(), &lines).unwrap();
     assert_eq!(
         at_eleven.questions,
-        ["/projects/board/questions/board-speed-plans-open"]
+        ["/projects/board/questions/board-speed-plans-open-a"]
     );
 
     let missing = ChangedLines {
@@ -766,7 +899,7 @@ fn the_run_record_and_the_suite_pass_their_schemas_and_name_each_commands_mode()
         .collect();
     // plans.open is judged twice here, once unjudged and once over.
     assert_eq!(modes.iter().filter(|mode| **mode == "live").count(), 2);
-    assert_eq!(ready::live_in(&run), live);
+    assert_eq!(ready::live_in(&run), Some(live.clone()));
     let dirty = check::run_record(&judged, &live, STARTED, "0.0.0+abc.dirty.1f", &host());
     assert_eq!(dirty["dirty"], true);
     for (path, record) in [
@@ -862,6 +995,63 @@ fn a_command_waits_for_enough_ci_runs_once_ci_has_one_and_one_that_flaps_stays_s
         assert!(live.is_empty());
     }
     assert!(checked(&mut unjudged, &[], &[judged("get", 5)], &thresholds).contains("get"));
+}
+
+#[test]
+fn the_owners_thresholds_are_one_hundred_local_and_fourteen_ci_results() {
+    assert_eq!(ready::READY, Thresholds { local: 100, ci: 14 });
+}
+
+#[test]
+fn ten_over_budget_results_with_one_cleared_stay_silent_and_eleven_with_one_cleared_go_live() {
+    let thresholds = Thresholds { local: 3, ci: 2 };
+    let mut ten = Vec::new();
+    for p90 in [500, 5].into_iter().chain([500; 9]) {
+        let live = checked(&mut ten, &[], &[judged("get", p90)], &thresholds);
+        assert!(live.is_empty(), "{p90}");
+    }
+    let mut eleven = Vec::new();
+    let p90s: Vec<u64> = [500, 5].into_iter().chain([500; 10]).collect();
+    for (at, p90) in p90s.iter().enumerate() {
+        let live = checked(&mut eleven, &[], &[judged("get", *p90)], &thresholds);
+        assert_eq!(live.contains("get"), at == p90s.len() - 1, "result {at}");
+    }
+}
+
+#[test]
+fn a_command_whose_newest_ci_result_is_an_error_does_not_go_live() {
+    let thresholds = Thresholds { local: 3, ci: 2 };
+    let ci = [
+        ci_run(&[("get", "pass")]),
+        ci_run(&[("get", "pass")]),
+        ci_run(&[("get", "error")]),
+    ];
+    let mut local = Vec::new();
+    for _ in 1..=4 {
+        assert!(checked(&mut local, &ci, &[judged("get", 5)], &thresholds).is_empty());
+    }
+    let errors = [ci_run(&[("get", "error")])];
+    let mut alone = Vec::new();
+    for _ in 1..=4 {
+        assert!(checked(&mut alone, &errors, &[judged("get", 5)], &thresholds).is_empty());
+    }
+}
+
+#[test]
+fn a_newest_local_run_with_no_modes_leaves_a_command_an_older_run_names_live_live() {
+    let live: BTreeSet<String> = ["get".to_owned()].into();
+    let named = check::run_record(&[judged("get", 5)], &live, STARTED, "0.0.0", &host());
+    let mut modeless = named.clone();
+    for result in modeless["results"].as_array_mut().unwrap() {
+        result["measures"].as_object_mut().unwrap().remove("mode");
+    }
+    let past = Past::of(&[named, modeless], &[]);
+    assert!(past.live.contains("get"));
+    let none = Thresholds {
+        local: 1000,
+        ci: 1000,
+    };
+    assert!(ready::live(&past, &[judged("get", 500)], &none).contains("get"));
 }
 
 #[test]
