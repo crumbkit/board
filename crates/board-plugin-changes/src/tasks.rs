@@ -5,14 +5,12 @@
 //! `tasks.done` or `tasks.drop`, so the tasks plugin's routing, sync and
 //! push apply, and this plugin never writes a task file itself.
 
-use std::collections::BTreeMap;
-
 use board_ops::{Host, Origin, PluginError, literal};
 use serde_json::{Map, Value, json};
 
 use crate::board::{self, get_text, rows, text};
 use crate::change::{Referenced, attached, referenced};
-use crate::gates::{Observed, open_task, sections};
+use crate::gates::{FENCES, HEADING, Observed, open_task};
 use crate::phases::plan_file;
 use crate::records::{ChangeRecord, TASK_TYPE};
 use crate::refusal;
@@ -117,12 +115,7 @@ pub(crate) fn add_task(
 /// A task already done or dropped, or one Board cannot read, is left as it
 /// is.
 pub(crate) fn close_task(host: &dyn Host, path: &str, settled: bool) -> Result<bool, PluginError> {
-    let sql = format!(
-        "SELECT json_extract(body, '$.status') FROM records WHERE logical = {}",
-        literal(path)
-    );
-    let found = rows(host, &sql)?;
-    if found.first().and_then(|row| text(row.first())) != Some("open") {
+    if !is_open(host, path)? {
         return Ok(false);
     }
     let capability = if settled { "tasks.done" } else { "tasks.drop" };
@@ -130,22 +123,60 @@ pub(crate) fn close_task(host: &dyn Host, path: &str, settled: bool) -> Result<b
     Ok(true)
 }
 
-/// The board paths `plan`'s Closes at merge section names, each once, in
-/// order.
+/// Whether the task at `path` has the status `open`. A task Board cannot
+/// read is not.
+fn is_open(host: &dyn Host, path: &str) -> Result<bool, PluginError> {
+    let sql = format!(
+        "SELECT json_extract(body, '$.status') FROM records WHERE logical = {}",
+        literal(path)
+    );
+    let found = rows(host, &sql)?;
+    Ok(found.first().and_then(|row| text(row.first())) == Some("open"))
+}
+
+/// The board paths the plan `text` names under its `## Closes at merge`
+/// heading, each once, in order.
 ///
-/// A path is a whole word that starts with `/`, bare or in backticks, so
-/// `/tasks/a.md` is not found inside `/repos/n/tasks/a.md`. Punctuation
-/// around a word, such as the comma or full stop after it, is not part of
-/// the path.
-pub(crate) fn closes_at_merge(plan: &BTreeMap<String, String>) -> Vec<String> {
+/// Only a level-two heading of that name counts; the section runs to the
+/// next heading of level one or two, so it holds its subsections. Lines in
+/// a fenced code block are not read, and a fenced line is never a heading.
+/// A path is a whole word that starts with `/`, bare, in backticks or as a
+/// Markdown link's target, so `/tasks/a.md` is not found inside
+/// `/repos/n/tasks/a.md`. Punctuation around a word, such as the comma or
+/// full stop after it, is not part of the path.
+pub(crate) fn closes_at_merge(text: &str) -> Vec<String> {
     let mut found: Vec<String> = Vec::new();
-    let words = (plan.get(CLOSES_AT_MERGE).into_iter()).flat_map(|text| text.split_whitespace());
-    for word in words {
-        let word = word
-            .trim_start_matches(['`', '(', '"', '\'', '*', '_'])
-            .trim_end_matches(['`', ')', '"', '\'', '*', '_', ',', '.', ';', ':']);
-        if word.len() > 1 && word.starts_with('/') && !found.iter().any(|each| each == word) {
-            found.push(word.to_owned());
+    let mut inside = false;
+    let mut fenced = false;
+    for line in text.lines() {
+        if FENCES
+            .iter()
+            .any(|fence| line.trim_start().starts_with(fence))
+        {
+            fenced = !fenced;
+            continue;
+        }
+        if fenced {
+            continue;
+        }
+        if let Some(heading) = HEADING.captures(line).and_then(|captures| captures.get(1)) {
+            let level = line.len() - line.trim_start_matches('#').len();
+            if level <= 2 {
+                inside = level == 2 && heading.as_str().to_lowercase() == CLOSES_AT_MERGE;
+            }
+            continue;
+        }
+        if !inside {
+            continue;
+        }
+        for word in line.split_whitespace() {
+            let target = word.split_once("](").map_or(word, |(_, target)| target);
+            let path = target
+                .trim_start_matches(['`', '(', '<', '"', '\'', '*', '_'])
+                .trim_end_matches(['`', ')', '>', '"', '\'', '*', '_', ',', '.', ';', ':']);
+            if path.len() > 1 && path.starts_with('/') && !found.iter().any(|each| each == path) {
+                found.push(path.to_owned());
+            }
         }
     }
     found
@@ -167,8 +198,8 @@ pub(crate) fn attached_or_not<'a>(
 /// merge, and the open attached tasks the plan does not name.
 #[derive(Debug, Default)]
 pub(crate) struct AtMerge {
-    /// The named tasks that are the change's own or attached to it, in the
-    /// plan's order. Each one still open closes.
+    /// The named tasks that are the change's own or attached to it and
+    /// still open, in the plan's order, which close when it merges.
     pub(crate) closes: Vec<String>,
     /// The attached tasks that are neither done nor dropped and that the
     /// plan does not name, which someone must close first.
@@ -187,16 +218,64 @@ pub(crate) fn at_merge(
         Some(file) => get_text(host, &file)?,
         None => None,
     };
-    let named = closes_at_merge(&sections(text.as_deref().unwrap_or_default()));
-    let (closes, _) = attached_or_not(&named, &records, change.task.as_deref());
+    let named = closes_at_merge(text.as_deref().unwrap_or_default());
+    let (attached_named, _) = attached_or_not(&named, &records, change.task.as_deref());
+    let mut closes = Vec::new();
+    for task in attached_named {
+        if is_open(host, task)? {
+            closes.push(task.to_owned());
+        }
+    }
     let owed = (records.of_type(TASK_TYPE))
         .filter(|(task, body)| open_task(body) && !named.iter().any(|each| each == task))
         .map(|(task, _)| task.to_owned())
         .collect();
-    Ok(AtMerge {
-        closes: closes.into_iter().map(str::to_owned).collect(),
-        owed,
-    })
+    Ok(AtMerge { closes, owed })
+}
+
+/// Refuses to move the change at `path` from `phase` into done while
+/// `tasks` lists an attached task that is still open and that the plan does
+/// not close at merge, as `sync` leaves such a change owed. A plan whose
+/// text Board cannot read names no task, so every open attached task is
+/// such a task.
+pub(crate) fn refuse_owed(path: &str, phase: &str, tasks: &AtMerge) -> Result<(), PluginError> {
+    if tasks.owed.is_empty() {
+        return Ok(());
+    }
+    Err(refusal(
+        "changes::land::tasks_open",
+        format!(
+            "the change at {path} stays in {phase}: these tasks attached to it are not done or \
+             dropped, and its plan does not name them under `## Closes at merge`: {}; close each \
+             with `board tasks done` or `board tasks drop`, or name it under `## Closes at \
+             merge` in the plan, then run `board changes advance --path {path}` again",
+            tasks.owed.join(", ")
+        ),
+        [("path", json!(path)), ("tasks", json!(tasks.owed))],
+    ))
+}
+
+/// Refuses to move the change at `path` from `phase` into done with no
+/// pull request while a task its plan closes at merge is still open. No
+/// merge closes those tasks, and Board closes a task only once GitHub
+/// reports a merge, so moving on would leave each open with no word.
+pub(crate) fn refuse_unmerged(path: &str, phase: &str, tasks: &AtMerge) -> Result<(), PluginError> {
+    if tasks.closes.is_empty() {
+        return Ok(());
+    }
+    Err(refusal(
+        "changes::land::no_merge",
+        format!(
+            "the change at {path} stays in {phase}: it records no pull request, so no merge \
+             closes these tasks its plan names under `## Closes at merge`, and Board closes a \
+             task only once GitHub reports a merge: {}; record the pull request with `board \
+             github ref` and attach it with `board changes attach --path {path} --pull \
+             <record>`, or ask the owner to close each task with `board tasks done`, then run \
+             `board changes advance --path {path}` again",
+            tasks.closes.join(", ")
+        ),
+        [("path", json!(path)), ("tasks", json!(tasks.closes))],
+    ))
 }
 
 /// Closes each of `named` still open through `tasks.done`, in order, and
@@ -243,12 +322,9 @@ pub(crate) fn close_at_merge(
 /// those the plan's Closes at merge section names, which close when the
 /// change's pull request merges. Each path that section names is the
 /// change's own task or an attached one.
-pub(crate) fn tasks_missing(
-    observed: &Observed,
-    plan: &BTreeMap<String, String>,
-) -> Option<String> {
+pub(crate) fn tasks_missing(observed: &Observed) -> Option<String> {
     let own = observed.change.task.as_deref();
-    let named = closes_at_merge(plan);
+    let named = closes_at_merge(observed.plan.as_deref().unwrap_or_default());
     let (_, unattached) = attached_or_not(&named, &observed.records, own);
     if !unattached.is_empty() {
         return Some(format!(
@@ -268,10 +344,18 @@ pub(crate) fn tasks_missing(
     (!left.is_empty()).then(|| format!("these tasks are not done or dropped: {}", left.join(", ")))
 }
 
-/// What a passing `tasks` check says: the tasks that close at merge, when
-/// the plan names any.
-pub(crate) fn tasks_passed(plan: &BTreeMap<String, String>) -> String {
-    let named = closes_at_merge(plan);
+/// What a passing `tasks` check says: the tasks still open that close at
+/// merge, when the plan names any. A named task the change has attached
+/// and that is done or dropped is left out.
+pub(crate) fn tasks_passed(observed: &Observed) -> String {
+    let closed: Vec<&str> = (observed.records.of_type(TASK_TYPE))
+        .filter(|(_, body)| !open_task(body))
+        .map(|(path, _)| path)
+        .collect();
+    let named: Vec<String> = closes_at_merge(observed.plan.as_deref().unwrap_or_default())
+        .into_iter()
+        .filter(|path| !closed.contains(&path.as_str()))
+        .collect();
     if named.is_empty() {
         return String::new();
     }

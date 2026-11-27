@@ -433,7 +433,15 @@ of `changes` still fails `review`.
   refuses one, the change stays in its phase, the tasks closed before it
   stay closed, and `advance` refuses with `changes::land::tasks_not_closed`,
   naming the task and the refusal; running it again skips the closed
-  tasks. The call receives `GH_TOKEN`, `GITHUB_TOKEN` and
+  tasks. Before it reads GitHub, `advance` into `done` refuses with
+  `changes::land::tasks_open` while a task attached to the change is
+  neither done nor dropped and the current plan does not name it under
+  `## Closes at merge`, as `sync` leaves such a change `owed`; a plan whose
+  text Board cannot read names no task. A change that records no pull
+  request has no merge to close its named tasks, so while one of them is
+  open `advance` refuses with `changes::land::no_merge` and closes nothing;
+  the remedy is to attach the pull request, or for the owner to close each
+  task. The call receives `GH_TOKEN`, `GITHUB_TOKEN` and
   `GH_CONFIG_DIR` for gh. A paused change is refused with
   `changes::phase::paused`. Leaving `done` or `dropped` is
   `changes::phase::final`, which points to `open` and `start`.
@@ -914,7 +922,7 @@ evaluated by kind:
 | `records` | at least `min` attached records of `type` meet `where` (`at_head`, with `unchanged_by` as below, `values`, `no_findings`, `owner_signed`, which counts only a decision the owner signed, or for some checks the owner's answer as below, and `refs`, each of which a record's refs must name: `plan` is the plan, its text or the change), from different actors when `distinct` names a part of `by` |
 | `run` | an attached run of the change's suite with `scope` is clean, passing and on `head` |
 | `paths` | the diff edits only the plan's paths |
-| `tasks` | every attached task but the change's own is done or dropped, or is named under the plan's `## Closes at merge` heading, which Board closes when the pull request merges; each path that section names, bare or in backticks, is the change's own task or an attached task. The detail of a passing check names the tasks that close at merge |
+| `tasks` | every attached task but the change's own is done or dropped, or is named under the plan's `## Closes at merge` heading, which Board closes when the pull request merges; each path that section names is the change's own task or an attached task. Only a level-two `## Closes at merge` heading counts, running to the next heading of level one or two; lines in a fenced code block are not read; a path counts as a whole word, bare, in backticks or as a Markdown link's target. The detail of a passing check names the named tasks still open, which close at merge |
 | `understood` | a decision the owner signed references an attached understanding check of this change's `subject`, or the option the owner's attached answer chose names both the change and that record; with `rechecks`, each such check also holds rechecks of that many points, and the latest recheck of every point matches |
 | `mockups` | the `agreed` part: each mockup under UX is named by a decision the owner signed, or by the chosen option of the owner's attached answer in its attached question; the `neighbours` part: UX lists its neighbours; the `versioned` part: each mockup item names a version, as `version <id>` or a `/artifacts/<id>/versions/<id>` path; the `built` part: for each mockup version the plan names, a `changes/conformance/v1` at `head` says `match` with no difference listed, and the detail lists each element that is missing or different; both `agreed` and `neighbours` when `part` is left out |
 | `considered` | each path in the change's `surfaced` that still reaches something is in the plan's `uses` or its `considered` field |
@@ -1150,7 +1158,8 @@ A change moves into `done` through these states:
 | last phase, pull request open | `github.merge --change`; GitHub reports the merge | `done`, through `advance` | Board |
 | last phase, pull request open | `github.merge --change`; a merge queue holds it | unchanged; `queued` is true | the agent runs `advance` once it merges |
 | any open phase but plan, pull request merged | `sync` | `done`, after it closes the tasks the plan closes at merge, or left while another task is open | Board |
-| last phase, no pull request | `advance`, gate passes | `done` | Board |
+| last phase, no pull request | `advance`, gate passes | `done`; while a task the plan closes at merge is open, unchanged and refused `changes::land::no_merge` | Board; the owner closes the task |
+| last phase, an attached task open that the plan does not close at merge | `advance` | unchanged; refused `changes::land::tasks_open` | the agent closes or names the task |
 | last phase | gh fails | unchanged; refused `changes::land::gh_failed` | the agent checks `gh auth status` |
 
 `advance` reads GitHub before it writes, so a crash or a refusal leaves the

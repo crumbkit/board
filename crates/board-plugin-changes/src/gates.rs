@@ -403,7 +403,7 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
                     (Status::Pass, paths::passed(observed))
                 }
                 (None, _) if each.kind.known() == Some(&CheckKind::Tasks) => {
-                    (Status::Pass, tasks_passed(&plan))
+                    (Status::Pass, tasks_passed(observed))
                 }
                 (None, _) => (Status::Pass, kinds::passed(observed, each, &values)),
             };
@@ -545,7 +545,7 @@ fn evaluate(
         CheckKind::Records => kinds::records_missing(observed, each),
         CheckKind::Run => run_missing(observed, each.scope.unwrap_or(Scope::Full)),
         CheckKind::Paths => paths::missing(observed),
-        CheckKind::Tasks => tasks_missing(observed, plan),
+        CheckKind::Tasks => tasks_missing(observed),
         CheckKind::Understood => kinds::understood_missing(observed, each),
         CheckKind::Mockups => match each.part {
             Some(Part::Agreed) => design::ux_missing(observed, plan),

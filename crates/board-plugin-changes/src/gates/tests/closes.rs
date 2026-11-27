@@ -99,3 +99,28 @@ fn a_named_path_only_matches_a_task_as_a_whole_word() {
     assert_eq!(status, "missing");
     assert!(detail.contains("names /tasks/a.md,"), "{detail}");
 }
+
+#[test]
+fn a_named_task_already_done_is_not_said_to_close_at_merge() {
+    let records = vec![
+        ("/t/a.md", ("tasks/task/v3", json!({"status": "done"}))),
+        ("/t/b.md", ("tasks/task/v3", json!({"status": "open"}))),
+        (RUN, run(&json!({}))),
+    ];
+    let found = given("build")
+        .records(records)
+        .with(json!({"head": HEAD}))
+        .plan(Some(&closing("/t/a.md /t/b.md")));
+    let (status, detail) = found.check("tasks");
+    assert_eq!(status, "pass", "{detail}");
+    assert!(detail.ends_with("says: /t/b.md"), "{detail}");
+    let closed = vec![
+        ("/t/a.md", ("tasks/task/v3", json!({"status": "done"}))),
+        (RUN, run(&json!({}))),
+    ];
+    let found = given("build")
+        .records(closed)
+        .with(json!({"head": HEAD}))
+        .plan(Some(&closing("/t/a.md")));
+    assert_eq!(found.check("tasks"), ("pass", String::new()));
+}

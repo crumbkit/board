@@ -9,7 +9,6 @@ use board_plugin::{CallReport, Target};
 use serde_json::{Value, json};
 
 use super::{close_at_merge, closes_at_merge, split_task};
-use crate::gates::sections;
 
 #[test]
 fn a_task_path_splits_into_its_repo_and_its_path_in_the_repo() {
@@ -28,7 +27,7 @@ fn a_path_under_no_tasks_directory_is_refused() {
 
 /// The paths the plan `text` lists under Closes at merge.
 fn named(text: &str) -> Vec<String> {
-    closes_at_merge(&sections(text))
+    closes_at_merge(text)
 }
 
 #[test]
@@ -51,6 +50,31 @@ fn a_path_matches_only_as_a_whole_word_and_a_plan_without_the_section_names_none
     let none: [String; 0] = [];
     assert_eq!(named("# P\n\n## Outcome\n\n/tasks/a.md\n"), none);
     assert_eq!(named("# P\n\n## Closes at merge\n\nNone.\n"), none);
+}
+
+#[test]
+fn only_a_level_two_closes_at_merge_heading_is_read() {
+    let nested = "# P\n\n## Outcome\n\n### Closes at merge\n\n/tasks/a.md\n";
+    let none: [String; 0] = [];
+    assert_eq!(named(nested), none);
+    let deeper = "# P\n\n## Closes at merge\n\n/tasks/a.md\n\n### Why\n\n/tasks/b.md\n\n## Data\n\n/tasks/c.md\n";
+    assert_eq!(named(deeper), ["/tasks/a.md", "/tasks/b.md"]);
+}
+
+#[test]
+fn a_path_in_a_fenced_code_block_is_not_named() {
+    let plan = "# P\n\n## Closes at merge\n\n/tasks/a.md\n\n```\n/tasks/b.md\n## Closes at merge\n```\n\n~~~\n/tasks/c.md\n~~~\n";
+    assert_eq!(named(plan), ["/tasks/a.md"]);
+    let fenced = "# P\n\n```\n## Closes at merge\n/tasks/a.md\n```\n";
+    let none: [String; 0] = [];
+    assert_eq!(named(fenced), none);
+}
+
+#[test]
+fn a_markdown_links_target_is_read_as_a_path() {
+    let plan =
+        "# P\n\n## Closes at merge\n\n- [the report task](/tasks/a.md), and [b](</tasks/b.md>).\n";
+    assert_eq!(named(plan), ["/tasks/a.md", "/tasks/b.md"]);
 }
 
 /// A host that holds a task at each path of `statuses`, and whose

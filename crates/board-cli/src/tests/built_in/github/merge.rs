@@ -216,6 +216,26 @@ fn merge_closes_the_task_the_plan_closes_at_merge_before_it_moves_the_change_to_
 }
 
 #[test]
+fn merge_leaves_the_change_in_land_when_the_plan_no_longer_closes_an_open_task_at_merge() {
+    let desk = Desk::new();
+    closing_at_merge(&desk);
+    desk.write("changes/lever/plan.md", TESTED);
+    pulls(&desk, true);
+    desk.gh_answers(&json!(""), 0, "");
+    let (ran, document) = desk.call(
+        "merge",
+        &merging("Add a lever (#12)", "Levers lift.", &["--change", CHANGE]),
+    );
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(document["code"], "github::merge::advance", "{document}");
+    let message = document["message"].as_str().unwrap();
+    assert!(message.contains("/tasks/left.md"), "{message}");
+    assert_eq!(desk.record(CHANGE).unwrap()["phase"], "land");
+    let left = std::fs::read_to_string(desk.personal.workdir().join("tasks/left.md")).unwrap();
+    assert!(left.contains("status: open"), "{left}");
+}
+
+#[test]
 fn a_merge_github_only_queued_records_the_crossing_and_leaves_the_change_in_land() {
     let desk = Desk::new();
     change(&desk, "land", HEAD, TESTED);

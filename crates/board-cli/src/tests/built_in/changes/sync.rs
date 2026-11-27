@@ -256,8 +256,7 @@ fn closing(tasks: &[&str], closes: &str) -> Changes {
     for each in tasks {
         board.write(each.trim_start_matches('/'), &task("open"));
     }
-    let plan = format!("# Plan\n\n## Closes at merge\n\n{closes}\n\n## Data\n\nNone.\n");
-    board.write("changes/merged/plans/1.md", &plan);
+    board.write("changes/merged/plans/1.md", &landing_plan(closes));
     board.change_at(
         "changes/merged.json",
         "land",
@@ -272,6 +271,129 @@ fn closing(tasks: &[&str], closes: &str) -> Changes {
         &json!({"state": "closed", "merged": true, "merge_commit_sha": MERGE}),
     );
     board
+}
+
+/// A plan at land, with its test sections and a Closes at merge section
+/// listing `closes`, or none when `closes` is empty.
+fn landing_plan(closes: &str) -> String {
+    let section = if closes.is_empty() {
+        String::new()
+    } else {
+        format!("## Closes at merge\n\n{closes}\n\n")
+    };
+    format!(
+        "# Plan\n\n{section}## Data\n\nNone.\n\n## What the tests prove\n\nIt closes.\n\n\
+         ## What the tests do not prove\n\nRetries.\n"
+    )
+}
+
+/// Makes the board's `tasks/` directory read-only when `blocked`, so a
+/// `tasks.done` there is refused, and writable again when not.
+fn block_tasks(board: &Changes, blocked: bool) {
+    use std::os::unix::fs::PermissionsExt as _;
+    let mode = if blocked { 0o555 } else { 0o755 };
+    let directory = board.root().join("tasks");
+    std::fs::set_permissions(directory, std::fs::Permissions::from_mode(mode)).unwrap();
+}
+
+#[test]
+fn advance_refuses_while_an_attached_task_is_open_that_the_plan_no_longer_closes_at_merge() {
+    let board = closing(&["/tasks/left.md"], "/tasks/left.md");
+    board.write("changes/merged/plans/1.md", &landing_plan(""));
+    let refused = board.refusal("advance", &json!({"path": "/changes/merged"}));
+    assert_eq!(refused["code"], "changes::land::tasks_open", "{refused}");
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.contains("/tasks/left.md"), "{message}");
+    assert!(message.contains("## Closes at merge"), "{message}");
+    assert_eq!(board.read("changes/merged.json")["phase"], "land");
+    assert!(board.text("tasks/left.md").contains("status: open"));
+    board.write("changes/merged/plans/1.md", &landing_plan("/tasks/left.md"));
+    assert_eq!(
+        board.call("advance", &json!({"path": "/changes/merged"}))["to"],
+        "done"
+    );
+    assert!(board.text("tasks/left.md").contains(r#"status: "done""#));
+}
+
+#[test]
+fn a_refused_close_leaves_the_change_in_land_through_advance_and_a_rerun_moves_it() {
+    let board = closing(&["/tasks/left.md"], "/tasks/left.md");
+    block_tasks(&board, true);
+    let refused = board.refusal("advance", &json!({"path": "/changes/merged"}));
+    block_tasks(&board, false);
+    assert_eq!(
+        refused["code"], "changes::land::tasks_not_closed",
+        "{refused}"
+    );
+    assert_eq!(refused["fields"]["task"], "/tasks/left.md", "{refused}");
+    assert_eq!(board.read("changes/merged.json")["phase"], "land");
+    assert!(board.text("tasks/left.md").contains("status: open"));
+    assert_eq!(
+        board.call("advance", &json!({"path": "/changes/merged"}))["to"],
+        "done"
+    );
+    assert!(board.text("tasks/left.md").contains(r#"status: "done""#));
+}
+
+#[test]
+fn a_refused_close_leaves_the_change_in_land_through_sync_and_a_rerun_moves_it() {
+    let board = closing(&["/tasks/left.md"], "/tasks/left.md");
+    block_tasks(&board, true);
+    let entry = board.call("sync", &json!({}))["changes"][0].clone();
+    block_tasks(&board, false);
+    assert_eq!(entry["code"], "changes::sync::owed", "{entry}");
+    let detail = entry["detail"].as_str().unwrap();
+    assert!(detail.contains("closing /tasks/left.md"), "{detail}");
+    assert!(detail.contains("was refused"), "{detail}");
+    assert_eq!(board.read("changes/merged.json")["phase"], "land");
+    assert!(board.text("tasks/left.md").contains("status: open"));
+    assert_eq!(board.call("sync", &json!({}))["changes"][0]["to"], "done");
+    assert!(board.text("tasks/left.md").contains(r#"status: "done""#));
+}
+
+/// The development flow's version whose land phase has no pull-request
+/// check, so a change on it reaches done with no pull request.
+const PULLLESS_FLOW: &str = "/flows/development/7ea3000000000001";
+
+#[test]
+fn advance_into_done_with_no_pull_request_closes_no_task_and_refuses_while_a_named_one_is_open() {
+    let board = Changes::with_tasks();
+    let mut flow: Value = serde_json::from_str(include_str!(
+        "../../../../../board-plugin-changes/flows/development.json"
+    ))
+    .unwrap();
+    let land = (flow["phases"].as_array_mut().unwrap().iter_mut())
+        .find(|phase| phase["name"] == "land")
+        .unwrap();
+    land["checks"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|check| check["id"] != "pull-request");
+    let version = format!("{}.json", PULLLESS_FLOW.trim_start_matches('/'));
+    board.write(&version, &flow.to_string());
+    board.write("tasks/left.md", &task("open"));
+    board.write("changes/bare/plans/1.md", &landing_plan("/tasks/left.md"));
+    board.change_at(
+        "changes/bare.json",
+        "land",
+        &json!({
+            "$type": "changes/change/v2",
+            "flow": PULLLESS_FLOW,
+            "records": ["/tasks/left.md"],
+            "plan": "/changes/bare/plans/1.md",
+        }),
+    );
+    let refused = board.refusal("advance", &json!({"path": "/changes/bare"}));
+    assert_eq!(refused["code"], "changes::land::no_merge", "{refused}");
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.contains("/tasks/left.md"), "{message}");
+    assert_eq!(board.read("changes/bare.json")["phase"], "land");
+    assert!(board.text("tasks/left.md").contains("status: open"));
+    board.write("tasks/left.md", &task("done"));
+    assert_eq!(
+        board.call("advance", &json!({"path": "/changes/bare"}))["to"],
+        "done"
+    );
 }
 
 #[test]

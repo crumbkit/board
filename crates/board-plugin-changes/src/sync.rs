@@ -446,15 +446,15 @@ fn synced(
 
 /// Refuses to move the change at `path` into done until GitHub reports
 /// its newest pull request merged, and then records the merge commit on
-/// `change`, as sync does. A change that records no pull request moves as
-/// before.
+/// `change`, as sync does, and says true. A change that records no pull
+/// request moves as before, and the answer is false: no merge happened.
 pub(crate) fn require_merged(
     host: &dyn Host,
     path: &str,
     change: &mut ChangeRecord,
-) -> Result<(), PluginError> {
+) -> Result<bool, PluginError> {
     let Some(reference) = change.pulls().last().cloned() else {
-        return Ok(());
+        return Ok(false);
     };
     let Some(pull) = pull_of(host, &reference)? else {
         return Err(not_merged(
@@ -491,7 +491,7 @@ pub(crate) fn require_merged(
     };
     if answer.get("merged") == Some(&Value::Bool(true)) {
         change.merge_commit_url = merge_commit_url(&pull, &answer);
-        return Ok(());
+        return Ok(true);
     }
     let why = if answer.get("state").and_then(Value::as_str) == Some("closed") {
         format!(

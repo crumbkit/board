@@ -12,7 +12,12 @@
   refused close leaves the change in its phase: `advance` refuses with
   `changes::land::tasks_not_closed` and `sync` reports `owed`, and a rerun
   skips the tasks already closed. `sync --dry_run true` names the tasks it
-  would close and closes none.
+  would close and closes none. `advance` into done refuses with
+  `changes::land::tasks_open` while an attached task the plan does not
+  name is open, and with `changes::land::no_merge` while a named task is
+  open on a change that records no pull request, which never closes a
+  task. Only a level-two heading counts, a fenced code block is not read,
+  and a Markdown link's target counts as a path.
 - `board tasks available` does not fetch a notes clone that was fetched
   less than a minute ago and already holds what that fetch brought, so a
   sweep of calls in a row fetches once. A task pushed from elsewhere in that
