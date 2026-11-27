@@ -49,6 +49,27 @@ path as its one positional argument, so `put`, `rm` and `mount add` still
 refuse it. Words after `--` are never changed. Any other refused line
 keeps clap's refusal.
 
+A word after a plugin's name, or after `board call <plugin>.`, that the
+plugin does not offer runs the capability below with the same flags, when
+the plugin offers that capability:
+
+| Plugin | Word | Runs |
+| --- | --- | --- |
+| changes | `show`, `status` | `next` |
+| changes | `list` | `open` |
+| tasks | `list` | `available` |
+| plans | `list` | `open` |
+| evals | `list` | `open` |
+
+A plugin that offers the word itself runs its own capability. Each such run
+prints one line on stderr, such as
+`note: board changes show ran board changes next`, and its stdout is what
+the capability prints. Any other word is still refused with
+`board::plugin::no_capability`. `runs run` and `runs record` are refused
+too, with a hint that a suite run is a `runs/run/v1` written with
+`board put --new --var suite=<name>` and attached with
+`board changes attach --ref`.
+
 ## Renamed plugins
 
 A manifest's `former_names` lists the names a plugin had before it was

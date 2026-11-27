@@ -377,7 +377,16 @@ pub(crate) fn run(
 ) -> Output {
     // Every exit prints the warnings for the undated writes it made.
     board_ops::take_undated_gate_notes();
-    run_command(arguments, context, stdin, ran).warned()
+    let arguments: Vec<OsString> = arguments.into_iter().collect();
+    let plugins = context.plugins.as_deref();
+    let output = match crate::guessed::called(&arguments, context.built_in, plugins) {
+        Some(called) => {
+            let note = called.call_note();
+            crate::guessed::noted(run_command(called.line, context, stdin, ran), &note)
+        }
+        None => run_command(arguments, context, stdin, ran),
+    };
+    output.warned()
 }
 
 fn run_command(

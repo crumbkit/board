@@ -36,7 +36,19 @@ pub(super) fn reread(
         return crate::mistaken::hinted(arguments, refused);
     };
     Some(match resolved {
-        Ok(called) => run(called, context, stdin, ran),
+        Ok(called) => {
+            let guessed =
+                crate::guessed::called(&called, context.built_in, context.plugins.as_deref());
+            let typed = crate::alias::first_word(arguments)
+                .and_then(|(at, _)| arguments.get(at)?.to_str().map(str::to_owned));
+            match guessed.zip(typed) {
+                Some((guessed, typed)) => {
+                    let note = guessed.word_note(&typed);
+                    crate::guessed::noted(run(guessed.line, context, stdin, ran), &note)
+                }
+                None => run(called, context, stdin, ran),
+            }
+        }
         Err(refusal) => {
             let printer = Printer {
                 view: refused.run().clone(),

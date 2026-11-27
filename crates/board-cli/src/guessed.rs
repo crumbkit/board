@@ -3,13 +3,19 @@
 //! such as `cat`, a long flag spelled with hyphens for underscores or the
 //! reverse, and `--path` given to a read command whose one positional
 //! argument is its path. Board reads them only after clap refused the line, so a line
-//! that parses never reaches them, and only where one command fits.
+//! that parses never reaches them, and only where one command fits. A word
+//! after a plugin's name, such as `changes show`, that the plugin does not
+//! offer runs the one capability of that plugin it means, with a note.
 
 use std::ffi::OsString;
+use std::path::Path;
 
+use board_ops::BuiltIn;
+use board_plugin::{Manifest, Target};
 use clap::CommandFactory as _;
 use clap::error::{ContextKind, ContextValue, ErrorKind};
 
+use crate::report::Output;
 use crate::run::Cli;
 
 /// Each first word that is no command, and the built-in command it means.
@@ -20,6 +26,105 @@ const WORDS: &[(&str, &str)] = &[
     ("list", "ls"),
     ("schema", "schemas"),
 ];
+
+/// Each plugin, word given after its name and capability of that plugin
+/// the word means. A row runs only when the plugin offers the capability
+/// and not the word, so a plugin that adds the word wins over the row.
+const CAPABILITIES: &[(&str, &str, &str)] = &[
+    ("changes", "show", "next"),
+    ("changes", "status", "next"),
+    ("changes", "list", "open"),
+    ("tasks", "list", "available"),
+    ("plans", "list", "open"),
+    ("evals", "list", "open"),
+];
+
+/// A `board call <plugin>.<word>` line read as the capability the word
+/// means.
+pub(crate) struct Called {
+    /// The line with the target's capability replaced.
+    pub(crate) line: Vec<OsString>,
+    /// The plugin as the target names it, which may be a former name.
+    plugin: String,
+    word: &'static str,
+    capability: &'static str,
+}
+
+impl Called {
+    /// The note that says what ran in place of `board call <plugin>.<word>`.
+    pub(crate) fn call_note(&self) -> String {
+        let Self {
+            plugin,
+            word,
+            capability,
+            ..
+        } = self;
+        format!("note: board call {plugin}.{word} ran board call {plugin}.{capability}\n")
+    }
+
+    /// The note that says what ran in place of `board <typed> <word>`,
+    /// where `typed` is the plugin's name or alias as given.
+    pub(crate) fn word_note(&self, typed: &str) -> String {
+        let Self {
+            word, capability, ..
+        } = self;
+        format!("note: board {typed} {word} ran board {typed} {capability}\n")
+    }
+}
+
+/// The capability that the target after `call` in `arguments`, before any
+/// `--`, means, by [`CAPABILITIES`], among the plugins `built_in` or, after
+/// them, those installed in `plugins`; `None` when no row fits, so the
+/// target runs, or is refused, as given.
+pub(crate) fn called(
+    arguments: &[OsString],
+    built_in: BuiltIn,
+    plugins: Option<&Path>,
+) -> Option<Called> {
+    let mut words = (arguments.iter().enumerate())
+        .take_while(|(_, word)| *word != "--")
+        .filter_map(|(at, word)| Some((at, word.to_str()?)));
+    words.find(|(_, word)| *word == "call")?;
+    let (at, plugin, given) = words.find_map(|(at, word)| match word.parse() {
+        Ok(Target::Named { plugin, capability }) => Some((at, plugin, capability)),
+        _ => None,
+    })?;
+    // Only a word some row maps reads a manifest.
+    if !(CAPABILITIES.iter()).any(|(_, word, _)| *word == given.as_str()) {
+        return None;
+    }
+    let answers =
+        |manifest: &Manifest| manifest.name == plugin || manifest.former_names.contains(&plugin);
+    let manifest = (built_in.0.iter().map(|built| built.manifest()))
+        .find(answers)
+        .or_else(|| {
+            (board_plugin::installed(plugins?).ok()?.into_iter())
+                .filter_map(|entry| entry.manifest.ok())
+                .find(answers)
+        })?;
+    let offers =
+        |name: &str| (manifest.capabilities.iter()).any(|offered| offered.name.as_str() == name);
+    let &(_, word, capability) = CAPABILITIES.iter().find(|(name, word, capability)| {
+        *name == manifest.name.as_str()
+            && *word == given.as_str()
+            && offers(capability)
+            && !offers(word)
+    })?;
+    let mut line = arguments.to_vec();
+    *line.get_mut(at)? = OsString::from(format!("{plugin}.{capability}"));
+    Some(Called {
+        line,
+        plugin: plugin.to_string(),
+        word,
+        capability,
+    })
+}
+
+/// `output` with `note` before what it printed on stderr.
+pub(crate) fn noted(mut output: Output, note: &str) -> Output {
+    output.stderr.splice(0..0, note.bytes());
+    output
+}
 
 /// The built-in commands, by their words, that read `--path X` as their
 /// path. Each only reads, and takes its path as its one positional

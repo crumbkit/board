@@ -552,3 +552,161 @@ fn a_board_enabling_a_former_name_runs_the_renamed_plugin_and_warns_and_one_enab
     let output = run_in(&board, &data, &["tasks", "due"]);
     assert_eq!((output.code, former(&output)), (0, Vec::new()));
 }
+
+/// A manifest of `name` offering each of `capabilities`, each of which
+/// takes the flag `--path`.
+fn offering(name: &str, capabilities: &[&str]) -> String {
+    let capabilities: Vec<Value> = (capabilities.iter())
+        .map(|capability| {
+            json!({
+                "name": capability,
+                "description": "Read one change.",
+                "inputSchema": {"type": "object", "properties": {
+                    "path": {"type": "string"}
+                }, "additionalProperties": false},
+                "outputSchema": {"type": "object"}
+            })
+        })
+        .collect();
+    json!({
+        "$type": "board/plugin-manifest/v1",
+        "name": name,
+        "version": "0.1.0",
+        "description": "A plugin a guessed word reaches.",
+        "run": ["./run"],
+        "capabilities": capabilities
+    })
+    .to_string()
+}
+
+/// A board enabling each of `plugins`, and a plugins directory holding
+/// each, offering its capabilities.
+fn offered(plugins: &[(&str, &[&str])]) -> (Scenario, Scenario) {
+    let names: Vec<&str> = plugins.iter().map(|(name, _)| *name).collect();
+    let (board, data) = aliased(&names, "");
+    for (name, capabilities) in plugins {
+        install(&data, name, "");
+        data.write(
+            &format!("plugins/{name}/plugin.json"),
+            Item::File(&offering(name, capabilities)),
+        );
+    }
+    (board, data)
+}
+
+/// Each word Board maps after a plugin's name, and the capability it runs.
+const GUESSED: [(&str, &str, &str); 6] = [
+    ("changes", "show", "next"),
+    ("changes", "status", "next"),
+    ("changes", "list", "open"),
+    ("tasks", "list", "available"),
+    ("plans", "list", "open"),
+    ("evals", "list", "open"),
+];
+
+#[test]
+fn a_guessed_plugin_word_runs_the_capability_it_means_and_notes_what_ran() {
+    let (board, data) = offered(&[
+        ("changes", &["next", "open"]),
+        ("tasks", &["available"]),
+        ("plans", &["open"]),
+        ("evals", &["open"]),
+    ]);
+    for (plugin, word, target) in GUESSED {
+        let lines: [(&[&str], &[&str], String); 2] = [
+            (
+                &["--json", plugin, word, "--path", "/changes/x"],
+                &["--json", plugin, target, "--path", "/changes/x"],
+                format!("note: board {plugin} {word} ran board {plugin} {target}\n"),
+            ),
+            (
+                &[
+                    "--json",
+                    "call",
+                    &format!("{plugin}.{word}"),
+                    "--path",
+                    "/changes/x",
+                ],
+                &[
+                    "--json",
+                    "call",
+                    &format!("{plugin}.{target}"),
+                    "--path",
+                    "/changes/x",
+                ],
+                format!("note: board call {plugin}.{word} ran board call {plugin}.{target}\n"),
+            ),
+        ];
+        for (guessed, meant, note) in lines {
+            let through_guess = run_in(&board, &data, guessed);
+            let sent = taken_by(&data, plugin);
+            let through_meant = run_in(&board, &data, meant);
+            assert_eq!(
+                through_guess.code,
+                0,
+                "{guessed:?}: {}",
+                text(&through_guess.stderr)
+            );
+            assert_eq!(through_guess.code, through_meant.code, "{guessed:?}");
+            assert_eq!(
+                text(&through_guess.stdout),
+                text(&through_meant.stdout),
+                "{guessed:?}"
+            );
+            assert_eq!(
+                text(&through_guess.stderr),
+                format!("{note}{}", text(&through_meant.stderr)),
+                "{guessed:?}"
+            );
+            let (request, _) = sent.clone().unwrap();
+            assert_eq!(request["capability"], target, "{guessed:?}");
+            assert_eq!(
+                request["input"],
+                json!({"path": "/changes/x"}),
+                "{guessed:?}"
+            );
+            assert_eq!(sent, taken_by(&data, plugin), "{guessed:?}");
+        }
+    }
+}
+
+#[test]
+fn a_plugin_that_offers_a_guessed_word_runs_its_own_and_one_lacking_the_target_is_refused() {
+    let (board, data) = offered(&[("changes", &["show", "next"]), ("tasks", &["due"])]);
+    for words in [&["changes", "show"][..], &["call", "changes.show"]] {
+        let output = run_in(&board, &data, words);
+        assert_eq!(output.code, 0, "{words:?}: {}", text(&output.stderr));
+        assert!(!text(&output.stderr).contains("note:"), "{words:?}");
+        let (request, _) = taken_by(&data, "changes").unwrap();
+        assert_eq!(request["capability"], "show", "{words:?}");
+    }
+    for words in [
+        &["--json", "tasks", "list"][..],
+        &["--json", "call", "tasks.list"],
+    ] {
+        let output = run_in(&board, &data, words);
+        assert_eq!(code(&output), "board::plugin::no_capability", "{words:?}");
+        assert!(!text(&output.stderr).contains("note:"), "{words:?}");
+        assert_eq!(taken_by(&data, "tasks"), None, "{words:?}");
+    }
+}
+
+#[test]
+fn runs_run_and_runs_record_are_refused_with_a_hint_that_names_board_put_new() {
+    let (board, data) = offered(&[("runs", &["latest"])]);
+    for word in ["run", "record"] {
+        for words in [
+            vec!["--json", "runs", word],
+            vec!["--json", "call", &*format!("runs.{word}")],
+        ] {
+            let output = run_in(&board, &data, &words);
+            assert_eq!(code(&output), "board::plugin::no_capability", "{words:?}");
+            let hint = json(&output)["recovery"]["text"].to_string();
+            assert!(
+                hint.contains("board put --new --var suite=<name>"),
+                "{hint}"
+            );
+            assert!(hint.contains("board changes attach"), "{hint}");
+        }
+    }
+}
