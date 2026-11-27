@@ -430,3 +430,123 @@ fn two_different_notes_repos_covering_the_remote_still_refuse_when_one_is_mounte
         "{refused}"
     );
 }
+
+/// Which of two mounts of one notes repo pins the commit before the
+/// other's.
+#[derive(Clone, Copy)]
+enum Behind {
+    Direct,
+    Nested,
+}
+
+/// Moves the notes repo `name`'s mount from `/repos/<name>` to `/<direct>`,
+/// mounts a board at `/<team>` that mounts the repo again at
+/// `/<team>/<inner>`, and commits the repo once more, so one mount pins the
+/// commit before the other's, as `behind` says. Commits the board, and
+/// gives the team board's clone, which the test keeps.
+#[must_use]
+fn twinned(
+    tasks: &Tasks,
+    name: &str,
+    direct: &str,
+    (team, inner): (&str, &str),
+    behind: Behind,
+) -> Scenario {
+    let moved = format!("repos/{name}.json");
+    let pointer: Value = serde_json::from_str(&tasks.read(&moved)).unwrap();
+    git(tasks.board.workdir(), &["add", &moved]);
+    git(tasks.board.workdir(), &["rm", "-qf", &moved]);
+    let clone = Path::new(pointer["repo"].as_str().unwrap());
+    let before = git(clone, &["rev-parse", "HEAD"]);
+    write_file(&clone.join("later.txt"), "later\n");
+    git(clone, &["add", "later.txt"]);
+    git(clone, &["commit", "-qm", "later"]);
+    git(clone, &["push", "-q", "origin", "main"]);
+    let after = git(clone, &["rev-parse", "HEAD"]);
+    let (direct_at, nested_at) = match behind {
+        Behind::Direct => (&before, &after),
+        Behind::Nested => (&after, &before),
+    };
+    let at = |commit: &str| {
+        json!({"$type": "board/mount/v1", "repo": clone, "follow": "main", "commit": commit})
+            .to_string()
+    };
+    let team_board = Scenario::new();
+    git(
+        team_board.workdir(),
+        &["symbolic-ref", "HEAD", "refs/heads/main"],
+    );
+    git(team_board.workdir(), &["config", "user.name", "t"]);
+    git(team_board.workdir(), &["config", "user.email", "t@t"]);
+    team_board
+        .write(
+            ".board/board.json",
+            Item::Fresh(r#"{"$type": "board/config/v1", "commit_on_put": true}"#),
+        )
+        .write(&format!("{inner}.json"), Item::Fresh(&at(nested_at)));
+    git(team_board.workdir(), &["add", "."]);
+    git(team_board.workdir(), &["commit", "-qm", "team"]);
+    let head = git(team_board.workdir(), &["rev-parse", "HEAD"]);
+    let team_pointer = json!({
+        "$type": "board/mount/v1", "repo": team_board.workdir(), "follow": "main", "commit": head,
+    });
+    tasks.write(&format!("{team}.json"), &team_pointer.to_string());
+    tasks.write(&format!("{direct}.json"), &at(direct_at));
+    git(tasks.board.workdir(), &["add", "."]);
+    git(tasks.board.workdir(), &["commit", "-qm", "mounts"]);
+    team_board
+}
+
+#[test]
+fn a_direct_mount_deeper_than_the_nested_one_takes_the_task() {
+    let tasks = Tasks::new();
+    tasks.mounted();
+    let _team = twinned(&tasks, "work", "x/y/work", ("t", "w"), Behind::Nested);
+    let routed = tasks
+        .call("add", &["--title", "Ship it", "--remote", EXAMPLE_ORG])
+        .unwrap();
+    assert_eq!(routed["path"], "/x/y/work/tasks/ship-it.md", "{routed}");
+}
+
+#[test]
+fn available_reads_a_repo_two_mounts_reach_once_and_after_its_pin_moves_onto_the_others() {
+    let tasks = Tasks::new();
+    tasks.mounted();
+    let _team = twinned(&tasks, "work", "repos/work", ("t", "a/w"), Behind::Direct);
+    let swept = tasks.call("available", &["--remote", EXAMPLE_ORG]).unwrap();
+    let report: Vec<&Value> = ["available", "due_soon", "stale", "held"]
+        .iter()
+        .flat_map(|section| swept[section]["tasks"].as_array().unwrap())
+        .filter(|task| task["title"] == "Report")
+        .collect();
+    assert_eq!(report.len(), 1, "{swept}");
+    assert_eq!(swept["unsynced"], json!([]), "{swept}");
+}
+
+#[test]
+fn available_and_tree_show_a_task_of_a_repo_two_mounts_reach_once() {
+    let tasks = Tasks::new();
+    tasks.mounted();
+    let _team = twinned(
+        &tasks,
+        "work",
+        "repos/work",
+        ("repos/team", "repos/work"),
+        Behind::Nested,
+    );
+    let swept = tasks.call("available", &["--remote", EXAMPLE_ORG]).unwrap();
+    assert_eq!(
+        swept["repos"],
+        json!(["/", "/repos/personal", "/repos/work"]),
+        "{swept}"
+    );
+    let reports = ["available", "due_soon", "stale", "held"]
+        .iter()
+        .flat_map(|section| swept[section]["tasks"].as_array().unwrap())
+        .filter(|task| task["title"] == "Report")
+        .count();
+    assert_eq!(reports, 1, "{swept}");
+    let tree = (tasks.call("tree", &["--root", "true", "--remote", EXAMPLE_ORG])).unwrap();
+    let shown = tree.to_string();
+    assert_eq!(shown.matches("tasks/report.md").count(), 1, "{shown}");
+}

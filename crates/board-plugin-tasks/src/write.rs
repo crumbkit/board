@@ -641,8 +641,9 @@ fn checked(
 /// The repo a new task goes to: the one named; else the one covering the
 /// remote; else the personal one; else `/`. Two repos covering the remote,
 /// or two personal ones, are refused, since a task must not cross a silo.
-/// Two mounts of one clone are one repo, which `covering` names by its
-/// shorter root.
+/// Two mounts of one clone are one repo, which `covering` names by the
+/// mount whose pointer the board's own tree holds, so the write can go
+/// through it.
 fn routed(
     host: &dyn Host,
     found: &[Listed],

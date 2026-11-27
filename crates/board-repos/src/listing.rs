@@ -19,8 +19,9 @@ pub const RECORD_TYPE: &str = "notes/repo/v1";
 
 /// What [`query`] reads of each notes repo: its root, the commit its
 /// mount pins and the clone Board read it from (`worktree` and the board's
-/// own root for `/`), and its record's type, status, Board code and body.
-pub const COLUMNS: [&str; 7] = [
+/// own root for `/`), its record's type, status, Board code and body, and
+/// whether the board's own tree holds the pointer that mounts it there.
+pub const COLUMNS: [&str; 8] = [
     "n.root",
     "n.source",
     "s.repository",
@@ -28,6 +29,8 @@ pub const COLUMNS: [&str; 7] = [
     "e.status",
     "e.code",
     "r.body",
+    "EXISTS (SELECT 1 FROM mounts AS m WHERE m.source = 'worktree' \
+     AND '/' || substr(m.path, 1, length(m.path) - 5) || '/' = n.root)",
 ];
 
 /// The query that finds every notes repo, by root, in [`COLUMNS`], for a
@@ -48,13 +51,15 @@ ORDER BY n.root",
 }
 
 /// A repo: its root, the commit its mount pins and the clone Board read it
-/// from (both none for the board's own tree), and its record's type,
-/// status, Board code and body, each null without one.
+/// from (both none for the board's own tree), whether the board's own tree
+/// holds its mount's pointer, so a put can write through it, and its
+/// record's type, status, Board code and body, each null without one.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Listed {
     pub root: String,
     pub source: Option<String>,
     pub clone: Option<String>,
+    pub direct: bool,
     pub row: [Value; 4],
 }
 
@@ -113,6 +118,7 @@ pub fn parsed(plugin: &str, rows: &[&[Value]]) -> Result<Vec<Listed>, PluginErro
             root: at,
             source: mounted.then(|| shown(&row[1])),
             clone,
+            direct: row[7] == Value::Bool(true) || row[7].as_i64() == Some(1),
             row: [
                 row[3].clone(),
                 row[4].clone(),
@@ -208,20 +214,13 @@ fn personal(record: Option<&Map<String, Value>>) -> bool {
 
 /// The repos of `found`, each once: roots that read the same clone are
 /// one repository reached through more than one mount, such as a notes
-/// repo the board mounts and a board it mounts mounts again, and the root
-/// with the fewest segments, then the first by name, stands for it. A
-/// root whose clone is unknown, such as the board's own tree, is its own.
+/// repo the board mounts and a board it mounts mounts again. A root whose
+/// pointer the board's own tree holds stands for it, since a put writes
+/// through only such a mount; among the rest, the root shortest in bytes,
+/// then the first by name, as the index lists a commit two routes reach.
+/// A root whose clone is unknown, such as the board's own tree, is its own.
 fn distinct(found: &[Listed]) -> Vec<&Listed> {
-    let rank = |listed: &Listed| {
-        (
-            listed
-                .root
-                .split('/')
-                .filter(|part| !part.is_empty())
-                .count(),
-            listed.root.clone(),
-        )
-    };
+    let rank = |listed: &Listed| (!listed.direct, listed.root.len(), listed.root.clone());
     let stands = |listed: &Listed| {
         let Some(clone) = &listed.clone else {
             return true;

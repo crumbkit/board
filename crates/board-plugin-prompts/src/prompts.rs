@@ -66,25 +66,25 @@ pub(crate) fn listed_files() -> String {
 
 /// The mounts, the marks and the files `condition` selects, in one query.
 /// Each mount's pointer is in the board's own working tree, never inside
-/// another mount.
+/// another mount, so each mount row says it is direct.
 fn sql(condition: &str) -> String {
     let record = literal(RECORD);
     let marks = literal(MARKS);
     format!(
         "SELECT 'mount', '/' || substr(m.path, 1, length(m.path) - 5), m.target, s.repository, \
-                e.type, e.status, e.code, r.body
+                e.type, e.status, e.code, r.body, 1
          FROM mounts AS m
          LEFT JOIN sources AS s ON s.source = m.target
          LEFT JOIN entries AS e ON e.source = m.target AND e.path = {record}
          LEFT JOIN records AS r ON r.source = m.target AND r.path = {record}
          WHERE m.source = 'worktree' AND m.code IS NULL AND m.target IS NOT NULL
          UNION ALL
-         SELECT 'marks', e.type, e.status, e.code, r.body, NULL, NULL, NULL
+         SELECT 'marks', e.type, e.status, e.code, r.body, NULL, NULL, NULL, NULL
          FROM entries AS e LEFT JOIN records AS r ON r.logical = e.logical
          WHERE e.source = 'worktree' AND e.path = {marks}
          UNION ALL
          SELECT * FROM (
-           SELECT 'file', {COLUMNS} FROM entries AS e
+           SELECT 'file', {COLUMNS}, NULL FROM entries AS e
            LEFT JOIN records AS r ON r.logical = e.logical
            WHERE {condition} ORDER BY e.logical
          )"

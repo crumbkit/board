@@ -59,9 +59,12 @@ fn a_listed_mount_carries_its_pin_and_clone_and_the_boards_own_tree_neither() {
             null,
             null,
             null,
-            null
+            null,
+            1
         ])),
-        row(&json!(["/", "worktree", "/board", null, null, null, null])),
+        row(&json!([
+            "/", "worktree", "/board", null, null, null, null, 0
+        ])),
     ];
     let found = parsed("tasks", &slices(&rows)).unwrap();
     let heads: Vec<_> = (found.iter())
@@ -70,14 +73,15 @@ fn a_listed_mount_carries_its_pin_and_clone_and_the_boards_own_tree_neither() {
                 listed.root.as_str(),
                 listed.source.as_deref(),
                 listed.clone.as_deref(),
+                listed.direct,
             )
         })
         .collect();
     assert_eq!(
         heads,
         [
-            ("/", None, None),
-            ("/repos/work", Some("c0ffee"), Some("/clones/work"))
+            ("/", None, None, false),
+            ("/repos/work", Some("c0ffee"), Some("/clones/work"), true)
         ]
     );
     assert_eq!(record("tasks", &found[1]).unwrap(), None);
@@ -92,7 +96,8 @@ fn a_mount_whose_clone_board_does_not_name_is_refused() {
         null,
         null,
         null,
-        null
+        null,
+        0
     ]))];
     let refused = parsed("tasks", &slices(&rows)).unwrap_err();
     assert_eq!(refused.code, "tasks::board::refused");
@@ -121,6 +126,7 @@ fn listed_with(root: &str, record: Option<Value>) -> Listed {
         root: root.to_owned(),
         source: (root != "/").then(|| "c0ffee".to_owned()),
         clone: (root != "/").then(|| format!("/clones{root}")),
+        direct: root != "/",
         row,
     }
 }
@@ -232,6 +238,7 @@ fn twin(listed: &Listed, root: &str) -> Listed {
     Listed {
         root: root.to_owned(),
         source: Some("beef".to_owned()),
+        direct: false,
         ..listed.clone()
     }
 }
@@ -274,4 +281,40 @@ fn two_roots_that_read_different_clones_stay_two_repos() {
     });
     let (_, personal) = covering("tasks", &unknown, None).unwrap();
     assert_eq!(personal, ["/repos/home", "/repos/team/repos/home"]);
+}
+
+#[test]
+fn a_mount_the_boards_own_tree_points_at_stands_for_its_clone_though_it_is_deeper() {
+    let direct = Listed {
+        root: "/x/y/work".to_owned(),
+        clone: Some("/clones/work".to_owned()),
+        ..listed_with("/x/y/work", Some(json!({"covers": ["acme/*"]})))
+    };
+    let found = vec![
+        listed_with("/", None),
+        twin(&direct, "/t/w"),
+        direct.clone(),
+    ];
+    let (covered, _) = covering("tasks", &found, Some("acme/x")).unwrap();
+    assert_eq!(covered, ["/x/y/work"]);
+    assert_eq!(
+        scope("tasks", &found, None, None, None).unwrap(),
+        ["/", "/x/y/work"]
+    );
+}
+
+#[test]
+fn of_two_nested_mounts_of_one_clone_the_one_the_index_lists_first_stands_for_it() {
+    // The index lists a commit two routes reach under the route shortest in
+    // bytes, then first by name, so two nested twins rank the same way.
+    let home = listed_with("/repos/home", Some(json!({"covers": [], "personal": true})));
+    let nested = |root: &str| twin(&home, root);
+    let found = vec![
+        listed_with("/", None),
+        nested("/repos/team/home"),
+        nested("/t/a/b/home"),
+        nested("/t/a/b/hom2"),
+    ];
+    let (_, personal) = covering("tasks", &found, None).unwrap();
+    assert_eq!(personal, ["/t/a/b/hom2"]);
 }
