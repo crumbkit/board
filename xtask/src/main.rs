@@ -139,6 +139,9 @@ fn lint(root: &Path) -> Result<Report, LintError> {
 fn bench(root: &Path, options: &bench::Options) -> Result<bool, bench::BenchError> {
     let docs = std::fs::read_to_string(root.join("docs/architecture/performance/budgets.md"))
         .map_err(bench::BenchError::Write)?;
+    if options.hot {
+        return hot(&docs, options);
+    }
     let budgets = bench::budgets(&docs)?;
     let against = match options.against()? {
         Some((base, runs)) => Some(([base.to_owned(), against::build(root)?], runs)),
@@ -171,6 +174,38 @@ fn bench(root: &Path, options: &bench::Options) -> Result<bool, bench::BenchErro
     let compared = against::compare(&binaries, &rows, runs, &host)?;
     report::emit(&Output::Against(&compared));
     Ok(against::passed(&compared))
+}
+
+/// Times the hot commands on a generated board with open changes, and
+/// prints their rows, or with `--json` the CI run they make. It passes
+/// whatever the times.
+fn hot(docs: &str, options: &bench::Options) -> Result<bool, bench::BenchError> {
+    let budgets = bench::hot::budgets(docs)?;
+    let generated = tempfile::tempdir().map_err(bench::BenchError::Write)?;
+    let started = jiff::Timestamp::now();
+    bench::generate(generated.path(), options.records, &bench::hot::changes(), 0)
+        .map_err(bench::BenchError::Write)?;
+    bench::hot::enable(generated.path())?;
+    bench::settle();
+    let rows = bench::hot::run(generated.path(), &budgets)?;
+    if options.json {
+        let finished = jiff::Timestamp::now();
+        let commit = process::var("GITHUB_SHA").map_or_else(
+            || "unknown".to_owned(),
+            |commit| commit.to_string_lossy().into_owned(),
+        );
+        let at = |time: jiff::Timestamp| time.round(jiff::Unit::Second).unwrap_or(time).to_string();
+        let record = bench::hot::record(
+            &rows,
+            (&at(started), &at(finished)),
+            options.records,
+            &commit,
+        );
+        report::emit(&Output::Json(&record));
+    } else {
+        report::emit(&Output::Hot(&rows));
+    }
+    Ok(true)
 }
 
 #[derive(Debug, thiserror::Error)]

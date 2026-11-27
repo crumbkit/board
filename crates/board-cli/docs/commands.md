@@ -710,16 +710,17 @@ Time hot commands against their budgets
 
 ### Commands
 
-- [`board timing check`](#board-timing-check): Judge each hot command's p90 on the personal board against its budget
+- [`board timing check`](#board-timing-check): Judge each hot command's p90 and median on the personal board against its budget
 
 ## `board timing check`
 
-Judge each hot command's p90 on the personal board against its budget.
+Judge each hot command's p90 and median on the personal board against its budget.
 
-A command is judged on its last 20 top-level runs on the personal board at a load no higher than the core count, and is unjudged with fewer than 5. The runs come from the timing log and its digest.
+A command is judged on its last 20 top-level runs on the personal board at a load no higher than the core count, and is unjudged with fewer than 5. The runs come from the timing log and its digest. A command is silent until it has enough steady results, then live: a live command over budget opens a task, and after the grace a question for the owner.
 
 ### Arguments
 
-- `--record`: Also write a run of /suites/board-speed-local to the personal board, at most once an hour
+- `--record`: Also import the newest CI timing run and write a run of /suites/board-speed-local to the personal board, at most once an hour
+- `--session <SESSION>`: The Claude Code session that asks, by its local\_ id, so a question the check files names it; without it the check files none
 
-Effects: additive, not idempotent, closed-world.
+Effects: additive, not idempotent, open-world.

@@ -525,7 +525,8 @@ fn a_recorded_check_writes_the_suite_and_a_run_once_an_hour_and_a_check_without_
     }
     let printed = check(&scenario, home.path(), &["--json", "timing", "check"]);
     assert_eq!(printed["recorded"], Value::Null);
-    assert_eq!(printed["mode"], "silent");
+    assert_eq!(printed["live"], serde_json::json!([]));
+    assert_eq!(printed["commands"][0]["mode"], "silent");
     let get = &printed["commands"][0];
     assert_eq!(
         (&get["command"], &get["budget_ms"]),
@@ -549,7 +550,7 @@ fn a_recorded_check_writes_the_suite_and_a_run_once_an_hour_and_a_check_without_
         &std::fs::read(scenario.workdir().join(format!("{}.json", &run[1..]))).unwrap(),
     )
     .unwrap();
-    assert_eq!(written["results"].as_array().unwrap().len(), 11);
+    assert_eq!(written["results"].as_array().unwrap().len(), 14);
     assert!(written["measures"]["over_budget"].is_u64(), "{written}");
     let setup = written["setup"].as_str().unwrap();
     assert!(
@@ -565,6 +566,22 @@ fn a_recorded_check_writes_the_suite_and_a_run_once_an_hour_and_a_check_without_
     assert_eq!(again["recorded"], Value::Null);
     let runs = std::fs::read_dir(scenario.workdir().join("suites/board-speed-local/runs"));
     assert_eq!(runs.unwrap().count(), 1);
+}
+
+#[test]
+fn a_check_refuses_a_session_that_is_not_a_local_id_and_a_session_without_record() {
+    let home = tempfile::tempdir().unwrap();
+    let scenario = personal(home.path());
+    for arguments in [
+        &["timing", "check", "--record", "--session", "local_0a; rm"][..],
+        &["timing", "check", "--session", "local_0a1b"][..],
+    ] {
+        let ran = command(&scenario, home.path(), arguments)
+            .env("XDG_CONFIG_HOME", home.path().join("config"))
+            .output()
+            .unwrap();
+        assert_eq!(ran.status.code(), Some(2), "{ran:?}");
+    }
 }
 
 /// The line the rules mod runs under /bin/sh at a session's start, from

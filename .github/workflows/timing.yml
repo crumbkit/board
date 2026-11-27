@@ -4,9 +4,18 @@
 # bin/test are the hard gate; this job only watches the trend. slow.yml calls
 # it nightly, with the macOS leg on Monday nights only; a pull request that changes the bench can run it by
 # hand.
+#
+# On each push to main the hot job instead times each budgeted command of the
+# Command budgets table on Linux, on a generated board with 100 open
+# changes, and uploads the run as the artifact board-speed-run, which
+# `board timing check --record` imports into /suites/board-speed-ci. It only
+# reports: it passes whatever the times, and blocks no merge. A newer push
+# cancels an older run, which then uploads nothing.
 name: timing
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       macos:
@@ -28,6 +37,7 @@ env:
 
 jobs:
   timing:
+    if: github.event_name != 'push'
     strategy:
       fail-fast: false
       matrix:
@@ -39,3 +49,23 @@ jobs:
         with:
           persist-credentials: false
       - run: cargo run --release --locked --package xtask -- bench
+
+  hot:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: timing-hot-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: cargo run --release --locked --package xtask -- bench --hot --json > run.json
+      - name: Each command's outcome, p50 and p90
+        run: jq -r '.results[] | "\(.outcome)  p50 \(.measures.p50_ms // "-") ms  p90 \(.measures.p90_ms // "-") ms  \(.case)"' run.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: board-speed-run
+          path: run.json
+          retention-days: 30

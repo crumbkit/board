@@ -23,4 +23,4 @@ board/serve-report/v2          output  document  Where the server listened and w
 board/ui-kinds-report/v2       output  document  The component kinds a view's slot can name.
 board/ui-template-report/v2    output  document  A slot's fill for a component kind.
 board/ui-open-report/v2        output  document  The page opened, and whether its server was started.
-board/timing-check-report/v2   output  document  Each hot command's p50 and p90 against its budget, and the speed run recorded, if any.
+board/timing-check-report/v2   output  document  Each hot command's p50 and p90 against its budgets and its mode, the commands live, the speed run recorded, if any, and any warnings.

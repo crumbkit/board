@@ -146,56 +146,120 @@ be written leaves that log's hours out, and the log still rotates.
 
 `board timing check` judges each command in budgets.md's Command budgets
 on the personal board: the p90 of its last 20 judged top-level runs, from
-the digest's hours of logs no longer kept and then both logs. A call is
-named by its capability. With fewer than 5 judged runs a command is
-unjudged. A command over its budget is over; one over three times it, or a
-session-start command with a run killed in the last day, is far too slow.
-The check prints a row per command and how many lines it could not parse.
+the digest's hours of logs no longer kept and then both logs, and their
+median where the command has a median budget. A call is named by its
+capability. With fewer than 5 judged runs a command is unjudged. A command
+over a budget is over; one over three times it, or a session-start command
+with a run killed in the last day, is far too slow. The check prints a row
+per command with its budgets, p50, p90 and mode, how many lines it could
+not parse, and any warnings.
 
 With `--record` it writes the suite `/suites/board-speed-local` (a
-`runs/suite/v1` of kind `benchmark`) if absent, then a `runs/run/v1` with a
-result per command and the measures `over_budget` and `killed`, and stamps
-`timing-check.stamp` in the cache. Within an hour of the stamp it writes
-nothing. The run's `setup` names the machine's host name. The rules mod
-starts `board timing check --record` detached at each session's start,
-in a session or process group of its own (`setsid -f` where present, else `set -m`) and under nohup so it
-ignores SIGHUP; `board timing` keeps that ignore. A SIGTERM or SIGKILL sent
-to the check's own process ends it with no run written; the next session's
-check writes one, as the stamp is not yet set.
+`runs/suite/v1` of kind `benchmark`) if absent, imports the newest CI run,
+decides each command's mode, then writes a `runs/run/v1` with a result per
+command, each naming its `mode`, and stamps `timing-check.stamp` in the
+cache. Within an hour of the stamp it writes nothing. The run's `setup`
+names the machine's host name, and `dirty` says whether the build's
+version has `.dirty.`. Its measures `over_budget` and `killed` count only
+live commands; `silent_over_budget` and `silent_killed` count the rest.
+The rules mod starts `board timing check --record --session <id>` detached
+at each session's start, with the `local_` id the desktop app names, in a
+session or process group of its own (`setsid -f` where present, else
+`set -m`) and under nohup so it ignores SIGHUP; `board timing` keeps that
+ignore. A SIGTERM or SIGKILL sent to the check's own process ends it with
+no run written; the next session's check writes one, as the stamp is not
+yet set.
 
-The check is silent: it records runs and opens nothing. A later change
-makes it live once each command has 100 judged runs and the budgets hold.
-A live check then opens one task per command over budget at
+### The CI timing run
+
+On each push to main, timing.yml's hot job runs `cargo xtask bench --hot
+--json` on Linux (budgets.md, Command budgets) and uploads the run as the
+artifact `board-speed-run`. The check finds the newest successful run with
+`gh run list`, through board-plugin's process module, and when
+`/suites/board-speed-ci/runs/<run id>` is absent downloads it with `gh run
+download` into a scratch directory under the cache and writes it there,
+with the suite if absent. On import `over_budget` counts the commands live
+then. A missing or signed-out gh, an offline machine or an artifact that
+does not parse is a warning, and nothing is imported; the local run is
+still written.
+
+### Silent and live
+
+A command is silent until it is ready, then live. It is ready when it has
+100 judged results in local runs, this check's included, and, once CI has
+timed it at all, 14 judged results in CI runs, and fewer than 1 in 10 of
+its over-budget results were cleared by its next judged result. The check
+reads the newest 120 runs of each suite, so flapping only in older runs is
+missed. A command the newest local run names live stays live, so live holds
+across Macs, and no event makes it silent.
+
+When the first command goes live the check writes `/rules/board/speed-budgets`
+and `/rules/board/speed-budgets-ci` if absent: zero rules on each suite's
+`over_budget` and `killed`, one per suite since a zero rule reads one suite,
+so the rules badge counts a live command over budget in every session.
+
+For each live command over budget the check opens a task at
 `/tasks/board-speed-<command>.md`, only if absent, naming the run; gives an
 open task a title that says so when the command is far too slow, which the
-lead names in its next status to the owner; and, once the lines changed
-since the task opened pass `overflow-agent-grace`, files one
-`plans/question/v1` at `/projects/board/questions/board-speed-<command>`,
-only if absent. Until that change measures the changed lines, no question
-is filed.
+lead names in its next status to the owner; and files a `plans/question/v1`
+at `/projects/board/questions/board-speed-<command>`, only if absent, once
+the grace has passed.
+
+### The grace
+
+The grace is the lines added plus removed (`git log --numstat`) on the
+branch the `/repos/board` mount follows, in the clone it names, since the
+run the task names started. It passes when they exceed the
+`overflow-agent-grace` param for `/repos/board`, read through
+`params.get`, or its default of 200 lines. The question names the session
+in `--session` as its `by`, and `blocks` the task. No question is filed
+when the check has no `--session`, git cannot count the lines, the board
+mounts no `/repos/board`, or another speed question is open: one whose
+status is `open` and whose id has no answer.
 
 ### Lifecycle
 
-| State | Event | Next | Owner |
+| From | Event | To | Owner |
 | --- | --- | --- | --- |
 | a run running | it returns | one line, `killed: false` | the run |
 | a run running | SIGINT, SIGTERM or SIGHUP | one line, `killed: true`, then it ends | the run's signal thread |
 | a run running | SIGKILL or a crash | no line | the system |
 | log under 1 MiB | a line would pass 1 MiB, lock taken | digest rewritten, log renamed | the rotating run |
 | log under 1 MiB | the lock is held | the line appended, no rotation | the run |
-| no stamp, or one over an hour old | `timing check --record` | suite if absent, a run, the stamp | the check |
+| no stamp, or one over an hour old | `timing check --record` | suite if absent, CI run imported, a run, the stamp | the check |
 | stamp under an hour old | `timing check --record` | nothing written | the check |
-| silent | the owner lands the live change | live | the owner |
-| live, command over | a check | its task, if absent | the check |
-| live, task open | far too slow | the task retitled | the check |
-| live, task open | changed lines past the grace | its question, if absent | the check |
+| none | a push to main | the hot job queued on Linux | GitHub Actions |
+| hot job queued or running | a newer push | cancelled, no artifact | Actions concurrency |
+| hot job running | bench finishes | artifact uploaded; the job passes | the hot job |
+| hot job running | 15 minutes pass, or the runner fails | failed, no artifact | GitHub Actions |
+| newest artifact not imported | a recording check | run written at its run id, if absent | the check, through gh |
+| newest artifact imported | a recording check | nothing written | the check |
+| gh or the artifact fails | a recording check | a warning, nothing imported | the check |
+| silent | a check finds it not ready | silent; its result recorded | the check |
+| silent | a check finds it ready | live, named in this run's results | the check |
+| live | any later check | live | the check |
+| no speed rules | the first command goes live | both rules, if absent | the check |
+| live, over, no task | a check | its task, if absent | the check |
+| task open | far too slow | the task retitled | the check; the lead names it |
+| task open | the grace passes, a session asks, no speed question open | its question, if absent | the check |
+| task open | the grace passes without those | no question; the next check tries | the check |
+| question open | the owner answers | the budget changed or retired in budgets.rs | the owner |
+| task open | the fix lands and the command is within | done through `tasks.done` | the session that lands it |
 
 Crash points: a run killed while appending leaves a partial line, which
 the check skips and counts. A rotation killed after the digest and before
-the rename rotates again, and the digest skips the log it holds. A check
-killed after the run and before the stamp records one more run within the
-hour. Two checks at once may both record a run; each task and question has
-one fixed path and is written only if absent.
+the rename rotates again, and the digest skips the log it holds. The hot
+job killed mid-bench uploads nothing; the next push runs again. A check
+killed during the download writes nothing and leaves its scratch directory
+in the cache; the next check imports the same artifact. One killed after
+the CI import and before the local run leaves the import, which the next
+check skips. One killed after the local run that first names a live
+command and before the rules, a task or a question leaves those absent,
+and the next check writes them. One killed after the run and before the
+stamp records one more run within the hour. Two checks at once may both
+record a run, or both import or ask; each import, task, rule and question
+has one fixed path and is written only if absent, though two different
+commands' questions may then open together.
 
 ## Reading the log and profiling
 

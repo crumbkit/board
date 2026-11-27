@@ -11,9 +11,20 @@ import type { Checked, Kind, Rule, StateBadge } from '../types'
  * hook's group does not reach it: through `setsid -f` where the system has
  * it, as Linux does, and else through the shell's job control, as macOS's
  * sh gives. nohup has it ignore SIGHUP, which `board timing` leaves ignored.
+ * A `session` the line sets first is passed as `--session`, so a question
+ * the check files names the session that asked.
  */
 export const SPEED_CHECK =
-  'run="nohup board timing check --record"; if command -v setsid >/dev/null 2>&1; then setsid -f $run </dev/null >/dev/null 2>&1; else set -m; $run </dev/null >/dev/null 2>&1 & fi'
+  'run="nohup board timing check --record${session:+ --session $session}"; if command -v setsid >/dev/null 2>&1; then setsid -f $run </dev/null >/dev/null 2>&1; else set -m; $run </dev/null >/dev/null 2>&1 & fi'
+
+/** A Claude Code session's `local_` id, the only form a question names and the only one put in a shell line. */
+const LOCAL_SESSION = /^local_[0-9a-f-]+$/
+
+/** The speed check's line, naming `host` as the session when it is a `local_` id. */
+export function speedLine(path: string, host: string | undefined): string {
+  const session = host !== undefined && LOCAL_SESSION.test(host) ? `session=${host}; ` : ''
+  return `${session}PATH=${path} ${SPEED_CHECK}`
+}
 
 /** The name of the context block the session's first message carries. */
 export const BLOCK = 'boardRules'

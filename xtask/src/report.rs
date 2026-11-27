@@ -5,6 +5,7 @@ use std::fmt::Write as _;
 use std::time::Duration;
 
 use crate::bench::against::{Arm, Compared, Verdict};
+use crate::bench::hot::Row;
 use crate::bench::{Timed, Took};
 use crate::questions::Migrated;
 use crate::rules::Divergence;
@@ -14,6 +15,7 @@ const SHOWN_PARTS: usize = 5;
 
 const USAGE: &str = "usage: cargo xtask lint
        cargo xtask bench [--board <dir>] [--records <n>] [--against <board> [--runs <n>]]
+       cargo xtask bench --hot [--records <n>] [--json]
        cargo xtask profile [--save <file>] -- <board arguments>
        cargo xtask migrate-questions <board directory> [--dry-run]
        cargo xtask migrate-shapes <board> [--write] [--map <file>]
@@ -164,6 +166,8 @@ impl Part {
 pub(crate) enum Output<'a> {
     Report(&'a Report),
     Bench(&'a [Timed]),
+    Hot(&'a [Row]),
+    Json(&'a serde_json::Value),
     Against(&'a [Compared]),
     Migrated(&'a Migrated),
     MigratedShapes(&'a serde_json::Value),
@@ -183,6 +187,8 @@ pub(crate) fn emit(output: &Output<'_>) {
     match output {
         Output::Report(report) => print!("{}", render(report)),
         Output::Bench(timed) => print!("{}", render_bench(timed)),
+        Output::Hot(rows) => print!("{}", render_hot(rows)),
+        Output::Json(value) => println!("{value}"),
         Output::Against(compared) => print!("{}", render_against(compared)),
         Output::Migrated(migrated) => println!(
             "{}",
@@ -193,6 +199,32 @@ pub(crate) fn emit(output: &Output<'_>) {
         Output::Failure { code, error } => eprint!("{}", render_failure(code, *error)),
         Output::Usage => eprint!("{USAGE}"),
     }
+}
+
+/// One line per hot row: its outcome, p50 and p90 and its budgets, or
+/// the code Board refused it with.
+pub(crate) fn render_hot(rows: &[Row]) -> String {
+    let mut text = String::new();
+    let ms = |duration: Duration| duration.as_secs_f64() * 1_000.0;
+    for row in rows {
+        let budget = &row.budget;
+        let median = budget
+            .median
+            .map_or_else(|| "-".to_owned(), |median| format!("{:.0} ms", ms(median)));
+        let _ = match &row.timed {
+            Ok((p50, p90)) => writeln!(
+                text,
+                "{:<5}  p50 {:>8.1} ms  p90 {:>8.1} ms  budget {:>6.0} ms  median {median:>8}  {}",
+                row.outcome(),
+                ms(*p50),
+                ms(*p90),
+                ms(budget.p90),
+                budget.command,
+            ),
+            Err(code) => writeln!(text, "error  {code}  {}", budget.command),
+        };
+    }
+    text
 }
 
 /// One line per operation: its median, its budget and their ratio, or why
