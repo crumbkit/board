@@ -225,3 +225,53 @@ fn the_boards_own_tree_is_a_notes_repo_once_it_tracks_a_file_under_daily() {
     let found = listed(&with, "notes").unwrap();
     assert_eq!(found, [listed_with("/", None)]);
 }
+
+/// `listed` mounted again at `root`, read from the same clone at another
+/// commit, as a board mounted inside the board mounts it.
+fn twin(listed: &Listed, root: &str) -> Listed {
+    Listed {
+        root: root.to_owned(),
+        source: Some("beef".to_owned()),
+        ..listed.clone()
+    }
+}
+
+#[test]
+fn two_roots_that_read_one_clone_are_one_repo_named_by_the_shorter_root() {
+    let mut found = found();
+    found.push(twin(&found[1], "/repos/team/repos/home"));
+    found.push(twin(&found[2], "/repos/team/repos/work"));
+    found.sort_by(|a, b| a.root.cmp(&b.root));
+    let (covered, personal) = covering("tasks", &found, Some("acme/x")).unwrap();
+    assert_eq!(
+        (covered, personal),
+        (
+            vec!["/repos/work".to_owned()],
+            vec!["/repos/home".to_owned()]
+        )
+    );
+    let all = scope("tasks", &found, None, None, None).unwrap();
+    assert_eq!(all, ["/", "/repos/home", "/repos/other", "/repos/work"]);
+    let routed = scope("tasks", &found, None, Some("acme/x"), None).unwrap();
+    assert_eq!(routed, ["/", "/repos/home", "/repos/work"]);
+    let named = scope("tasks", &found, Some("/repos/team/repos/work"), None, None).unwrap();
+    assert_eq!(named, ["/repos/team/repos/work"]);
+}
+
+#[test]
+fn two_roots_that_read_different_clones_stay_two_repos() {
+    let mut different = found();
+    let mut more = listed_with("/repos/more", Some(json!({"covers": ["acme/x"]})));
+    more.clone = Some("/clones/repos/more".to_owned());
+    different.push(more);
+    let (covered, _) = covering("tasks", &different, Some("acme/x")).unwrap();
+    assert_eq!(covered, ["/repos/work", "/repos/more"]);
+    let mut unknown = found();
+    unknown[1].clone = None;
+    unknown.push(Listed {
+        clone: None,
+        ..twin(&unknown[1], "/repos/team/repos/home")
+    });
+    let (_, personal) = covering("tasks", &unknown, None).unwrap();
+    assert_eq!(personal, ["/repos/home", "/repos/team/repos/home"]);
+}

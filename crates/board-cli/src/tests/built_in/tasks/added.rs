@@ -358,3 +358,75 @@ fn a_title_that_starts_with_a_dash_runs_as_printed_in_a_hint() {
     let path = output["path"].as_str().unwrap();
     assert!(path.starts_with("/repos/personal/tasks/"), "{path}");
 }
+
+/// Mounts a board at `/repos/team` that mounts each notes repo of `names`
+/// again, at `/repos/team/repos/<name>`, pinned one commit behind the
+/// board's own mount, so each is reached through two mounts that Board
+/// lists apart. Board indexes a commit once, so two mounts pinning one
+/// commit list once. Commits the board, and gives the team board's clone,
+/// which the test keeps.
+#[must_use]
+fn mounted_twice(tasks: &Tasks, names: &[&str]) -> Scenario {
+    let team = Scenario::new();
+    git(team.workdir(), &["symbolic-ref", "HEAD", "refs/heads/main"]);
+    git(team.workdir(), &["config", "user.name", "t"]);
+    git(team.workdir(), &["config", "user.email", "t@t"]);
+    team.write(
+        ".board/board.json",
+        Item::Fresh(r#"{"$type": "board/config/v1", "commit_on_put": true}"#),
+    );
+    for name in names {
+        let pointer = tasks.read(&format!("repos/{name}.json"));
+        team.write(&format!("repos/{name}.json"), Item::Fresh(&pointer));
+        let pointer: Value = serde_json::from_str(&pointer).unwrap();
+        let clone = Path::new(pointer["repo"].as_str().unwrap());
+        write_file(&clone.join("later.txt"), "later\n");
+        git(clone, &["add", "later.txt"]);
+        git(clone, &["commit", "-qm", "later"]);
+        git(clone, &["push", "-q", "origin", "main"]);
+        tasks.mount(name, clone);
+    }
+    git(team.workdir(), &["add", "."]);
+    git(team.workdir(), &["commit", "-qm", "team"]);
+    tasks.mount("team", team.workdir());
+    git(tasks.board.workdir(), &["add", "."]);
+    git(tasks.board.workdir(), &["commit", "-qm", "mounts"]);
+    team
+}
+
+#[test]
+fn a_notes_repo_two_mounts_reach_takes_the_task_at_its_shorter_mount() {
+    let tasks = Tasks::new();
+    tasks.mounted();
+    let _team = mounted_twice(&tasks, &["personal", "work"]);
+    let routed = tasks
+        .call("add", &["--title", "Ship it", "--remote", EXAMPLE_ORG])
+        .unwrap();
+    assert_eq!(routed["path"], "/repos/work/tasks/ship-it.md", "{routed}");
+    let about = routed["about"].as_str().unwrap();
+    assert!(
+        about.starts_with("Wrote /repos/work/tasks/ship-it.md to /repos/work "),
+        "{about}"
+    );
+    let personal = tasks.call("add", &["--title", "Call home"]).unwrap();
+    assert_eq!(
+        personal["path"], "/repos/personal/tasks/call-home.md",
+        "{personal}"
+    );
+}
+
+#[test]
+fn two_different_notes_repos_covering_the_remote_still_refuse_when_one_is_mounted_twice() {
+    let tasks = Tasks::new();
+    tasks.mounted();
+    let covers = json!({"covers": ["example-org/home"]});
+    tasks.notes_repo("more", Some(covers), &[], true);
+    let _team = mounted_twice(&tasks, &["work"]);
+    let refused = tasks.refused("add", &["--title", "Ship it", "--remote", EXAMPLE_ORG]);
+    assert_eq!(refused["code"], "tasks::repo::ambiguous");
+    assert_eq!(
+        refused["fields"]["candidates"],
+        json!(["/repos/more", "/repos/work"]),
+        "{refused}"
+    );
+}

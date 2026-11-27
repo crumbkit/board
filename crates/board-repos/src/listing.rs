@@ -206,15 +206,43 @@ fn personal(record: Option<&Map<String, Value>>) -> bool {
     record.and_then(|record| record.get("personal")) == Some(&Value::Bool(true))
 }
 
-/// Each listed repo's root and record, refused when one is not valid.
+/// The repos of `found`, each once: roots that read the same clone are
+/// one repository reached through more than one mount, such as a notes
+/// repo the board mounts and a board it mounts mounts again, and the root
+/// with the fewest segments, then the first by name, stands for it. A
+/// root whose clone is unknown, such as the board's own tree, is its own.
+fn distinct(found: &[Listed]) -> Vec<&Listed> {
+    let rank = |listed: &Listed| {
+        (
+            listed
+                .root
+                .split('/')
+                .filter(|part| !part.is_empty())
+                .count(),
+            listed.root.clone(),
+        )
+    };
+    let stands = |listed: &Listed| {
+        let Some(clone) = &listed.clone else {
+            return true;
+        };
+        !(found.iter())
+            .any(|other| other.clone.as_ref() == Some(clone) && rank(other) < rank(listed))
+    };
+    found.iter().filter(|listed| stands(listed)).collect()
+}
+
+/// Each repo's root and record, once per [`distinct`] repo, refused when
+/// one is not valid.
 fn records(plugin: &str, found: &[Listed]) -> Result<Vec<(String, Option<Record>)>, PluginError> {
-    (found.iter())
+    (distinct(found).into_iter())
         .map(|listed| Ok((listed.root.clone(), record(plugin, listed)?)))
         .collect()
 }
 
 /// The roots of the listed repos whose record covers `remote`, and of
-/// those whose record says `personal: true`.
+/// those whose record says `personal: true`, each repo once by its
+/// `distinct` root.
 pub fn covering(
     plugin: &str,
     found: &[Listed],
@@ -234,7 +262,8 @@ pub fn covering(
 /// named; else every repo outside a git repository; else `/`, the personal
 /// repo and the repos whose record covers the remote. Inside a git
 /// repository whose origin is `unread`, no repo is covered, so they are `/`
-/// and the personal repo.
+/// and the personal repo. Unless named, a repo is read once, at its
+/// `distinct` root.
 pub fn scope(
     plugin: &str,
     found: &[Listed],
@@ -263,6 +292,8 @@ pub fn scope(
         }
         return Ok(vec![root(name)]);
     }
+    let once: Vec<&Listed> = distinct(found);
+    roots.retain(|at| at == "/" || once.iter().any(|listed| &listed.root == at));
     if remote.is_none() && unread.is_none() {
         return Ok(roots);
     }
