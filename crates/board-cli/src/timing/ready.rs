@@ -51,7 +51,7 @@ impl Past {
     /// The past of `local` and `ci` runs, each oldest first.
     pub(crate) fn of(local: &[Value], ci: &[Value]) -> Self {
         Self {
-            live: local.last().map(live_in).unwrap_or_default(),
+            live: local.last().map_or_default(live_in),
             local: outcomes(local),
             ci: outcomes(ci),
         }

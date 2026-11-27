@@ -118,7 +118,7 @@ fn shown_live(context: &Context, personal: &Path) -> BTreeSet<String> {
         return BTreeSet::new();
     };
     let newest = ready::runs(&board, LOCAL_SUITE, context.cache.as_deref(), 1);
-    newest.last().map(ready::live_in).unwrap_or_default()
+    newest.last().map_or_default(ready::live_in)
 }
 
 /// The variables `names` from the environment Board inherited, beside
@@ -166,7 +166,7 @@ fn recorded(
     }
     // Once every command is live, the newest run alone says so.
     let mut local = ready::runs(&board, LOCAL_SUITE, Some(cache), 1);
-    let before = local.last().map(ready::live_in).unwrap_or_default();
+    let before = local.last().map_or_default(ready::live_in);
     let every = (check::budgets().iter()).all(|budget| before.contains(budget.command));
     if !every {
         local = ready::runs(&board, LOCAL_SUITE, Some(cache), ready::READ);
@@ -181,8 +181,7 @@ fn recorded(
     let at = asker.at;
     let name = at
         .parse::<jiff::Timestamp>()
-        .map(|at| at.strftime("%Y%m%dT%H%M%SZ").to_string())
-        .unwrap_or_default();
+        .map_or_default(|at| at.strftime("%Y%m%dT%H%M%SZ").to_string());
     let path = logical(&format!("{LOCAL_SUITE}/runs/{name}"))?;
     let host = check::Host {
         name: nix::unistd::gethostname()
