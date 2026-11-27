@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.1.5 (2026-11-27)
+
+- `board --personal requests threads` returns the thread of every pending
+  request in one call, as `{"threads": [...]}`, each item shaped as
+  `requests.thread` returns it. It reads the effects once and the replies at
+  most once, however many threads it lists, so a caller such as Board.app's
+  request relay need not run `requests.thread` once per request.
+- The Board band draws a green `Ready to land N` button before Waiting when
+  at least one change stands in its flow's last phase and waits only on the
+  owner's checks, or is done with rechecks still owed. Pressing it opens a
+  pane that lists each change with the check it waits on and the step that
+  clears it. A new read-only capability, `changes.ready`, lists these rows,
+  and the band's Waiting button leaves out the questions these rows name,
+  so each check is counted once. Rows that fail CI, conflict with the
+  branch or have a stale review still count in N; the red `· N failing`
+  part stays off by default.
 - `board changes plan-amend --path /changes/<name>` writes a new plan
   version that only adds text under the "What the tests prove" and "What
   the tests do not prove" headings of the change's current plan, so an
