@@ -335,6 +335,7 @@ pub(crate) fn body(observed: &Observed, closes: &[String]) -> String {
         ));
     }
     parts.extend(added_section(observed));
+    parts.extend(amended_section(observed));
     parts.push(format!("## Evidence\n\n{}", bullets(&evidence(observed))));
     for issue in closes {
         parts.push(format!("Closes {issue}"));
@@ -367,6 +368,34 @@ fn added_section(observed: &Observed) -> Option<String> {
         "## {ADDED}\n\nThe change edits these files, which no path in its plan named when the \
          plan was written:\n\n{}",
         bullets(&added)
+    ))
+}
+
+/// The section that lists the test headings each amendment since the last
+/// full plan filled, so the owner sees additions the plan's approval did not
+/// cover; none when there are none.
+fn amended_section(observed: &Observed) -> Option<String> {
+    if observed.amended.is_empty() {
+        return None;
+    }
+    let lines: Vec<String> = (observed.amended.iter())
+        .map(|each| {
+            let headings: Vec<&str> = each
+                .sections
+                .iter()
+                .map(|section| section.heading())
+                .collect();
+            format!(
+                "{} filled the sections {}",
+                quoted_text(&each.path),
+                headings.join(", ")
+            )
+        })
+        .collect();
+    Some(format!(
+        "## Plan amendments\n\nThese were added to the plan after it was written, with \
+         `board changes plan-amend`:\n\n{}",
+        bullets(&lines)
     ))
 }
 
@@ -440,6 +469,7 @@ pub(crate) fn pr(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     observed.cited = cited;
     observed.plan = plan;
     observed.plan_file = plan_file;
+    observed.amended = crate::amend::chain(host, &path, observed.change.plan.as_deref())?;
     reviewed(host, &mut observed)?;
     if let Some(flow) = of_change(host, &path, &observed.change)? {
         let checks = flow.phases.iter().flat_map(|phase| &phase.checks);

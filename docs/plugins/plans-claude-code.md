@@ -17,17 +17,24 @@ through `plans.open`. When the call fails, the debug log gives the code.
 
 ## Open questions
 
-When the session starts, the mod runs `plans.open --limit 100` and
-`plans.waiting`; [claude-code/band.md](claude-code/band.md) describes its
-button. After that:
+At session start the mod runs `plans.open --limit 100`, `plans.waiting`
+and `changes.ready`; [claude-code/band.md](claude-code/band.md) describes
+their buttons. Then:
 
-- Each tick runs `plans.waiting` if the band was drawn since the last read.
-- A draw runs it when that read is a minute old.
+- Each tick runs the last two if the band was drawn since.
+- A draw runs them when that read is a minute old.
 - `plans.open` runs for a pane whose list is a minute old, a changed count, an answer, or every read without `plans.waiting`.
 
-An undrawn session reads Board once. A failed refresh is logged, keeps
-the last count read and marks the band's button. The pane says why for a
-failed `plans.open`; a failed `plans.waiting` is in the debug log. The band is drawn on the terminal and the desktop app only.
+A tick or band draw runs `board` only when the board's stamp changed since
+the last good read. `hooks/stamp.ts` reads it from files: HEAD's commit and
+the index's size and mtime, in the Git directory a worktree's `.git` names.
+An unstaged edit shows with the next commit.
+`changes.ready` has its own stamp, and reads after a warning or an hour, as
+its conflict marks follow the mounts and its day counts the date.
+
+An undrawn session reads Board once. [claude-code/band.md](claude-code/band.md)
+says how the button shows a failed read. The band is drawn on the terminal and
+the desktop app only.
 
 The button opens the `questions` pane. It lists each question with its project, its
 age and what it blocks, shown as the last path segment of `blocks` or as
@@ -81,6 +88,3 @@ an empty `why`, whenever it was written. Each question asked shows
 `answered` when an answer names it, and its status otherwise. The command's output row gives the
 totals. The query reads at most 1000 records, and when Board cuts it there,
 both the pane and the output row say so. The report quotes record fields only and calls no model.
-
-The pane is drawn by the mod's own `ui.render` hook. Once board-ui lands
-(#301), it moves to board-ui view and binding records.

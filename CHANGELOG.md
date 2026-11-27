@@ -10,6 +10,44 @@
   once per run in place of a scan of every reference for each path. The
   answers are the same as before.
 
+## 0.1.5 (2026-11-27)
+
+- `board --personal requests threads` returns the thread of every pending
+  request in one call, as `{"threads": [...]}`, each item shaped as
+  `requests.thread` returns it. It reads the effects once and the replies at
+  most once, however many threads it lists, so a caller such as Board.app's
+  request relay need not run `requests.thread` once per request.
+- The Board band draws a green `Ready to land N` button before Waiting when
+  at least one change stands in its flow's last phase and waits only on the
+  owner's checks, or is done with rechecks still owed. Pressing it opens a
+  pane that lists each change with the check it waits on and the step that
+  clears it. A new read-only capability, `changes.ready`, lists these rows,
+  and the band's Waiting button leaves out the questions these rows name,
+  so each check is counted once. Rows that fail CI, conflict with the
+  branch or have a stale review still count in N; the red `· N failing`
+  part stays off by default.
+- `board changes plan-amend --path /changes/<name>` writes a new plan
+  version that only adds text under the "What the tests prove" and "What
+  the tests do not prove" headings of the change's current plan, so an
+  agent no longer resends the whole plan at land for those sections. It
+  takes no paths and no owed entries, which still need the owner's resend.
+  It records each addition in a `changes/amendment/v1`, which `changes
+  next` lists as `amended` and the pull request body lists under "Plan
+  amendments". At land, `changes next` and the `test-sections` check's
+  remedy name `changes plan-amend` in place of a whole-plan resend.
+- The plans and effects Claude Code mods run `board` on their minute's tick
+  only when the board's HEAD commit or Git index changed since their last
+  read that worked. They read both as files, with no process. On a board
+  with no new commit, a session's two mods run no `board` between the
+  owner's own reads, where they ran about 1 s of `board` each minute. The
+  pane and an answer still read at once, and a new commit shows within one
+  tick.
+- A query that looks entries or records up by logical path, blob or record
+  type reads an index in place of every entry, so plugin calls that look
+  records up, such as `plans open` and `changes next`, answer faster. The
+  rows every view returns are the same as before. The index format moves to
+  31, so the first run after the upgrade builds a new index from scratch.
+
 ## 0.1.4 (2026-11-26)
 
 - A warm `board refs`, and each plugin call that asks `host.refs`, reads the

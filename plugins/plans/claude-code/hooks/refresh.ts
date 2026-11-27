@@ -9,6 +9,10 @@
 // what waits has changed since the list was read, or when there is no count
 // and the button counts the list.
 //
+// A read the tick or a draw starts runs `board` only when the board's
+// stamp, in stamp.ts, changed since the last read that worked; register.tsx
+// still marks the read begun and ended, so the next check is a minute away.
+//
 // The predicates here only answer. register.tsx calls `begin` as soon as a
 // predicate says a read is due, before the read runs, because the host may
 // draw twice before a read that a draw schedules starts.

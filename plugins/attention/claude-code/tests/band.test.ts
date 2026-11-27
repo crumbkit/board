@@ -25,8 +25,8 @@ test('the parts sit in slot order whichever mod draws first, with a bar between 
   const effects = joinBand(ENGINE, [part(SLOT.effects, 'Effects 2')])
   const state = joinBand(effects, [part(SLOT.state, 'Board personal')])
   const orders = joinBand(state, [part(SLOT.orders, 'Orders 4')])
-  const all = joinBand(orders, [part(SLOT.controls, 'Controls 5'), part(SLOT.waiting, 'Questions 3')])
-  expect(row(all)).toEqual([SLOT.state, '|', SLOT.orders, SLOT.controls, SLOT.waiting, SLOT.effects])
+  const all = joinBand(orders, [part(SLOT.controls, 'Controls 5'), part(SLOT.waiting, 'Questions 3'), part(SLOT.ready, 'Ready to land 2')])
+  expect(row(all)).toEqual([SLOT.state, '|', SLOT.orders, SLOT.controls, SLOT.ready, SLOT.waiting, SLOT.effects])
 })
 
 test('a part replaces the part of the same slot, so a mod drawn twice shows once', () => {

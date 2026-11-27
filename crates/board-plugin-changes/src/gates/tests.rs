@@ -1550,3 +1550,32 @@ mod design;
 mod owner_answers;
 mod rechecks;
 mod review_head;
+
+/// At land, a plan that lacks the test sections takes them through
+/// `changes plan-amend`, which adds only those headings, so the land gate's
+/// remedy and instruction name it and not the whole-plan resend; the plan
+/// phase's missing sections still take `changes plan`.
+#[test]
+fn the_land_test_sections_remedy_names_plan_amend_and_the_plan_sections_remedy_names_changes_plan()
+{
+    let land = given("land").remedy("test-sections");
+    assert!(
+        land.contains(
+            "`board changes plan-amend --path /changes/t --proves <text> --does-not-prove <text>`"
+        ),
+        "{land}"
+    );
+    assert!(!land.contains("changes plan --path"), "{land}");
+    let plan = given("plan").plan(Some("# T\n")).remedy("plan-sections");
+    assert!(
+        plan.contains("`board changes plan --path /changes/t`"),
+        "{plan}"
+    );
+    assert!(!plan.contains("plan-amend"), "{plan}");
+    let flow = development();
+    let instruction = &flow.phase("land").unwrap().instruction;
+    assert!(
+        instruction.contains("`board changes plan-amend --path {change}`"),
+        "{instruction}"
+    );
+}

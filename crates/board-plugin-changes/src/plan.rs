@@ -28,6 +28,24 @@ pub(crate) use answers::Answers;
 const PLAN_WORDS: usize = 3_000;
 const USES_WORDS: usize = 3_000;
 
+/// Refuses `text`, a plan for the change at `path`, when it holds more than
+/// [`PLAN_WORDS`] words. `changes plan` and `changes plan-amend` both call it.
+pub(crate) fn check_words(path: &str, text: &str) -> Result<(), PluginError> {
+    let counted = words(text);
+    if counted > PLAN_WORDS {
+        return Err(refusal(
+            "changes::plan::too_long",
+            format!(
+                "the plan for {path} holds {} words, over the 3,000-word limit; cut it, and move \
+                 detail into the records it uses",
+                thousands(counted)
+            ),
+            [("path", json!(path)), ("words", json!(counted))],
+        ));
+    }
+    Ok(())
+}
+
 /// A plan for a change, given as flags, with `uses` and `paths` repeated
 /// once for each item, or as JSON on stdin, which `considered`, `owed` and
 /// `answers` need.
@@ -291,18 +309,7 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
     if let Some(flow) = of_change(host, &path, &change)? {
         check_answers(&path, &flow, answers)?;
     }
-    let counted = words(&text);
-    if counted > PLAN_WORDS {
-        return Err(refusal(
-            "changes::plan::too_long",
-            format!(
-                "the plan for {path} holds {} words, over the 3,000-word limit; cut it, and move \
-                 detail into the records it uses",
-                thousands(counted)
-            ),
-            [("path", json!(path)), ("words", json!(counted))],
-        ));
-    }
+    check_words(&path, &text)?;
     let records = check_named(host, &path, &uses, &considered, &owed)?;
     check_uses(host, &path, &uses, &records)?;
     let count = uses.len();

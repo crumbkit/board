@@ -27,6 +27,7 @@ export const SLOT = {
   state: 'band:a1-state',
   orders: 'band:b1-orders',
   controls: 'band:b2-controls',
+  ready: 'band:b3-ready',
   waiting: 'band:b3-waiting',
   effects: 'band:b4-effects',
 } as const

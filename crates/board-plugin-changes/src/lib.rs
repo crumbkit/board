@@ -5,6 +5,7 @@
 //! request closes. Tasks are written through the tasks plugin and rules read
 //! through the rules plugin, each by a nested call.
 
+mod amend;
 mod approve;
 mod ask;
 mod board;
@@ -21,6 +22,7 @@ mod phases;
 mod plan;
 mod pr;
 mod prototype;
+mod ready;
 mod records;
 mod repo;
 mod rules;
@@ -112,7 +114,7 @@ fn output<T: JsonSchema>() -> Value {
 /// Every capability, in the order the manifest lists them. A capability
 /// that rewrites a field of a change, or ends it, is destructive; one that
 /// adds a task or reads GitHub reaches the open world.
-const CAPABILITIES: [Capability; 23] = [
+const CAPABILITIES: [Capability; 25] = [
     Capability {
         name: "start",
         description: "Create a change in the first phase of its flow, its plan to fill in and, \
@@ -187,6 +189,22 @@ const CAPABILITIES: [Capability; 23] = [
         run: owed::owed,
         input: input::<owed::Input>,
         output: output::<owed::Output>,
+        hints: [true, false, true, false],
+        env: &[],
+        timeout: None,
+    },
+    Capability {
+        name: "ready",
+        description: "The changes ready to land that wait only on the owner: each in its flow's \
+            last phase with no missing check that blocks but the owner's, and a missing check of \
+            the owner's or an open question whose blocks names it, and each done change that \
+            `owed` lists with a check of the owner's; each with its pull request, the kind of \
+            check it waits on, its open questions, the days since it was touched and why it is \
+            failing: its newest CI run at its head failed, its head conflicts with the branch its \
+            mount follows, or no attached review covers its head.",
+        run: ready::ready,
+        input: input::<ready::Input>,
+        output: output::<ready::Output>,
         hints: [true, false, true, false],
         env: &[],
         timeout: None,
@@ -423,6 +441,23 @@ const CAPABILITIES: [Capability; 23] = [
         env: &[],
         timeout: None,
     },
+    Capability {
+        name: "plan-amend",
+        description: "Write a new plan version that only adds text under the headings What the \
+            tests prove and What the tests do not prove of the change's current plan. It takes no \
+            paths and no owed entries, which still need the owner's resend with plan. It copies \
+            the plan's other text, uses, paths, considered, owed, answers, lifecycle and records \
+            unchanged, writes a changes/amendment/v1 naming the headings it filled, which next \
+            and the pull request body list, and refuses an input that fills no heading, a heading \
+            that already holds text and a text over 3,000 words.",
+        run: amend::plan_amend,
+        input: input::<amend::Input>,
+        output: output::<amend::Output>,
+        // Each amendment is a new plan record, and earlier plans stay.
+        hints: [false, false, false, false],
+        env: &[],
+        timeout: None,
+    },
 ];
 
 impl Plugin for Changes {
@@ -466,6 +501,10 @@ impl Plugin for Changes {
             typed(AttemptRecord::TYPE, schema_of::<AttemptRecord>(settings())),
             typed(StopRecord::TYPE, schema_of::<StopRecord>(settings())),
             typed(ReopenRecord::TYPE, schema_of::<ReopenRecord>(settings())),
+            typed(
+                amend::AmendmentRecord::TYPE,
+                schema_of::<amend::AmendmentRecord>(settings()),
+            ),
         ]
     }
 
@@ -531,6 +570,7 @@ fn manifest() -> Value {
             directory say more.",
         "metadata": {"area": "delivery"},
         "types": [
+            amend::AmendmentRecord::TYPE,
             AttemptRecord::TYPE,
             ChangeV1::TYPE,
             ChangeRecord::TYPE,

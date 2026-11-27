@@ -34,7 +34,7 @@ mod reflow;
 use moves::latest_reason;
 pub(crate) use moves::{ReopenInput, pause, reopen, resume};
 pub(crate) use observe::{
-    Known, after_review, board_root, fixes, observe, observe_known, reviewed,
+    Known, after_review, board_root, fixes, observe, observe_in, observe_known, reviewed,
 };
 pub(crate) use reflow::{ReflowInput, Reflowed, reflow};
 
@@ -144,7 +144,9 @@ pub(crate) struct AttachInput {
 /// reached it; it is left out when no run set one. `not_required` lists the
 /// checks of the phase whose `when` does not hold, so the gate leaves them
 /// out, such as `owner-approval` for a plan that answers `ux` none and
-/// `data` none.
+/// `data` none. `amended` lists, oldest first, what each `changes.plan-amend`
+/// since the last plan `changes.plan` wrote added to it; it is left out when
+/// there is none.
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct NextOutput {
     pub(crate) path: String,
@@ -160,6 +162,8 @@ pub(crate) struct NextOutput {
     pub(crate) ask: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) stop: Option<Shown>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) amended: Vec<crate::amend::Amended>,
     pub(crate) instruction: String,
     pub(crate) sync: LastSync,
 }
@@ -208,9 +212,10 @@ const ANSWERS: &str = r#","answers":{"ux":"none","data":"none","lifecycle":"none
 /// `said` with the fields `board changes plan` takes on stdin and a one-line
 /// example, when `said` names `changes plan` or `changes.plan`. The command
 /// replaces the plan, so for a change that has one, `said` says to resend
-/// every field and the two optional ones.
+/// every field and the two optional ones. `changes plan-amend` adds to the
+/// plan without replacing it, so naming it alone adds nothing.
 fn with_plan_usage(observed: &Observed, said: String) -> String {
-    if !said.contains("changes plan") && !said.contains("changes.plan") {
+    if !names_plan(&said) {
         return said;
     }
     let typed = (observed.flow.iter()).any(|flow| flow.answers().next().is_some());
@@ -235,6 +240,14 @@ fn with_plan_usage(observed: &Observed, said: String) -> String {
              {count} fields with any `considered` and `owed`, such as `{example}`."
         )
     }
+}
+
+/// Whether `said` names `changes plan` or `changes.plan`, apart from
+/// `changes plan-amend` and `changes.plan-amend`.
+fn names_plan(said: &str) -> bool {
+    ["changes plan", "changes.plan"].iter().any(|command| {
+        (said.match_indices(command)).any(|(at, _)| !said[at + command.len()..].starts_with('-'))
+    })
 }
 
 /// `said` with the fields `board changes lifecycle` takes on stdin and a
@@ -396,6 +409,7 @@ pub(crate) fn step_of(host: &dyn Host, path: &str) -> Result<(NextOutput, Observ
         waiting_on,
         ask,
         stop,
+        amended: crate::amend::chain(host, path, change.plan.as_deref())?,
         sync: last_sync(host, sync_reads(path, &change))?,
     };
     Ok((next, observed))
