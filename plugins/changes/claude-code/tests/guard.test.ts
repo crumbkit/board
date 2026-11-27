@@ -88,6 +88,7 @@ const FILES = new Set([
   FILE,
   `${REPO}/README.md`,
   `${REPO}/notes/explore.ipynb`,
+  '/work/gadgets/src/lib.rs',
   '/home/me/board/tasks/a.md',
   '/work/loose/notes.md',
   '/work/clone-ssh/src/lib.rs',
@@ -174,14 +175,19 @@ type Answers = {
   queryFails?: boolean
   /** The one directory where `board query` fails. */
   queryFailsIn?: string
-  /** The session's id; s1 when left out. */
+  /** The session's id; one of the engine's own when left out, since the guard remembers each session's briefs and advice. */
   session?: string
   /** The branch every checkout is on; '' for a detached HEAD, 'main' when left out. */
   branch?: string
+  /** A refusal a later hook gives the next edit, which then clears. */
+  refuse?: string
 }
+
+let engines = 0
 
 /** Stands in for git, the file system, `board` and each conversation; `ran` lists the commands. */
 function engine(on: On, answers: Answers) {
+  const session = `s${++engines}`
   const ran: string[] = []
   const edits: string[] = []
   const run = (exitCode: number, stdout: string, stderr = '') => ({
@@ -241,7 +247,7 @@ function engine(on: On, answers: Answers) {
     const printed = answers.changes?.[args[0] ?? ''] ?? answers.change ?? BUILDING
     return run(printed === MISSING || printed === DEGRADED ? 1 : 0, printed)
   })
-  on('session.id', () => ({ value: answers.session ?? 's1' }))
+  on('session.id', () => ({ value: answers.session ?? session }))
   on('session.messages', (_, e) => {
     const first = answers.first?.[e.agentId ?? '']
     if (first === undefined) return { value: { deny: `no conversation ${e.agentId}` } }
@@ -249,6 +255,11 @@ function engine(on: On, answers: Answers) {
     return { value: [{ role: 'user', text: first, toolUses: [] }, ...rest] }
   })
   on('tool.call', (_, e) => {
+    if (answers.refuse !== undefined) {
+      const deny = answers.refuse
+      delete answers.refuse
+      return { deny }
+    }
     edits.push(e.tool)
     return { result: {} }
   })
@@ -392,7 +403,8 @@ test('a brief for a change to another repository is advised, and one for this re
 
 test('a prototype builder is advised off its proto branch and not advised on it', async ($, on) => {
   // A change is a prototype when a prototype record sits at <change>/prototype.
-  const answers: Answers = { first: { a1: BRIEF }, prototype: PROTOTYPE, branch: 'main' }
+  // a3 is a builder the guard has not advised, so its edit on the proto branch shows what judge says there.
+  const answers: Answers = { first: { a1: BRIEF, a3: BRIEF }, prototype: PROTOTYPE, branch: 'main' }
   const { edits } = engine(on, answers)
   const off = await edit($, FILE, 'a1')
   expect(off.deny).toBeUndefined()
@@ -404,8 +416,9 @@ test('a prototype builder is advised off its proto branch and not advised on it'
   answers.branch = ''
   expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/checkout is on a detached HEAD\./)
   answers.branch = 'proto/fix-it'
+  expect((await edit($, FILE, 'a3')).context).toBeUndefined()
   expect((await edit($, FILE, 'a1')).context).toBeUndefined()
-  expect(edits).toEqual(['Edit', 'Edit', 'Edit'])
+  expect(edits).toEqual(['Edit', 'Edit', 'Edit', 'Edit'])
 })
 
 test('a prototype record Board does not read is advised as unknown, and with a healthy one there the builder is not', async ($, on) => {
@@ -550,9 +563,10 @@ test('origins match across ssh and https forms, case and a trailing .git', () =>
 })
 
 test('a clone whose origin is a local path or a file URL of the mounted repository is guarded like a worktree', async ($, on) => {
-  const { ran, edits } = engine(on, { first: { '': 'Coordinate the work.', a1: BRIEF } })
-  for (const file of ['/work/clone-local/src/lib.rs', '/work/clone-file/src/lib.rs']) {
-    expect((await edit($, file)).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. .* is in \/repos\/widgets, /)
+  // Each clone is edited by its own agent with no brief, since the guard advises an agent once for each mount.
+  const { ran, edits } = engine(on, { first: { m1: 'Coordinate the work.', m2: 'Coordinate the work.', a1: BRIEF } })
+  for (const [file, agent] of [['/work/clone-local/src/lib.rs', 'm1'], ['/work/clone-file/src/lib.rs', 'm2']] as const) {
+    expect((await edit($, file, agent)).context?.[0]).toMatch(/^changes::guard::no_brief: this edit of .* ran\. .* is in \/repos\/widgets, /)
     expect((await edit($, file, 'a1')).deny).toBeUndefined()
   }
   expect(edits).toEqual(['Edit', 'Edit', 'Edit', 'Edit'])
@@ -691,6 +705,115 @@ test('a change of the same name in a board listed first does not advise the buil
   // With the change in no other board, the done one refuses.
   answers.changes = { [BOARD2]: done, [BOARD]: MISSING }
   expect((await edit($, file, 'a1')).context?.[0]).toMatch(/^changes::guard::not_building: this edit of .* ran\. \/changes\/fix-it is in phase done, /)
+  expect(edits).toEqual(['Edit', 'Edit'])
+})
+
+test('an agent with no brief is advised on its first edit of a repository and not on the next, and a second agent is advised', async ($, on) => {
+  const { edits } = engine(on, { first: { '': 'Coordinate the work.', a2: 'Look around.' } })
+  expect((await edit($)).context).toEqual([noBriefLine(FILE)])
+  expect((await edit($, `${REPO}/README.md`)).context).toBeUndefined()
+  expect((await edit($, FILE, 'a2')).context).toEqual([noBriefLine(FILE)])
+  expect((await edit($, FILE, 'a2')).context).toBeUndefined()
+  expect(edits).toEqual(['Edit', 'Edit', 'Edit', 'Edit'])
+})
+
+test('an agent advised in one repository is advised again in another and after /clear, and not again in the first', async ($, on) => {
+  const gadget = '/work/gadgets/src/lib.rs'
+  const answers: Answers = { first: { '': 'Coordinate the work.' }, session: 'before-clear-advice' }
+  engine(on, answers)
+  expect((await edit($)).context).toEqual([noBriefLine(FILE)])
+  expect((await edit($, gadget)).context).toEqual([noBriefLine(gadget, BOARD, '/repos/gadgets')])
+  expect((await edit($, gadget)).context).toBeUndefined()
+  expect((await edit($)).context).toBeUndefined()
+  answers.session = 'after-clear-advice'
+  expect((await edit($)).context).toEqual([noBriefLine(FILE)])
+})
+
+test('a builder is advised once for each code its change earns', async ($, on) => {
+  const answers: Answers = { first: { a1: BRIEF }, change: change({ mount: '/repos/widgets', phase: 'plan' }) }
+  engine(on, answers)
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/^changes::guard::not_building: /)
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+  answers.change = change({ mount: '/repos/gadgets', phase: 'build' })
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/^changes::guard::wrong_mount: /)
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+})
+
+test('a builder told its change is in plan is told again when the change is paused, and again when it is in review', async ($, on) => {
+  const answers: Answers = { first: { a1: BRIEF }, change: change({ mount: '/repos/widgets', phase: 'plan' }) }
+  engine(on, answers)
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/is in phase plan, .*changes\.advance/)
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+  answers.change = change({ mount: '/repos/widgets', phase: 'build' })
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+  answers.change = change({ mount: '/repos/widgets', phase: 'paused' })
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/is paused, .*changes\.resume/)
+  answers.change = change({ mount: '/repos/widgets', phase: 'build' })
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+  answers.change = change({ mount: '/repos/widgets', phase: 'review' })
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/is in phase review, /)
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+})
+
+test('a prototype builder is told the branch again when its checkout moves to another wrong branch', async ($, on) => {
+  const answers: Answers = { first: { a1: BRIEF }, prototype: PROTOTYPE, branch: 'main' }
+  engine(on, answers)
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/checkout is on branch main\./)
+  answers.branch = 'topic'
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/checkout is on branch topic\./)
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+})
+
+test('a builder told its change is paused is told again when it is paused after an edit in build', async ($, on) => {
+  const answers: Answers = { first: { a1: BRIEF }, change: change({ mount: '/repos/widgets', phase: 'paused' }) }
+  engine(on, answers)
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/is paused, .*changes\.resume/)
+  answers.change = change({ mount: '/repos/widgets', phase: 'build' })
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+  answers.change = change({ mount: '/repos/widgets', phase: 'paused' })
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/is paused, .*changes\.resume/)
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+})
+
+test('a prototype builder told it is on main is told again when it returns to main from its proto branch', async ($, on) => {
+  const answers: Answers = { first: { a1: BRIEF }, prototype: PROTOTYPE, branch: 'main' }
+  engine(on, answers)
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/checkout is on branch main\./)
+  answers.branch = 'proto/fix-it'
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+  answers.branch = 'main'
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/checkout is on branch main\./)
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+})
+
+test('advice on an edit a later hook refuses is not counted as given, so the next edit gets it', async ($, on) => {
+  const answers: Answers = { first: { '': 'Coordinate the work.' }, refuse: 'a later hook refused this edit' }
+  const { edits } = engine(on, answers)
+  const refused = await edit($)
+  expect(refused.deny).toBe('a later hook refused this edit')
+  expect(refused.context).toBeUndefined()
+  expect((await edit($)).context).toEqual([noBriefLine(FILE)])
+  expect((await edit($)).context).toBeUndefined()
+  expect(edits).toEqual(['Edit', 'Edit'])
+})
+
+test('unknown advice is given on every edit, and the advice that follows a fixed lookup is given in full', async ($, on) => {
+  const answers: Answers = { first: { '': 'Coordinate the work.' }, queryFails: true }
+  engine(on, answers)
+  for (let i = 0; i < 2; i++) {
+    expect((await edit($)).context?.[0]).toMatch(/^changes::guard::unknown: .*did not list its mounts/)
+  }
+  answers.queryFails = false
+  expect((await edit($)).context).toEqual([noBriefLine(FILE)])
+})
+
+test('an edit of a change record is refused every time, and the advised edit beside it is advised once', async ($, on) => {
+  const { edits } = engine(on, { first: { '': 'Coordinate the work.' } })
+  for (let i = 0; i < 2; i++) {
+    expect((await edit($, `${BOARD}/changes/fix-it.json`)).deny).toMatch(/^changes::guard::board_record: .* is a change record /)
+  }
+  expect((await edit($)).context).toEqual([noBriefLine(FILE)])
+  expect((await edit($)).context).toBeUndefined()
   expect(edits).toEqual(['Edit', 'Edit'])
 })
 
