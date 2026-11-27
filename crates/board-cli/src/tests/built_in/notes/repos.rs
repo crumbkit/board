@@ -420,3 +420,69 @@ fn the_boards_own_tree_that_does_not_commit_puts_reports_a_null_commit_and_one_t
     let written = std::fs::read_to_string(board.join(path)).unwrap();
     assert!(written.ends_with("Uncommitted.\n"), "{written}");
 }
+
+/// Mounts a board at `/repos/team` that mounts the notes repo `scenario`
+/// again, at `/repos/team/repos/<name>`, pinned at its HEAD, then commits
+/// to the repo, pushes and moves the board's own mount at `/repos/<name>`
+/// on, so the repo is reached through two mounts that Board lists apart.
+/// Board indexes a commit once, so two mounts pinning one commit list
+/// once. Gives the team board's clone, which the test keeps.
+#[must_use]
+fn mounted_twice(notes: &Notes, scenario: &Scenario, name: &str) -> Scenario {
+    let team = Scenario::new();
+    git(team.workdir(), &["symbolic-ref", "HEAD", "refs/heads/main"]);
+    identify(team.workdir());
+    let head = git(scenario.workdir(), &["rev-parse", "HEAD"]);
+    let pointer = json!({"$type": "board/mount/v1", "repo": scenario.path(), "follow": "main", "commit": head});
+    team.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1"}"#),
+    )
+    .write(
+        &format!("repos/{name}.json"),
+        Item::File(&pointer.to_string()),
+    );
+    commit(team.workdir());
+    notes.mount("team", &team);
+    scenario.write("later.txt", Item::File("later\n"));
+    commit(scenario.workdir());
+    git(scenario.workdir(), &["push", "-q"]);
+    let pinned = notes.run(&["mount", "update", &format!("/repos/{name}")], UTC, None);
+    assert_eq!(pinned.code, 0, "{}", text(&pinned.stderr));
+    team
+}
+
+#[test]
+fn daily_reads_a_repo_two_mounts_reach_at_its_shorter_mount() {
+    let notes = Notes::new();
+    notes.cover(&notes.clone, "notes-personal", &["example-org/*"], true);
+    let _team = mounted_twice(&notes, &notes.clone, "notes-personal");
+    let covered = notes.call("daily", &["--remote", EXAMPLE_ORG]).unwrap();
+    assert_eq!(covered["repo"], "/repos/notes-personal", "{covered}");
+    let personal = notes.call("daily", &[]).unwrap();
+    assert_eq!(personal["repo"], "/repos/notes-personal", "{personal}");
+}
+
+#[test]
+fn the_only_repo_two_mounts_reach_serves_a_call_without_a_remote() {
+    let notes = Notes::new();
+    let _team = mounted_twice(&notes, &notes.clone, "notes-personal");
+    let only = notes.call("daily", &[]).unwrap();
+    assert_eq!(only["repo"], "/repos/notes-personal", "{only}");
+}
+
+#[test]
+fn daily_still_refuses_two_different_repos_covering_the_remote_when_one_is_mounted_twice() {
+    let notes = Notes::new();
+    notes.cover(&notes.clone, "notes-personal", &["example-org/*"], true);
+    let work = notes.another("notes-work");
+    notes.cover(&work, "notes-work", &["example-org/*"], false);
+    let _team = mounted_twice(&notes, &notes.clone, "notes-personal");
+    let refused = notes.refused("daily", &["--remote", EXAMPLE_ORG]);
+    assert_eq!(refused["code"], "notes::repo::ambiguous");
+    assert_eq!(
+        refused["fields"]["candidates"],
+        json!(["/repos/notes-personal", "/repos/notes-work"]),
+        "{refused}"
+    );
+}
