@@ -25,3 +25,9 @@ The index keeps the board's prose, so Board creates the board's cache
 directory, `<root-hash>/`, with mode 0700, and the index file with mode
 0600. SQLite gives the `-wal` and `-shm` journals the mode of the file. A
 directory that is already there keeps its mode.
+
+`board search` scans every entry but looks a text up only for a Markdown
+file or an untyped JSON file, and a body only for a record. A word of three
+or more characters matches a text through its set in `texts_fts`, so the
+search reads no prose. Each connection maps up to 1 GiB of the index file
+into memory, so a warm search reads pages with no system call each.

@@ -385,6 +385,26 @@ fn a_filter_s_condition_comes_before_any_word_s_in_the_statement() {
     assert!(filter < word, "{sql}");
 }
 
+#[test]
+fn a_word_reads_an_untyped_entry_s_heading_and_not_its_file_name_which_its_path_holds() {
+    let sql = statement("budget").sql(None);
+    let condition = &sql[sql.find("FROM c WHERE ").unwrap()..];
+    assert!(condition.contains("(k = '' AND (hd LIKE "), "{sql}");
+    assert!(!condition.contains("(t LIKE "), "{sql}");
+}
+
+#[test]
+fn an_entry_looks_up_only_the_rows_its_kind_role_and_source_can_have() {
+    let sql = statement("budget").sql(None);
+    for key in [
+        "o.blob = CASE WHEN e.role IS NOT NULL THEN e.blob END",
+        "b.blob = CASE WHEN e.kind = 'record' THEN e.blob END",
+        "w.path = CASE WHEN e.source = 'worktree' THEN e.physical END",
+    ] {
+        assert!(sql.contains(key), "{key}: {sql}");
+    }
+}
+
 /// The fixture with a Markdown note, a Markdown task, an untyped JSON file
 /// and an image, each written `later` than the records.
 fn documents() -> Scenario {

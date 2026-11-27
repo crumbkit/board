@@ -16,7 +16,9 @@
   its texts through `texts_fts`, a trigram index of the prose, and matches
   a text in any Unicode case; a shorter word scans the prose. The index
   directory is created with mode 0700 and the index file and its journals
-  with mode 0600, because the index keeps the board's prose. The index
+  with mode 0600, because the index keeps the board's prose. Every
+  connection to the index maps up to 1 GiB of the file into memory, so a
+  warm query reads its pages with no system call each. The index
   format is 32, so the first run of this build builds a new index.
 - `board tasks available` does not fetch a notes clone that was fetched
   less than a minute ago and already holds what that fetch brought, so a

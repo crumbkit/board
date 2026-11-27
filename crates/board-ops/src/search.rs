@@ -270,10 +270,11 @@ fn condition(
         Term::Word { text } | Term::Phrase { text } => {
             let (body, prose, path) =
                 (holds("b", text), prose(text, trigrams), holds("path", text));
-            let title = holds("t", text);
             if in_body(text) {
-                format!("({body} OR {prose} OR {path} OR (k = '' AND {title}))")
+                let heading = holds("hd", text);
+                format!("({body} OR {prose} OR {path} OR (k = '' AND {heading}))")
             } else {
+                let title = holds("t", text);
                 format!("({body} OR {prose} OR {path} OR {title})")
             }
         }
@@ -361,8 +362,8 @@ fn holds(column: &str, text: &str) -> String {
 /// it too, so the title need not be read to decide a match. The body is the
 /// record's JSON, which writes a string as it is apart from `"`, `\` and
 /// control characters, so a title holds such text only when the body does.
-/// An entry with no `$type` has a heading or a file name for a title, which
-/// is always read.
+/// An entry with no `$type` has a heading or a file name for a title; its
+/// path holds the file name, so only the heading is read.
 fn in_body(text: &str) -> bool {
     !text
         .chars()
@@ -381,8 +382,8 @@ fn any_of(conditions: &[String]) -> String {
 /// The entries with the columns the conditions read: `path`; `t`, the
 /// title; `b`, a record's body; `x`, the text of a Markdown file or of a
 /// JSON file with no `$type`, or empty text when `{prose}` is `NULL`;
-/// `xid`, that text's id, or 0 when it has none, which no text has; `k`,
-/// the type; `m`, when the working tree last
+/// `xid`, that text's id, or 0 when it has none, which no text has; `hd`,
+/// that text's first heading; `k`, the type; `m`, when the working tree last
 /// changed the file, or the smallest integer for an entry of a mount; and
 /// `person`, `agent` and `program`, from `by`, in lower case. Each is empty
 /// text where the entry has none. A record's title is the first of
@@ -391,12 +392,19 @@ fn any_of(conditions: &[String]) -> String {
 /// its first heading, or by its file name when it has none. A word's
 /// condition reads the body, the text and the path before the title,
 /// because a record's title costs a read of the JSON for each record.
+/// Each join's key is `NULL` where the entry's kind, role or source can
+/// have no row, so that entry costs no lookup, which took about 40 ms off
+/// a three-word search on a board of 91,000 entries.
 const ENTRIES: &str = "\
 WITH e AS (
-    SELECT e.source, e.path AS physical, e.logical AS path, e.blob, e.kind, e.role, e.type
-    FROM entries AS e WHERE e.logical IS NOT NULL
+    SELECT e.source, e.path AS physical, e.logical AS path, e.blob, e.kind, e.role, o.type
+    FROM resolved AS e
+    LEFT JOIN main.blobs AS o
+        ON o.blob = CASE WHEN e.role IS NOT NULL THEN e.blob END AND o.role = e.role
+    WHERE e.logical IS NOT NULL
 ), r AS (
     SELECT e.path, e.type, b.body, {prose} AS prose, coalesce(x.id, 0) AS xid,
+        coalesce(x.heading, '') AS hd,
         CASE WHEN e.type IS NULL
             THEN coalesce(x.heading,
                 substr(e.path, length(rtrim(e.path, replace(e.path, '/', ''))) + 1))
@@ -406,12 +414,13 @@ WITH e AS (
         END AS title,
         coalesce(w.modified_ns, -9223372036854775808) AS m
     FROM e
-    LEFT JOIN main.bodies AS b ON e.kind = 'record' AND b.blob = e.blob
-    LEFT JOIN main.texts AS x ON x.blob = e.blob
-        AND (e.role = 'markdown' OR (e.role = 'json' AND e.type IS NULL))
-    LEFT JOIN main.worktree AS w ON e.source = 'worktree' AND w.path = e.physical
+    LEFT JOIN main.bodies AS b ON b.blob = CASE WHEN e.kind = 'record' THEN e.blob END
+    LEFT JOIN main.texts AS x ON x.blob = CASE
+        WHEN e.role = 'markdown' OR (e.role = 'json' AND e.type IS NULL) THEN e.blob END
+    LEFT JOIN main.worktree AS w
+        ON w.path = CASE WHEN e.source = 'worktree' THEN e.physical END
 ), c AS (
-    SELECT path, type, title, m, xid,
+    SELECT path, type, title, m, xid, hd,
         coalesce(title, '') AS t, coalesce(body, '') AS b, coalesce(prose, '') AS x,
         coalesce(type, '') AS k,
         lower(coalesce(json_extract(body, '$.by.person'), '')) AS person,

@@ -709,6 +709,17 @@ fn journal_mode(view: &View) -> String {
 }
 
 #[test]
+fn a_view_reads_the_index_file_through_a_memory_map() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    let mapped: i64 = index
+        .connection()
+        .query_row("PRAGMA mmap_size", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(mapped, 1 << 30);
+}
+
+#[test]
 fn a_query_cannot_run_a_pragma_but_can_call_a_pragma_function() {
     let cache = tempfile::tempdir().unwrap();
     let index = filled(cache.path());
