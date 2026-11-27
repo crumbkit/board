@@ -28,10 +28,7 @@ their buttons. Then:
 A tick or a draw runs `board` only when the commit `.git/HEAD` names, or
 the size or modified time of `.git/index`, changed since the last read that
 worked; `hooks/stamp.ts` reads them as files. `changes.ready` keeps its own
-stamp, so a failed `changes.ready` is tried again on the next tick without
-reading the questions again. A session start and an answer read all three
-whatever the stamp says. An edit neither committed nor staged shows with the
-next commit.
+stamp. An unstaged, uncommitted edit shows with the next commit.
 
 An undrawn session reads Board once. A failed refresh is logged, keeps
 the last count read and marks the band's button. The pane says why for a
