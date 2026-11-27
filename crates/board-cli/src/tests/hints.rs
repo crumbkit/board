@@ -23,21 +23,21 @@ fn put(scenario: &Scenario, arguments: &[&str], record: &str) -> Output {
 fn a_missing_path_hints_ls_of_its_parent_and_that_listing_runs() {
     let scenario = board();
     scenario.write("tasks/t1.json", Item::File(r#"{"$type": "lr/project/v1"}"#));
-    let missing = board_in(scenario.workdir(), &["get", "/tasks/t9"]);
+    let missing = board_in(scenario.workdir(), &["get", "/tasks/zz"]);
     assert_eq!(
         hint_of(&missing),
         "run `board ls /tasks` to see what is there; paths leave out `.json`"
     );
     let error = super::get::got(&board_in(
         scenario.workdir(),
-        &["get", "/tasks/t9", "--json"],
+        &["get", "/tasks/zz", "--json"],
     ));
     assert_eq!(
         error["fields"],
-        json!({"path": "/tasks/t9", "ancestor": "/tasks"})
+        json!({"path": "/tasks/zz", "ancestor": "/tasks"})
     );
     assert_eq!(board_in(scenario.workdir(), &["ls", "/tasks"]).code, 0);
-    let top = board_in(scenario.workdir(), &["ls", "/t9"]);
+    let top = board_in(scenario.workdir(), &["ls", "/zz"]);
     assert_eq!(
         hint_of(&top),
         "run `board ls /` to see what is there; paths leave out `.json`"

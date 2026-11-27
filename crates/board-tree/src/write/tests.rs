@@ -261,10 +261,7 @@ fn a_write_refused_by_an_error_that_does_not_start_with_its_path_keeps_the_messa
     let git_message = git.to_string();
     for (source, message) in [
         (
-            ResolveError::NotFound {
-                path: path.clone(),
-                ancestor: LogicalPath::root(),
-            },
+            ResolveError::not_found(&path, LogicalPath::root()),
             "nothing is at /l/x".to_owned(),
         ),
         (

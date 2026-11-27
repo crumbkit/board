@@ -79,6 +79,20 @@ pub(crate) trait Tree {
         vec![]
     }
 
+    /// The segments of `directory`'s entries, sorted, for a path that names
+    /// nothing in it; empty when it holds more than
+    /// [`MAX_NEAREST_LISTED`](crate::MAX_NEAREST_LISTED) entries or cannot be
+    /// listed.
+    fn beside(&mut self, directory: &Self::Directory) -> Vec<String> {
+        let Ok(listed) = self.list(directory) else {
+            return Vec::new();
+        };
+        segments_beside(listed.iter().map(|entry| {
+            let directory = matches!(entry.kind, Kind::Directory(_) | Kind::Submodule);
+            (entry.name.as_slice(), directory)
+        }))
+    }
+
     /// Gives `visit` the listing of `start`, then of each directory `visit`
     /// returns, each with the payload it was returned with, in any order.
     /// A commit's tree lists one directory at a time; the working tree
@@ -122,6 +136,33 @@ pub(crate) trait Tree {
             pointers.shadows(record, || self.read(directory, record))
         })
     }
+}
+
+/// The valid segments of the entries `names` gives, each by its name and
+/// whether it is a directory, sorted and once each; none when it gives more
+/// than [`MAX_NEAREST_LISTED`](crate::MAX_NEAREST_LISTED). A file's segment
+/// leaves out `.json`, as [`address::segment`] does.
+pub(crate) fn segments_beside<'n>(
+    names: impl ExactSizeIterator<Item = (&'n [u8], bool)>,
+) -> Vec<String> {
+    if names.len() > crate::MAX_NEAREST_LISTED {
+        return Vec::new();
+    }
+    let root = LogicalPath::root();
+    let mut segments: Vec<String> = names
+        .filter_map(|(name, directory)| {
+            let name = std::str::from_utf8(name).ok()?;
+            let segment = if directory {
+                name
+            } else {
+                name.strip_suffix(".json").unwrap_or(name)
+            };
+            address::child(&root, segment).map(|_| segment.to_owned())
+        })
+        .collect();
+    segments.sort();
+    segments.dedup();
+    segments
 }
 
 /// The listing of a directory, or why it could not be listed.

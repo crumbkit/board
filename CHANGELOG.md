@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- A refusal with `board::path::not_found` names, in a `nearest` field and
+  in its hint, at most 5 entries in the deepest ancestor that resolves
+  that are close to the segment that missed: first each that starts with
+  it, such as `notes.md` for `notes`, then each within an edit distance of
+  a third of its length, such as a stamp one minute off, then each that
+  shares a long prefix with it, such as a slug cut at another length. The
+  hint reads `nearest entries in /projects/p/decisions: <names>; run
+  board ls /projects/p/decisions for all`. A directory of over 10,000
+  entries, or one with no close name, offers none, and the hint says to
+  run `board ls` as before. Board never reads a nearest path in place of
+  the one asked for.
 - A word an agent guesses after a plugin's name runs the capability it
   means: `changes show` and `changes status` run `changes next`,
   `changes list` runs `changes open`, and `tasks list`, `plans list` and

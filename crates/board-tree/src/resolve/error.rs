@@ -8,14 +8,26 @@ use super::MAX_HOPS;
 use crate::git::GitError;
 use crate::symlink::Refused;
 
+/// How many names a refusal for a path that names nothing offers.
+const MAX_NEAREST: usize = 5;
+
+/// The most entries a directory may hold for a refusal for a path that
+/// names nothing in it to offer their names. Ranking a larger one costs
+/// more than the `board ls` the names would save.
+pub const MAX_NEAREST_LISTED: usize = 10_000;
+
 /// A path that does not resolve.
 #[derive(Debug, thiserror::Error)]
 pub enum ResolveError {
-    /// `ancestor` is the deepest ancestor of `path` that resolves.
+    /// `ancestor` is the deepest ancestor of `path` that resolves, and
+    /// `beside` the segments in it that resolving read, sorted: empty when
+    /// it read none, or the directory holds more than
+    /// [`MAX_NEAREST_LISTED`] entries.
     #[error("nothing is at {path}")]
     NotFound {
         path: LogicalPath,
         ancestor: LogicalPath,
+        beside: Vec<String>,
     },
     #[error("{segment:?} in {path} names more than one entry")]
     Shadowed { path: LogicalPath, segment: String },
@@ -58,6 +70,25 @@ pub enum ResolveError {
 }
 
 impl ResolveError {
+    /// Nothing at `path`, whose deepest ancestor that resolves is
+    /// `ancestor`, with no names read beside it.
+    pub fn not_found(path: &LogicalPath, ancestor: LogicalPath) -> Self {
+        Self::NotFound {
+            path: path.clone(),
+            ancestor,
+            beside: Vec::new(),
+        }
+    }
+
+    /// This error with the names `listed` gives, read only when it is
+    /// [`ResolveError::NotFound`].
+    pub(crate) fn beside(mut self, listed: impl FnOnce() -> Vec<String>) -> Self {
+        if let Self::NotFound { beside, .. } = &mut self {
+            *beside = listed();
+        }
+        self
+    }
+
     /// What the message says of its path, for an error whose message starts
     /// with that path.
     pub(crate) fn predicate(&self) -> Option<String> {
@@ -125,8 +156,17 @@ impl ResolveError {
     pub fn fields(&self) -> Fields {
         match self {
             Self::Dangling { link, .. } => Fields::at(link),
-            Self::NotFound { path, ancestor } => Fields {
+            Self::NotFound {
+                path,
+                ancestor,
+                beside,
+            } => Fields {
                 ancestor: Some(ancestor.clone()),
+                nearest: path
+                    .segments()
+                    .nth(ancestor.segments().count())
+                    .map(|missing| nearest(missing, beside))
+                    .unwrap_or_default(),
                 ..Fields::at(path)
             },
             Self::Symlink { path, refused, .. } => Fields {
@@ -143,5 +183,118 @@ impl ResolveError {
             | Self::TooManyHops { path } => Fields::at(path),
             Self::Git(error) => error.fields(),
         }
+    }
+}
+
+/// The names in `beside` nearest `missing`, a segment that names nothing,
+/// at most [`MAX_NEAREST`]. A name that starts with `missing` ranks first,
+/// shortest first; then a name within an edit distance of a third of
+/// `missing`'s length, closest first; then a name that shares a prefix of at
+/// least that third, and at least one character, longest prefix first. Ties
+/// go by name. A name that starts with `.` is offered only for a `missing`
+/// that does too, as `board complete` offers it. A `.json` that ends
+/// `missing` is left out first, as a logical path leaves it out.
+fn nearest(missing: &str, beside: &[String]) -> Vec<String> {
+    let missing = missing.strip_suffix(".json").unwrap_or(missing);
+    let length = missing.chars().count();
+    let within = length / 3;
+    let mut ranked: Vec<(u8, usize, &String)> = beside
+        .iter()
+        .filter(|name| missing.starts_with('.') || !name.starts_with('.'))
+        .filter_map(|name| {
+            if name.starts_with(missing) {
+                return Some((0, name.chars().count(), name));
+            }
+            if name.chars().count().abs_diff(length) <= within {
+                let distance = strsim::levenshtein(missing, name);
+                if distance <= within {
+                    return Some((1, distance, name));
+                }
+            }
+            let shared = (missing.chars().zip(name.chars()))
+                .take_while(|(one, two)| one == two)
+                .count();
+            (shared >= within.max(1)).then(|| (2, usize::MAX - shared, name))
+        })
+        .collect();
+    ranked.sort();
+    ranked
+        .into_iter()
+        .take(MAX_NEAREST)
+        .map(|(.., name)| name.clone())
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn names(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_name_that_starts_with_the_missing_segment_ranks_before_a_near_one() {
+        let beside = names(&["notes.md", "notex", "nothing", "zeta"]);
+        assert_eq!(
+            nearest("notes", &beside),
+            names(&["notes.md", "notex", "nothing"])
+        );
+    }
+
+    #[test]
+    fn near_names_rank_by_edit_distance_then_by_shared_prefix() {
+        let beside = names(&[
+            "20261127T1947Z-95a5",
+            "20261127T2010Z-0c1d",
+            "20261127T1950Z-95a6",
+            "a-slug",
+        ]);
+        assert_eq!(
+            nearest("20261127T1948Z-95a5", &beside),
+            names(&[
+                "20261127T1947Z-95a5",
+                "20261127T1950Z-95a6",
+                "20261127T2010Z-0c1d"
+            ])
+        );
+    }
+
+    #[test]
+    fn no_name_is_offered_when_none_is_close_and_at_most_five_when_many_are() {
+        assert_eq!(
+            nearest("qqqq", &names(&["notes.md", "zeta", ".board"])),
+            Vec::<String>::new()
+        );
+        let many: Vec<String> = (0..9).map(|number| format!("task-{number}")).collect();
+        assert_eq!(nearest("task", &many), many[..MAX_NEAREST].to_vec());
+    }
+
+    #[test]
+    fn a_missing_segment_is_ranked_without_its_json() {
+        let beside = names(&["notes.json", "other"]);
+        assert_eq!(nearest("other.json", &beside), names(&["other"]));
+    }
+
+    #[test]
+    fn a_hidden_name_is_offered_only_for_a_hidden_segment() {
+        let beside = names(&[".board", "board"]);
+        assert_eq!(nearest("boar", &beside), names(&["board"]));
+        assert_eq!(nearest(".boar", &beside), names(&[".board"]));
+    }
+
+    #[test]
+    fn the_fields_of_a_missing_path_name_the_entries_nearest_its_missing_segment() {
+        let missing = ResolveError::NotFound {
+            path: "/decisions/notes/x".parse().unwrap(),
+            ancestor: "/decisions".parse().unwrap(),
+            beside: names(&["notes.md", "zeta"]),
+        };
+        assert_eq!(missing.fields().nearest, names(&["notes.md"]));
+        let unread = ResolveError::not_found(
+            &"/decisions/notes".parse().unwrap(),
+            "/decisions".parse().unwrap(),
+        );
+        assert_eq!(unread.fields().nearest, Vec::<String>::new());
     }
 }

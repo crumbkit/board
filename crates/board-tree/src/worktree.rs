@@ -457,6 +457,19 @@ impl<T: Send> Tree for WorkingTree<'_, '_, T> {
             .collect())
     }
 
+    /// Names the directory's items as it listed them, without classifying
+    /// each as git sees it, so a miss in a large directory stats none of
+    /// them. An item git ignores may be among the names.
+    fn beside(&mut self, directory: &PathBuf) -> Vec<String> {
+        let Ok(listing) = self.listing(directory) else {
+            return Vec::new();
+        };
+        crate::tree::segments_beside(listing.items.iter().map(|item| {
+            let directory = item.file_type == Some(ItemType::Directory);
+            (item.name.as_slice(), directory)
+        }))
+    }
+
     fn followed_symlink(&mut self) {
         if let Some(reads) = &self.reads {
             reads.borrow_mut().push(crate::reads::ANY.to_owned());

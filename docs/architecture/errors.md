@@ -56,7 +56,7 @@ plugin's own code carries.
 | `plugin` | string | `plugin` codes from `call` that name one plugin; every plugin's own code | the plugin |
 | `capability` | string | `plugin::no_capability`, `plugin::ambiguous`, `plugin::bad_input` | the capability called |
 | `offered` | array of strings | `plugin::no_capability` when the named plugin lacks the capability | each capability that plugin offers |
-| `nearest` | string | `plugin::no_capability` when no plugin offers the capability and one offered name is near | the nearest offered name |
+| `nearest` | string, or array of strings for `path::not_found` | `plugin::no_capability` when no plugin offers the capability and one offered name is near; `path::not_found` when the deepest ancestor that resolves holds at most 10,000 entries and one is near the segment that missed | the nearest offered name; for a path, up to 5 segments in `ancestor`, nearest first: each that starts with the missed segment, then each within an edit distance of a third of its length, then each sharing a prefix of at least that third. The hint names them in place of the `board ls` line |
 | `plugins` | array of strings | `plugin::ambiguous` | each enabled plugin that offers the capability |
 | `stderr` | string | `plugin::failed`, `plugin::timeout`, `plugin::too_large`, `plugin::bad_output`; every plugin's own code; `sync::failed` | the end of the plugin's stderr, or of git's, with bytes that are not UTF-8 replaced |
 | `tables` | array of strings | `query::invalid` for a missing table | every table and view |
