@@ -18,6 +18,29 @@
   open on a change that records no pull request, which never closes a
   task. Only a level-two heading counts, a fenced code block is not read,
   and a Markdown link's target counts as a path.
+- A word an agent guesses after a plugin's name runs the capability it
+  means: `changes show` and `changes status` run `changes next`,
+  `changes list` runs `changes open`, and `tasks list`, `plans list` and
+  `evals list` run `tasks available`, `plans open` and `evals open`, with
+  the same flags. `board call <plugin>.<word>` does the same. Each prints
+  `note: board changes show is board changes next` or the like on stderr.
+  A plugin that offers the word itself still runs its own. `runs run` and
+  `runs record` are still refused, and their hint says to write the run
+  with `board put --new --var suite=<name>` and attach it with
+  `board changes attach --ref`.
+- `board changes plan` writes a plan it used to refuse for a fault the
+  gates catch at `advance`, and lists the fault in `warnings`. A plan over
+  3,000 words warns `changes::plan::too_long` and used documents over
+  3,000 words in all warn `changes::plan::uses_too_long`, each with the
+  word count; a plan over 6,000 words is still refused. A reference in
+  `uses`, `considered` or `owed` that reaches nothing is left out of the
+  plan and listed under `changes::ref::dangling`. The new warning
+  `changes::plan::sections_missing` names each heading a `sections` check
+  of the change's flow requires and the text lacks, in any phase, so a
+  development plan learns of its two test sections at plan time. A
+  directory in `uses`, a path outside the mount, a build plan with no
+  paths and a plan headed by another change's title are still refused.
+  `changes plan-amend` keeps its 3,000-word refusal.
 - `board tasks available` does not fetch a notes clone that was fetched
   less than a minute ago and already holds what that fetch brought, so a
   sweep of calls in a row fetches once. A task pushed from elsewhere in that

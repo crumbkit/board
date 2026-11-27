@@ -3,6 +3,7 @@
 
 pub(crate) mod answers;
 mod heading;
+mod sections;
 
 use std::time::SystemTime;
 
@@ -23,27 +24,53 @@ use crate::rules::RULE_TYPES;
 use crate::{PLUGIN, Warning, refusal, to_value};
 pub(crate) use answers::Answers;
 
-/// The most words a plan's text holds, and the most words the documents it
-/// uses hold in all.
+/// The words a plan's text holds before `changes plan` warns, and the most
+/// words the documents it uses hold in all before it warns.
 const PLAN_WORDS: usize = 3_000;
 const USES_WORDS: usize = 3_000;
+/// The most words `changes plan` writes, so a pasted log cannot become a
+/// plan.
+const PLAN_CEILING: usize = 6_000;
 
 /// Refuses `text`, a plan for the change at `path`, when it holds more than
-/// [`PLAN_WORDS`] words. `changes plan` and `changes plan-amend` both call it.
+/// [`PLAN_WORDS`] words. `changes plan-amend` calls it.
 pub(crate) fn check_words(path: &str, text: &str) -> Result<(), PluginError> {
     let counted = words(text);
     if counted > PLAN_WORDS {
-        return Err(refusal(
-            "changes::plan::too_long",
-            format!(
-                "the plan for {path} holds {} words, over the 3,000-word limit; cut it, and move \
-                 detail into the records it uses",
-                thousands(counted)
-            ),
-            [("path", json!(path)), ("words", json!(counted))],
-        ));
+        return Err(too_long(path, counted, "3,000"));
     }
     Ok(())
+}
+
+/// `changes::plan::too_long` for the plan at `path`, `counted` words over
+/// the `limit`.
+fn too_long(path: &str, counted: usize, limit: &str) -> PluginError {
+    refusal(
+        "changes::plan::too_long",
+        format!(
+            "the plan for {path} holds {} words, over the {limit}-word limit; cut it, and move \
+             detail into the records it uses",
+            thousands(counted)
+        ),
+        [("path", json!(path)), ("words", json!(counted))],
+    )
+}
+
+/// Refuses `text`, a plan for the change at `path`, over [`PLAN_CEILING`]
+/// words, and warns of one over [`PLAN_WORDS`].
+fn measure_words(path: &str, text: &str) -> Result<Option<Warning>, PluginError> {
+    let counted = words(text);
+    if counted > PLAN_CEILING {
+        return Err(too_long(path, counted, "6,000"));
+    }
+    Ok((counted > PLAN_WORDS).then(|| Warning {
+        code: "changes::plan::too_long",
+        detail: format!(
+            "the plan for {path} holds {} words, over the 3,000 a plan should hold; it was \
+             written, but cut it, and move detail into the records it uses",
+            thousands(counted)
+        ),
+    }))
 }
 
 /// A plan for a change, given as flags, with `uses` and `paths` repeated
@@ -61,14 +88,16 @@ pub(crate) struct Input {
     path: String,
     #[schemars(
         regex(pattern = r"\S"),
-        description = "The plan in Markdown, at most 3,000 words."
+        description = "The plan in Markdown; one over 3,000 words is written with a warning, and \
+                       one over 6,000 is refused."
     )]
     text: String,
     #[serde(default)]
     #[schemars(
         with = "Vec<BoardPath>",
-        description = "The records and documents the plan relies on; the documents hold at most \
-                       3,000 words in all, and none when left out."
+        description = "The records and documents the plan relies on, none when left out; a \
+                       reference that reaches nothing is left out with a warning, and documents \
+                       over 3,000 words in all warn."
     )]
     uses: Vec<String>,
     #[schemars(
@@ -190,16 +219,28 @@ pub(crate) fn documents(
         .collect())
 }
 
-/// What each path the plan names is, or a refusal when one reaches nothing
-/// or an owed path is no rule.
+/// The references a plan names in `uses`, `considered` and `owed`.
+struct Named {
+    uses: Vec<String>,
+    considered: Vec<Considered>,
+    owed: Vec<Owed>,
+}
+
+/// What each path the plan names is, and the references with each that
+/// reaches nothing left out, with a warning naming those; a refusal when an
+/// owed path is a record but no rule. A `considered` group left with no
+/// record is left out.
 fn check_named(
     host: &dyn Host,
     path: &str,
-    uses: &[String],
-    considered: &[Considered],
-    owed: &[Owed],
-) -> Result<Referenced, PluginError> {
-    let mut named = uses.to_vec();
+    given: Named,
+) -> Result<(Referenced, Named, Option<Warning>), PluginError> {
+    let Named {
+        uses,
+        considered,
+        owed,
+    } = given;
+    let mut named = uses.clone();
     named.extend(
         considered
             .iter()
@@ -209,39 +250,54 @@ fn check_named(
     let records = referenced(host, &named)?;
     // An owed rule may be stored under the other prefix until the board
     // is migrated.
-    let mut rules = Vec::new();
-    for each in owed {
+    let mut rules: Vec<String> = Vec::new();
+    for each in &owed {
         if crate::rules::exists(host, &each.rule)? {
-            rules.push(each.rule.as_str());
+            rules.push(each.rule.clone());
         }
     }
-    let dangling: Vec<&String> = named
-        .iter()
-        .filter(|each| records.get(each).is_none() && !rules.contains(&each.as_str()))
-        .collect();
-    if !dangling.is_empty() {
-        let listed: Vec<&str> = dangling.iter().map(|each| each.as_str()).collect();
-        return Err(refusal(
-            "changes::ref::dangling",
-            format!(
-                "these references in the plan reach nothing or are degraded: {}; check each path \
-                 with `board ls` or `board check`",
-                listed.join(", ")
-            ),
-            [("path", json!(path)), ("refs", json!(listed))],
-        ));
+    let reaches = |each: &str| records.get(each).is_some() || rules.iter().any(|rule| rule == each);
+    let mut dangling: Vec<&str> = Vec::new();
+    for each in named.iter().filter(|each| !reaches(each)) {
+        if !dangling.contains(&each.as_str()) {
+            dangling.push(each);
+        }
     }
-    check_owed(path, owed, &rules)?;
-    Ok(records)
+    let warning = (!dangling.is_empty()).then(|| Warning {
+        code: "changes::ref::dangling",
+        detail: format!(
+            "these references in the plan reach nothing or are degraded, so the plan was written \
+             without them: {}; write each record, or check each path with `board ls` or `board \
+             check` and plan again",
+            dangling.join(", ")
+        ),
+    });
+    let kept = Named {
+        uses: uses.into_iter().filter(|each| reaches(each)).collect(),
+        considered: (considered.into_iter())
+            .filter_map(|mut group| {
+                group.records.retain(|each| reaches(each));
+                (!group.records.is_empty()).then_some(group)
+            })
+            .collect(),
+        owed: owed
+            .into_iter()
+            .filter(|each| reaches(&each.rule))
+            .collect(),
+    };
+    let rules: Vec<&str> = rules.iter().map(String::as_str).collect();
+    check_owed(path, &kept.owed, &rules)?;
+    Ok((records, kept, warning))
 }
 
-/// Refuses `uses` that hold a directory, or documents over the word limit.
+/// Refuses `uses` that hold a directory, and warns of documents over the
+/// word limit.
 fn check_uses(
     host: &dyn Host,
     path: &str,
     uses: &[String],
     records: &Referenced,
-) -> Result<(), PluginError> {
+) -> Result<Option<Warning>, PluginError> {
     let directories: Vec<&str> = (uses.iter())
         .filter(|each| {
             records
@@ -264,18 +320,14 @@ fn check_uses(
     let words_used: usize = (documents(host, uses, records)?.iter())
         .map(|(_, text)| words(text))
         .sum();
-    if words_used > USES_WORDS {
-        return Err(refusal(
-            "changes::plan::uses_too_long",
-            format!(
-                "the documents the plan for {path} uses hold {} words in all, over the \
-                 3,000-word limit; use fewer, choosing from each directory's index.md",
-                thousands(words_used)
-            ),
-            [("path", json!(path)), ("words", json!(words_used))],
-        ));
-    }
-    Ok(())
+    Ok((words_used > USES_WORDS).then(|| Warning {
+        code: "changes::plan::uses_too_long",
+        detail: format!(
+            "the documents the plan for {path} uses hold {} words in all, over the 3,000 they \
+             should hold; it was written, but use fewer, choosing from each directory's index.md",
+            thousands(words_used)
+        ),
+    }))
 }
 
 pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
@@ -306,15 +358,28 @@ pub(crate) fn plan(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         ));
     }
     check_paths(&path, &change.mount, &paths, kind_of(host, &path)?)?;
-    if let Some(flow) = of_change(host, &path, &change)? {
-        check_answers(&path, &flow, answers)?;
+    let flow = of_change(host, &path, &change)?;
+    if let Some(flow) = &flow {
+        check_answers(&path, flow, answers)?;
     }
-    check_words(&path, &text)?;
-    let records = check_named(host, &path, &uses, &considered, &owed)?;
-    check_uses(host, &path, &uses, &records)?;
+    let mut warnings: Vec<Warning> = measure_words(&path, &text)?.into_iter().collect();
+    let given = Named {
+        uses,
+        considered,
+        owed,
+    };
+    let (records, named, dangling) = check_named(host, &path, given)?;
+    let Named {
+        uses,
+        considered,
+        owed,
+    } = named;
+    warnings.extend(dangling);
+    warnings.extend(check_uses(host, &path, &uses, &records)?);
     let count = uses.len();
-    let mut warnings = text_warnings(&text);
+    warnings.extend(text_warnings(&text));
     warnings.extend(heading::check(host, &path, &change.title, &text)?);
+    warnings.extend((flow.as_ref()).and_then(|flow| sections::missing(flow, &text)));
     let planned = Planned {
         uses,
         paths,

@@ -62,7 +62,11 @@ blocks is missing.
    `[{"records": ["<path>"], "why": "<reason>"}]`. Obligations the change
    leaves owed go in `owed`, as `[{"rule": "<path>", "why": "<reason>"}]`.
    Both fields take paths, and the gates do not read paths in the text.
-   Keep the plan near 900 words; `plan` refuses one over 3,000.
+   Keep the plan near 900 words; `plan` warns of one over 3,000 and
+   refuses one over 6,000. Read the output's `warnings` before you
+   advance: `plan` writes the plan without each reference that reaches
+   nothing (`changes::ref::dangling`) and names each section the flow
+   requires that the text lacks (`changes::plan::sections_missing`).
    To add the "What the tests prove" or "What the tests do not prove"
    section to an existing plan, such as at land, run `board -C <board>
    changes plan-amend --path /changes/<name>` with `--proves` or

@@ -552,3 +552,243 @@ fn a_board_enabling_a_former_name_runs_the_renamed_plugin_and_warns_and_one_enab
     let output = run_in(&board, &data, &["tasks", "due"]);
     assert_eq!((output.code, former(&output)), (0, Vec::new()));
 }
+
+/// A manifest of `name` offering each of `capabilities`, each of which
+/// takes the flag `--path`.
+fn offering(name: &str, capabilities: &[&str]) -> String {
+    let capabilities: Vec<Value> = (capabilities.iter())
+        .map(|capability| {
+            json!({
+                "name": capability,
+                "description": "Read one change.",
+                "inputSchema": {"type": "object", "properties": {
+                    "path": {"type": "string"}
+                }, "additionalProperties": false},
+                "outputSchema": {"type": "object"}
+            })
+        })
+        .collect();
+    json!({
+        "$type": "board/plugin-manifest/v1",
+        "name": name,
+        "version": "0.1.0",
+        "description": "A plugin a guessed word reaches.",
+        "run": ["./run"],
+        "capabilities": capabilities
+    })
+    .to_string()
+}
+
+/// A board enabling each of `plugins`, and a plugins directory holding
+/// each, offering its capabilities.
+fn offered(plugins: &[(&str, &[&str])]) -> (Scenario, Scenario) {
+    let names: Vec<&str> = plugins.iter().map(|(name, _)| *name).collect();
+    let (board, data) = aliased(&names, "");
+    for (name, capabilities) in plugins {
+        install(&data, name, "");
+        data.write(
+            &format!("plugins/{name}/plugin.json"),
+            Item::File(&offering(name, capabilities)),
+        );
+    }
+    (board, data)
+}
+
+#[test]
+fn a_guessed_plugin_word_runs_the_capability_it_means_and_notes_what_ran() {
+    let (board, data) = offered(&[
+        ("changes", &["next", "open"]),
+        ("tasks", &["available"]),
+        ("plans", &["open"]),
+        ("evals", &["open"]),
+    ]);
+    for &(plugin, word, target) in crate::guessed::CAPABILITIES {
+        let lines: [(&[&str], &[&str], String); 2] = [
+            (
+                &["--json", plugin, word, "--path", "/changes/x"],
+                &["--json", plugin, target, "--path", "/changes/x"],
+                format!("note: board {plugin} {word} is board {plugin} {target}\n"),
+            ),
+            (
+                &[
+                    "--json",
+                    "call",
+                    &format!("{plugin}.{word}"),
+                    "--path",
+                    "/changes/x",
+                ],
+                &[
+                    "--json",
+                    "call",
+                    &format!("{plugin}.{target}"),
+                    "--path",
+                    "/changes/x",
+                ],
+                format!("note: board call {plugin}.{word} is board call {plugin}.{target}\n"),
+            ),
+        ];
+        for (guessed, meant, note) in lines {
+            let through_guess = run_in(&board, &data, guessed);
+            let sent = taken_by(&data, plugin);
+            let through_meant = run_in(&board, &data, meant);
+            assert_eq!(
+                through_guess.code,
+                0,
+                "{guessed:?}: {}",
+                text(&through_guess.stderr)
+            );
+            assert_eq!(through_guess.code, through_meant.code, "{guessed:?}");
+            assert_eq!(
+                text(&through_guess.stdout),
+                text(&through_meant.stdout),
+                "{guessed:?}"
+            );
+            assert_eq!(
+                text(&through_guess.stderr),
+                format!("{note}{}", text(&through_meant.stderr)),
+                "{guessed:?}"
+            );
+            let (request, _) = sent.clone().unwrap();
+            assert_eq!(request["capability"], target, "{guessed:?}");
+            assert_eq!(
+                request["input"],
+                json!({"path": "/changes/x"}),
+                "{guessed:?}"
+            );
+            assert_eq!(sent, taken_by(&data, plugin), "{guessed:?}");
+        }
+    }
+}
+
+#[test]
+fn a_plugin_that_offers_a_guessed_word_runs_its_own_and_one_lacking_the_target_is_refused() {
+    let (board, data) = offered(&[("changes", &["show", "next"]), ("tasks", &["due"])]);
+    for words in [&["changes", "show"][..], &["call", "changes.show"]] {
+        let output = run_in(&board, &data, words);
+        assert_eq!(output.code, 0, "{words:?}: {}", text(&output.stderr));
+        assert!(!text(&output.stderr).contains("note:"), "{words:?}");
+        let (request, _) = taken_by(&data, "changes").unwrap();
+        assert_eq!(request["capability"], "show", "{words:?}");
+    }
+    for words in [
+        &["--json", "tasks", "list"][..],
+        &["--json", "call", "tasks.list"],
+    ] {
+        let output = run_in(&board, &data, words);
+        assert_eq!(code(&output), "board::plugin::no_capability", "{words:?}");
+        assert!(!text(&output.stderr).contains("note:"), "{words:?}");
+        assert_eq!(taken_by(&data, "tasks"), None, "{words:?}");
+    }
+}
+
+#[test]
+fn runs_run_and_runs_record_are_refused_with_a_hint_that_names_board_put_new() {
+    let (board, data) = offered(&[("runs", &["latest"])]);
+    for word in ["run", "record"] {
+        for words in [
+            vec!["--json", "runs", word],
+            vec!["--json", "call", &*format!("runs.{word}")],
+        ] {
+            let output = run_in(&board, &data, &words);
+            assert_eq!(code(&output), "board::plugin::no_capability", "{words:?}");
+            let hint = json(&output)["recovery"]["text"].to_string();
+            assert!(
+                hint.contains("board put --new --var suite=<name>"),
+                "{hint}"
+            );
+            assert!(hint.contains("board changes attach"), "{hint}");
+        }
+    }
+}
+
+#[test]
+fn a_mapped_word_that_is_no_call_target_is_sent_as_given() {
+    let (board, data) = offered(&[("plans", &["open"])]);
+    install(&data, "jot", "");
+    let jot = json!({
+        "$type": "board/plugin-manifest/v1",
+        "name": "jot",
+        "version": "0.1.0",
+        "description": "Notes.",
+        "run": ["./run"],
+        "capabilities": [{
+            "name": "add",
+            "description": "Add a note.",
+            "inputSchema": {"type": "object", "properties": {
+                "title": {"type": "string"},
+                "text": {"type": "string"}
+            }, "additionalProperties": false},
+            "outputSchema": {"type": "object"}
+        }]
+    });
+    data.write("plugins/jot/plugin.json", Item::File(&jot.to_string()));
+    let config = json!({"$type": "board/config/v1", "plugins": ["plans", "jot"]});
+    board.write(".board/board.json", Item::File(&config.to_string()));
+    let words = [
+        "--json",
+        "jot",
+        "add",
+        "--title",
+        "call",
+        "--text",
+        "plans.list",
+    ];
+    let output = run_in(&board, &data, &words);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert!(
+        !text(&output.stderr).contains("note:"),
+        "{}",
+        text(&output.stderr)
+    );
+    let (request, _) = taken_by(&data, "jot").unwrap();
+    assert_eq!(
+        request["input"],
+        json!({"title": "call", "text": "plans.list"})
+    );
+    let words = [
+        "--json",
+        "call",
+        "jot.add",
+        "--title",
+        "t",
+        "--",
+        "call",
+        "plans.list",
+    ];
+    let output = run_in(&board, &data, &words);
+    assert!(
+        !text(&output.stderr).contains("note:"),
+        "{}",
+        text(&output.stderr)
+    );
+    assert_eq!(taken_by(&data, "plans"), None);
+}
+
+#[cfg(all(
+    feature = "changes",
+    feature = "tasks",
+    feature = "plans",
+    feature = "evals"
+))]
+#[test]
+fn each_mapped_word_reaches_a_capability_the_shipped_plugin_offers_and_the_word_is_none() {
+    let built_in = board_plugins::BUILT_IN;
+    for &(plugin, word, target) in crate::guessed::CAPABILITIES {
+        let manifest = (built_in.0.iter().map(|built| built.manifest()))
+            .find(|manifest| manifest.name.as_str() == plugin)
+            .unwrap_or_else(|| panic!("{plugin} is built in"));
+        let offers = |name: &str| {
+            (manifest.capabilities.iter()).any(|offered| offered.name.as_str() == name)
+        };
+        assert!(offers(target), "{plugin} offers {target}");
+        assert!(!offers(word), "{plugin} does not offer {word}");
+        let line: Vec<OsString> = [BINARY_NAME, "call", &format!("{plugin}.{word}")]
+            .map(OsString::from)
+            .to_vec();
+        let called = crate::guessed::called(&line, built_in, None).unwrap();
+        let meant: Vec<OsString> = [BINARY_NAME, "call", &format!("{plugin}.{target}")]
+            .map(OsString::from)
+            .to_vec();
+        assert_eq!(called.line, meant, "{plugin} {word}");
+    }
+}
