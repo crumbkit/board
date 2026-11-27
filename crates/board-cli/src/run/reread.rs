@@ -8,7 +8,7 @@ use board_ops::{Board, Bulk};
 
 use super::mount::MountCommand;
 use super::putting::{Checking, mending};
-use super::{Command, Putting, run};
+use super::{Command, Putting, run, run_typed};
 use crate::config::Context;
 use crate::effects;
 use crate::render::{self, Printer};
@@ -36,7 +36,11 @@ pub(super) fn reread(
         return crate::mistaken::hinted(arguments, refused);
     };
     Some(match resolved {
-        Ok(called) => run(called, context, stdin, ran),
+        Ok(called) => {
+            let typed = crate::alias::first_word(arguments)
+                .and_then(|(at, _)| arguments.get(at)?.to_str().map(str::to_owned));
+            run_typed(called, typed.as_deref(), context, stdin, ran)
+        }
         Err(refusal) => {
             let printer = Printer {
                 view: refused.run().clone(),
