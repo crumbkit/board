@@ -201,8 +201,10 @@ pub struct DecisionRecord {
     #[serde(default)]
     pub refs: Vec<Ref>,
     /// The one entry in the board the decision decides, such as the plan
-    /// revision it approves, the question it settles or the understanding
-    /// check it signs off; absent when it decides no single entry.
+    /// revision it approves or the understanding check it signs off; absent
+    /// when it decides no single entry. The owner's reply to a question,
+    /// such as the one `changes ask` files, is a `plans/answer/v1` that
+    /// `plans answer` writes, not a decision.
     pub decides: Option<Ref>,
     /// Web pages the decision concerns, such as a pull request.
     #[serde(default)]

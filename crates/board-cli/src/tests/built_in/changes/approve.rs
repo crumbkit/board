@@ -11,7 +11,7 @@ const ANSWER: &str = "/projects/a/answers/q";
 /// The owner's personal board, enabling plans and changes, holding the
 /// change /changes/t in plan with its plan, which stores data so it needs
 /// the owner's approval, and an open question that
-/// blocks it whose option `a` says `approve`. The question is attached to
+/// blocks it whose option `approve` says `approve`. The question is attached to
 /// the change, as the asking session attaches it.
 fn asked(approve: &str) -> Personal {
     let personal = Personal::enabling(&["plans", "changes"]);
@@ -26,7 +26,7 @@ fn asked(approve: &str) -> Personal {
     let question = json!({
         "$type": "plans/question/v1", "question": "Approve?", "by": {"session": "local_0a1b"},
         "asked": "2026-11-20T09:00:00Z", "status": "open", "blocks": "/changes/t",
-        "options": [{"id": "a", "text": approve}, {"id": "b", "text": "Hold the work."}],
+        "options": [{"id": "approve", "text": approve}, {"id": "b", "text": "Hold the work."}],
     });
     personal
         .write("changes/t.json", &change.to_string())
@@ -63,9 +63,9 @@ fn called(personal: &Personal, capability: &str, flags: &[&str]) -> (u8, Value) 
     (ran.code, json(&ran))
 }
 
-/// Answers the question with option `a`, with `flags` added.
+/// Answers the question with option `approve`, with `flags` added.
 fn answered(personal: &Personal, flags: &[&str]) -> Value {
-    let mut given = vec!["--path", QUESTION, "--option", "a"];
+    let mut given = vec!["--path", QUESTION, "--option", "approve"];
     given.extend(flags);
     let (code, document) = called(personal, "plans.answer", &given);
     assert_eq!(code, 0, "{document}");

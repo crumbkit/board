@@ -5,14 +5,16 @@
 - A `plans/decision/v1` can name the one board entry it decides in
   `decides`, which `board plans decide --decides <path>` sets. The
   `owner-approval` check counts only an explicit approval of the plan that
-  names the revision it approves: the owner's answer whose chosen option
-  names the change and a plan revision, as the option `changes ask` writes
-  does, a Touch ID approval, or an owner decision whose refs name the
-  change and whose `decides` is a plan revision or the approval question
-  `changes ask` filed. Any other decision or answer, such as a Data
-  sign-off that names the current revision in its refs, no longer approves
-  the plan, and an existing approval decision without `decides` must be
-  asked again. The check binds each approval to the plan revision it
+  names the revision it approves: the owner's answer choosing the
+  `approve` option of an attached question that blocks the change and whose
+  `approve` option names a plan revision, as the question `changes ask`
+  files does; a Touch ID approval; or an owner decision whose refs name the
+  change and whose `decides` is a plan revision. Any other decision or
+  answer, such as a choice to revise or a Data sign-off that names the
+  current revision in its refs, no longer approves the plan, and an
+  existing approval decision without `decides` must be asked again. A
+  board whose `.board/types/` holds the earlier `plans/decision/v1` copy
+  refuses `decides` until `board plugin enable` replaces it. The check binds each approval to the plan revision it
   approved, and stops counting it once a later revision changes the plan's
   typed answers or its Outcome, Out of scope, UX or Data section, or once
   Board no longer reads that revision. A rewrite of the plan's paths, Tests

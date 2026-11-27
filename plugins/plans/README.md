@@ -42,8 +42,9 @@ so it is written at its path. Its schema declares its folder too, so
   when no review is wanted) and `written_by` are optional. `refs` lists
   board entries the decision concerns, such as an answer; `decides` names
   the one board entry the decision decides, such as the plan revision it
-  approves, the question it settles or the understanding check it signs
-  off; `urls` lists web pages, such as a pull request.
+  approves or the understanding check it signs off, and the owner's reply
+  to a question, such as the one `changes ask` files, is an answer that
+  `plans answer` writes, not a decision; `urls` lists web pages, such as a pull request.
 
 ```json
 {
@@ -71,8 +72,7 @@ pane asks for it after an answer whose chosen option names the change it was
 attached to. An option that names `<change>#<check id>` names a check,
 not the change, so it waives that check and asks for no approval. A
 decision approves a change's plan only when its `decides` is the plan
-revision it approves, or the approval question `changes ask` filed for the
-change, and its `refs` name the change; what its words say never decides
+revision it approves and its `refs` name the change; what its words say never decides
 it. An agent that records an approval the owner gave in chat names the
 owner as `person` and quotes the owner's words in `why`:
 

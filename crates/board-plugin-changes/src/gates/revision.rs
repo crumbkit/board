@@ -3,20 +3,19 @@
 //!
 //! Only an explicit approval of the plan counts, and it names the revision
 //! it approves: a decision whose refs name the change and that decides a
-//! revision, or the approval question `changes ask` filed; an answer whose
-//! chosen option names the change and a revision, as the option `changes
-//! ask` writes does; or a Touch ID approval of the revision it signed. Any
-//! other decision or answer is about the plan's content and approves
-//! nothing. An approval of a revision Board no longer reads lapses. The
-//! plan differs in substance when its typed answers differ, or the text of
-//! its Outcome, Out of scope, UX or Data section differs once
+//! revision; an answer that chose the `approve` option of the approval
+//! question `changes ask` filed, which names the change and a revision; or
+//! a Touch ID approval of the revision it signed. Any other decision or
+//! answer approves nothing. An approval of a revision Board no longer reads
+//! lapses. The plan differs in substance when its typed answers differ, or
+//! the text of its Outcome, Out of scope, UX or Data section differs once
 //! runs of whitespace are collapsed; anything else is routine.
 
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value};
 
-use super::kinds::{ANSWER_TYPE, QUESTION_TYPE, answers_count, chosen_text, meets, names_whole};
+use super::kinds::{ANSWER_TYPE, QUESTION_TYPE, answers_count, meets, names_whole};
 use super::{Approval, HEADING, Observed, Revision, sections};
 use crate::flow::{self, Where};
 
@@ -67,25 +66,36 @@ impl Standing {
     }
 }
 
-/// The revision the decision `body` approves: the one its `decides`
-/// names, as a `<change>/plans/<id>` record or its `.md` file, or the one
-/// the approving option names of the approval question `board changes ask`
-/// filed for the change when `decides` names that question. A decision
-/// that decides anything else, such as a section of the plan, another
-/// question or an understanding check, approves no revision.
-pub(crate) fn decided(observed: &Observed, body: &Map<String, Value>) -> Option<String> {
-    let decides = body.get("decides").and_then(Value::as_str)?;
-    if let Some(revision) = named_in(observed, decides)
-        && decides.strip_suffix(".md").unwrap_or(decides) == revision
-    {
-        return Some(revision);
+/// The revision the owner's decision or answer `body` approves, the one
+/// helper both routes go through. A decision approves the revision its
+/// `decides` names, as a `<change>/plans/<id>` record or its `.md` file;
+/// a decision that decides anything else approves nothing. An answer
+/// approves the revision the `approve` option of the approval question
+/// `board changes ask` files names: its question is attached and blocks the
+/// change, its choice is that option, and the option names the change and
+/// a revision. Any other answer, such as a choice to revise or a choice in
+/// a question about the plan's content, approves nothing.
+pub(crate) fn approved(
+    observed: &Observed,
+    body: &Map<String, Value>,
+    answer: bool,
+) -> Option<String> {
+    let field = |key| body.get(key).and_then(Value::as_str);
+    if !answer {
+        let decides = field("decides")?;
+        let revision = named_in(observed, decides)?;
+        return (decides.strip_suffix(".md").unwrap_or(decides) == revision).then_some(revision);
     }
-    let (_, question) =
-        (observed.records.of_type(QUESTION_TYPE)).find(|(path, _)| *path == decides)?;
-    if question.get("blocks").and_then(Value::as_str) != Some(observed.path.as_str()) {
+    if field("choice")? != APPROVE {
         return None;
     }
-    (question.get("options").and_then(Value::as_array))
+    let question = field("question")?;
+    let (_, asked) =
+        (observed.records.of_type(QUESTION_TYPE)).find(|(path, _)| *path == question)?;
+    if asked.get("blocks").and_then(Value::as_str) != Some(observed.path.as_str()) {
+        return None;
+    }
+    (asked.get("options").and_then(Value::as_array))
         .into_iter()
         .flatten()
         .filter(|option| option.get("id").and_then(Value::as_str) == Some(APPROVE))
@@ -96,7 +106,7 @@ pub(crate) fn decided(observed: &Observed, body: &Map<String, Value>) -> Option<
 
 /// The revision of the change's plan `text` names as a whole path: a
 /// `<change>/plans/<id>` record or its `.md` file. Of several, the last.
-pub(crate) fn named_in(observed: &Observed, text: &str) -> Option<String> {
+fn named_in(observed: &Observed, text: &str) -> Option<String> {
     let prefix = format!("{}/plans/", observed.path);
     let joined = |next: char| next.is_alphanumeric() || "-_/".contains(next);
     (text.match_indices(&prefix))
@@ -112,16 +122,6 @@ pub(crate) fn named_in(observed: &Observed, text: &str) -> Option<String> {
             (!id.is_empty() && !longer).then(|| format!("{prefix}{id}"))
         })
         .last()
-}
-
-/// The revision an approval approved: for a decision, the one it
-/// decides, and for an answer, the one `chosen`, the text of the option it
-/// chose, names. A counted approval always names one.
-fn bound(observed: &Observed, body: &Map<String, Value>, chosen: Option<&str>) -> Option<String> {
-    match chosen {
-        Some(text) => named_in(observed, text),
-        None => decided(observed, body),
-    }
 }
 
 /// Where an approval of `revision` stands against the current plan.
@@ -305,7 +305,7 @@ pub(super) fn meeting<'a>(
     let answers = owners.then(|| observed.records.of_type(ANSWER_TYPE));
     (observed.records.of_type(kind))
         .filter(move |(_, body)| meets(observed, body, rules, head, false))
-        .filter(move |(_, body)| !owners || decided(observed, body).is_some())
+        .filter(move |(_, body)| !owners || approved(observed, body, false).is_some())
         .map(|(path, body)| (path, body, false))
         .chain(
             (answers.into_iter().flatten())
@@ -326,8 +326,7 @@ pub(super) fn approvals(
 ) -> Vec<(String, Standing)> {
     let mut judged: Vec<(String, Standing)> = meeting(observed, each, rules, head)
         .filter_map(|(path, body, answer)| {
-            let chosen = answer.then(|| chosen_text(observed, body)).flatten();
-            let revision = bound(observed, body, chosen)?;
+            let revision = approved(observed, body, answer)?;
             Some((path.to_owned(), standing(observed, revision)))
         })
         .collect();
@@ -354,12 +353,12 @@ pub(super) fn unmet(observed: &Observed) -> String {
     };
     format!(
         "no plans/decision/v1 that the owner signed with by.person whose refs name {path} and \
-         that decides a revision of the plan, such as {plan}, or the approval question `board \
-         changes ask` filed, is attached, nor a {ANSWER_TYPE} from the owner (one that names \
-         `by.person`, or was written through the owner's questions pane, Board.app or /ask) \
-         whose chosen option, in its attached question, names {path} and a revision of the \
-         plan, nor the owner's Touch \
-         ID approval of changes.approve for the current plan{unread}"
+         that decides a revision of the plan, such as {plan}, is attached, nor a {ANSWER_TYPE} \
+         from the owner (one that names `by.person`, or was written through the owner's \
+         questions pane, Board.app or /ask) that chose the `approve` option of an attached \
+         question blocking {path}, whose text names {path} and a revision of the plan, as the \
+         question `board changes ask` files does, nor the owner's Touch ID approval of \
+         changes.approve for the current plan{unread}"
     )
 }
 

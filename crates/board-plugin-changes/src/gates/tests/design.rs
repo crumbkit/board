@@ -487,10 +487,12 @@ fn a_chosen_option_counts_for_every_path_it_names_whatever_it_says() {
     );
     let revision = format!("Agree {MOCKUP} as the mockup for /changes/t/plans/1 of /changes/t");
     let given = at_plan(&named_version()).records(asked(&revision, "agree", &owner));
+    let statuses = given.statuses();
     assert_eq!(
-        given.statuses()["owner-approval"],
-        "pass",
-        "an option naming the mockup, the change and a plan revision also approves the plan"
+        (statuses["mockups"], statuses["owner-approval"]),
+        ("pass", "missing"),
+        "an option agreeing the mockup approves no plan, though it names the change and a plan \
+         revision, because it is not the approval question's approve option"
     );
     let mockup_only = format!("Agree {MOCKUP} as the mockup");
     let given = at_plan(&named_version()).records(asked(&mockup_only, "agree", &owner));

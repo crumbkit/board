@@ -292,7 +292,8 @@ A v1 change and a migrated one both meet the development flow's gates,
 below, which block on more than the gates before flows did:
 
 - leaving plan, `owner-approval` needs a `plans/decision/v1` that the owner
-  signed, whose `refs` name a revision of the plan, on every route, unless
+  signed, whose `refs` name the change and whose `decides` names a revision
+  of the plan, or an answer that approves the plan, on every route, unless
   the plan answers `ux` none and `data` none. Before
   flows only an `ask-first` change needed a decision, and any decision
   passed, a rejection or an agent's stub included. `considered` is new, and
@@ -996,17 +997,18 @@ names the change it was attached to.
 Only an explicit approval of the plan counts, and each names the revision
 of the plan it approves, a record under `<change>/plans/`. A decision
 approves the plan only when its refs name the change and its `decides`
-names what it approves: a revision, such as the current plan's path or its
-`.md` file, or the approval question `changes ask` filed for the change,
-whose `blocks` is the change and whose `approve` option names the revision.
-A decision that decides anything else, such as a section of the plan,
-another question or an understanding check, approves nothing, though its
-refs or words name the current revision, and so does a decision with no
-`decides`. An
-answer approves the plan only when its chosen option names the change and
-a revision, as the option `changes ask` writes does ("Approve <change> as
-planned in <change>/plans/<id>"); an answer whose option names no revision
-approves nothing. A Touch ID approval approves the revision whose digest
+names the revision it approves, such as the current plan's path or its
+`.md` file. A decision that decides anything else, such as a section of
+the plan, a question or an understanding check, approves nothing, though
+its refs or words name the current revision, and so does a decision with
+no `decides`. An answer approves the plan only when it chose the `approve`
+option of an attached question whose `blocks` is the change, and that
+option names the change and a revision, as the question `changes ask`
+files does ("Approve <change> as planned in <change>/plans/<id>"). A
+choice to revise, and a choice in any other question, approves nothing,
+even when its option names the change and the current revision. Record
+the owner's reply to that question with `plans answer`, never as a
+decision. A Touch ID approval approves the revision whose digest
 it signed; `next` tries each revision, newest first.
 
 The approval counts while the current plan does not differ from that
@@ -1053,18 +1055,15 @@ These routes still pass a gate without the owner:
    `/flows/` and move the change onto it with `changes reflow`.
 3. A direct phase edit. An agent can write the change record with a later
    phase. `github.merge` reads only the land gate, which has no owner check.
-4. An option that names the change and a plan revision but does not
-   approve it. The gate counts any chosen option whose text names both, so
-   an answer that chose "Reject /changes/<name>/plans/<id> of
-   /changes/<name>" counts as approval.
+4. A hand-written approval question. The gate identifies the approval
+   question by its `blocks` and its `approve` option id, so a question any
+   writer files in that shape counts as `changes ask`'s, and an `approve`
+   option worded "Reject /changes/<name>/plans/<id> of /changes/<name>"
+   counts as approval.
 5. An edited question. The gate reads the question's options as they are
    now, so editing an option's text after the owner answered changes what
    the answer counts for. Rewriting an answered option to name the current
    revision binds the old answer to the current plan.
-6. A decision that decides the approval question `changes ask` filed.
-   A decision names no option, so the gate counts it as approval of the
-   revision the question's `approve` option names, even when the owner
-   chose to revise.
 
 Instructions, remedies and the rules of a `rule-paths` or
 `planned-rule-paths` check may name
@@ -1114,7 +1113,7 @@ The development flow's gates:
 
 | Leaving | Checks |
 | --- | --- |
-| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, unless the plan answers `ux` none and `data` none, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name a revision of the plan, or the owner's attached `plans/answer/v1` whose chosen option, in its attached question, names the change, or the owner's Touch ID approval of `changes.approve` for the current plan, on every route; `mockups` and `mockup-versions`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
+| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, unless the plan answers `ux` none and `data` none, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name the change and whose `decides` names a revision of the plan, or the owner's attached `plans/answer/v1` that chose the `approve` option of an attached question blocking the change, whose text names the change and a revision of the plan, or the owner's Touch ID approval of `changes.approve` for the current plan, on every route; `mockups` and `mockup-versions`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
 | build | `head`; `suite-run`, waivable; `tasks` |
 | review | `review`, a report on `head`, or on an earlier commit when each commit after it edits only paths `/rules/{repo}/record-paths` lists or the lifecycle record's `doc`, cleanly merges the branch the mount follows, or is a fix commit a `changes/fix/v1` names, with no critical or high finding; `design-conformance`, the `built` part of `mockups`, when the plan answers `ux` mockups; `paths`; `ui-paths` and `data-paths`, `rule-paths` checks of `/rules/{repo}/ui-paths` when the plan answers `ux` none and `/rules/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/rules/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
 | land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `rechecks`, which does not block, rechecks of two points, the latest recheck of each matching, when the plan answers `data` stored; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/rules/{repo}/lifecycle-paths` again, so each re-reads the diff at the recorded head and a record removed after review is gated |

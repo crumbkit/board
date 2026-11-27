@@ -22,11 +22,11 @@ fn stores() -> Value {
 /// approves the change as planned in `revision`.
 fn owners_answer(revision: &str) -> Records {
     let options = json!([
-        {"id": "a", "text": format!("Approve {PATH} as planned in {revision}.")},
-        {"id": "b", "text": "Revise the plan, then ask again."},
+        {"id": "approve", "text": format!("Approve {PATH} as planned in {revision}.")},
+        {"id": "revise", "text": "Revise the plan, then ask again."},
     ]);
-    let question = json!({"question": "Approve?", "options": options});
-    let body = json!({"question": "/q/1", "choice": "a", "by": {"person": PERSON}});
+    let question = json!({"question": "Approve?", "options": options, "blocks": PATH});
+    let body = json!({"question": "/q/1", "choice": "approve", "by": {"person": PERSON}});
     vec![
         ("/q/1", ("plans/question/v1", question)),
         ("/a/1", ("plans/answer/v1", body)),
@@ -257,8 +257,8 @@ fn a_decision_whose_refs_name_the_current_revision_approves_only_when_it_decides
     assert!(
         detail.starts_with(
             "no plans/decision/v1 that the owner signed with by.person whose refs name \
-             /changes/t and that decides a revision of the plan, such as /changes/t/plans/1, \
-             or the approval question `board changes ask` filed, is attached"
+             /changes/t and that decides a revision of the plan, such as /changes/t/plans/1, is \
+             attached"
         ),
         "{detail}"
     );
@@ -293,37 +293,82 @@ fn asked(revision: &str, blocks: &str) -> (&'static str, (&'static str, Value)) 
     ("/q/ask", ("plans/question/v1", question))
 }
 
-/// A decision that decides the approval question `changes ask` filed for
-/// the change approves the revision its approving option names. One that
-/// decides a question about the plan's content, or an approval question
-/// filed for another change, approves nothing.
+/// The owner's answer choosing `choice` in the approval question `asked`
+/// gives, which `attached` says is attached.
+fn answering(
+    question: (&'static str, (&'static str, Value)),
+    choice: &str,
+    attached: bool,
+) -> Records {
+    let body = json!({"question": question.0, "choice": choice, "by": {"person": PERSON}});
+    let mut records = vec![("/a/ask", ("plans/answer/v1", body))];
+    if attached {
+        records.push(question);
+    }
+    records
+}
+
+/// A decision that decides the approval question `changes ask` filed
+/// approves nothing, because a decision names no option; the owner's reply
+/// to that question is an answer.
 #[test]
-fn a_decision_deciding_the_approval_question_approves_the_revision_its_option_names() {
+fn a_decision_deciding_the_approval_question_approves_nothing() {
     let mut records = deciding("/q/ask");
-    records.push(asked(EARLIER, PATH));
-    let text = PLAN.replace("A suite stops.", "A suite stops and retries.");
-    let lapsed = revised(records.clone(), &[], PLAN, &text, &stores(), &json!({}));
-    let (status, detail) = owner_approval(&lapsed);
-    assert_eq!(status, Status::Missing);
-    assert!(
-        detail.starts_with("the owner approved plans/0 in /d/1,"),
-        "{detail}"
-    );
-    let held = revised(records, &[], PLAN, PLAN, &stores(), &json!({}));
-    assert_eq!(owner_approval(&held).0, Status::Pass);
-    let mut other = deciding("/q/ask");
-    other.push(asked(EARLIER, "/changes/other"));
-    let given = revised(other, &[], PLAN, PLAN, &stores(), &json!({}));
+    records.push(asked(CURRENT, PATH));
+    let given = revised(records, &[], PLAN, PLAN, &stores(), &json!({}));
     assert_eq!(owner_approval(&given).0, Status::Missing);
+}
+
+/// An answer approves the plan only when it chose the `approve` option of
+/// an attached approval question blocking the change, whose text names
+/// the change and one of its revisions. A choice to revise, a question
+/// that is not attached, a question blocking another change, an `approve`
+/// option naming another change's revision, and a content question whose
+/// chosen option names the change and the current revision all approve
+/// nothing.
+#[test]
+fn only_the_approve_option_of_the_attached_approval_question_approves_the_plan() {
+    let status = |records: Records| {
+        let given = revised(records, &[], PLAN, PLAN, &stores(), &json!({}));
+        owner_approval(&given).0
+    };
+    assert_eq!(
+        status(answering(asked(CURRENT, PATH), "approve", true)),
+        Status::Pass
+    );
+    assert_eq!(
+        status(answering(asked(CURRENT, PATH), "revise", true)),
+        Status::Missing
+    );
+    assert_eq!(
+        status(answering(asked(CURRENT, PATH), "approve", false)),
+        Status::Missing
+    );
+    assert_eq!(
+        status(answering(asked(CURRENT, "/changes/other"), "approve", true)),
+        Status::Missing
+    );
+    assert_eq!(
+        status(answering(
+            asked("/changes/other/plans/1", PATH),
+            "approve",
+            true
+        )),
+        Status::Missing
+    );
     let options = json!([
         {"id": "a", "text": format!("Store runs as rows under {PATH}, as {CURRENT} says.")},
         {"id": "b", "text": "Store runs as files."},
     ]);
     let content = json!({"question": "Rows or files?", "options": options, "blocks": PATH});
-    let mut about = deciding("/q/ask");
-    about.push(("/q/ask", ("plans/question/v1", content)));
-    let given = revised(about, &[], PLAN, PLAN, &stores(), &json!({}));
-    assert_eq!(owner_approval(&given).0, Status::Missing);
+    assert_eq!(
+        status(answering(
+            ("/q/ask", ("plans/question/v1", content)),
+            "a",
+            true
+        )),
+        Status::Missing
+    );
 }
 
 #[test]
@@ -363,11 +408,11 @@ fn a_decision_deciding_a_revision_s_text_file_approves_that_revision_wherever_it
 #[test]
 fn an_answer_whose_option_names_a_revision_approves_that_revision() {
     let options = json!([
-        {"id": "a", "text": format!("Approve {PATH} as planned in {EARLIER}.")},
-        {"id": "b", "text": "Revise the plan, then ask again."},
+        {"id": "approve", "text": format!("Approve {PATH} as planned in {EARLIER}.")},
+        {"id": "revise", "text": "Revise the plan, then ask again."},
     ]);
-    let question = json!({"question": "Approve?", "options": options});
-    let body = json!({"question": "/q/1", "choice": "a", "by": {"person": PERSON}});
+    let question = json!({"question": "Approve?", "options": options, "blocks": PATH});
+    let body = json!({"question": "/q/1", "choice": "approve", "by": {"person": PERSON}});
     let records = vec![
         ("/q/1", ("plans/question/v1", question)),
         ("/a/1", ("plans/answer/v1", body)),

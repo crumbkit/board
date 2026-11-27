@@ -96,53 +96,55 @@ blocks is missing.
    `owner-confirms`, counts only an explicit approval of the plan that
    names the revision it approves: a decision whose refs name the change
    and whose `decides` is a revision of the plan, such as
-   `/changes/<name>/plans/<id>`, or the approval question `changes ask`
-   filed for the change; the owner's `plans/answer/v1` when its `by.person`
-   or its `written_by` is a string that is not empty, as an answer from the
-   questions pane, Board.app or /ask is, and the option the owner chose
-   names the change and a revision of its plan, as the option `changes ask`
-   writes does; or the owner's Touch ID approval of a plan revision. A
-   decision that decides anything else, such as a section, a question about
-   the plan's content or an understanding check, approves nothing, whatever
-   its refs and words say, and so does an answer whose option names no
-   revision. For the Touch ID approval, run `board call changes.approve
-   --path /changes/<name>`, which the pane runs after such an answer, and
-   the owner approves the effect it names. Only that signed approval proves
-   the owner chose; `by` and `written_by` are claims any writer can make.
-   Each approval binds to the plan revision it names, and lapses when a
-   later revision changes the plan's `answers` or its Outcome, Out of
-   scope, UX or Data section, or when Board no longer reads that revision.
-   Other rewrites, such as `paths` or the Tests sections, keep it, and the
+   `/changes/<name>/plans/<id>`; the owner's `plans/answer/v1` when its
+   `by.person` or its `written_by` is a string that is not empty, as an
+   answer from the questions pane, Board.app or /ask is, and the owner
+   chose the `approve` option of an attached question whose `blocks` is the
+   change and whose `approve` option names the change and a revision of its
+   plan, as the question `changes ask` files does; or the owner's Touch ID
+   approval of a plan revision. A decision that decides anything else, such
+   as a section, a question about the plan's content or an understanding
+   check, approves nothing, whatever its refs and words say, and so does a
+   choice to revise or a choice in any other question. Record the owner's
+   reply to the approval question with `plans answer`, never as a decision.
+   For the Touch ID approval, run `board call changes.approve --path
+   /changes/<name>`, which the pane runs after such an answer, and the
+   owner approves the effect it names. Only that signed approval proves the
+   owner chose; `by` and `written_by` are claims any writer can make. Each
+   approval binds to the plan revision it names, and lapses when a later
+   revision changes the plan's `answers` or its Outcome, Out of scope, UX
+   or Data section, or when Board no longer reads that revision. Other
+   rewrites, such as `paths` or the Tests sections, keep it, and the
    passing detail names the approved revision and what changed since; as a
    reviewer, raise a finding when such a change alters what the owner
    approved. When it lapses, ask the owner again with `changes ask` or
    `changes approve`. A mockup agreement that names a version counts only
-   for that version. When you ask for approval with /ask, put the change's
-   path and its current plan revision in the text of the option that
-   approves it and in no other option, because any chosen option that names
-   both counts. A path followed by `#` is a longer name: an option naming
-   `/changes/<name>#<check id>` waives that waivable check and approves
-   nothing. An option naming a mockup's URL or board path agrees it for the
-   `mockups` check. The gates read only which paths the chosen option
-   names, never what it says, so name the mockup's URL or board path, or
-   `/changes/<name>#<check id>`, only in the option that agrees the mockup
-   or waives the check. Never name them in an option that rejects or
-   revises, and never name the bare change path in the agreeing or waiving
-   option, because that option would then approve the plan too. Attach the
-   question and the answer, each with `board changes attach --path
-   /changes/<name> --ref <path>`. When you record the owner's approval from
-   chat, write the decision as the plans skill says, with `by.person`, the
-   owner's words in `why`, the change in `refs`, and the plan revision the
-   owner approved in `decides`. Piping `{"path": "/changes/<name>",
-   "project": "<project>", "by": {"session": "<your local_ id>"}}` to
-   `board -C <board> changes ask` files and attaches one question whose
-   approving option names the change, each data understanding check and
-   each mockup, so one answer passes `owner-approval`, `data-signed` and
-   `mockups`. A plan that answers `ux` none and `data` none needs no
-   approval. After a change lands, `board -C <board> changes owed` lists
-   the rechecks it still owes. `board -C <board> changes ready` lists the
-   changes that wait only on the owner, with the kind of check each waits
-   on and why one is failing.
+   for that version. When you ask for approval with /ask, file the question
+   with `changes ask`; a hand-written approval question needs `blocks` set
+   to the change and an option with id `approve` whose text names the
+   change and its current plan revision. A path followed by `#` is a longer
+   name: an option naming `/changes/<name>#<check id>` waives that waivable
+   check and approves nothing. An option naming a mockup's URL or board
+   path agrees it for the `mockups` check. The gates read only which paths
+   the chosen option names, never what it says, so name the mockup's URL or
+   board path, or `/changes/<name>#<check id>`, only in the option that
+   agrees the mockup or waives the check. Never name them in an option that
+   rejects or revises, and never name the bare change path in the agreeing
+   or waiving option, because that option would then approve the plan too.
+   Attach the question and the answer, each with `board changes attach
+   --path /changes/<name> --ref <path>`. When you record the owner's
+   approval from chat, write the decision as the plans skill says, with
+   `by.person`, the owner's words in `why`, the change in `refs`, and the
+   plan revision the owner approved in `decides`. Piping `{"path":
+   "/changes/<name>", "project": "<project>", "by": {"session": "<your
+   local_ id>"}}` to `board -C <board> changes ask` files and attaches one
+   question whose approving option names the change, each data
+   understanding check and each mockup, so one answer passes
+   `owner-approval`, `data-signed` and `mockups`. A plan that answers `ux`
+   none and `data` none needs no approval. After a change lands, `board -C
+   <board> changes owed` lists the rechecks it still owes. `board -C
+   <board> changes ready` lists the changes that wait only on the owner,
+   with the kind of check each waits on and why one is failing.
 4. Run `board -C <board> changes advance --path /changes/<name>`
    when every check passes. A change that records a pull request moves
    into `done` only once GitHub reports it merged, so land it with

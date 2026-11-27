@@ -26,13 +26,13 @@ fn approval_with(records: super::Records, approval: Approval) -> (Status, String
 #[test]
 fn the_panes_answer_passes_owner_approval_and_its_twin_with_neither_writer_nor_person_does_not() {
     let pane = json!({"by": {"session": "local_1"}, "written_by": "plans/pane-answer"});
-    let passed = approval_with(answer(PATH, "a", &pane), Approval::None);
+    let passed = approval_with(answer(PATH, "approve", &pane), Approval::None);
     assert_eq!(passed, (Status::Pass, String::new()));
     let unnamed = json!({"by": {"session": "local_1"}});
-    let unmet = approval_with(answer(PATH, "a", &unnamed), Approval::None);
+    let unmet = approval_with(answer(PATH, "approve", &unnamed), Approval::None);
     assert_eq!(unmet, (Status::Missing, UNMET.to_owned()));
     let ask = json!({"by": {"person": PERSON}, "written_by": "claude-code/ask"});
-    let asked = approval_with(answer(PATH, "a", &ask), Approval::None);
+    let asked = approval_with(answer(PATH, "approve", &ask), Approval::None);
     assert_eq!(asked.0, Status::Pass);
 }
 
@@ -99,27 +99,28 @@ fn only_a_check_that_counts_answers_reads_the_signed_approval() {
 fn an_answer_naming_a_check_after_the_change_does_not_approve_its_plan_and_the_bare_path_does() {
     let owner = json!({"by": {"person": PERSON}});
     let anchored = approval_with(
-        answer("/changes/t#design-conformance", "a", &owner),
+        answer("/changes/t#design-conformance", "approve", &owner),
         Approval::None,
     );
     assert_eq!(anchored, (Status::Missing, UNMET.to_owned()));
-    let bare = approval_with(answer(PATH, "a", &owner), Approval::None);
+    let bare = approval_with(answer(PATH, "approve", &owner), Approval::None);
     assert_eq!(bare, (Status::Pass, String::new()));
 }
 
 /// A change whose plan answers mockups and stored, lists [`super::MOCKUP`]
 /// and `/artifacts/m2` with neighbours, and has its data understanding
 /// check attached, with the question and the owner's answer choosing
-/// option `a`, whose text is `approve`.
+/// option `approve`, whose text is `approve`, in a question blocking the
+/// change.
 fn combined(approve: &str) -> super::Given {
     let ux = format!("{}\n{}", super::mockups_list(), super::NEIGHBOURS);
     let plan = super::planned(&ux, "One record per call.");
     let options = json!([
-        {"id": "a", "text": approve},
+        {"id": "approve", "text": approve},
         {"id": "b", "text": "Revise the plan first."},
     ]);
-    let question = json!({"question": "Approve?", "options": options});
-    let body = json!({"question": "/q/1", "choice": "a", "by": {"person": PERSON}});
+    let question = json!({"question": "Approve?", "options": options, "blocks": PATH});
+    let body = json!({"question": "/q/1", "choice": "approve", "by": {"person": PERSON}});
     let records = vec![
         (super::UNDERSTOOD, super::understanding(&json!({}))),
         ("/q/1", ("plans/question/v1", question)),

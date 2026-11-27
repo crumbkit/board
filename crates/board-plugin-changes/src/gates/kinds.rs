@@ -366,10 +366,10 @@ fn not_after(observed: &Observed, each: &flow::Check, rules: &Where) -> String {
         .collect()
 }
 
-/// Whether the option `answer` chose names the change and a revision of
-/// its plan, as the option `changes ask` writes does.
+/// Whether `answer` chose the `approve` option of the approval question
+/// `changes ask` files for the change, which names a revision of its plan.
 fn chose_change(observed: &Observed, answer: &Map<String, Value>) -> bool {
-    chosen_text(observed, answer).is_some_and(|text| revision::named_in(observed, text).is_some())
+    revision::approved(observed, answer, true).is_some()
 }
 
 /// The text of the option `answer` chose, when it names the change whole.

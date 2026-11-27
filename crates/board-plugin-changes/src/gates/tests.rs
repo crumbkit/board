@@ -388,11 +388,12 @@ fn compared<const N: usize>(
 /// What the owner-approval check of the fixture change says when nothing
 /// passes it.
 const UNMET: &str = "no plans/decision/v1 that the owner signed with by.person whose refs name \
-     /changes/t and that decides a revision of the plan, such as /changes/t/plans/1, or the \
-     approval question `board changes ask` filed, is attached, nor a plans/answer/v1 from the owner (one that names \
-     `by.person`, or was written through the owner's questions pane, Board.app or /ask) whose \
-     chosen option, in its attached question, names /changes/t and a revision of the plan, nor \
-     the owner's Touch ID approval of changes.approve for the current plan";
+     /changes/t and that decides a revision of the plan, such as /changes/t/plans/1, is \
+     attached, nor a plans/answer/v1 from the owner (one that names `by.person`, or was written \
+     through the owner's questions pane, Board.app or /ask) that chose the `approve` option of \
+     an attached question blocking /changes/t, whose text names /changes/t and a revision of the \
+     plan, as the question `board changes ask` files does, nor the owner's Touch ID approval of \
+     changes.approve for the current plan";
 
 /// `body` with each of `fields` over it.
 pub(crate) fn by(mut body: Value, fields: &Value) -> Value {
@@ -530,10 +531,10 @@ fn on_every_route_the_plan_gate_needs_a_persons_decision_that_decides_a_plan_rev
 /// change.
 fn answer(named: &str, choice: &str, fields: &Value) -> Records {
     let options = json!([
-        {"id": "a", "text": format!("Approve {named} as planned in {named}/plans/1.")},
+        {"id": "approve", "text": format!("Approve {named} as planned in {named}/plans/1.")},
         {"id": "b", "text": "Hold the work for now."},
     ]);
-    let question = json!({"question": "Approve?", "options": options});
+    let question = json!({"question": "Approve?", "options": options, "blocks": PATH});
     let words = format!("Approve the plan at {PATH}.");
     let body = json!({"question": "/q/1", "choice": choice, "words": words});
     vec![
@@ -549,7 +550,7 @@ fn the_owners_answer_whose_chosen_option_names_the_change_meets_owner_approval()
             .records(records)
             .check("owner-approval")
     };
-    let [got, wanted] = answered(|fields| approval(answer(PATH, "a", fields)).0 == "pass");
+    let [got, wanted] = answered(|fields| approval(answer(PATH, "approve", fields)).0 == "pass");
     assert_eq!(got, wanted);
     let owners = json!({"by": {"person": PERSON}});
     let unmet = ("missing", UNMET.to_owned());
@@ -560,16 +561,20 @@ fn the_owners_answer_whose_chosen_option_names_the_change_meets_owner_approval()
         "/team/changes/t",
     ];
     for named in paths {
-        assert_eq!(approval(answer(named, "a", &owners)), unmet, "{named}");
+        assert_eq!(
+            approval(answer(named, "approve", &owners)),
+            unmet,
+            "{named}"
+        );
     }
     // The other option, though the answer's words name the change.
     assert_eq!(approval(answer(PATH, "b", &owners)), unmet);
     let program = json!({"by": {"program": "claude-code"}});
-    assert_eq!(approval(answer(PATH, "a", &program)), unmet);
+    assert_eq!(approval(answer(PATH, "approve", &program)), unmet);
     // The answer alone, without its question attached.
-    let alone = answer(PATH, "a", &owners).split_off(1);
+    let alone = answer(PATH, "approve", &owners).split_off(1);
     assert_eq!(approval(alone), unmet);
-    assert_eq!(approval(answer(PATH, "a", &owners)).0, "pass");
+    assert_eq!(approval(answer(PATH, "approve", &owners)).0, "pass");
 }
 
 #[test]

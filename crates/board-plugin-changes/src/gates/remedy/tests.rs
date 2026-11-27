@@ -109,9 +109,9 @@ fn an_owner_approval_check_says_to_attach_the_owners_answer_and_one_with_type_re
     let said = of(&approval(serde_json::json!(["plan"])), &values(None));
     assert_eq!(
         said,
-        "Ask the owner with the question `board changes ask` files, whose approving option \
-         names /changes/t and its current plan revision /changes/t/plans/1; an answer whose \
-         option names no revision approves nothing. Then attach the question and the owner's \
+        "Ask the owner with the question `board changes ask` files, which blocks /changes/t \
+         and whose `approve` option names its current plan revision /changes/t/plans/1; only \
+         an answer choosing that option approves the plan. Then attach the question and the owner's \
          answer, each with `board changes attach --path /changes/t --ref <path>`. A \
          plans/decision/v1 the owner signs with by.person whose refs name /changes/t and whose \
          `decides` is the plan revision it approves, such as /changes/t/plans/1, also counts; \
