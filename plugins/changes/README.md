@@ -941,13 +941,18 @@ option approves no plan and `.../m1.png` does not name `.../m1`. A `board-ref`
 with a `#` fragment resolves to the path before it, and a fragment after
 `/` alone is malformed.
 
-The `mockups` check, a waiver and `owner-approval` read only which paths
-the chosen option names, never its wording. So only the option that agrees
-a mockup or waives a check may name the mockup's URL or board path or
-`<change>#<id>`, and that option must not name the bare change path. An
-option that names both the mockup and `/changes/<name>` also approves the
-plan, and an option such as "Revise <mockup URL>" agrees the mockup.
-Tests in `gates/tests/design.rs` pin both cases, so this rule is the guard.
+The `mockups` check and a waiver read only which paths the chosen option
+names, never its wording. So only the option that agrees a mockup or
+waives a check may name the mockup's URL or board path or `<change>#<id>`,
+and an option such as "Revise <mockup URL>" agrees the mockup.
+`owner-approval` reads the option id instead, so an option that names the
+mockup, `/changes/<name>` and a plan revision approves no plan unless it is
+the `approve` option of the approval question. Tests in
+`gates/tests/design.rs` pin both cases. Leave the bare change path out of
+an agreeing or waiving option all the same, for two reasons: `data-signed`
+counts a chosen option that names the change and an understanding record,
+and `changes.approve` offers Touch ID after any answer whose chosen option
+names the change.
 
 Every owner check (`owner_signed`, `understood`, `mockups` and a waiver)
 reads one rule. A decision counts as the owner's signature only when its

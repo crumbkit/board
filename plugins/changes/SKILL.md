@@ -125,26 +125,30 @@ blocks is missing.
    change and its current plan revision. A path followed by `#` is a longer
    name: an option naming `/changes/<name>#<check id>` waives that waivable
    check and approves nothing. An option naming a mockup's URL or board
-   path agrees it for the `mockups` check. The gates read only which paths
-   the chosen option names, never what it says, so name the mockup's URL or
-   board path, or `/changes/<name>#<check id>`, only in the option that
-   agrees the mockup or waives the check. Never name them in an option that
-   rejects or revises, and never name the bare change path in the agreeing
-   or waiving option, because that option would then approve the plan too.
-   Attach the question and the answer, each with `board changes attach
-   --path /changes/<name> --ref <path>`. When you record the owner's
-   approval from chat, write the decision as the plans skill says, with
-   `by.person`, the owner's words in `why`, the change in `refs`, and the
-   plan revision the owner approved in `decides`. Piping `{"path":
-   "/changes/<name>", "project": "<project>", "by": {"session": "<your
-   local_ id>"}}` to `board -C <board> changes ask` files and attaches one
-   question whose approving option names the change, each data
-   understanding check and each mockup, so one answer passes
-   `owner-approval`, `data-signed` and `mockups`. A plan that answers `ux`
-   none and `data` none needs no approval. After a change lands, `board -C
-   <board> changes owed` lists the rechecks it still owes. `board -C
-   <board> changes ready` lists the changes that wait only on the owner,
-   with the kind of check each waits on and why one is failing.
+   path agrees it for the `mockups` check. The `mockups` check and waivers
+   read only which paths the chosen option names, never what it says, so
+   name the mockup's URL or board path, or `/changes/<name>#<check id>`,
+   only in the option that agrees the mockup or waives the check, and never
+   in an option that rejects or revises. Such an option approves no plan,
+   because `owner-approval` counts only the `approve` option of the
+   approval question. Still leave the bare change path out of the agreeing
+   or waiving option: `data-signed` counts a chosen option that names the
+   change and an understanding record, and `changes.approve` offers Touch
+   ID after any answer whose chosen option names the change. Attach the
+   question and the answer, each with `board changes attach --path
+   /changes/<name> --ref <path>`. When you record the owner's approval from
+   chat, write the decision as the plans skill says, with `by.person`, the
+   owner's words in `why`, the change in `refs`, and the plan revision the
+   owner approved in `decides`. Piping `{"path": "/changes/<name>",
+   "project": "<project>", "by": {"session": "<your local_ id>"}}` to
+   `board -C <board> changes ask` files and attaches one question whose
+   approving option names the change, each data understanding check and
+   each mockup, so one answer passes `owner-approval`, `data-signed` and
+   `mockups`. A plan that answers `ux` none and `data` none needs no
+   approval. After a change lands, `board -C <board> changes owed` lists
+   the rechecks it still owes. `board -C <board> changes ready` lists the
+   changes that wait only on the owner, with the kind of check each waits
+   on and why one is failing.
 4. Run `board -C <board> changes advance --path /changes/<name>`
    when every check passes. A change that records a pull request moves
    into `done` only once GitHub reports it merged, so land it with
