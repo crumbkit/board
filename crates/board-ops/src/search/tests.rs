@@ -394,6 +394,19 @@ fn a_word_reads_an_untyped_entry_s_heading_and_not_its_file_name_which_its_path_
 }
 
 #[test]
+fn each_word_queries_the_trigram_index_once_however_often_the_statement_reads_it() {
+    let scenario = documents();
+    let sql = statement("the plan board -kettle").sql(None);
+    let plan = open(&scenario)
+        .query(&format!("EXPLAIN QUERY PLAN {sql}"), 1000, None, None)
+        .unwrap();
+    let scans = (plan.rows.iter().flatten())
+        .filter(|cell| cell.as_str().is_some_and(|text| text.contains("texts_fts")))
+        .count();
+    assert_eq!(scans, 4, "{plan:?}");
+}
+
+#[test]
 fn an_entry_looks_up_only_the_rows_its_kind_role_and_source_can_have() {
     let sql = statement("budget").sql(None);
     for key in [

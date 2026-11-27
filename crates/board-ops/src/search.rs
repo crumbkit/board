@@ -169,7 +169,7 @@ pub struct Statement {
     /// counts.
     ranked: Vec<String>,
     /// Each distinct word and phrase the trigram index answers, in order:
-    /// the one at `n` is the set `w<n>`.
+    /// the one at `n` is the flag `f<n>` of each text in `h`.
     trigrams: Vec<String>,
     /// Whether a word reads the prose, because it is too short for the
     /// trigram index.
@@ -241,11 +241,11 @@ fn indexed(text: &str) -> bool {
 }
 
 /// SQL that is 1 when the entry's text holds `text` and 0 when it does not:
-/// its id in the set of texts the trigram index finds for it, or a `LIKE`
-/// scan of the prose when the index cannot answer it.
+/// the text's flag for it in `h`, the texts the trigram index finds, or a
+/// `LIKE` scan of the prose when the index cannot answer it.
 fn prose(text: &str, trigrams: &[String]) -> String {
     match trigrams.iter().position(|indexed| indexed == text) {
-        Some(at) => format!("(xid IN w{at})"),
+        Some(at) => format!("(f{at})"),
         None => holds("x", text),
     }
 }
@@ -382,8 +382,9 @@ fn any_of(conditions: &[String]) -> String {
 /// The entries with the columns the conditions read: `path`; `t`, the
 /// title; `b`, a record's body; `x`, the text of a Markdown file or of a
 /// JSON file with no `$type`, or empty text when `{prose}` is `NULL`;
-/// `xid`, that text's id, or 0 when it has none, which no text has; `hd`,
-/// that text's first heading; `k`, the type; `m`, when the working tree last
+/// `f0`, `f1` and on, 1 when the trigram index finds that word of
+/// [`Statement::trigrams`] in that text and 0 otherwise; `hd`, that
+/// text's first heading; `k`, the type; `m`, when the working tree last
 /// changed the file, or the smallest integer for an entry of a mount; and
 /// `person`, `agent` and `program`, from `by`, in lower case. Each is empty
 /// text where the entry has none. A record's title is the first of
@@ -394,16 +395,18 @@ fn any_of(conditions: &[String]) -> String {
 /// because a record's title costs a read of the JSON for each record.
 /// Each join's key is `NULL` where the entry's kind, role or source can
 /// have no row, so that entry costs no lookup, which took about 40 ms off
-/// a three-word search on a board of 91,000 entries.
+/// a three-word search on a board of 91,000 entries. `{found}` is `h`,
+/// each text the trigram index finds for some word with a flag for each
+/// word, so each word queries the index once.
 const ENTRIES: &str = "\
-WITH e AS (
+WITH {found}e AS (
     SELECT e.source, e.path AS physical, e.logical AS path, e.blob, e.kind, e.role, o.type
     FROM resolved AS e
     LEFT JOIN main.blobs AS o
         ON o.blob = CASE WHEN e.role IS NOT NULL THEN e.blob END AND o.role = e.role
     WHERE e.logical IS NOT NULL
 ), r AS (
-    SELECT e.path, e.type, b.body, {prose} AS prose, coalesce(x.id, 0) AS xid,
+    SELECT e.path, e.type, b.body, {prose} AS prose{flags},
         coalesce(x.heading, '') AS hd,
         CASE WHEN e.type IS NULL
             THEN coalesce(x.heading,
@@ -416,11 +419,11 @@ WITH e AS (
     FROM e
     LEFT JOIN main.bodies AS b ON b.blob = CASE WHEN e.kind = 'record' THEN e.blob END
     LEFT JOIN main.texts AS x ON x.blob = CASE
-        WHEN e.role = 'markdown' OR (e.role = 'json' AND e.type IS NULL) THEN e.blob END
+        WHEN e.role = 'markdown' OR (e.role = 'json' AND e.type IS NULL) THEN e.blob END{join}
     LEFT JOIN main.worktree AS w
         ON w.path = CASE WHEN e.source = 'worktree' THEN e.physical END
 ), c AS (
-    SELECT path, type, title, m, xid, hd,
+    SELECT path, type, title, m{columns}, hd,
         coalesce(title, '') AS t, coalesce(body, '') AS b, coalesce(prose, '') AS x,
         coalesce(type, '') AS k,
         lower(coalesce(json_extract(body, '$.by.person'), '')) AS person,
@@ -430,6 +433,38 @@ WITH e AS (
 )";
 
 impl Statement {
+    /// `entries` with `h`, the texts the trigram index finds for the words
+    /// of [`Statement::trigrams`], joined to each entry's text, or with no
+    /// `h` when there are none.
+    fn found(&self, entries: &str) -> String {
+        if self.trigrams.is_empty() {
+            return ["{found}", "{flags}", "{join}", "{columns}"]
+                .iter()
+                .fold(entries.to_owned(), |sql, slot| sql.replace(slot, ""));
+        }
+        let (mut flags, mut matched) = (Vec::new(), Vec::new());
+        let (mut columns, mut read) = (String::new(), String::new());
+        for (at, text) in self.trigrams.iter().enumerate() {
+            flags.push(format!("max(n = {at}) AS f{at}"));
+            let _ = write!(read, ", coalesce(h.f{at}, 0) AS f{at}");
+            matched.push(format!(
+                "SELECT rowid AS id, {at} AS n FROM main.texts_fts WHERE texts_fts MATCH {}",
+                literal(&phrase(text))
+            ));
+            let _ = write!(columns, ", f{at}");
+        }
+        let found = format!(
+            "h AS (\n    SELECT id, {} FROM (\n        {}\n    ) GROUP BY id\n), ",
+            flags.join(", "),
+            matched.join("\n        UNION ALL ")
+        );
+        entries
+            .replace("{found}", &found)
+            .replace("{flags}", &read)
+            .replace("{join}", "\n    LEFT JOIN h ON h.id = x.id")
+            .replace("{columns}", &columns)
+    }
+
     /// The SQL: each matching entry's path, type, title cut to
     /// [`TITLE_CHARS`], how many ranked words its title and its body or text
     /// hold, and when the working tree last changed it: most title words
@@ -448,16 +483,9 @@ impl Statement {
             hits(&|word| format!("({} OR {})", holds("b", word), prose(word, &self.trigrams)));
         // Only a word too short for the trigram index reads the prose.
         let entries = ENTRIES.replace("{prose}", if self.scans { "x.body" } else { "NULL" });
-        let mut sets = String::new();
-        for (at, text) in self.trigrams.iter().enumerate() {
-            let query = literal(&phrase(text));
-            let _ = write!(
-                sets,
-                ", w{at} AS (SELECT rowid FROM main.texts_fts WHERE texts_fts MATCH {query})"
-            );
-        }
+        let entries = self.found(&entries);
         let mut sql = format!(
-            "{entries}{sets}, s AS (
+            "{entries}, s AS (
     SELECT path, type, substr(title, 1, {TITLE_CHARS}) AS title,
         {titled} AS title_hits, {bodied} AS body_hits, m
     FROM c WHERE {}
