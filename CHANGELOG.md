@@ -18,6 +18,27 @@
   open on a change that records no pull request, which never closes a
   task. Only a level-two heading counts, a fenced code block is not read,
   and a Markdown link's target counts as a path.
+- A notes repository that the board reaches through two mounts, such as
+  `/repos/notes-personal` and the same repository mounted again by a board
+  mounted at `/repos/team`, counts as one repository. `board tasks add`,
+  `board changes start` and `board notes daily` used to refuse with
+  `tasks::repo::ambiguous` or `notes::repo::ambiguous`, naming both mounts.
+  They now write to the mount whose pointer is in the board's own tree,
+  and the output's `about` names it. Among nested mounts, the one with the
+  shortest path stands for the repository. Mounts count as one repository
+  when Board read them from the same clone. `board tasks available` and
+  `board tasks tree` show the repository's tasks once, including after a
+  sync moves a pin onto the other mount's commit. Two different
+  repositories that both cover the remote still refuse as before.
+- The `board-changes` mod's edit guard remembers the last verdict on each
+  agent's edits of each repository, counting an edit that needed no advice.
+  A later edit by the same agent whose line would say what that verdict
+  said, apart from the file, runs with no line. A line that says something
+  new, such as another phase, branch or change, is given in full, and so is
+  advice that returns after an edit that needed none. Advice
+  that a lookup failed is still given on every edit, and an edit of a
+  board record is still refused every time. The memory lasts until the mod
+  reloads, as on `/clear` and `/resume`.
 - A word an agent guesses after a plugin's name runs the capability it
   means: `changes show` and `changes status` run `changes next`,
   `changes list` runs `changes open`, and `tasks list`, `plans list` and
