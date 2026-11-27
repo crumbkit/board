@@ -179,6 +179,8 @@ type Answers = {
   session?: string
   /** The branch every checkout is on; '' for a detached HEAD, 'main' when left out. */
   branch?: string
+  /** A refusal a later hook gives the next edit, which then clears. */
+  refuse?: string
 }
 
 let engines = 0
@@ -253,6 +255,11 @@ function engine(on: On, answers: Answers) {
     return { value: [{ role: 'user', text: first, toolUses: [] }, ...rest] }
   })
   on('tool.call', (_, e) => {
+    if (answers.refuse !== undefined) {
+      const deny = answers.refuse
+      delete answers.refuse
+      return { deny }
+    }
     edits.push(e.tool)
     return { result: {} }
   })
@@ -396,8 +403,8 @@ test('a brief for a change to another repository is advised, and one for this re
 
 test('a prototype builder is advised off its proto branch and not advised on it', async ($, on) => {
   // A change is a prototype when a prototype record sits at <change>/prototype.
-  // a2 is a second builder of the change, since the guard gives each agent one wrong_branch line for the change.
-  const answers: Answers = { first: { a1: BRIEF, a2: BRIEF }, prototype: PROTOTYPE, branch: 'main' }
+  // a3 is a builder the guard has not advised, so its edit on the proto branch shows what judge says there.
+  const answers: Answers = { first: { a1: BRIEF, a3: BRIEF }, prototype: PROTOTYPE, branch: 'main' }
   const { edits } = engine(on, answers)
   const off = await edit($, FILE, 'a1')
   expect(off.deny).toBeUndefined()
@@ -407,10 +414,11 @@ test('a prototype builder is advised off its proto branch and not advised on it'
       '`git switch proto/fix-it` once it exists.',
   ])
   answers.branch = ''
-  expect((await edit($, FILE, 'a2')).context?.[0]).toMatch(/checkout is on a detached HEAD\./)
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/checkout is on a detached HEAD\./)
   answers.branch = 'proto/fix-it'
+  expect((await edit($, FILE, 'a3')).context).toBeUndefined()
   expect((await edit($, FILE, 'a1')).context).toBeUndefined()
-  expect(edits).toEqual(['Edit', 'Edit', 'Edit'])
+  expect(edits).toEqual(['Edit', 'Edit', 'Edit', 'Edit'])
 })
 
 test('a prototype record Board does not read is advised as unknown, and with a healthy one there the builder is not', async ($, on) => {
@@ -729,6 +737,42 @@ test('a builder is advised once for each code its change earns', async ($, on) =
   answers.change = change({ mount: '/repos/gadgets', phase: 'build' })
   expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/^changes::guard::wrong_mount: /)
   expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+})
+
+test('a builder told its change is in plan is told again when the change is paused, and again when it is in review', async ($, on) => {
+  const answers: Answers = { first: { a1: BRIEF }, change: change({ mount: '/repos/widgets', phase: 'plan' }) }
+  engine(on, answers)
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/is in phase plan, .*changes\.advance/)
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+  answers.change = change({ mount: '/repos/widgets', phase: 'build' })
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+  answers.change = change({ mount: '/repos/widgets', phase: 'paused' })
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/is paused, .*changes\.resume/)
+  answers.change = change({ mount: '/repos/widgets', phase: 'build' })
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+  answers.change = change({ mount: '/repos/widgets', phase: 'review' })
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/is in phase review, /)
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+})
+
+test('a prototype builder is told the branch again when its checkout moves to another wrong branch', async ($, on) => {
+  const answers: Answers = { first: { a1: BRIEF }, prototype: PROTOTYPE, branch: 'main' }
+  engine(on, answers)
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/checkout is on branch main\./)
+  answers.branch = 'topic'
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/checkout is on branch topic\./)
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+})
+
+test('advice on an edit a later hook refuses is not counted as given, so the next edit gets it', async ($, on) => {
+  const answers: Answers = { first: { '': 'Coordinate the work.' }, refuse: 'a later hook refused this edit' }
+  const { edits } = engine(on, answers)
+  const refused = await edit($)
+  expect(refused.deny).toBe('a later hook refused this edit')
+  expect(refused.context).toBeUndefined()
+  expect((await edit($)).context).toEqual([noBriefLine(FILE)])
+  expect((await edit($)).context).toBeUndefined()
+  expect(edits).toEqual(['Edit', 'Edit'])
 })
 
 test('unknown advice is given on every edit, and the advice that follows a fixed lookup is given in full', async ($, on) => {

@@ -36,7 +36,7 @@ import { briefLineIn, noLine, notRendered, planText } from './brief'
 // checkout is on branch `proto/<name>`. The line starts with its code
 // (`changes::guard::no_brief`, `not_building`, `wrong_mount` or `wrong_branch`)
 // and names the command that starts a change. Each agent gets a line once: a
-// later edit that earns the same code for the same mount and change gets none.
+// later edit whose line would say the same, apart from the file, gets none.
 // A repository whose directory is listed in `boards` of the board config is
 // not guarded as a mounted repository, even when another known board mounts it,
 // since a board holds records and no code. The guard learns this from the
@@ -82,9 +82,9 @@ const WINDOW = 4096
 // over when the module reloads.
 const briefs = new Map<string, string>()
 
-// The advice each agent was given, by session id, agent id, code, board, mount
-// and the change its brief named, so an agent is told once for each change or
-// repository. It starts over as `briefs` does, and is never written to disk.
+// The advice each agent was given, by session id, agent id and the advice's
+// words with the file left out, so an agent is told each thing once. It starts
+// over as `briefs` does, and is never written to disk.
 const advised = new Set<string>()
 
 type Ran = { exitCode: number; stdout: string; stderr: string }
@@ -317,11 +317,11 @@ async function briefNamed($: EngineInterface, agentId: string | undefined): Prom
  */
 type Verdict = { deny: string } | { advise: string; once?: string } | null
 
-/** The advice `advice`, given about `at` for the change `named`, remembered by its code. */
-const remembered = (advice: string, at: Mount, named: string | null) => ({
-  advise: advice,
-  once: [advice.slice(0, advice.indexOf(':', 'changes::guard::'.length)), at.board, at.mount, named ?? ''].join('\n'),
-})
+/**
+ * The advice `advice` on an edit of `file`, remembered by its words with the file left out. The words name the code,
+ * board, mount, change, phase and branch, so advice that tells the agent anything new is given again.
+ */
+const remembered = (advice: string, file: string) => ({ advise: advice, once: advice.split(file).join('<file>') })
 
 /**
  * The verdict on an edit of `file` by `agentId`. The guard chooses no mount:
@@ -346,7 +346,7 @@ async function verdict($: EngineInterface, file: string, agentId: string | undef
     if (mounts.length === 0) await widen()
     if (mounts.length === 0) return null
     const named = await briefNamed($, agentId)
-    if (named === null) return remembered(noBrief(file, mounts[0]!, null), mounts[0]!, null)
+    if (named === null) return remembered(noBrief(file, mounts[0]!, null), file)
     // The change as each board that mounts the file's repository holds it; null where it holds none.
     const changes = new Map<string, { mount: string; phase: string } | null>()
     const mountNamed = (board: string) => {
@@ -398,9 +398,9 @@ async function verdict($: EngineInterface, file: string, agentId: string | undef
       }
       const prototype = kind.kind === 'prototype'
       const advice = judge(file, at, named, change, prototype, prototype ? await branchOf($, file) : '')
-      return advice === null ? null : remembered(advice, at, named)
+      return advice === null ? null : remembered(advice, file)
     }
-    return remembered(noBrief(file, mounts[0]!, named), mounts[0]!, named)
+    return remembered(noBrief(file, mounts[0]!, named), file)
   } catch (error) {
     const why = error instanceof Unknown ? error.message : `the lookup threw ${String(error)}`
     return state.inBoard ? { deny: unknownRecord(file, why) } : { advise: unknown(file, why) }
