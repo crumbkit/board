@@ -112,8 +112,8 @@ that one record.
   `/controls/` or a `controls/control/v1` reads as its `/rules/` form.
   `board check` does not follow `rule`, because an obligation is deleted
   once its work is done and a plan snapshot never changes. `plan` checks the
-  path when it writes it: a record that is missing is
-  `changes::ref::dangling`, and an owed path that is no rule is
+  path when it writes it: a record that is missing is left out with the
+  warning `changes::ref::dangling`, and an owed path that is no rule is
   `changes::ref::wrong_type`. A plan's text
   takes no such paths: the `considered` and `obligations` checks read only
   these fields. A `### Considered` or `## Obligations left owed` heading
@@ -560,12 +560,22 @@ of `changes` still fails `review`.
   the change named before. A plan whose text, `uses`, `paths` and `answers` equal
   those of the plan record the change names writes nothing and returns
   that record with `unchanged: true`; otherwise `unchanged` is false. It keeps each reference in `uses` once. It
-  refuses a reference that reaches nothing, or a record Board marks degraded
-  for anything but a broken reference of its own (`changes::ref::dangling`,
-  whose `refs` lists them); a directory (`changes::plan::directory`); a text
-  over 3,000 words (`changes::plan::too_long`); and Markdown documents in
-  `uses` over 3,000 words in all (`changes::plan::uses_too_long`). Words are
-  separated by whitespace. The last limit comes from
+  refuses a directory in `uses` (`changes::plan::directory`) and a text over
+  6,000 words (`changes::plan::too_long`), so a pasted log cannot become a
+  plan. It writes the plan and adds a `warnings` entry for each fault that
+  the gates catch at `advance`: a text over 3,000 words
+  (`changes::plan::too_long`), Markdown documents in `uses` over 3,000 words
+  in all (`changes::plan::uses_too_long`), each with the word count, and a
+  reference in `uses`, `considered` or `owed` that reaches nothing, or a
+  record Board marks degraded for anything but a broken reference of its
+  own (`changes::ref::dangling`). It leaves each such reference out of the
+  plan and lists it; a `considered` group left with no record is left out,
+  so the `considered` check then names any surfaced record the plan no
+  longer considers. It also warns with `changes::plan::sections_missing`
+  of each heading that a `sections` check of the change's flow, in any
+  phase, requires and the text lacks, such as the development flow's two
+  test sections, which land reads; it reads no check's `when`. Words are
+  separated by whitespace. The `uses` limit comes from
   `/evals/board-standards-selection` in the owner's board: agents that chose
   standards from each directory's `index.md` stayed within it.
 - `plan-amend --path /changes/<name> [--proves <text>] [--does-not-prove <text>]`
