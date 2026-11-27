@@ -30,8 +30,8 @@ blocks is missing.
    `stop` with `reached` true, `advance` refuses. With the `board-changes`
    mod installed, an Edit, Write or NotebookEdit of the repository by an
    agent not started from `changes.brief` runs with a line of advice,
-   given once to each agent for each change or repository; it cannot see
-   writes made through Bash. Start a builder with a prompt
+   given to each agent again only when the verdict on its edits of that
+   repository changes; it cannot see writes made through Bash. Start a builder with a prompt
    whose first line is the brief's `brief_line`, followed by the whole
    brief as `changes.brief` prints it now, as plain text, not inside a code
    fence; compact or pretty JSON with keys in any order both pass. The

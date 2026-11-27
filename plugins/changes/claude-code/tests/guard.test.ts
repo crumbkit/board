@@ -764,6 +764,28 @@ test('a prototype builder is told the branch again when its checkout moves to an
   expect((await edit($, FILE, 'a1')).context).toBeUndefined()
 })
 
+test('a builder told its change is paused is told again when it is paused after an edit in build', async ($, on) => {
+  const answers: Answers = { first: { a1: BRIEF }, change: change({ mount: '/repos/widgets', phase: 'paused' }) }
+  engine(on, answers)
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/is paused, .*changes\.resume/)
+  answers.change = change({ mount: '/repos/widgets', phase: 'build' })
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+  answers.change = change({ mount: '/repos/widgets', phase: 'paused' })
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/is paused, .*changes\.resume/)
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+})
+
+test('a prototype builder told it is on main is told again when it returns to main from its proto branch', async ($, on) => {
+  const answers: Answers = { first: { a1: BRIEF }, prototype: PROTOTYPE, branch: 'main' }
+  engine(on, answers)
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/checkout is on branch main\./)
+  answers.branch = 'proto/fix-it'
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+  answers.branch = 'main'
+  expect((await edit($, FILE, 'a1')).context?.[0]).toMatch(/checkout is on branch main\./)
+  expect((await edit($, FILE, 'a1')).context).toBeUndefined()
+})
+
 test('advice on an edit a later hook refuses is not counted as given, so the next edit gets it', async ($, on) => {
   const answers: Answers = { first: { '': 'Coordinate the work.' }, refuse: 'a later hook refused this edit' }
   const { edits } = engine(on, answers)

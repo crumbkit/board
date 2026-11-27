@@ -35,8 +35,10 @@ import { briefLineIn, noLine, notRendered, planText } from './brief'
 // change in build to that repository, and, for a prototype, the file's
 // checkout is on branch `proto/<name>`. The line starts with its code
 // (`changes::guard::no_brief`, `not_building`, `wrong_mount` or `wrong_branch`)
-// and names the command that starts a change. Each agent gets a line once: a
-// later edit whose line would say the same, apart from the file, gets none.
+// and names the command that starts a change. The guard remembers the last
+// verdict on each agent's edits of each mount, so an edit whose line would say
+// what that verdict said, apart from the file, gets none. An edit that needed
+// no advice counts as a verdict too, so advice that returns is given again.
 // A repository whose directory is listed in `boards` of the board config is
 // not guarded as a mounted repository, even when another known board mounts it,
 // since a board holds records and no code. The guard learns this from the
@@ -82,10 +84,10 @@ const WINDOW = 4096
 // over when the module reloads.
 const briefs = new Map<string, string>()
 
-// The advice each agent was given, by session id, agent id and the advice's
-// words with the file left out, so an agent is told each thing once. It starts
-// over as `briefs` does, and is never written to disk.
-const advised = new Set<string>()
+// The last verdict on each agent's edits of each mount, by session id, agent id,
+// board and mount: the advice's words with the file left out, or '' for an edit
+// that needed none. It starts over as `briefs` does, and is never written to disk.
+const last = new Map<string, string>()
 
 type Ran = { exitCode: number; stdout: string; stderr: string }
 const sh = ($: EngineInterface, script: string, args: string[]): Promise<Ran> =>
@@ -311,17 +313,25 @@ async function briefNamed($: EngineInterface, agentId: string | undefined): Prom
 }
 
 /**
- * What the guard does with an edit: refuses a board record, or admits it with a line of advice, or null to admit it
- * untouched. Advice with `once` is given to an agent only the first time; `unknown` advice has none, since the next
- * lookup may fail differently or pass.
+ * A verdict the guard remembers: the board and mount of the edit, and what it said, the advice's words with the file
+ * left out, or '' when it needed none. The words name the code, board, mount, change, phase and branch.
  */
-type Verdict = { deny: string } | { advise: string; once?: string } | null
+type Memo = { slot: string; said: string }
 
 /**
- * The advice `advice` on an edit of `file`, remembered by its words with the file left out. The words name the code,
- * board, mount, change, phase and branch, so advice that tells the agent anything new is given again.
+ * What the guard does with an edit: refuses a board record, or admits it with a line of advice, or admits it
+ * untouched. A verdict with `memo` is remembered, and its advice is given only when the agent's last verdict on that
+ * mount said something else. `unknown` advice has no memo, since the next lookup may fail differently or pass.
  */
-const remembered = (advice: string, file: string) => ({ advise: advice, once: advice.split(file).join('<file>') })
+type Verdict = { deny: string } | { advise: string; memo?: Memo } | { memo: Memo } | null
+
+/** The verdict on an edit of `file` in `at`: `advice`, or none when it is null, remembered for the mount. */
+const remembered = (advice: string | null, file: string, at: Mount): Verdict => {
+  const slot = `${at.board}\n${at.mount}`
+  return advice === null
+    ? { memo: { slot, said: '' } }
+    : { advise: advice, memo: { slot, said: advice.split(file).join('<file>') } }
+}
 
 /**
  * The verdict on an edit of `file` by `agentId`. The guard chooses no mount:
@@ -346,7 +356,7 @@ async function verdict($: EngineInterface, file: string, agentId: string | undef
     if (mounts.length === 0) await widen()
     if (mounts.length === 0) return null
     const named = await briefNamed($, agentId)
-    if (named === null) return remembered(noBrief(file, mounts[0]!, null), file)
+    if (named === null) return remembered(noBrief(file, mounts[0]!, null), file, mounts[0]!)
     // The change as each board that mounts the file's repository holds it; null where it holds none.
     const changes = new Map<string, { mount: string; phase: string } | null>()
     const mountNamed = (board: string) => {
@@ -398,9 +408,9 @@ async function verdict($: EngineInterface, file: string, agentId: string | undef
       }
       const prototype = kind.kind === 'prototype'
       const advice = judge(file, at, named, change, prototype, prototype ? await branchOf($, file) : '')
-      return advice === null ? null : remembered(advice, file)
+      return remembered(advice, file, at)
     }
-    return remembered(noBrief(file, mounts[0]!, named), file)
+    return remembered(noBrief(file, mounts[0]!, named), file, mounts[0]!)
   } catch (error) {
     const why = error instanceof Unknown ? error.message : `the lookup threw ${String(error)}`
     return state.inBoard ? { deny: unknownRecord(file, why) } : { advise: unknown(file, why) }
@@ -408,8 +418,9 @@ async function verdict($: EngineInterface, file: string, agentId: string | undef
 }
 
 /**
- * Runs the edit unless `v` refuses it; adds the advice of `v` to the result of an edit that ran, unless `agentId`
- * was given the same advice before. A session id that cannot be read leaves the advice unremembered.
+ * Runs the edit unless `v` refuses it; adds the advice of `v` to the result of an edit that ran, unless the last
+ * verdict on `agentId`'s edits of the mount said the same, and remembers `v` as that verdict. An edit a later hook
+ * refuses changes nothing. A session id that cannot be read leaves the verdict unremembered.
  */
 async function guarded<R extends { deny?: string; context?: string[] }>(
   $: EngineInterface,
@@ -418,17 +429,20 @@ async function guarded<R extends { deny?: string; context?: string[] }>(
   next: () => Promise<R>,
 ) {
   if (v !== null && 'deny' in v) return { deny: v.deny }
+  const memo = v !== null && 'memo' in v ? v.memo : undefined
   let key: string | undefined
-  if (v?.once !== undefined) {
+  if (memo !== undefined) {
     try {
-      key = `${await $.session.id()}\n${agentId ?? ''}\n${v.once}`
+      key = `${await $.session.id()}\n${agentId ?? ''}\n${memo.slot}`
     } catch {
       key = undefined
     }
   }
   const ran = await next()
-  if (v === null || ran.deny !== undefined || (key !== undefined && advised.has(key))) return ran
-  if (key !== undefined) advised.add(key)
+  if (v === null || ran.deny !== undefined) return ran
+  const repeated = key !== undefined && last.get(key) === memo!.said
+  if (key !== undefined) last.set(key, memo!.said)
+  if (!('advise' in v) || repeated) return ran
   return { ...ran, context: [...(ran.context ?? []), v.advise] }
 }
 

@@ -2,10 +2,12 @@
 
 ## Unreleased
 
-- The `board-changes` mod's edit guard gives each agent a line of advice
-  once. A later edit by the same agent whose line would say the same, apart
-  from the file, runs with no line. A line that says something new, such as
-  another phase, branch, repository or change, is given in full. Advice
+- The `board-changes` mod's edit guard remembers the last verdict on each
+  agent's edits of each repository, counting an edit that needed no advice.
+  A later edit by the same agent whose line would say what that verdict
+  said, apart from the file, runs with no line. A line that says something
+  new, such as another phase, branch or change, is given in full, and so is
+  advice that returns after an edit that needed none. Advice
   that a lookup failed is still given on every edit, and an edit of a
   board record is still refused every time. The memory lasts until the mod
   reloads, as on `/clear` and `/resume`.
