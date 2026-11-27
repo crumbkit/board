@@ -27,6 +27,13 @@
   next` lists as `amended` and the pull request body lists under "Plan
   amendments". At land, `changes next` and the `test-sections` check's
   remedy name `changes plan-amend` in place of a whole-plan resend.
+- The plans and effects Claude Code mods run `board` on their minute's tick
+  only when the board's HEAD commit or Git index changed since their last
+  read that worked. They read both as files, with no process. On a board
+  with no new commit, a session's two mods run no `board` between the
+  owner's own reads, where they ran about 1 s of `board` each minute. The
+  pane and an answer still read at once, and a new commit shows within one
+  tick.
 - A query that looks entries or records up by logical path, blob or record
   type reads an index in place of every entry, so plugin calls that look
   records up, such as `plans open` and `changes next`, answer faster. The

@@ -69,6 +69,8 @@ type Answers = {
   delivered?: boolean
   report?: string
   host?: string | null
+  /** The board's .git files, as gitFiles stands them in, whose text fs.read reads. */
+  files?: Record<string, File>
 }
 
 const NO_CHANGES = JSON.stringify({ schema: 'board/failure/v1', code: 'board::plugin::not_installed', message: 'plugin changes is not installed' })
@@ -127,6 +129,10 @@ function engine(on: On, answers: Answers = {}) {
   })
   on('ui.log', () => ({ value: undefined }))
   on('fs.read', (_, e) => {
+    const held = answers.files?.[e.path]?.text
+    if (held !== undefined) return { value: held }
+    // A board config that names no personal board, so a test that names no board has an unknown stamp.
+    if (e.path.endsWith('/board/config.json')) return { value: '{}' }
     const text = disk.get(e.path)
     if (text === undefined) throw new Error('missing')
     return { value: text }
@@ -813,6 +819,105 @@ test('a band that stays on screen is drawn again by each read, so it reads what 
   expect(reads(ran, waited)).toEqual({ waiting: 7, open: 1 })
 })
 
+// When the board's stamp gates the minute's reads. The board's .git is stood
+// in by fs hooks; tests above name no board and read a board config that
+// names none, so their stamp is unknown and every minute reads, as the mod
+// did before the stamp.
+type File = { text?: string; size?: number; mtimeMs?: number; kind?: 'file' | 'dir' }
+const GIT = '/boards/me/.git'
+/**
+ * Stands in for the board's .git at /boards/me, whose HEAD names main, and
+ * returns its files to change. Pass them to engine as `files`, whose fs.read
+ * reads their text.
+ */
+function gitFiles(on: On) {
+  const held: Record<string, File> = {
+    [GIT]: { kind: 'dir' },
+    [`${GIT}/HEAD`]: { text: 'ref: refs/heads/main\n' },
+    [`${GIT}/refs/heads/main`]: { text: `${'1'.repeat(40)}\n` },
+    [`${GIT}/index`]: { size: 4096, mtimeMs: 1000 },
+  }
+  on('fs.exists', (_, e) => ({ value: held[e.path] !== undefined }))
+  on('fs.stat', (_, e) => {
+    const file = held[e.path]
+    if (file === undefined) throw new Error(`ENOENT: ${e.path}`)
+    return { value: { kind: file.kind ?? 'file', size: file.size ?? 0, mtimeMs: file.mtimeMs ?? 0, isLink: false } }
+  })
+  return held
+}
+const ME = { options: { board: '/boards/me' } }
+
+test('drawn minutes on a board whose HEAD and index stay as they were run no board, and its twin, a new commit, reads once on the next tick', ME, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = gitFiles(on)
+  const { ran, waited } = engine(on, { files: held, waiting: () => ({ exitCode: 0, stdout: waitingReport(3, 1) }) })
+  await start($)
+  for (let i = 0; i < 10; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(reads(ran, waited)).toEqual({ waiting: 1, open: 1 })
+  held[`${GIT}/refs/heads/main`] = { text: '2'.repeat(40) }
+  await draw($, clock)
+  await clock.advance(60_000)
+  expect(reads(ran, waited)).toEqual({ waiting: 2, open: 1 })
+  for (let i = 0; i < 5; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(reads(ran, waited)).toEqual({ waiting: 2, open: 1 })
+})
+
+test('a write to the board\'s index reads what waits on the next tick, and the open list when the count changed', ME, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = gitFiles(on)
+  let total = 3
+  const { ran, waited } = engine(on, { files: held, waiting: () => ({ exitCode: 0, stdout: waitingReport(total, 1) }) })
+  await start($)
+  await draw($, clock)
+  await clock.advance(60_000)
+  expect(reads(ran, waited)).toEqual({ waiting: 1, open: 1 })
+  total = 4
+  held[`${GIT}/index`] = { size: 4096, mtimeMs: 2000 }
+  await draw($, clock)
+  await clock.advance(60_000)
+  expect(reads(ran, waited)).toEqual({ waiting: 2, open: 2 })
+})
+
+test('a read that fails on an unchanged board is tried again on the next tick, until one works', ME, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = gitFiles(on)
+  let fails = true
+  const down = { exitCode: 1, stdout: JSON.stringify({ schema: 'board/failure/v1', code: 'board::lock::timeout', message: 'the board is busy' }) }
+  const { ran, waited } = engine(on, { files: held, waiting: () => (fails ? down : { exitCode: 0, stdout: waitingReport(3, 1) }) })
+  await start($)
+  for (let i = 0; i < 2; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(reads(ran, waited)).toEqual({ waiting: 3, open: 1 })
+  fails = false
+  for (let i = 0; i < 3; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(reads(ran, waited)).toEqual({ waiting: 4, open: 2 })
+})
+
+test('on an unchanged board the questions pane and an answer still read at once', ME, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = gitFiles(on)
+  const { ran, waited } = engine(on, { files: held, waiting: () => ({ exitCode: 0, stdout: waitingReport(2, 1) }) })
+  await start($)
+  await clock.advance(61_000)
+  await draw($, clock, pane('questions'))
+  expect(reads(ran, waited)).toEqual({ waiting: 1, open: 2 })
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  expect(ran.map(r => r[3])).toEqual(['plans.open', 'plans.open', 'plans.answer', 'plans.open'])
+  expect(waited).toHaveLength(2)
+})
+
 /** A change ready to land at `/changes/<name>`, as changes.ready lists it, with `fields`. */
 const landing = (name: string, fields: Record<string, unknown> = {}) => ({
   path: `/changes/${name}`,
@@ -998,4 +1103,121 @@ test('Waiting leaves out the questions Ready to land counts, so a check is count
     'core · 1h',
     'How many users have a blank email?',
   ])
+})
+
+test('drawn minutes on an unchanged board read changes.ready once, at the session start, and a new commit reads it once on the next tick', ME, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = gitFiles(on)
+  const { readied } = engine(on, { files: held, waiting: () => ({ exitCode: 0, stdout: waitingReport(3, 1) }), ready: readyOf([landing('t')]) })
+  await start($)
+  await clock.advance(0)
+  for (let i = 0; i < 10; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(readied).toHaveLength(1)
+  held[`${GIT}/refs/heads/main`] = { text: '2'.repeat(40) }
+  await draw($, clock)
+  await clock.advance(60_000)
+  expect(readied).toHaveLength(2)
+  for (let i = 0; i < 5; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(readied).toHaveLength(2)
+})
+
+test('a changes.ready read that fails on an unchanged board is tried again on the next tick, while what waits is not read again', ME, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = gitFiles(on)
+  let fails = true
+  const down = { exitCode: 1, stdout: JSON.stringify({ schema: 'board/failure/v1', code: 'board::query::timeout', message: 'the query ran longer than 1s' }) }
+  const ok = readyOf([landing('t')])
+  const { ran, waited, readied } = engine(on, { files: held, waiting: () => ({ exitCode: 0, stdout: waitingReport(3, 1) }), ready: () => (fails ? down : ok()) })
+  await start($)
+  await clock.advance(0)
+  await draw($, clock)
+  await clock.advance(60_000)
+  expect(readied).toHaveLength(2)
+  fails = false
+  for (let i = 0; i < 3; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(readied).toHaveLength(3)
+  expect(reads(ran, waited)).toEqual({ waiting: 1, open: 1 })
+})
+
+test('an answer on an unchanged board reads changes.ready again', ME, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = gitFiles(on)
+  const { readied } = engine(on, { files: held, waiting: () => ({ exitCode: 0, stdout: waitingReport(2, 1) }), ready: readyOf([landing('t')]) })
+  await start($)
+  await clock.advance(0)
+  expect(readied).toHaveLength(1)
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  await clock.advance(0)
+  expect(readied).toHaveLength(2)
+})
+
+test('a changes.ready read whose merge checks git could not answer is read again on the next tick of an unchanged board, and its twin without the warning is not', ME, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = gitFiles(on)
+  let warn = true
+  const report = () => ({
+    exitCode: 0,
+    stdout: JSON.stringify({
+      schema: 'board/call-report/v2',
+      data: { plugin: 'changes', capability: 'ready', output: { changes: [landing('t')], total: 1, truncated: false, unreadable: 0, ...(warn ? { warnings: [{ code: 'changes::ready::merge_unread', detail: 'the merge check ran out of time' }] } : {}) } },
+    }),
+  })
+  const { readied } = engine(on, { files: held, waiting: () => ({ exitCode: 0, stdout: waitingReport(3, 1) }), ready: report })
+  await start($)
+  await clock.advance(0)
+  for (let i = 0; i < 2; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(readied).toHaveLength(3)
+  warn = false
+  for (let i = 0; i < 3; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(readied).toHaveLength(4)
+})
+
+test('an unchanged board reads changes.ready again an hour after its last read that worked, for the mounts and the date the stamp does not see', ME, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = gitFiles(on)
+  const { ran, waited, readied } = engine(on, { files: held, waiting: () => ({ exitCode: 0, stdout: waitingReport(3, 1) }), ready: readyOf([landing('t')]) })
+  await start($)
+  await clock.advance(0)
+  for (let i = 0; i < 30; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(readied).toHaveLength(1)
+  for (let i = 0; i < 40; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(readied).toHaveLength(2)
+  expect(reads(ran, waited)).toEqual({ waiting: 1, open: 1 })
+})
+
+test('a plans.waiting read that fails on an unchanged board is tried again on the next tick, while changes.ready is not read again', ME, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const held = gitFiles(on)
+  const down = { exitCode: 1, stdout: JSON.stringify({ schema: 'board/failure/v1', code: 'board::lock::timeout', message: 'the board is busy' }) }
+  const { waited, readied } = engine(on, { files: held, waiting: () => down, ready: readyOf([landing('t')]) })
+  await start($)
+  await clock.advance(0)
+  for (let i = 0; i < 2; i++) {
+    await draw($, clock)
+    await clock.advance(60_000)
+  }
+  expect(waited).toHaveLength(3)
+  expect(readied).toHaveLength(1)
 })

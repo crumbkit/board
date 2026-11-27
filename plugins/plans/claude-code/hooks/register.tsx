@@ -6,6 +6,8 @@ import { SLOT, drawsInto, joinBand, keepOneBand } from './band'
 import { failingLabel, failingMode, failingPart, keptLines, kindLabel, parseReady, pullRef, readyBadge, readyFor, stateText, transitions, waitingLess, waitsOnFailing } from './ready'
 import { begin, countCallsForList, end, isDue, REFRESH_MS, schedule, tickIsDue } from './refresh'
 import type { Counted, Schedule } from './refresh'
+import { unseen, whenChanged } from './stamp'
+import type { Seen } from './stamp'
 import { answerText, approvalText, approvedChange, blocking, countBadge, failure, parseAnswered, parseApproved, parseOpen, parseRows, parseWaiting, plain, project, refused, report, REPORT_LIMIT, REPORT_SQL, WRITTEN_BY } from './plans'
 
 // The mod reads the owner's open questions from Board, draws their count in
@@ -35,6 +37,10 @@ const TIMEOUT_MS = 5000
 // changes.ready reads gates and runs merge checks, so its read gets longer. It
 // runs beside the refresh, never awaited, so the band keeps the last count while it runs.
 const READY_TIMEOUT_MS = 20_000
+// changes.ready's conflict marks follow the mounted repositories and its day
+// counts follow the date, which the board's stamp does not see, so an
+// unchanged board still reads it once this long after the last read that worked.
+const READY_STALE_MS = 3_600_000
 // plans.answer takes board's lock twice, for the answer and for the attach,
 // and each take may wait up to 5 seconds.
 const ANSWER_MS = 15_000
@@ -43,9 +49,12 @@ const LISTED = 100
 
 type Ran = { exitCode: number; stdout: string; stderr: string }
 
+/** The configured board's directory; empty for the personal board. */
+const configured = (options: PluginOptions) => String(options.board ?? '')
+
 /** Runs `board` with `args` in the configured board, the personal board when none is set. */
 function board($: EngineInterface, options: PluginOptions, args: string[], timeoutMs = TIMEOUT_MS): Promise<Ran> {
-  const dir = String(options.board ?? '')
+  const dir = configured(options)
   const where = dir === '' ? ['--personal'] : ['-C', dir]
   return $.process.run(['/bin/sh', '-c', RUN, 'board', ...where, '--json', ...args], { timeoutMs })
 }
@@ -97,11 +106,14 @@ async function recordFailing($: EngineInterface, found: Ready) {
 /**
  * Reads the changes ready to land. A board with no changes plugin, or one
  * without `ready`, says so once and is not asked again while the module is
- * loaded. A failure keeps the last count.
+ * loaded. A failure keeps the last count. Says whether the read worked; a
+ * read that carries warnings, such as a merge check git could not answer in
+ * time, counts as not worked, so the next tick reads again.
  */
-async function refreshReady($: EngineInterface, options: PluginOptions, local: { readyAbsent: boolean }) {
-  if (local.readyAbsent) return
+async function refreshReady($: EngineInterface, options: PluginOptions, local: { readyAbsent: boolean }): Promise<boolean> {
+  if (local.readyAbsent) return true
   let why: string | null
+  let warned = false
   try {
     const ran = await board($, options, ['call', 'changes.ready'], READY_TIMEOUT_MS)
     const read = parseReady(ran.exitCode, ran.stdout, ran.stderr)
@@ -112,6 +124,7 @@ async function refreshReady($: EngineInterface, options: PluginOptions, local: {
     if (read.kind === 'read') {
       await update($, ready, () => read.ready)
       await recordFailing($, read.ready)
+      warned = warnedIn(ran.stdout)
     }
     why = read.kind === 'failed' ? read.why : null
   } catch (error) {
@@ -119,6 +132,17 @@ async function refreshReady($: EngineInterface, options: PluginOptions, local: {
   }
   if (why !== null) $.ui.log(`board: changes.ready failed: ${why}`, { to: 'debug' })
   await update($, readyFailed, () => why)
+  return why === null && !warned
+}
+
+/** Whether a changes.ready report lists any warning. */
+function warnedIn(stdout: string): boolean {
+  try {
+    const warnings = (JSON.parse(stdout) as { data?: { output?: { warnings?: unknown } } }).data?.output?.warnings
+    return Array.isArray(warnings) && warnings.length > 0
+  } catch {
+    return false
+  }
 }
 
 /** Reads the open questions again, and says whether the read worked. A failure is logged, kept for the band and keeps the last count read. */
@@ -138,18 +162,34 @@ async function refreshOpen($: EngineInterface, options: PluginOptions): Promise<
   return found !== null
 }
 
-/** What the mod keeps between reads: whether plans.waiting or changes.ready is absent, whether a changes.ready read runs, and its schedule. */
-type Local = { absent: boolean; readyAbsent: boolean; readying: boolean; schedule: Schedule }
+/**
+ * What the mod keeps between reads: whether plans.waiting or changes.ready is
+ * absent, whether a changes.ready read runs, its schedule, and the board's
+ * stamp the last read that worked saw, one for the questions and one for the
+ * changes ready to land, and when the last changes.ready read that worked began.
+ */
+type Local = { absent: boolean; readyAbsent: boolean; readying: boolean; schedule: Schedule; seen: Seen; readySeen: Seen; readyAt: number }
 
 /**
  * Starts a read of the changes ready to land without waiting for it, so no
  * refresh, session start or answer waits on it. While one runs, another is
- * not started.
+ * not started. It runs no `board` when the board's stamp is the one the last
+ * read of changes.ready that worked saw and that read is less than
+ * READY_STALE_MS old; `always` reads regardless, as a session start and an
+ * answer do.
  */
-function startReady($: EngineInterface, options: PluginOptions, local: Local) {
+function startReady($: EngineInterface, options: PluginOptions, local: Local, always = false) {
   if (local.readying || local.readyAbsent) return
   local.readying = true
-  void guarded($, 'changes.ready', () => refreshReady($, options, local), () => {
+  void guarded($, 'changes.ready', async () => {
+    const now = await $.clock.now()
+    const stale = now - local.readyAt >= READY_STALE_MS
+    await whenChanged($, configured(options), local.readySeen, async () => {
+      const worked = await refreshReady($, options, local)
+      if (worked) local.readyAt = now
+      return worked
+    }, always || stale)
+  }, () => {
     local.readying = false
   })
 }
@@ -167,15 +207,21 @@ async function guarded($: EngineInterface, what: string, work: () => Promise<voi
 
 const totalOf = (counted: Counted) => (counted.kind === 'read' ? counted.total : null)
 
-/** Reads the open questions, whose read the schedule marks begun, and marks it ended beside the count `total`. */
-async function list($: EngineInterface, options: PluginOptions, s: Schedule, total: number | null) {
+/** Reads the open questions, whose read the schedule marks begun, marks it ended beside the count `total`, and says whether it worked. */
+async function list($: EngineInterface, options: PluginOptions, s: Schedule, total: number | null): Promise<boolean> {
   let worked = false
   await guarded($, 'plans.open', async () => {
     worked = await refreshOpen($, options)
   }, () => end(s, 'list', { worked, total }))
+  return worked
 }
 
-/** Reads the open questions and what waits on the owner, side by side, as a session starts and after an answer. */
+/**
+ * Reads the open questions and what waits on the owner, side by side, as a
+ * session starts and after an answer. It reads whatever the board's stamp
+ * says, and records the stamp when both reads work, so the next minute's
+ * tick on an unchanged board runs no `board`.
+ */
 async function refreshBoth($: EngineInterface, options: PluginOptions, local: Local) {
   const s = local.schedule
   const now = await $.clock.now()
@@ -184,24 +230,35 @@ async function refreshBoth($: EngineInterface, options: PluginOptions, local: Lo
   let worked = false
   let counted: Counted = { kind: 'failed' }
   await guarded($, 'a refresh', async () => {
-    startReady($, options, local)
-    ;[worked, counted] = await Promise.all([refreshOpen($, options), refreshWaiting($, options, local)])
+    startReady($, options, local, true)
+    // `always` makes whenChanged read whatever the stamp says; it is called only to record the stamp.
+    await whenChanged($, configured(options), local.seen, async () => {
+      ;[worked, counted] = await Promise.all([refreshOpen($, options), refreshWaiting($, options, local)])
+      return worked && counted.kind !== 'failed'
+    }, true)
   }, () => {
     end(s, 'count')
     end(s, 'list', { worked, total: totalOf(counted) })
   })
 }
 
-/** Reads what waits on the owner, whose read the schedule marks begun, and the open questions only when the count calls for them. */
+/**
+ * Reads what waits on the owner, whose read the schedule marks begun, and the
+ * open questions only when the count calls for them. It runs no `board` when
+ * the board's stamp is the one the last read that worked saw; the schedule
+ * still counts the minute as read, so the next check is a minute away.
+ */
 async function refreshCount($: EngineInterface, options: PluginOptions, local: Local) {
   const s = local.schedule
   await guarded($, 'plans.waiting', async () => {
     startReady($, options, local)
-    const counted = await refreshWaiting($, options, local)
-    const now = await $.clock.now()
-    if (!countCallsForList(s, counted, now)) return
-    begin(s, 'list', now)
-    await list($, options, s, totalOf(counted))
+    await whenChanged($, configured(options), local.seen, async () => {
+      const counted = await refreshWaiting($, options, local)
+      const now = await $.clock.now()
+      if (!countCallsForList(s, counted, now)) return counted.kind !== 'failed'
+      begin(s, 'list', now)
+      return (await list($, options, s, totalOf(counted))) && counted.kind !== 'failed'
+    })
   }, () => end(s, 'count'))
 }
 
@@ -292,7 +349,7 @@ const age = (asked: string, now: number) => {
 }
 
 export const register: Register = (on, options) => {
-  const local: Local = { absent: false, readyAbsent: false, readying: false, schedule: schedule() }
+  const local: Local = { absent: false, readyAbsent: false, readying: false, schedule: schedule(), seen: unseen(), readySeen: unseen(), readyAt: 0 }
   const mode = failingMode(options.failing)
 
   // The minute's refresh starts with the first band drawn, which a `-p` run
