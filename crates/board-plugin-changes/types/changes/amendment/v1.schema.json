@@ -1,0 +1,45 @@
+{
+  "additionalProperties": false,
+  "description": "`changes/amendment/v1`: the test headings one `changes.plan-amend`\nfilled in a plan.\n\nIt lives at `/changes/<name>/amendments/<stamp>`, with the stamp of the\nplan it wrote.",
+  "properties": {
+    "$type": {
+      "const": "changes/amendment/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "from": {
+      "description": "The plan version it added to.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "changes/plan/v1"
+    },
+    "plan": {
+      "description": "The plan version the amendment wrote.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "changes/plan/v1"
+    },
+    "sections": {
+      "description": "The test headings it filled in the plan's text, one or both.",
+      "items": {
+        "description": "A heading of a plan's text that an amendment may fill, which the land\ngate's `test-sections` check reads.",
+        "enum": [
+          "What the tests prove",
+          "What the tests do not prove"
+        ],
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "$type",
+    "plan",
+    "from",
+    "sections"
+  ],
+  "title": "AmendmentRecord",
+  "type": "object",
+  "x-board-folder": "/changes/{change}/amendments/"
+}

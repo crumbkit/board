@@ -1,7 +1,7 @@
 ok artifacts 0.1.0 disabled offers list, import, record, set, agree
 ok autosync 0.1.0 disabled offers add, run, status, install, uninstall
 ok boundary 0.1.0 disabled offers check, covers, verify, record
-ok changes 0.1.0 disabled offers start, next, attach, advance, open, owed, ready, ask, pr, plan, lifecycle, brief, prototype, verdict, pause, resume, reopen, reflow, sync, drop, migrate, run, stop, approve
+ok changes 0.1.0 disabled offers start, next, attach, advance, open, owed, ready, ask, pr, plan, lifecycle, brief, prototype, verdict, pause, resume, reopen, reflow, sync, drop, migrate, run, stop, approve, plan-amend
 ok evals 0.1.0 disabled offers about, open, migrate
 ok github 0.1.0 disabled offers ref, push, pr-create, pr-edit, comment, issue-create, tag, release-create, merge, ci, install-hook, pre-push, covers
 ok jira 0.1.0 disabled offers ref
@@ -13,7 +13,7 @@ ok places 0.1.0 disabled offers attach, detach, list
 ok plans 0.1.0 disabled offers open, answer, withdraw, migrate, waiting, sweep, ask, stale, decide
 ok priorities 0.1.0 disabled offers list, set, move, drop, confirm
 ok prompts 0.1.0 disabled offers get, list
-ok requests 0.1.0 disabled offers thread
+ok requests 0.1.0 disabled offers thread, threads
 ok review 0.2.0 disabled offers run, post, covered
 ok rules 0.1.0 disabled offers for-path, for-paths, check, evaluate, from-standards, migrate, report
 ok runs 0.1.0 disabled offers latest, trend, migrate

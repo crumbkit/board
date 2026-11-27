@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use super::*;
 
+mod amend;
 mod approve;
 mod authoring;
 mod brief;
@@ -48,6 +49,8 @@ const STOP_SCHEMA: &str =
     include_str!("../../../../board-plugin-changes/types/changes/stop/v1.schema.json");
 const REOPEN_SCHEMA: &str =
     include_str!("../../../../board-plugin-changes/types/changes/reopen/v1.schema.json");
+const AMENDMENT_SCHEMA: &str =
+    include_str!("../../../../board-plugin-changes/types/changes/amendment/v1.schema.json");
 
 const HEAD: &str = "a3f9c0de1234567890abcdef1234567890abcdef";
 const BASE: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -830,7 +833,8 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
             "migrate",
             "run",
             "stop",
-            "approve"
+            "approve",
+            "plan-amend"
         ])
     );
     for (kind, schema) in [
@@ -843,6 +847,7 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
         ("attempt/v1", ATTEMPT_SCHEMA),
         ("stop/v1", STOP_SCHEMA),
         ("reopen/v1", REOPEN_SCHEMA),
+        ("amendment/v1", AMENDMENT_SCHEMA),
     ] {
         let written = board.read(&format!(".board/types/changes/{kind}.schema.json"));
         let shipped: Value = serde_json::from_str(schema).unwrap();
