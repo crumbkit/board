@@ -88,16 +88,50 @@ fn versions_in(text: &str) -> Vec<String> {
     found
 }
 
+/// The version ids that follow `name` in `text`: an id holding a digit
+/// after the word `version`, right after the name.
+fn versions_after(text: &str, name: &str) -> Vec<String> {
+    (text.match_indices(name))
+        .filter_map(|(at, _)| {
+            let found = AGREED_VERSION.captures(&text[at + name.len()..])?;
+            Some(found.get(1)?.as_str().to_owned())
+        })
+        .collect()
+}
+
+static AGREED_VERSION: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"(?i)^[\s,;:(]*version[ :]+`?([A-Za-z0-9_-]*[0-9][A-Za-z0-9_-]*)`?"));
+
+/// How many mockups `text` names: each distinct URL, and each board path in
+/// inline code.
+fn named_count(text: &str) -> usize {
+    let mut named: BTreeSet<&str> = (MOCKUP_URL.find_iter(text))
+        .map(|each| each.as_str().trim_end_matches(['.', ',', ';', ':']))
+        .collect();
+    named.extend(
+        (MOCKUP_PATH.captures_iter(text)).filter_map(|captures| Some(captures.get(1)?.as_str())),
+    );
+    named.len()
+}
+
 /// Each agreement of `mockup` by the owner: an attached decision the owner
 /// signed that names it, or its artifact, in its urls, its refs or its
 /// words, or an attached answer from the owner whose chosen option names it
-/// whole. The versions it names are those in its words, urls and refs, and
-/// the mockup's own when it is a `/versions/` path the agreement names.
+/// whole. An agreement that names one mockup names each version its words,
+/// urls and refs give anywhere; one that names several names only the
+/// versions right after this mockup's own name. Either names the mockup's
+/// own version when it is a `/versions/` path the agreement names.
 fn agreements<'a>(observed: &'a Observed, mockup: &str) -> Vec<Agreement<'a>> {
     let artifact = artifact_of(mockup);
     let names: Vec<&str> = std::iter::once(mockup).chain(artifact).collect();
     let versions = |text: &str, exact: bool| {
-        let mut found = versions_in(text);
+        let mut found = if named_count(text) > 1 {
+            (names.iter())
+                .flat_map(|name| versions_after(text, name))
+                .collect()
+        } else {
+            versions_in(text)
+        };
         if let Some(own) = exact.then(|| version_in(mockup)).flatten()
             && !found.contains(&own)
         {
@@ -116,10 +150,11 @@ fn agreements<'a>(observed: &'a Observed, mockup: &str) -> Vec<Agreement<'a>> {
             .iter()
             .any(|name| listed.contains(name) || names_whole(words, name))
         {
-            let all = format!(
-                "{words} {}",
-                listed.iter().copied().collect::<Vec<_>>().join(" ")
-            );
+            let shown: Vec<String> = (listed.iter())
+                .filter(|each| each.starts_with("http") || each.starts_with("/artifacts/"))
+                .map(|each| format!("`{each}`"))
+                .collect();
+            let all = format!("{words} {}", shown.join(" "));
             let exact = listed.contains(mockup) || names_whole(words, mockup);
             found.push(Agreement {
                 by,
@@ -241,7 +276,7 @@ pub(crate) fn passed(observed: &Observed, found: &BTreeMap<String, String>) -> S
 
 /// The artifact a `/artifacts/<id>/versions/<id>` path names a version of,
 /// which a decision may name in place of the version.
-fn artifact_of(path: &str) -> Option<&str> {
+pub(crate) fn artifact_of(path: &str) -> Option<&str> {
     let (artifact, _) = path.split_once("/versions/")?;
     artifact.starts_with("/artifacts/").then_some(artifact)
 }

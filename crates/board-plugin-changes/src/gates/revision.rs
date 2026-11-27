@@ -1,23 +1,24 @@
 //! Which revision of the change's plan each owner approval approved, and
 //! whether the current plan differs from it in substance.
 //!
-//! Only an explicit approval of the plan counts: a decision whose refs name
-//! a revision approves that revision, and a decision whose refs name none
-//! is about the plan's content and approves nothing. An answer whose chosen
-//! option names a revision approves that revision; any other answer
-//! approves the earliest revision whose `records` list holds it, the one
-//! current when it was attached. A Touch ID approval approves the revision
-//! it signed. An approval of a revision Board no longer reads lapses. The
-//! plan differs in substance when its typed answers differ, or the text of
-//! its Outcome, Out of scope, UX or Data section differs once runs of
-//! whitespace are collapsed; anything else is routine.
+//! Only an explicit approval of the plan counts, and it names the revision
+//! it approves: a decision whose refs name the change and a revision, and
+//! that signs off no other owner check's record, an answer whose chosen
+//! option names the change and a revision, as the option `changes ask`
+//! writes does, or a Touch ID approval of the revision it signed. A
+//! decision or answer that names no revision is about the plan's content
+//! and approves nothing. An approval of a revision Board no longer reads
+//! lapses. The plan differs in substance when its typed answers differ, or
+//! the text of its Outcome, Out of scope, UX or Data section differs once
+//! runs of whitespace are collapsed; anything else is routine.
 
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value};
 
+use super::design::{artifact_of, mockups};
 use super::kinds::{ANSWER_TYPE, answers_count, chosen_text, meets};
-use super::{Approval, HEADING, Observed, Revision, sections, strings};
+use super::{Approval, HEADING, Observed, Revision, UNDERSTANDING_TYPE, sections, strings};
 use crate::flow::{self, Where};
 
 /// The sections whose text an approval covers, by heading in lower case,
@@ -52,8 +53,6 @@ pub(crate) enum Standing {
         revision: String,
         changed: Vec<String>,
     },
-    /// Board cannot tell which revision it approved.
-    Unbound,
     /// It approved a revision Board no longer reads, `named` as a detail
     /// names it.
     Gone { named: String },
@@ -67,9 +66,22 @@ impl Standing {
 }
 
 /// Whether the decision `body` approves the plan explicitly: its refs name
-/// a revision of the plan.
+/// a revision of the plan, and it signs off no other owner check's record.
+/// A decision whose refs name an understanding check, a waiver of one of
+/// the change's checks, or a mockup the plan lists or its artifact, in its
+/// refs or urls, is that check's sign-off and approves no plan.
 pub(crate) fn explicit(observed: &Observed, body: &Map<String, Value>) -> bool {
-    strings(body, "refs").any(|each| named_in(observed, each).is_some())
+    let understood =
+        |each: &str| (observed.records.of_type(UNDERSTANDING_TYPE)).any(|(path, _)| path == each);
+    let waiver = format!("{}#", observed.path);
+    let listed = mockups(&sections(observed.plan.as_deref().unwrap_or_default()));
+    let mockup = |each: &str| {
+        (listed.iter()).any(|mockup| each == mockup || artifact_of(mockup) == Some(each))
+    };
+    let other = strings(body, "refs")
+        .any(|each| understood(each) || each.starts_with(&waiver) || mockup(each))
+        || strings(body, "urls").any(mockup);
+    !other && strings(body, "refs").any(|each| named_in(observed, each).is_some())
 }
 
 /// The revision of the change's plan `text` names as a whole path: a
@@ -92,67 +104,20 @@ pub(crate) fn named_in(observed: &Observed, text: &str) -> Option<String> {
         .last()
 }
 
-/// The revision the attached record at `path` approved: the one its refs
-/// name for a decision, or the one `chosen`, the text of the option an
-/// answer chose, names; otherwise the earliest revision whose `records`
-/// list holds it. An answer older than that revision was attached under an
-/// earlier one Board no longer lists, which reads as gone.
-fn bound(
-    observed: &Observed,
-    path: &str,
-    body: &Map<String, Value>,
-    chosen: Option<&str>,
-) -> Standing {
-    let named = match chosen {
+/// The revision an approval approved: for a decision, the one its refs
+/// name, and for an answer, the one `chosen`, the text of the option it
+/// chose, names. A counted approval always names one.
+fn bound(observed: &Observed, body: &Map<String, Value>, chosen: Option<&str>) -> Option<String> {
+    match chosen {
         Some(text) => named_in(observed, text),
         None => strings(body, "refs")
             .filter_map(|each| named_in(observed, each))
             .last(),
-    };
-    if named.is_some() {
-        return standing(observed, named);
     }
-    let revisions = observed.revisions.as_deref().unwrap_or_default();
-    let holder = (revisions.iter())
-        .find(|each| strings(&each.record, "records").any(|held| held == path))
-        .map(|each| each.path.clone());
-    let answered = body.get("answered").and_then(Value::as_str);
-    if let (Some(holder), Some(answered)) = (&holder, answered)
-        && older(answered, holder)
-    {
-        return Standing::Gone {
-            named: format!("the revision current at {answered}"),
-        };
-    }
-    standing(observed, holder)
-}
-
-/// Whether the UTC time `answered`, such as `2026-11-25T09:00:00Z`, is
-/// before the time the revision at `revision` was written, which its
-/// `plans/<yyyymmddThhmmss…Z>` name gives. A revision named otherwise has
-/// no time, and nothing is older than it.
-fn older(answered: &str, revision: &str) -> bool {
-    let id = revision.rsplit('/').next().unwrap_or_default();
-    let compact: String = (answered.chars())
-        .filter(char::is_ascii_alphanumeric)
-        .take(15)
-        .collect();
-    let stamp = id.get(..15).unwrap_or_default();
-    let shaped = |text: &str| {
-        text.len() == 15
-            && (text.char_indices()).all(|(at, each)| match at {
-                8 => each == 'T',
-                _ => each.is_ascii_digit(),
-            })
-    };
-    shaped(&compact) && shaped(stamp) && compact.as_str() < stamp
 }
 
 /// Where an approval of `revision` stands against the current plan.
-fn standing(observed: &Observed, revision: Option<String>) -> Standing {
-    let Some(revision) = revision else {
-        return Standing::Unbound;
-    };
+fn standing(observed: &Observed, revision: String) -> Standing {
     if observed.change.plan.as_deref() == Some(revision.as_str()) {
         return Standing::Current;
     }
@@ -352,13 +317,14 @@ pub(super) fn approvals(
     head: Option<&str>,
 ) -> Vec<(String, Standing)> {
     let mut judged: Vec<(String, Standing)> = meeting(observed, each, rules, head)
-        .map(|(path, body, answer)| {
+        .filter_map(|(path, body, answer)| {
             let chosen = answer.then(|| chosen_text(observed, body)).flatten();
-            (path.to_owned(), bound(observed, path, body, chosen))
+            let revision = bound(observed, body, chosen)?;
+            Some((path.to_owned(), standing(observed, revision)))
         })
         .collect();
     if let Approval::Signed(signed) = &observed.approval {
-        let standing = standing(observed, Some(signed.clone()));
+        let standing = standing(observed, signed.clone());
         judged.push((TOUCH_ID.to_owned(), standing));
     }
     judged
@@ -379,19 +345,19 @@ pub(super) fn unmet(observed: &Observed) -> String {
         Approval::None | Approval::Signed(_) => String::new(),
     };
     format!(
-        "no plans/decision/v1 that the owner signed with by.person whose refs name a revision of \
-         the plan, such as {plan}, is attached, nor a {ANSWER_TYPE} from the owner (one that \
-         names `by.person`, or was written through the owner's questions pane, Board.app or \
-         /ask) whose chosen option, in its attached question, names {path}, nor the owner's \
-         Touch ID approval of changes.approve for the current plan{unread}"
+        "no plans/decision/v1 that the owner signed with by.person whose refs name {path} and a \
+         revision of the plan, such as {plan}, and that signs off no other owner check, is \
+         attached, nor a {ANSWER_TYPE} from the owner (one that names `by.person`, or was \
+         written through the owner's questions pane, Board.app or /ask) whose chosen option, in \
+         its attached question, names {path} and a revision of the plan, nor the owner's Touch \
+         ID approval of changes.approve for the current plan{unread}"
     )
 }
 
 /// What a passing owner-approval check says of the approvals that count,
 /// each by the record that holds it: nothing when one approved the current
 /// revision, else that the newest earlier one still counts and what
-/// changed since, else that Board could not tell which revision one
-/// approved.
+/// changed since.
 pub(crate) fn passed(observed: &Observed, counted: &[(String, Standing)]) -> String {
     if counted.iter().any(|(_, each)| *each == Standing::Current) {
         return String::new();
@@ -402,9 +368,9 @@ pub(crate) fn passed(observed: &Observed, counted: &[(String, Standing)]) -> Str
             _ => None,
         })
         .max_by(|one, other| one.1.cmp(other.1));
-    if let Some((by, revision, changed)) = routine {
+    routine.map_or_else(String::new, |(by, revision, changed)| {
         let (revision, by) = (short(observed, revision), source(by));
-        return if changed.is_empty() {
+        if changed.is_empty() {
             format!(
                 "the owner approved {revision} {by}, and the current plan changes nothing that \
                  needs a new approval"
@@ -415,16 +381,8 @@ pub(crate) fn passed(observed: &Observed, counted: &[(String, Standing)]) -> Str
                  which needs no new approval",
                 listed(changed)
             )
-        };
-    }
-    (counted.iter())
-        .find(|(_, each)| *each == Standing::Unbound)
-        .map_or_else(String::new, |(by, _)| {
-            format!(
-                "Board could not tell which plan revision {by} approved, so it counts it as \
-                 approving the current plan"
-            )
-        })
+        }
+    })
 }
 
 /// What a missing owner-approval check says when approvals lapsed: each

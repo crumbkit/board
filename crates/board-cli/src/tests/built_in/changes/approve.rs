@@ -90,7 +90,7 @@ fn approval(personal: &Personal) -> (String, String) {
 
 #[test]
 fn the_panes_answer_to_an_option_naming_the_change_passes_owner_approval_and_its_twin_does_not() {
-    let personal = asked("Approve the plan at /changes/t.");
+    let personal = asked("Approve /changes/t as planned in /changes/t/plans/1.");
     let output = answered(&personal, &["--written_by", "plans/pane-answer"]);
     assert_eq!(output["attached"], json!({"change": "/changes/t"}));
     assert_eq!(approval(&personal).0, "pass");
@@ -105,7 +105,7 @@ fn the_panes_answer_to_an_option_naming_the_change_passes_owner_approval_and_its
     reason = "it signs the approval with a key the allowed signers file does not list"
 )]
 fn approve_asks_the_owner_and_owner_approval_passes_once_the_owner_signs_it() {
-    let personal = asked("Approve the plan at /changes/t.");
+    let personal = asked("Approve /changes/t as planned in /changes/t/plans/1.");
     let refused = called(&personal, "changes.approve", &["--path", "/changes/t"]).1;
     assert_eq!(refused["code"], "changes::approve::not_chosen", "{refused}");
     assert_eq!(personal.pending(), Vec::<String>::new());
@@ -131,7 +131,7 @@ fn approve_asks_the_owner_and_owner_approval_passes_once_the_owner_signs_it() {
         (
             &json!("Let a suite declare a timeout"),
             &json!(ANSWER),
-            &json!("Approve the plan at /changes/t.")
+            &json!("Approve /changes/t as planned in /changes/t/plans/1.")
         )
     );
     assert!(
@@ -166,7 +166,7 @@ fn approve_asks_the_owner_and_owner_approval_passes_once_the_owner_signs_it() {
 /// The fixture with an answer that chose the option naming the change, and
 /// the owner's signed approval of the plan as it is: owner-approval passes.
 fn signed() -> Personal {
-    let personal = asked("Approve the plan at /changes/t.");
+    let personal = asked("Approve /changes/t as planned in /changes/t/plans/1.");
     answered(&personal, &[]);
     let asked = called(&personal, "changes.approve", &["--path", "/changes/t"]).1;
     let effect = asked["data"]["output"]["effect"]
@@ -307,7 +307,7 @@ fn a_plan_revised_through_changes_plan_keeps_the_signed_approval_for_paths_and_l
 
 #[test]
 fn a_plan_revised_through_changes_plan_after_the_panes_answer_makes_owner_approval_missing() {
-    let personal = asked("Approve the plan at /changes/t.");
+    let personal = asked("Approve /changes/t as planned in /changes/t/plans/1.");
     answered(&personal, &["--written_by", "plans/pane-answer"]);
     assert_eq!(approval(&personal), ("pass".to_owned(), String::new()));
     revise(
@@ -328,7 +328,7 @@ fn a_plan_revised_through_changes_plan_after_the_panes_answer_makes_owner_approv
 
 #[test]
 fn approve_reports_a_refusal_the_owner_gave_and_owner_approval_stays_missing() {
-    let personal = asked("Approve the plan at /changes/t.");
+    let personal = asked("Approve /changes/t as planned in /changes/t/plans/1.");
     answered(&personal, &[]);
     let asked = called(&personal, "changes.approve", &["--path", "/changes/t"]).1;
     let effect = asked["data"]["output"]["effect"]

@@ -388,10 +388,11 @@ fn compared<const N: usize>(
 /// What the owner-approval check of the fixture change says when nothing
 /// passes it.
 const UNMET: &str = "no plans/decision/v1 that the owner signed with by.person whose refs name \
-     a revision of the plan, such as /changes/t/plans/1, is attached, nor a plans/answer/v1 from the owner (one that names \
+     /changes/t and a revision of the plan, such as /changes/t/plans/1, and that signs off no \
+     other owner check, is attached, nor a plans/answer/v1 from the owner (one that names \
      `by.person`, or was written through the owner's questions pane, Board.app or /ask) whose \
-     chosen option, in its attached question, names /changes/t, nor the owner's Touch ID \
-     approval of changes.approve for the current plan";
+     chosen option, in its attached question, names /changes/t and a revision of the plan, nor \
+     the owner's Touch ID approval of changes.approve for the current plan";
 
 /// `body` with each of `fields` over it.
 pub(crate) fn by(mut body: Value, fields: &Value) -> Value {
@@ -522,12 +523,14 @@ fn on_every_route_the_plan_gate_needs_a_persons_decision_whose_refs_name_a_plan_
     }
 }
 
-/// An attached /ask question whose option `a` approves `named` and whose
-/// option `b` names no change, and an attached answer that chose `choice`,
-/// with `fields` over it. The answer's words always name the change.
+/// An attached /ask question whose option `a` approves `named` as planned
+/// in its revision `plans/1`, as the option `changes ask` writes does, and
+/// whose option `b` names no change, and an attached answer that chose
+/// `choice`, with `fields` over it. The answer's words always name the
+/// change.
 fn answer(named: &str, choice: &str, fields: &Value) -> Records {
     let options = json!([
-        {"id": "a", "text": format!("Approve the plan at {named}.")},
+        {"id": "a", "text": format!("Approve {named} as planned in {named}/plans/1.")},
         {"id": "b", "text": "Hold the work for now."},
     ]);
     let question = json!({"question": "Approve?", "options": options});

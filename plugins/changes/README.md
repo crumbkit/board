@@ -993,17 +993,20 @@ check's detail says why.
 The questions pane runs `changes.approve` after an answer whose chosen option
 names the change it was attached to.
 
-Only an explicit approval of the plan counts, and each binds to one
-revision of the plan, a record under `<change>/plans/`. A decision approves
-the plan only when its refs name a revision, such as the current plan's
-path or its `.md` file, and it approves that revision. A decision whose refs
-name only the change is about the plan's content, such as a choice the Data
-section records, and approves nothing. An answer whose chosen option names
-a revision, such as the option `changes ask` writes, approves that
-revision. Any other answer whose chosen option names the change approves
-the earliest revision whose `records` list holds it, which is the revision
-that was current when it was attached. A Touch ID approval approves the
-revision whose digest it signed; `next` tries each revision, newest first.
+Only an explicit approval of the plan counts, and each names the revision
+of the plan it approves, a record under `<change>/plans/`. A decision
+approves the plan only when its refs name the change and a revision, such
+as the current plan's path or its `.md` file, and it signs off no other
+owner check: its refs name no understanding check, no waiver of the
+change's checks and no mockup the plan lists or its artifact, and its
+`urls` name no such mockup. A Data sign-off whose refs also name the
+current revision therefore approves no plan. A decision whose refs name
+only the change is about the plan's content and approves nothing. An
+answer approves the plan only when its chosen option names the change and
+a revision, as the option `changes ask` writes does ("Approve <change> as
+planned in <change>/plans/<id>"); an answer whose option names no revision
+approves nothing. A Touch ID approval approves the revision whose digest
+it signed; `next` tries each revision, newest first.
 
 The approval counts while the current plan does not differ from that
 revision in substance. The plan differs in substance when its `answers`
@@ -1015,11 +1018,8 @@ whose approval is of an earlier revision names that revision and the
 routine parts changed since, and the reviewer raises a finding when such a
 change alters what the owner approved. A missing check names the approved
 revision and the parts the current plan changes. An approval of a revision
-Board no longer reads lapses too, and so does an answer given before the
-earliest revision that holds it was written, because the revision current
-when it was given is gone. When Board cannot tell which revision an answer
-approved, the approval counts and the detail says so. When Board refuses
-to list the revisions, the check is missing and quotes the refusal.
+Board no longer reads lapses too. When Board refuses to list the
+revisions, the check is missing and quotes the refusal.
 
 Two limits apply. `owner-approval` is a check of the plan phase, so the
 lapse applies only while the change is in plan; a plan rewritten in build,
@@ -1030,8 +1030,10 @@ files in place; only the Touch ID approval's digest notices such an edit.
 
 The `mockups` check compares versions too. An agreement names the
 mockup when its URL or board path is in the decision's `urls`, `refs` or
-words, or in the chosen option's text. It names each version its words
-give as `version <id>`, or as a `/versions/<id>` path, anywhere in them.
+words, or in the chosen option's text. An agreement that names one mockup
+names each version its words give as `version <id>`, or as a
+`/versions/<id>` path, anywhere in them; one that names several mockups
+names only the version written right after each mockup.
 An agreement naming versions counts only when one is the version the
 plan's Mockups item names; otherwise the check is missing and names both.
 An agreement that names no version counts, and the passing detail says so.
@@ -1050,15 +1052,14 @@ These routes still pass a gate without the owner:
    `/flows/` and move the change onto it with `changes reflow`.
 3. A direct phase edit. An agent can write the change record with a later
    phase. `github.merge` reads only the land gate, which has no owner check.
-4. An approval that names the change. A decision whose `refs` name the
-   change, in place of a plan record, keeps counting after the plan is
-   written again.
-5. An option that names the change but does not approve it. The gate
-   counts any chosen option whose text names the change's path, so an
-   answer that chose "Reject /changes/<name>" counts as approval.
-6. An edited question. The gate reads the question's options as they are
+4. An option that names the change and a plan revision but does not
+   approve it. The gate counts any chosen option whose text names both, so
+   an answer that chose "Reject /changes/<name>/plans/<id> of
+   /changes/<name>" counts as approval.
+5. An edited question. The gate reads the question's options as they are
    now, so editing an option's text after the owner answered changes what
-   the answer counts for.
+   the answer counts for. Rewriting an answered option to name the current
+   revision binds the old answer to the current plan.
 
 Instructions, remedies and the rules of a `rule-paths` or
 `planned-rule-paths` check may name

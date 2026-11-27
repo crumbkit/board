@@ -4,7 +4,9 @@
 
 use serde_json::{Value, json};
 
-use super::{Given, PATH, PERSON, PLAN, Records, STORES, answer, approving, revision};
+use super::{
+    Given, PATH, PERSON, PLAN, Records, STORES, UNDERSTOOD, approving, revision, understanding,
+};
 use crate::gates::{Approval, Status, gate};
 
 /// The earlier revision the fixture approvals approve.
@@ -16,10 +18,19 @@ fn stores() -> Value {
     serde_json::from_str(STORES).unwrap()
 }
 
-/// The owner's answer, with its question, choosing the option that names
-/// the change.
-fn owners_answer() -> Records {
-    answer(PATH, "a", &json!({"by": {"person": PERSON}}))
+/// The owner's answer, with its question, choosing the option that
+/// approves the change as planned in `revision`.
+fn owners_answer(revision: &str) -> Records {
+    let options = json!([
+        {"id": "a", "text": format!("Approve {PATH} as planned in {revision}.")},
+        {"id": "b", "text": "Revise the plan, then ask again."},
+    ]);
+    let question = json!({"question": "Approve?", "options": options});
+    let body = json!({"question": "/q/1", "choice": "a", "by": {"person": PERSON}});
+    vec![
+        ("/q/1", ("plans/question/v1", question)),
+        ("/a/1", ("plans/answer/v1", body)),
+    ]
 }
 
 /// A plan record of the fixture change whose text is at `<path>.md`, with
@@ -70,7 +81,7 @@ fn revised(
 /// `fields`.
 fn answered_earlier(text: &str, answers: &Value, fields: &Value) -> Given {
     revised(
-        owners_answer(),
+        owners_answer(EARLIER),
         &["/q/1", "/a/1"],
         PLAN,
         text,
@@ -234,8 +245,9 @@ fn a_decision_naming_no_plan_revision_does_not_approve_and_one_naming_the_curren
     assert_eq!(status, Status::Missing);
     assert!(
         detail.starts_with(
-            "no plans/decision/v1 that the owner signed with by.person whose refs name a \
-             revision of the plan, such as /changes/t/plans/1, is attached"
+            "no plans/decision/v1 that the owner signed with by.person whose refs name \
+             /changes/t and a revision of the plan, such as /changes/t/plans/1, and that signs \
+             off no other owner check, is attached"
         ),
         "{detail}"
     );
@@ -308,26 +320,6 @@ fn an_answer_whose_option_names_a_revision_approves_that_revision() {
 }
 
 #[test]
-fn an_approval_bound_to_no_revision_passes_and_the_detail_warns() {
-    let given = (approving("plan").with(json!({"route": "owner"})))
-        .records(owners_answer())
-        .revisions(Ok(vec![revision(
-            CURRENT,
-            &record(CURRENT, &stores(), &json!({}), &[]),
-            Some(PLAN),
-        )]));
-    assert_eq!(
-        owner_approval(&given),
-        (
-            Status::Pass,
-            "Board could not tell which plan revision /a/1 approved, so it counts it as \
-             approving the current plan"
-                .to_owned()
-        )
-    );
-}
-
-#[test]
 fn an_approval_naming_a_revision_board_cannot_read_lapses_and_its_twin_passes() {
     let gone = revised(
         decision(&["/changes/t/plans/gone"]),
@@ -351,51 +343,10 @@ fn an_approval_naming_a_revision_board_cannot_read_lapses_and_its_twin_passes() 
     assert_eq!(owner_approval(&held).0, Status::Pass);
 }
 
-/// An owner's answer given at `answered`, attached under the revisions
-/// /changes/t/plans/20261125T100000000000Z and the current one.
-fn answered_at(answered: &str) -> Given {
-    let first = "/changes/t/plans/20261125T100000000000Z";
-    let mut records = owners_answer();
-    records[1].1.1["answered"] = json!(answered);
-    let revisions = vec![
-        revision(
-            first,
-            &record(first, &stores(), &json!({}), &["/q/1", "/a/1"]),
-            Some(PLAN),
-        ),
-        revision(
-            CURRENT,
-            &record(CURRENT, &stores(), &json!({}), &["/q/1", "/a/1"]),
-            Some(PLAN),
-        ),
-    ];
-    let current = json!({"route": "owner", "plan": CURRENT});
-    (approving("plan").with(current))
-        .records(records)
-        .revisions(Ok(revisions))
-}
-
-/// The revision that was current when the owner answered is gone when the
-/// earliest revision holding the answer was written after it.
-#[test]
-fn an_answer_older_than_every_revision_holding_it_lapses_and_a_later_one_counts() {
-    let (status, detail) = owner_approval(&answered_at("2026-11-25T09:00:00Z"));
-    assert_eq!(status, Status::Missing);
-    assert!(
-        detail.starts_with(
-            "the owner approved the revision current at 2026-11-25T09:00:00Z in /a/1, which \
-             Board can no longer read;"
-        ),
-        "{detail}"
-    );
-    let later = answered_at("2026-11-25T10:00:01Z");
-    assert_eq!(owner_approval(&later).0, Status::Pass);
-}
-
 #[test]
 fn a_refused_listing_of_the_revisions_leaves_the_check_missing_with_the_refusal() {
     let given = (approving("plan").with(json!({"route": "owner"})))
-        .records(owners_answer())
+        .records(owners_answer(CURRENT))
         .revisions(Err("changes::board::refused: query failed".to_owned()));
     assert_eq!(
         owner_approval(&given),
@@ -453,4 +404,89 @@ fn an_approval_of_the_current_revision_counts_though_another_lapsed() {
         approval(&given, Approval::Signed(CURRENT.to_owned())),
         (Status::Pass, String::new())
     );
+}
+
+/// "Explicit only" for answers: an answer whose chosen option names the
+/// change but no revision of its plan approves nothing, and its twin naming
+/// the current revision approves it.
+#[test]
+fn an_answer_naming_the_change_but_no_revision_does_not_approve_and_its_twin_does() {
+    let options = json!([
+        {"id": "a", "text": format!("Store runs as rows under {PATH}.")},
+        {"id": "b", "text": "Store runs as files."},
+    ]);
+    let question = json!({"question": "Rows or files?", "options": options});
+    let body = json!({"question": "/q/1", "choice": "a", "by": {"person": PERSON}});
+    let content = vec![
+        ("/q/1", ("plans/question/v1", question)),
+        ("/a/1", ("plans/answer/v1", body)),
+    ];
+    let given = revised(content, &[], PLAN, PLAN, &stores(), &json!({}));
+    assert_eq!(owner_approval(&given).0, Status::Missing);
+    let approving = revised(
+        owners_answer(CURRENT),
+        &[],
+        PLAN,
+        PLAN,
+        &stores(),
+        &json!({}),
+    );
+    assert_eq!(owner_approval(&approving), (Status::Pass, String::new()));
+}
+
+/// A Data sign-off whose refs name the change, its understanding check and
+/// the current revision, as on the live board, signs off data-signed and
+/// approves no plan; the same decision without the understanding check
+/// approves it.
+#[test]
+fn a_data_sign_off_naming_the_current_revision_does_not_approve_the_plan() {
+    let data = PLAN.replace("## Data\n\nNone.", "## Data\n\nOne row per run.");
+    let sign_off = vec![
+        (UNDERSTOOD, understanding(&json!({}))),
+        (
+            "/d/data",
+            (
+                "plans/decision/v1",
+                json!({
+                    "decision": "The data the comments store is signed off.",
+                    "refs": [PATH, UNDERSTOOD, CURRENT], "by": {"person": PERSON},
+                }),
+            ),
+        ),
+    ];
+    let given = revised(sign_off, &[], &data, &data, &stores(), &json!({}));
+    let statuses = given.statuses();
+    assert_eq!(
+        (statuses["owner-approval"], statuses["data-signed"]),
+        ("missing", "pass")
+    );
+    let plain = revised(
+        decision(&[CURRENT]),
+        &[],
+        &data,
+        &data,
+        &stores(),
+        &json!({}),
+    );
+    assert_eq!(plain.statuses()["owner-approval"], "pass");
+}
+
+/// A mockup agreement whose refs name the current revision agrees the
+/// mockup and approves no plan.
+#[test]
+fn a_mockup_agreement_naming_the_current_revision_does_not_approve_the_plan() {
+    let agreed = vec![(
+        "/d/ux",
+        (
+            "plans/decision/v1",
+            json!({
+                "decision": "Agreed.", "urls": [super::MOCKUP], "refs": [PATH, CURRENT],
+                "by": {"person": PERSON},
+            }),
+        ),
+    )];
+    let ux = format!("{}\n{}", super::mockups_list(), super::NEIGHBOURS);
+    let text = super::planned(&ux, "None.");
+    let given = revised(agreed, &[], &text, &text, &stores(), &json!({}));
+    assert_eq!(given.statuses()["owner-approval"], "missing");
 }

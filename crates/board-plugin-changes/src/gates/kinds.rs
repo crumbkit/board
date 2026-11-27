@@ -366,9 +366,10 @@ fn not_after(observed: &Observed, each: &flow::Check, rules: &Where) -> String {
         .collect()
 }
 
-/// Whether the option `answer` chose names the change.
+/// Whether the option `answer` chose names the change and a revision of
+/// its plan, as the option `changes ask` writes does.
 fn chose_change(observed: &Observed, answer: &Map<String, Value>) -> bool {
-    chosen_text(observed, answer).is_some()
+    chosen_text(observed, answer).is_some_and(|text| revision::named_in(observed, text).is_some())
 }
 
 /// The text of the option `answer` chose, when it names the change whole.
@@ -458,12 +459,10 @@ fn either(items: &[String]) -> String {
 }
 
 /// At least `min` attached records of the check's type meet its `where`,
-/// each from a different actor when it names `distinct`. A check that
-/// counts the owner's answers is judged by [`owners_judged`].
+/// each from a different actor when it names `distinct`. `interpret`
+/// judges a check that counts the owner's answers through
+/// [`owners_judged`] and never reaches this for it.
 pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option<String> {
-    if let Some(judged) = owners_judged(observed, each) {
-        return judged.err();
-    }
     let Some(kind) = &each.record_type else {
         return Some(unset(each, "type"));
     };
@@ -473,17 +472,25 @@ pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option
         (Some(_), None) => return Some(NO_HEAD.to_owned()),
         (Some(_), Some(head)) => Some(head.as_str()),
     };
-    let passing = meeting(observed, each, rules, head);
-    let count = match each.distinct {
+    let count = counted(meeting(observed, each, rules, head), each);
+    let min = each.min.map_or(1, |min| min as usize);
+    (count < min)
+        .then(|| records_detail(each, kind, rules, head, min) + &not_after(observed, each, rules))
+}
+
+/// How many of `passing` count: each, or each different actor when the
+/// check names `distinct`.
+fn counted<'a>(
+    passing: impl Iterator<Item = (&'a str, &'a Map<String, Value>, bool)>,
+    each: &flow::Check,
+) -> usize {
+    match each.distinct {
         None => passing.count(),
         Some(part) => (passing
             .filter_map(|(_, body, _)| body.get("by")?.get(part.part())?.as_str())
             .collect::<BTreeSet<_>>())
         .len(),
-    };
-    let min = each.min.map_or(1, |min| min as usize);
-    (count < min)
-        .then(|| records_detail(each, kind, rules, head, min) + &not_after(observed, each, rules))
+    }
 }
 
 /// For a check that counts the owner's answers, what its detail says when
@@ -507,13 +514,7 @@ pub(super) fn owners_judged(
     let lapsed =
         |path: &str| (judged.iter()).any(|(by, standing)| by == path && !standing.counts());
     let passing = meeting(observed, each, rules, None).filter(|(path, _, _)| !lapsed(path));
-    let count = match each.distinct {
-        None => passing.count(),
-        Some(part) => (passing
-            .filter_map(|(_, body, _)| body.get("by")?.get(part.part())?.as_str())
-            .collect::<BTreeSet<_>>())
-        .len(),
-    };
+    let count = counted(passing, each);
     // The owner's Touch ID approval counts once.
     let signed = matches!(observed.approval, Approval::Signed(_)) && !lapsed(TOUCH_ID);
     let count = count + usize::from(signed);

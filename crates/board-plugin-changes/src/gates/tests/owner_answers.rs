@@ -129,13 +129,15 @@ fn combined(approve: &str) -> super::Given {
         .with(json!({"route": "owner"}))
 }
 
-/// Decision 1314Z: one answer whose chosen option names the change, its
+/// Decision 1314Z: one answer whose chosen option names the change and its
+/// current plan revision, its
 /// data understanding check and each mockup passes owner-approval,
 /// data-signed and mockups together.
 #[test]
 fn one_answer_naming_the_change_its_understanding_check_and_each_mockup_passes_all_three() {
     let approve = format!(
-        "Approve {PATH} as planned, with the data in {} and the mockups {} and `/artifacts/m2`.",
+        "Approve {PATH} as planned in {PATH}/plans/1, with the data in {} and the mockups {} and \
+         `/artifacts/m2`.",
         super::UNDERSTOOD,
         super::MOCKUP
     );
@@ -150,7 +152,7 @@ fn one_answer_naming_the_change_its_understanding_check_and_each_mockup_passes_a
 #[test]
 fn an_option_without_the_understanding_checks_path_fails_data_signed_and_names_it() {
     let approve = format!(
-        "Approve {PATH} as planned, with the mockups {} and `/artifacts/m2`.",
+        "Approve {PATH} as planned in {PATH}/plans/1, with the mockups {} and `/artifacts/m2`.",
         super::MOCKUP
     );
     let change = combined(&approve);

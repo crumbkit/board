@@ -481,8 +481,16 @@ fn a_chosen_option_counts_for_every_path_it_names_whatever_it_says() {
     let statuses = given.statuses();
     assert_eq!(
         (statuses["mockups"], statuses["owner-approval"]),
-        ("pass", "pass"),
-        "an option naming the mockup and the bare change path also approves the plan"
+        ("pass", "missing"),
+        "an option naming the mockup and the bare change path, but no plan revision, approves \
+         no plan"
+    );
+    let revision = format!("Agree {MOCKUP} as the mockup for /changes/t/plans/1 of /changes/t");
+    let given = at_plan(&named_version()).records(asked(&revision, "agree", &owner));
+    assert_eq!(
+        given.statuses()["owner-approval"],
+        "pass",
+        "an option naming the mockup, the change and a plan revision also approves the plan"
     );
     let mockup_only = format!("Agree {MOCKUP} as the mockup");
     let given = at_plan(&named_version()).records(asked(&mockup_only, "agree", &owner));
@@ -598,4 +606,19 @@ fn an_option_naming_several_versions_agrees_the_one_the_plan_names() {
     );
     let given = at_plan(&plan_naming("1795531196-2e27")).records(asked(&text, "agree", &owner));
     assert_eq!(given.check("mockups"), ("pass", String::new()));
+}
+
+/// An option naming two mockups reads only the version that follows each
+/// one, so the version of the other mockup does not agree this one.
+#[test]
+fn an_option_naming_two_mockups_reads_the_version_after_each() {
+    let owner = json!({"person": PERSON});
+    let text = format!("Agree {MOCKUP} version 8, and the mockups `/artifacts/m2` version 2");
+    let given = at_plan(&plan_naming("2")).records(asked(&text, "agree", &owner));
+    let (status, detail) = given.check("mockups");
+    assert_eq!(status, "missing");
+    assert!(
+        detail.contains(&format!("{MOCKUP} version 8 in /a/m")),
+        "{detail}"
+    );
 }
