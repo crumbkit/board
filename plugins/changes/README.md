@@ -292,7 +292,7 @@ A v1 change and a migrated one both meet the development flow's gates,
 below, which block on more than the gates before flows did:
 
 - leaving plan, `owner-approval` needs a `plans/decision/v1` that the owner
-  signed, whose `refs` name the plan or the change, on every route, unless
+  signed, whose `refs` name a revision of the plan, on every route, unless
   the plan answers `ux` none and `data` none. Before
   flows only an `ask-first` change needed a decision, and any decision
   passed, a rejection or an agent's stub included. `considered` is new, and
@@ -993,33 +993,48 @@ check's detail says why.
 The questions pane runs `changes.approve` after an answer whose chosen option
 names the change it was attached to.
 
-Each approval such a check counts binds to one revision of the plan, a
-record under `<change>/plans/`. A decision whose refs name a revision, or an
-answer whose chosen option names one, such as the option `changes ask`
-writes, approves that revision. Any other decision or answer approves the
-earliest revision whose `records` list holds it, which is the revision that
-was current when it was attached. A Touch ID approval approves the revision
-whose digest it signed; `next` tries each revision, newest first. The
-approval counts while the current plan does not differ from that revision
-in substance. The plan differs in substance when its `answers` differ, or
-when the text of its Outcome, Out of scope, UX or Data section differs once
-runs of whitespace are collapsed. A missing section counts as empty text.
-Any other change, such as `paths`, `owed`, `uses`, `considered`, the Tests
-sections, Problem or a decision log, is routine. A passing check whose
-approval is of an earlier revision names that revision and the routine
-parts changed since, and the reviewer raises a finding when such a change
-alters what the owner approved. A missing check names the approved revision
-and the parts the current plan changes. When Board cannot tell which
-revision an approval approved, or cannot read the revision it names, the
-approval counts and the detail says so. When Board refuses to list the
-revisions, the check is missing and quotes the refusal.
+Only an explicit approval of the plan counts, and each binds to one
+revision of the plan, a record under `<change>/plans/`. A decision approves
+the plan only when its refs name a revision, such as the current plan's
+path or its `.md` file, and it approves that revision. A decision whose refs
+name only the change is about the plan's content, such as a choice the Data
+section records, and approves nothing. An answer whose chosen option names
+a revision, such as the option `changes ask` writes, approves that
+revision. Any other answer whose chosen option names the change approves
+the earliest revision whose `records` list holds it, which is the revision
+that was current when it was attached. A Touch ID approval approves the
+revision whose digest it signed; `next` tries each revision, newest first.
 
-The `mockups` check compares versions too. An agreement that names a
-version of a mockup, as `version <id>` after the mockup's URL or path in a
-decision's `decision` or in the chosen option, or as the mockup's own
-`/versions/<id>` path, counts only for that version. When the plan's Mockups
-item names another version, the check is missing and names both. An
-agreement that names no version counts, and the passing detail says so.
+The approval counts while the current plan does not differ from that
+revision in substance. The plan differs in substance when its `answers`
+differ, or when the text of its Outcome, Out of scope, UX or Data section
+differs once runs of whitespace are collapsed. A missing section counts as
+empty text. Any other change, such as `paths`, `owed`, `uses`, `considered`,
+the Tests sections, Problem or a decision log, is routine. A passing check
+whose approval is of an earlier revision names that revision and the
+routine parts changed since, and the reviewer raises a finding when such a
+change alters what the owner approved. A missing check names the approved
+revision and the parts the current plan changes. An approval of a revision
+Board no longer reads lapses too, and so does an answer given before the
+earliest revision that holds it was written, because the revision current
+when it was given is gone. When Board cannot tell which revision an answer
+approved, the approval counts and the detail says so. When Board refuses
+to list the revisions, the check is missing and quotes the refusal.
+
+Two limits apply. `owner-approval` is a check of the plan phase, so the
+lapse applies only while the change is in plan; a plan rewritten in build,
+review or land is not judged against the owner's approval again. And an
+answer's approval is judged against the approved revision's record and
+text as Board holds them now, so it trusts that no one edits a revision's
+files in place; only the Touch ID approval's digest notices such an edit.
+
+The `mockups` check compares versions too. An agreement names the
+mockup when its URL or board path is in the decision's `urls`, `refs` or
+words, or in the chosen option's text. It names each version its words
+give as `version <id>`, or as a `/versions/<id>` path, anywhere in them.
+An agreement naming versions counts only when one is the version the
+plan's Mockups item names; otherwise the check is missing and names both.
+An agreement that names no version counts, and the passing detail says so.
 
 Only the signed approval proves the owner chose. An answer's `by` and
 `written_by`, and a decision's `by.person`, are claims any writer can make.
@@ -1093,7 +1108,7 @@ The development flow's gates:
 
 | Leaving | Checks |
 | --- | --- |
-| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, unless the plan answers `ux` none and `data` none, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name the plan or the change, or the owner's attached `plans/answer/v1` whose chosen option, in its attached question, names the change, or the owner's Touch ID approval of `changes.approve` for the current plan, on every route; `mockups` and `mockup-versions`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
+| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, unless the plan answers `ux` none and `data` none, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name a revision of the plan, or the owner's attached `plans/answer/v1` whose chosen option, in its attached question, names the change, or the owner's Touch ID approval of `changes.approve` for the current plan, on every route; `mockups` and `mockup-versions`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
 | build | `head`; `suite-run`, waivable; `tasks` |
 | review | `review`, a report on `head`, or on an earlier commit when each commit after it edits only paths `/rules/{repo}/record-paths` lists or the lifecycle record's `doc`, cleanly merges the branch the mount follows, or is a fix commit a `changes/fix/v1` names, with no critical or high finding; `design-conformance`, the `built` part of `mockups`, when the plan answers `ux` mockups; `paths`; `ui-paths` and `data-paths`, `rule-paths` checks of `/rules/{repo}/ui-paths` when the plan answers `ux` none and `/rules/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/rules/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
 | land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `rechecks`, which does not block, rechecks of two points, the latest recheck of each matching, when the plan answers `data` stored; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/rules/{repo}/lifecycle-paths` again, so each re-reads the diff at the recorded head and a record removed after review is gated |

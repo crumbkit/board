@@ -393,13 +393,23 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
             // A check that reads an answer the plan does not give is the
             // agent's to clear, by writing the plan again.
             let left_out = left_out(observed, each);
+            // What a check that counts the owner's answers says when it
+            // passes, judged once with its count.
+            let mut note = None;
             let missing = match applies(observed, &plan, each) {
                 Ok(false) => return None,
                 Ok(true) if !left_out.is_empty() => Some(format!(
                     "the plan gives no typed answer for {}, which this check reads",
                     left_out.join(" and ")
                 )),
-                Ok(true) => evaluate(observed, &plan, each),
+                Ok(true) => match kinds::owners_judged(observed, each) {
+                    Some(Ok(said)) => {
+                        note = Some(said);
+                        None
+                    }
+                    Some(Err(missing)) => Some(missing),
+                    None => evaluate(observed, &plan, each),
+                },
                 Err(detail) => Some(detail),
             };
             let waiver = missing.as_ref().and_then(|_| waived_by(observed, each));
@@ -412,6 +422,7 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
                     (Status::Missing, format!("{detail}{unanchored}"))
                 }
                 (Some(detail), None) => (Status::Missing, detail),
+                (None, _) if note.is_some() => (Status::Pass, note.take().unwrap_or_default()),
                 (None, _) if each.kind.known() == Some(&CheckKind::Paths) => {
                     (Status::Pass, paths::passed(observed))
                 }

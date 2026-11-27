@@ -92,26 +92,29 @@ blocks is missing.
    An owner check (`owner-approval`, `data-signed`, `rechecks`, `mockups`
    and a waiver) counts an attached `plans/decision/v1` only when its
    `by.person` names a person and its `written_by` is empty. A decision the
-   plan lists only in `uses` passes no check. An owner check that counts
-   such decisions with refs naming the plan or the change, such as
-   `owner-approval` or `owner-confirms`, also counts the owner's
+   plan lists only in `uses` passes no check. `owner-approval`, like
+   `owner-confirms`, counts only an explicit approval of the plan: a
+   decision whose refs name a revision
+   of the plan, such as `/changes/<name>/plans/<id>`, the owner's
    `plans/answer/v1` when its `by.person` or its `written_by` is a string
    that is not empty, as an answer from the questions pane, Board.app or
    /ask is, and the option the owner chose names the change's path, such
-   as `/changes/<name>`, in its text. Such a check also counts the owner's
-   Touch ID approval of a plan revision: run
+   as `/changes/<name>`, in its text, or the owner's Touch ID approval of a
+   plan revision. A decision whose refs name only the change is about the
+   plan's content and approves nothing. For the Touch ID approval, run
    `board call changes.approve --path /changes/<name>`, which the pane runs
    after such an answer, and the owner approves the effect it names. Only
    that signed approval proves the owner chose; `by` and `written_by` are
-   claims any writer can make. Each approval binds to the plan
-   revision it names, or else the one current when it was attached, and
-   lapses when a later revision changes the plan's `answers` or its
-   Outcome, Out of scope, UX or Data section. Other rewrites, such as
-   `paths` or the Tests sections, keep it, and the passing detail names the
-   approved revision and what changed since; as a reviewer, raise a finding
-   when such a change alters what the owner approved. When it lapses, ask
-   the owner again with `changes ask` or `changes approve`. A mockup
-   agreement that names a version counts only for that version. When you ask for approval with /ask, put
+   claims any writer can make. Each approval binds to the plan revision it
+   names, or else the one current when it was attached, and lapses when a
+   later revision changes the plan's `answers` or its Outcome, Out of
+   scope, UX or Data section, or when Board no longer reads that revision.
+   Other rewrites, such as `paths` or the Tests sections, keep it, and the
+   passing detail names the approved revision and what changed since; as a
+   reviewer, raise a finding when such a change alters what the owner
+   approved. When it lapses, ask the owner again with `changes ask` or
+   `changes approve`. A mockup agreement that names a version counts only
+   for that version. When you ask for approval with /ask, put
    the change's path in the text of the option that approves it and in no
    other option, because any chosen option that names the path counts.
    A path followed by `#` is a longer name: an option naming
@@ -126,7 +129,8 @@ blocks is missing.
    Attach the question and the answer, each with
    `board changes attach --path /changes/<name> --ref <path>`. When you
    record the owner's approval from chat, write the decision as the plans
-   skill says, with `by.person` and the owner's words in `why`.
+   skill says, with `by.person`, the owner's words in `why`, and the plan
+   revision the owner approved in `refs`.
    Piping `{"path": "/changes/<name>", "project": "<project>", "by":
    {"session": "<your local_ id>"}}` to `board -C <board> changes ask`
    files and attaches one question whose approving option names the

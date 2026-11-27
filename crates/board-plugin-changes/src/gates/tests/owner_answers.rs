@@ -39,7 +39,7 @@ fn the_panes_answer_passes_owner_approval_and_its_twin_with_neither_writer_nor_p
 #[test]
 fn a_decision_written_by_a_hook_still_does_not_pass_owner_approval_though_an_answer_would() {
     let decision = |fields: serde_json::Value| {
-        let mut body = json!({"refs": [PATH], "by": {"person": PERSON}});
+        let mut body = json!({"refs": [PATH, "/changes/t/plans/1"], "by": {"person": PERSON}});
         for (key, value) in fields.as_object().unwrap() {
             body[key] = value.clone();
         }

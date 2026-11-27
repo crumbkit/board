@@ -65,54 +65,72 @@ pub(crate) fn mockups(found: &BTreeMap<String, String>) -> Vec<String> {
     named
 }
 
-/// One owner's agreement of a mockup: the record that holds it, and the
-/// version of the mockup it names, none when it names none.
+/// One owner's agreement of a mockup: the record that holds it, and each
+/// version it names, none when it names none.
 struct Agreement<'a> {
     by: &'a str,
-    version: Option<String>,
+    versions: Vec<String>,
 }
 
-/// The version an agreement's `text` names for `name`: the id after the
-/// word `version` that follows `name`.
-fn version_after(text: &str, name: &str) -> Option<String> {
-    (text.match_indices(name)).find_map(|(at, _)| {
-        let found = AGREED_VERSION.captures(&text[at + name.len()..])?;
-        Some(found.get(1)?.as_str().to_owned())
-    })
+/// Each version `text` names anywhere: the last part of a `/versions/<id>`
+/// path, or an id holding a digit after the word `version`.
+fn versions_in(text: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for shape in [&*VERSION_PATH, &*VERSION_WORD] {
+        for captures in shape.captures_iter(text) {
+            if let Some(id) = captures.get(1)
+                && !found.iter().any(|each| each == id.as_str())
+            {
+                found.push(id.as_str().to_owned());
+            }
+        }
+    }
+    found
 }
-
-static AGREED_VERSION: LazyLock<Regex> =
-    LazyLock::new(|| pattern(r"(?i)^[\s,;:(]*version[ :]+`?([A-Za-z0-9_-]*[0-9][A-Za-z0-9_-]*)`?"));
 
 /// Each agreement of `mockup` by the owner: an attached decision the owner
-/// signed that names it, or its artifact, in its urls or refs, or an
-/// attached answer from the owner whose chosen option names it whole. An
-/// agreement naming the mockup's own `/versions/` path names that version;
-/// otherwise the words after the mockup in the decision or the option say
-/// which.
+/// signed that names it, or its artifact, in its urls, its refs or its
+/// words, or an attached answer from the owner whose chosen option names it
+/// whole. The versions it names are those in its words, urls and refs, and
+/// the mockup's own when it is a `/versions/` path the agreement names.
 fn agreements<'a>(observed: &'a Observed, mockup: &str) -> Vec<Agreement<'a>> {
     let artifact = artifact_of(mockup);
     let names: Vec<&str> = std::iter::once(mockup).chain(artifact).collect();
-    let version = |text: &str, exact: bool| {
-        (exact.then(|| version_in(mockup)).flatten())
-            .or_else(|| names.iter().find_map(|name| version_after(text, name)))
+    let versions = |text: &str, exact: bool| {
+        let mut found = versions_in(text);
+        if let Some(own) = exact.then(|| version_in(mockup)).flatten()
+            && !found.contains(&own)
+        {
+            found.push(own);
+        }
+        found
     };
     let mut found = Vec::new();
     for (by, body) in signed_decisions(observed) {
         let listed: BTreeSet<&str> = strings(body, "urls").chain(strings(body, "refs")).collect();
-        if names.iter().any(|name| listed.contains(name)) {
-            let words = body
-                .get("decision")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let version = version(words, listed.contains(mockup));
-            found.push(Agreement { by, version });
+        let words = body
+            .get("decision")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if names
+            .iter()
+            .any(|name| listed.contains(name) || names_whole(words, name))
+        {
+            let all = format!(
+                "{words} {}",
+                listed.iter().copied().collect::<Vec<_>>().join(" ")
+            );
+            let exact = listed.contains(mockup) || names_whole(words, mockup);
+            found.push(Agreement {
+                by,
+                versions: versions(&all, exact),
+            });
         }
     }
     for (by, text) in owner_choices(observed) {
         if names.iter().any(|name| names_whole(text, name)) {
-            let version = version(text, names_whole(text, mockup));
-            found.push(Agreement { by, version });
+            let versions = versions(text, names_whole(text, mockup));
+            found.push(Agreement { by, versions });
         }
     }
     found
@@ -144,12 +162,12 @@ fn agreed<'a>(observed: &'a Observed, found: &BTreeMap<String, String>) -> Agree
         let Some((_, wanted)) = versions.iter().find(|(each, _)| *each == mockup) else {
             continue;
         };
-        if all.iter().any(|each| each.version.as_ref() == Some(wanted)) {
+        if all.iter().any(|each| each.versions.contains(wanted)) {
             continue;
         }
         let bare = all
             .iter()
-            .find(|each| each.version.is_none())
+            .find(|each| each.versions.is_empty())
             .map(|each| each.by);
         if let Some(by) = bare {
             (agreed.unversioned).push((mockup, by, wanted.clone()));
@@ -196,7 +214,7 @@ pub(crate) fn ux_missing(observed: &Observed, found: &BTreeMap<String, String>) 
         ));
     }
     for (mockup, agreement, wanted) in other {
-        let version = agreement.version.unwrap_or_default();
+        let version = agreement.versions.join(" or ");
         said.push(format!(
             "the owner agreed {mockup} version {version} in {}, and the plan names version \
              {wanted}; ask the owner to agree version {wanted}",

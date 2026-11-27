@@ -558,3 +558,44 @@ fn a_decision_agreeing_another_version_does_not_count_and_one_naming_no_version_
         )
     );
 }
+
+/// An agreement names a version wherever its words say `version <id>`, so
+/// a decision that names the mockup only in `urls` and puts the version
+/// before or after other words still names it.
+#[test]
+fn an_agreement_names_the_version_its_words_give_anywhere() {
+    let decided = |words: &str| {
+        let body = json!({
+            "decision": words, "urls": [MOCKUP], "refs": [], "by": {"person": PERSON},
+        });
+        at_plan(&plan_naming("1795531196-2e27"))
+            .records(vec![("/d/ux", ("plans/decision/v1", body))])
+            .check("mockups")
+    };
+    for words in [
+        "Signs off the install sheet mockup (version 1795519815-da06).",
+        "Agreed version 1795519815-da06 of the install sheet.",
+    ] {
+        let other = decided(words);
+        assert_eq!(other.0, "missing", "{words}");
+        assert!(
+            other.1.contains("version 1795519815-da06 in /d/ux"),
+            "{}",
+            other.1
+        );
+    }
+    let same = decided("Signs off the install sheet mockup (version 1795531196-2e27).");
+    assert_eq!(same, ("pass", String::new()));
+}
+
+/// An option agreeing two mockups names a version of each, and agrees the
+/// plan's version when it names that one among them.
+#[test]
+fn an_option_naming_several_versions_agrees_the_one_the_plan_names() {
+    let owner = json!({"person": PERSON});
+    let text = format!(
+        "Agree {MOCKUP} version 1795531196-2e27, and the mockups `/artifacts/m2` version v9"
+    );
+    let given = at_plan(&plan_naming("1795531196-2e27")).records(asked(&text, "agree", &owner));
+    assert_eq!(given.check("mockups"), ("pass", String::new()));
+}

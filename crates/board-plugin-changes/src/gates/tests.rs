@@ -388,7 +388,7 @@ fn compared<const N: usize>(
 /// What the owner-approval check of the fixture change says when nothing
 /// passes it.
 const UNMET: &str = "no plans/decision/v1 that the owner signed with by.person whose refs name \
-     the plan or the change is attached, nor a plans/answer/v1 from the owner (one that names \
+     a revision of the plan, such as /changes/t/plans/1, is attached, nor a plans/answer/v1 from the owner (one that names \
      `by.person`, or was written through the owner's questions pane, Board.app or /ask) whose \
      chosen option, in its attached question, names /changes/t, nor the owner's Touch ID \
      approval of changes.approve for the current plan";
@@ -483,7 +483,7 @@ fn the_plan_gate_misses_a_change_with_no_route_and_passes_each_route() {
 }
 
 #[test]
-fn on_every_route_the_plan_gate_needs_a_persons_decision_whose_refs_name_the_plan_or_the_change() {
+fn on_every_route_the_plan_gate_needs_a_persons_decision_whose_refs_name_a_plan_revision() {
     for route in ["owner", "ask-first", "unowned"] {
         let asking = || approving("plan").with(json!({"route": route}));
         let unrelated = vec![(
@@ -497,14 +497,28 @@ fn on_every_route_the_plan_gate_needs_a_persons_decision_whose_refs_name_the_pla
             asking().records(unrelated).statuses()["owner-approval"],
             "missing"
         );
-        for named in ["/changes/t/plans/1", "/changes/t/plans/1.md", PATH] {
+        for named in ["/changes/t/plans/1", "/changes/t/plans/1.md"] {
             let [got, wanted] = judged(|fields| {
-                let body = by(json!({"refs": [named]}), fields);
+                let body = by(json!({"refs": [PATH, named]}), fields);
                 let decided = vec![("/d", ("plans/decision/v1", body))];
                 asking().records(decided).statuses()["owner-approval"] == "pass"
             });
             assert_eq!(got, wanted, "{route} {named}");
         }
+        // A decision about the plan's content names only the change, so it
+        // approves no revision of the plan.
+        let content = vec![(
+            "/d",
+            (
+                "plans/decision/v1",
+                json!({"refs": [PATH], "by": {"person": PERSON}}),
+            ),
+        )];
+        assert_eq!(
+            asking().records(content).statuses()["owner-approval"],
+            "missing",
+            "{route}"
+        );
     }
 }
 

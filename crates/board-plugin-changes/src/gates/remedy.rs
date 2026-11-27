@@ -150,8 +150,9 @@ fn default(each: &flow::Check) -> String {
              text of the option that approves it and in no other option, because any chosen \
              option that names it counts. Then attach the question and the owner's \
              answer, each with `board changes attach --path {change} --ref <path>`. A \
-             plans/decision/v1 the owner signs with by.person whose refs name {change} also \
-             counts. The owner's Touch ID approval of changes.approve for the current plan also \
+             plans/decision/v1 the owner signs with by.person whose refs name the plan revision \
+             it approves, such as {plan}, also counts; a decision whose refs name no revision is \
+             about the plan's content and approves nothing. The owner's Touch ID approval of changes.approve for the current plan also \
              counts: run `board call changes.approve --path {change}` and approve the effect it \
              names."
             .to_owned(),

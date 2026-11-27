@@ -1,10 +1,13 @@
 //! Which revision of the change's plan each owner approval approved, and
 //! whether the current plan differs from it in substance.
 //!
-//! A decision whose refs name a revision, or an answer whose chosen option
-//! names one, approves that revision. Any other approval approves the
-//! earliest revision whose `records` list holds it, the one current when it
-//! was attached. A Touch ID approval approves the revision it signed. The
+//! Only an explicit approval of the plan counts: a decision whose refs name
+//! a revision approves that revision, and a decision whose refs name none
+//! is about the plan's content and approves nothing. An answer whose chosen
+//! option names a revision approves that revision; any other answer
+//! approves the earliest revision whose `records` list holds it, the one
+//! current when it was attached. A Touch ID approval approves the revision
+//! it signed. An approval of a revision Board no longer reads lapses. The
 //! plan differs in substance when its typed answers differ, or the text of
 //! its Outcome, Out of scope, UX or Data section differs once runs of
 //! whitespace are collapsed; anything else is routine.
@@ -14,7 +17,7 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value};
 
 use super::kinds::{ANSWER_TYPE, answers_count, chosen_text, meets};
-use super::{Approval, FENCES, HEADING, Observed, Revision, sections, strings};
+use super::{Approval, HEADING, Observed, Revision, sections, strings};
 use crate::flow::{self, Where};
 
 /// The sections whose text an approval covers, by heading in lower case,
@@ -51,15 +54,22 @@ pub(crate) enum Standing {
     },
     /// Board cannot tell which revision it approved.
     Unbound,
-    /// It names a revision Board does not read.
-    Unread { revision: String },
+    /// It approved a revision Board no longer reads, `named` as a detail
+    /// names it.
+    Gone { named: String },
 }
 
 impl Standing {
     /// Whether the approval still counts.
     pub(crate) fn counts(&self) -> bool {
-        !matches!(self, Self::Lapsed { .. })
+        !matches!(self, Self::Lapsed { .. } | Self::Gone { .. })
     }
+}
+
+/// Whether the decision `body` approves the plan explicitly: its refs name
+/// a revision of the plan.
+pub(crate) fn explicit(observed: &Observed, body: &Map<String, Value>) -> bool {
+    strings(body, "refs").any(|each| named_in(observed, each).is_some())
 }
 
 /// The revision of the change's plan `text` names as a whole path: a
@@ -85,29 +95,61 @@ pub(crate) fn named_in(observed: &Observed, text: &str) -> Option<String> {
 /// The revision the attached record at `path` approved: the one its refs
 /// name for a decision, or the one `chosen`, the text of the option an
 /// answer chose, names; otherwise the earliest revision whose `records`
-/// list holds it.
-pub(crate) fn bound(
+/// list holds it. An answer older than that revision was attached under an
+/// earlier one Board no longer lists, which reads as gone.
+fn bound(
     observed: &Observed,
     path: &str,
     body: &Map<String, Value>,
     chosen: Option<&str>,
-) -> Option<String> {
+) -> Standing {
     let named = match chosen {
         Some(text) => named_in(observed, text),
         None => strings(body, "refs")
             .filter_map(|each| named_in(observed, each))
             .last(),
     };
-    named.or_else(|| {
-        let revisions = observed.revisions.as_deref().unwrap_or_default();
-        (revisions.iter())
-            .find(|each| strings(&each.record, "records").any(|held| held == path))
-            .map(|each| each.path.clone())
-    })
+    if named.is_some() {
+        return standing(observed, named);
+    }
+    let revisions = observed.revisions.as_deref().unwrap_or_default();
+    let holder = (revisions.iter())
+        .find(|each| strings(&each.record, "records").any(|held| held == path))
+        .map(|each| each.path.clone());
+    let answered = body.get("answered").and_then(Value::as_str);
+    if let (Some(holder), Some(answered)) = (&holder, answered)
+        && older(answered, holder)
+    {
+        return Standing::Gone {
+            named: format!("the revision current at {answered}"),
+        };
+    }
+    standing(observed, holder)
+}
+
+/// Whether the UTC time `answered`, such as `2026-11-25T09:00:00Z`, is
+/// before the time the revision at `revision` was written, which its
+/// `plans/<yyyymmddThhmmss…Z>` name gives. A revision named otherwise has
+/// no time, and nothing is older than it.
+fn older(answered: &str, revision: &str) -> bool {
+    let id = revision.rsplit('/').next().unwrap_or_default();
+    let compact: String = (answered.chars())
+        .filter(char::is_ascii_alphanumeric)
+        .take(15)
+        .collect();
+    let stamp = id.get(..15).unwrap_or_default();
+    let shaped = |text: &str| {
+        text.len() == 15
+            && (text.char_indices()).all(|(at, each)| match at {
+                8 => each == 'T',
+                _ => each.is_ascii_digit(),
+            })
+    };
+    shaped(&compact) && shaped(stamp) && compact.as_str() < stamp
 }
 
 /// Where an approval of `revision` stands against the current plan.
-pub(crate) fn standing(observed: &Observed, revision: Option<String>) -> Standing {
+fn standing(observed: &Observed, revision: Option<String>) -> Standing {
     let Some(revision) = revision else {
         return Standing::Unbound;
     };
@@ -119,7 +161,9 @@ pub(crate) fn standing(observed: &Observed, revision: Option<String>) -> Standin
         .find(|each| each.path == revision)
         .filter(|each| each.text.is_some())
     else {
-        return Standing::Unread { revision };
+        return Standing::Gone {
+            named: short(observed, &revision).to_owned(),
+        };
     };
     let (substance, routine) = differences(earlier, &current(observed));
     if substance.is_empty() {
@@ -192,70 +236,49 @@ fn differences(earlier: &Revision, current: &Revision) -> (Vec<String>, Vec<Stri
     (substance, routine)
 }
 
-/// Each `## ` section of `was` or `now`, other than those an approval
-/// covers, whose text differs once whitespace is collapsed, and the title
-/// when the text before the first such section differs.
+/// Each section of `was` or `now`, as `sections` reads them, other than
+/// the title and those an approval covers, whose text differs once
+/// whitespace is collapsed.
 fn routine_sections(was: &str, now: &str) -> Vec<String> {
-    let ((was_before, was_parts), (now_before, now_parts)) = (parts(was), parts(now));
-    let mut changed = Vec::new();
-    if collapsed(&was_before) != collapsed(&now_before) {
-        changed.push("its title".to_owned());
-    }
-    let mut headings: Vec<&String> = now_parts.iter().map(|(heading, _)| heading).collect();
-    for (heading, _) in &was_parts {
-        if !headings.contains(&heading) {
-            headings.push(heading);
-        }
-    }
-    let body = |found: &[(String, String)], heading: &str| {
-        (found.iter())
-            .find(|(each, _)| each == heading)
-            .map_or_else(String::new, |(_, text)| collapsed(text))
+    let (was_found, now_found) = (sections(was), sections(now));
+    let titles = [title(was), title(now)];
+    let text = |found: &BTreeMap<String, String>, key: &str| {
+        collapsed(found.get(key).map_or("", String::as_str))
     };
-    changed.extend(
-        (headings.into_iter())
-            .filter(|heading| {
-                let key = heading.to_lowercase();
-                !SUBSTANCE.iter().any(|(each, _)| *each == key)
-                    && body(&was_parts, heading) != body(&now_parts, heading)
-            })
-            .map(|heading| format!("its {heading} section")),
-    );
-    changed
+    let mut keys: Vec<&String> = now_found.keys().collect();
+    keys.extend(was_found.keys().filter(|key| !now_found.contains_key(*key)));
+    keys.sort();
+    (keys.into_iter())
+        .filter(|key| {
+            !SUBSTANCE.iter().any(|(each, _)| each == key)
+                && !titles.iter().any(|title| title.as_ref() == Some(*key))
+                && text(&was_found, key) != text(&now_found, key)
+        })
+        .map(|key| {
+            let mut letters = key.chars();
+            let first = letters
+                .next()
+                .map(|each| each.to_uppercase().collect::<String>());
+            format!(
+                "its {}{} section",
+                first.unwrap_or_default(),
+                letters.as_str()
+            )
+        })
+        .collect()
+}
+
+/// The plan's title, its first `# ` heading, in lower case as `sections`
+/// keys it.
+fn title(text: &str) -> Option<String> {
+    let line = text.lines().find(|line| line.starts_with("# "))?;
+    let heading = HEADING.captures(line)?.get(1)?;
+    Some(heading.as_str().to_lowercase())
 }
 
 /// `text` with each run of whitespace one space, trimmed.
 fn collapsed(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-/// The text before a plan's first `## ` heading, and each `## ` section by
-/// its heading, with its subsections. A line in a code fence is never a
-/// heading.
-fn parts(text: &str) -> (String, Vec<(String, String)>) {
-    let mut before = Vec::new();
-    let mut found: Vec<(String, Vec<&str>)> = Vec::new();
-    let mut fenced = false;
-    for line in text.lines() {
-        let heading = (!fenced && line.starts_with("## "))
-            .then(|| HEADING.captures(line).and_then(|captures| captures.get(1)))
-            .flatten();
-        if FENCES
-            .iter()
-            .any(|fence| line.trim_start().starts_with(fence))
-        {
-            fenced = !fenced;
-        }
-        match (heading, found.last_mut()) {
-            (Some(heading), _) => found.push((heading.as_str().to_owned(), Vec::new())),
-            (None, Some((_, lines))) => lines.push(line),
-            (None, None) => before.push(line),
-        }
-    }
-    let found = (found.into_iter())
-        .map(|(heading, lines)| (heading, lines.join("\n")))
-        .collect();
-    (before.join("\n"), found)
 }
 
 /// `items` joined as a reader lists them: `a`, `a and b`, `a, b and c`.
@@ -296,7 +319,8 @@ pub(super) const NONE: Where = Where {
 
 /// Each attached record of the check's type, and for a check that counts
 /// the owner's answers each such answer, that meets its `where` at `head`,
-/// by path, with whether it is an answer.
+/// by path, with whether it is an answer. Such a check counts only a
+/// decision that approves the plan explicitly.
 pub(super) fn meeting<'a>(
     observed: &'a Observed,
     each: &'a flow::Check,
@@ -304,9 +328,11 @@ pub(super) fn meeting<'a>(
     head: Option<&'a str>,
 ) -> impl Iterator<Item = (&'a str, &'a Map<String, Value>, bool)> {
     let kind = each.record_type.as_deref().unwrap_or_default();
-    let answers = answers_count(each).then(|| observed.records.of_type(ANSWER_TYPE));
+    let owners = answers_count(each);
+    let answers = owners.then(|| observed.records.of_type(ANSWER_TYPE));
     (observed.records.of_type(kind))
         .filter(move |(_, body)| meets(observed, body, rules, head, false))
+        .filter(move |(_, body)| !owners || explicit(observed, body))
         .map(|(path, body)| (path, body, false))
         .chain(
             (answers.into_iter().flatten())
@@ -328,8 +354,7 @@ pub(super) fn approvals(
     let mut judged: Vec<(String, Standing)> = meeting(observed, each, rules, head)
         .map(|(path, body, answer)| {
             let chosen = answer.then(|| chosen_text(observed, body)).flatten();
-            let bound = bound(observed, path, body, chosen);
-            (path.to_owned(), standing(observed, bound))
+            (path.to_owned(), bound(observed, path, body, chosen))
         })
         .collect();
     if let Approval::Signed(signed) = &observed.approval {
@@ -339,23 +364,12 @@ pub(super) fn approvals(
     judged
 }
 
-/// What a passing check that counts the owner's answers says of the
-/// approvals that count: see [`passed`].
-pub(super) fn passed_approval(observed: &Observed, each: &flow::Check) -> String {
-    let rules = each.conditions.as_ref().unwrap_or(&NONE);
-    let head = rules.at_head.and(observed.change.head.as_deref());
-    let counted: Vec<(String, Standing)> = (approvals(observed, each, rules, head).into_iter())
-        .filter(|(_, standing)| standing.counts())
-        .collect();
-    passed(observed, &counted)
-}
-
 /// What a missing check that counts the owner's answers says when no
-/// approval lapsed: `detail`, the records it lacks, and the answers and
-/// Touch ID approval it also counts, with why Board could not read that
-/// approval.
-pub(super) fn unmet(observed: &Observed, detail: &str) -> String {
+/// approval lapsed: the explicit approvals it counts, with why Board could
+/// not read the Touch ID approval.
+pub(super) fn unmet(observed: &Observed) -> String {
     let path = &observed.path;
+    let plan = (observed.change.plan.clone()).unwrap_or_else(|| format!("{path}/plans/<id>"));
     let unread = match &observed.approval {
         Approval::Unread(refusal) => format!(
             "; Board could not read that approval: {} {}",
@@ -365,17 +379,19 @@ pub(super) fn unmet(observed: &Observed, detail: &str) -> String {
         Approval::None | Approval::Signed(_) => String::new(),
     };
     format!(
-        "{detail}, nor a {ANSWER_TYPE} from the owner (one that names `by.person`, or was written \
-         through the owner's questions pane, Board.app or /ask) whose chosen option, in its \
-         attached question, names {path}, nor the owner's Touch ID approval of changes.approve \
-         for the current plan{unread}"
+        "no plans/decision/v1 that the owner signed with by.person whose refs name a revision of \
+         the plan, such as {plan}, is attached, nor a {ANSWER_TYPE} from the owner (one that \
+         names `by.person`, or was written through the owner's questions pane, Board.app or \
+         /ask) whose chosen option, in its attached question, names {path}, nor the owner's \
+         Touch ID approval of changes.approve for the current plan{unread}"
     )
 }
 
 /// What a passing owner-approval check says of the approvals that count,
 /// each by the record that holds it: nothing when one approved the current
 /// revision, else that the newest earlier one still counts and what
-/// changed since, else why Board could not tell.
+/// changed since, else that Board could not tell which revision one
+/// approved.
 pub(crate) fn passed(observed: &Observed, counted: &[(String, Standing)]) -> String {
     if counted.iter().any(|(_, each)| *each == Standing::Current) {
         return String::new();
@@ -401,15 +417,6 @@ pub(crate) fn passed(observed: &Observed, counted: &[(String, Standing)]) -> Str
             )
         };
     }
-    for (by, each) in counted {
-        if let Standing::Unread { revision } = each {
-            return format!(
-                "{by} approved {}, which Board could not read, so Board cannot tell whether the \
-                 plan changed since; it counts the approval",
-                short(observed, revision)
-            );
-        }
-    }
     (counted.iter())
         .find(|(_, each)| *each == Standing::Unbound)
         .map_or_else(String::new, |(by, _)| {
@@ -426,16 +433,27 @@ pub(crate) fn passed(observed: &Observed, counted: &[(String, Standing)]) -> Str
 pub(crate) fn lapsed(observed: &Observed, judged: &[(String, Standing)]) -> Option<String> {
     let mut said: Vec<(&str, String)> = Vec::new();
     for (by, each) in judged {
-        if let Standing::Lapsed { revision, changed } = each
-            && !said.iter().any(|(each, _)| each == revision)
-        {
-            let sentence = format!(
-                "the owner approved {} {}, and the current plan changes {}",
-                short(observed, revision),
-                source(by),
-                listed(changed)
-            );
-            said.push((revision, sentence));
+        let (key, sentence) = match each {
+            Standing::Lapsed { revision, changed } => (
+                revision.as_str(),
+                format!(
+                    "the owner approved {} {}, and the current plan changes {}",
+                    short(observed, revision),
+                    source(by),
+                    listed(changed)
+                ),
+            ),
+            Standing::Gone { named } => (
+                named.as_str(),
+                format!(
+                    "the owner approved {named} {}, which Board can no longer read",
+                    source(by)
+                ),
+            ),
+            _ => continue,
+        };
+        if !said.iter().any(|(each, _)| *each == key) {
+            said.push((key, sentence));
         }
     }
     if said.is_empty() {

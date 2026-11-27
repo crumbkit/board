@@ -211,22 +211,49 @@ fn a_whitespace_reflow_of_the_outcome_keeps_the_answer_and_a_changed_data_answer
     );
 }
 
-/// The owner's decision naming only the change.
-fn decision() -> Records {
+/// The owner's decision whose refs name the change and `named`.
+fn decision(named: &[&str]) -> Records {
+    let refs: Vec<&str> = std::iter::once(PATH).chain(named.iter().copied()).collect();
     vec![(
         "/d/1",
         (
             "plans/decision/v1",
-            json!({"refs": [PATH], "by": {"person": PERSON}}),
+            json!({"refs": refs, "by": {"person": PERSON}}),
         ),
     )]
 }
 
+/// "Explicit only": a decision about the plan's content, whose refs name
+/// the change but no revision of its plan, approves nothing, though it is
+/// attached under the current revision; one naming the current revision
+/// approves it.
 #[test]
-fn a_decision_attached_under_the_earlier_revision_lapses_on_a_data_change_and_under_the_current_passes()
- {
+fn a_decision_naming_no_plan_revision_does_not_approve_and_one_naming_the_current_revision_does() {
+    let content = revised(decision(&[]), &[], PLAN, PLAN, &stores(), &json!({}));
+    let (status, detail) = owner_approval(&content);
+    assert_eq!(status, Status::Missing);
+    assert!(
+        detail.starts_with(
+            "no plans/decision/v1 that the owner signed with by.person whose refs name a \
+             revision of the plan, such as /changes/t/plans/1, is attached"
+        ),
+        "{detail}"
+    );
+    let approving = revised(decision(&[CURRENT]), &[], PLAN, PLAN, &stores(), &json!({}));
+    assert_eq!(owner_approval(&approving), (Status::Pass, String::new()));
+}
+
+#[test]
+fn a_decision_approving_the_earlier_revision_lapses_on_a_data_change() {
     let text = PLAN.replace("## Data\n\nNone.", "## Data\n\nOne row per run.");
-    let earlier = revised(decision(), &["/d/1"], PLAN, &text, &stores(), &json!({}));
+    let earlier = revised(
+        decision(&[EARLIER]),
+        &["/d/1"],
+        PLAN,
+        &text,
+        &stores(),
+        &json!({}),
+    );
     let (status, detail) = owner_approval(&earlier);
     assert_eq!(status, Status::Missing);
     assert!(
@@ -235,8 +262,6 @@ fn a_decision_attached_under_the_earlier_revision_lapses_on_a_data_change_and_un
         ),
         "{detail}"
     );
-    let current = revised(decision(), &[], PLAN, &text, &stores(), &json!({}));
-    assert_eq!(owner_approval(&current), (Status::Pass, String::new()));
 }
 
 #[test]
@@ -303,24 +328,68 @@ fn an_approval_bound_to_no_revision_passes_and_the_detail_warns() {
 }
 
 #[test]
-fn an_approval_naming_a_revision_board_cannot_read_passes_and_the_detail_warns() {
-    let named = vec![(
-        "/d/1",
-        (
-            "plans/decision/v1",
-            json!({"refs": [PATH, "/changes/t/plans/gone"], "by": {"person": PERSON}}),
-        ),
-    )];
-    let given = revised(named, &[], PLAN, PLAN, &stores(), &json!({}));
+fn an_approval_naming_a_revision_board_cannot_read_lapses_and_its_twin_passes() {
+    let gone = revised(
+        decision(&["/changes/t/plans/gone"]),
+        &[],
+        PLAN,
+        PLAN,
+        &stores(),
+        &json!({}),
+    );
     assert_eq!(
-        owner_approval(&given),
+        owner_approval(&gone),
         (
-            Status::Pass,
-            "/d/1 approved plans/gone, which Board could not read, so Board cannot tell whether \
-             the plan changed since; it counts the approval"
+            Status::Missing,
+            "the owner approved plans/gone in /d/1, which Board can no longer read; ask the \
+             owner again with the question `board changes ask` files, or with `board changes \
+             approve` and Touch ID"
                 .to_owned()
         )
     );
+    let held = revised(decision(&[EARLIER]), &[], PLAN, PLAN, &stores(), &json!({}));
+    assert_eq!(owner_approval(&held).0, Status::Pass);
+}
+
+/// An owner's answer given at `answered`, attached under the revisions
+/// /changes/t/plans/20261125T100000000000Z and the current one.
+fn answered_at(answered: &str) -> Given {
+    let first = "/changes/t/plans/20261125T100000000000Z";
+    let mut records = owners_answer();
+    records[1].1.1["answered"] = json!(answered);
+    let revisions = vec![
+        revision(
+            first,
+            &record(first, &stores(), &json!({}), &["/q/1", "/a/1"]),
+            Some(PLAN),
+        ),
+        revision(
+            CURRENT,
+            &record(CURRENT, &stores(), &json!({}), &["/q/1", "/a/1"]),
+            Some(PLAN),
+        ),
+    ];
+    let current = json!({"route": "owner", "plan": CURRENT});
+    (approving("plan").with(current))
+        .records(records)
+        .revisions(Ok(revisions))
+}
+
+/// The revision that was current when the owner answered is gone when the
+/// earliest revision holding the answer was written after it.
+#[test]
+fn an_answer_older_than_every_revision_holding_it_lapses_and_a_later_one_counts() {
+    let (status, detail) = owner_approval(&answered_at("2026-11-25T09:00:00Z"));
+    assert_eq!(status, Status::Missing);
+    assert!(
+        detail.starts_with(
+            "the owner approved the revision current at 2026-11-25T09:00:00Z in /a/1, which \
+             Board can no longer read;"
+        ),
+        "{detail}"
+    );
+    let later = answered_at("2026-11-25T10:00:01Z");
+    assert_eq!(owner_approval(&later).0, Status::Pass);
 }
 
 #[test]

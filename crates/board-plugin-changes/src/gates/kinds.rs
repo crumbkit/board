@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 
 use super::remedy::{Values, fill, unfilled};
-use super::revision::{self, NONE, TOUCH_ID, meeting};
+use super::revision::{self, NONE, Standing, TOUCH_ID, meeting};
 use super::{
     Approval, DECISION_TYPE, NO_HEAD, Observed, UNDERSTANDING_TYPE, objects, owner_answered,
     owner_signed, reviewed_head, route_missing, same_commit, signed_decisions, strings,
@@ -57,9 +57,6 @@ pub(super) fn bounded(paths: &[&str]) -> String {
 /// none exists, and otherwise nothing.
 pub(super) fn passed(observed: &Observed, each: &flow::Check, values: &Values) -> String {
     let kind = each.kind.known().copied();
-    if kind == Some(Kind::Records) && answers_count(each) {
-        return revision::passed_approval(observed, each);
-    }
     if kind == Some(Kind::Records) {
         return passed_after(observed, each).unwrap_or_default();
     }
@@ -462,10 +459,11 @@ fn either(items: &[String]) -> String {
 
 /// At least `min` attached records of the check's type meet its `where`,
 /// each from a different actor when it names `distinct`. A check that
-/// counts the owner's answers counts the owner's Touch ID approval too,
-/// and counts no approval whose plan revision the current plan changes in
-/// substance.
+/// counts the owner's answers is judged by [`owners_judged`].
 pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option<String> {
+    if let Some(judged) = owners_judged(observed, each) {
+        return judged.err();
+    }
     let Some(kind) = &each.record_type else {
         return Some(unset(each, "type"));
     };
@@ -475,18 +473,40 @@ pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option
         (Some(_), None) => return Some(NO_HEAD.to_owned()),
         (Some(_), Some(head)) => Some(head.as_str()),
     };
-    let owners = answers_count(each);
-    if owners && let Err(refusal) = &observed.revisions {
-        return Some(revision::unlisted(observed, refusal));
-    }
-    let judged = if owners {
-        revision::approvals(observed, each, rules, head)
-    } else {
-        Vec::new()
+    let passing = meeting(observed, each, rules, head);
+    let count = match each.distinct {
+        None => passing.count(),
+        Some(part) => (passing
+            .filter_map(|(_, body, _)| body.get("by")?.get(part.part())?.as_str())
+            .collect::<BTreeSet<_>>())
+        .len(),
     };
+    let min = each.min.map_or(1, |min| min as usize);
+    (count < min)
+        .then(|| records_detail(each, kind, rules, head, min) + &not_after(observed, each, rules))
+}
+
+/// For a check that counts the owner's answers, what its detail says when
+/// it passes, or what is missing: at least `min` explicit approvals, each
+/// from a different actor when it names `distinct`, with the owner's Touch
+/// ID approval counted once, and none whose plan revision the current plan
+/// changes in substance or that Board no longer reads. None for any other
+/// check.
+pub(super) fn owners_judged(
+    observed: &Observed,
+    each: &flow::Check,
+) -> Option<Result<String, String>> {
+    if !answers_count(each) {
+        return None;
+    }
+    let rules = each.conditions.as_ref().unwrap_or(&NONE);
+    if let Err(refusal) = &observed.revisions {
+        return Some(Err(revision::unlisted(observed, refusal)));
+    }
+    let judged = revision::approvals(observed, each, rules, None);
     let lapsed =
         |path: &str| (judged.iter()).any(|(by, standing)| by == path && !standing.counts());
-    let passing = meeting(observed, each, rules, head).filter(|(path, _, _)| !lapsed(path));
+    let passing = meeting(observed, each, rules, None).filter(|(path, _, _)| !lapsed(path));
     let count = match each.distinct {
         None => passing.count(),
         Some(part) => (passing
@@ -495,23 +515,18 @@ pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option
         .len(),
     };
     // The owner's Touch ID approval counts once.
-    let count = count
-        + usize::from(
-            matches!(observed.approval, Approval::Signed(_)) && owners && !lapsed(TOUCH_ID),
-        );
+    let signed = matches!(observed.approval, Approval::Signed(_)) && !lapsed(TOUCH_ID);
+    let count = count + usize::from(signed);
     let min = each.min.map_or(1, |min| min as usize);
-    (count < min).then(|| {
-        if let Some(said) = revision::lapsed(observed, &judged) {
-            return said;
-        }
-        let detail =
-            records_detail(each, kind, rules, head, min) + &not_after(observed, each, rules);
-        if owners {
-            revision::unmet(observed, &detail)
-        } else {
-            detail
-        }
-    })
+    if count >= min {
+        let counted: Vec<(String, Standing)> = (judged.into_iter())
+            .filter(|(_, standing)| standing.counts())
+            .collect();
+        return Some(Ok(revision::passed(observed, &counted)));
+    }
+    Some(Err(
+        revision::lapsed(observed, &judged).unwrap_or_else(|| revision::unmet(observed))
+    ))
 }
 
 /// What is missing when too few records meet a `records` check.
