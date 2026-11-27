@@ -112,8 +112,8 @@ that one record.
   `/controls/` or a `controls/control/v1` reads as its `/rules/` form.
   `board check` does not follow `rule`, because an obligation is deleted
   once its work is done and a plan snapshot never changes. `plan` checks the
-  path when it writes it: a record that is missing is
-  `changes::ref::dangling`, and an owed path that is no rule is
+  path when it writes it: a record that is missing is left out with the
+  warning `changes::ref::dangling`, and an owed path that is no rule is
   `changes::ref::wrong_type`. A plan's text
   takes no such paths: the `considered` and `obligations` checks read only
   these fields. A `### Considered` or `## Obligations left owed` heading
@@ -559,12 +559,22 @@ of `changes` still fails `review`.
   the change named before. A plan whose text, `uses`, `paths` and `answers` equal
   those of the plan record the change names writes nothing and returns
   that record with `unchanged: true`; otherwise `unchanged` is false. It keeps each reference in `uses` once. It
-  refuses a reference that reaches nothing, or a record Board marks degraded
-  for anything but a broken reference of its own (`changes::ref::dangling`,
-  whose `refs` lists them); a directory (`changes::plan::directory`); a text
-  over 3,000 words (`changes::plan::too_long`); and Markdown documents in
-  `uses` over 3,000 words in all (`changes::plan::uses_too_long`). Words are
-  separated by whitespace. The last limit comes from
+  refuses a directory in `uses` (`changes::plan::directory`) and a text over
+  6,000 words (`changes::plan::too_long`), so a pasted log cannot become a
+  plan. It writes the plan and adds a `warnings` entry for each fault that
+  the gates catch at `advance`: a text over 3,000 words
+  (`changes::plan::too_long`), Markdown documents in `uses` over 3,000 words
+  in all (`changes::plan::uses_too_long`), each with the word count, and a
+  reference in `uses`, `considered` or `owed` that reaches nothing, or a
+  record Board marks degraded for anything but a broken reference of its
+  own (`changes::ref::dangling`). It leaves each such reference out of the
+  plan and lists it; a `considered` group left with no record is left out,
+  so the `considered` check then names any surfaced record the plan no
+  longer considers. It also warns with `changes::plan::sections_missing`
+  of each heading that a `sections` check of the change's flow, in any
+  phase, requires and the text lacks, such as the development flow's two
+  test sections, which land reads; it reads no check's `when`. Words are
+  separated by whitespace. The `uses` limit comes from
   `/evals/board-standards-selection` in the owner's board: agents that chose
   standards from each directory's `index.md` stayed within it.
 - `plan-amend --path /changes/<name> [--proves <text>] [--does-not-prove <text>]`
@@ -1304,7 +1314,15 @@ plan's text, `changes/<name>/plans/<stamp>.md`, stays writable.
 Only `board_record` refuses, and `unknown` in a board's checkout. Every other
 code is advice: the edit runs and
 the guard adds one line to the tool result that starts with the code, says
-the edit ran, and names what to do:
+the edit ran, and names what to do. The guard remembers the last verdict on
+each agent's edits of each mount, counting an edit that needed no advice. A
+later edit by the same agent whose line would say what that verdict said,
+apart from the file, runs with no line. A line that says something new, such
+as another phase, branch or change, is given in full, and so is advice that
+returns after an edit that needed none, such as a change paused again after
+an edit in build. `unknown` advice and every refusal are given on every
+edit. The guard keeps these verdicts until the mod reloads, and `/clear` or
+`/resume` starts over:
 
 - `changes::guard::board_record`: the file is the board config, a change
   record or a mount record. The refusal names the board command to use.
@@ -1343,7 +1361,10 @@ line. It cannot see:
   reloads, and `/clear` or `/resume` starts over. With no brief kept and a
   full window of 4,096 entries, the guard advises with
   `changes::guard::unknown`, since the oldest row left may be one another
-  agent wrote.
+  agent wrote;
+- an agent that lost a line of advice in a compaction. The guard has
+  already given that line to the agent, so it is not given again for that
+  mount until the verdict changes.
 
 The guard advises on an edit of every mounted repository that is not itself a
 known board, including the notes repositories a personal board mounts, such

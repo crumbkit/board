@@ -29,8 +29,9 @@ blocks is missing.
    flow's when it has none, unless told otherwise; once `next` returns
    `stop` with `reached` true, `advance` refuses. With the `board-changes`
    mod installed, an Edit, Write or NotebookEdit of the repository by an
-   agent not started from `changes.brief` runs with a line of advice; it
-   cannot see writes made through Bash. Start a builder with a prompt
+   agent not started from `changes.brief` runs with a line of advice,
+   given to each agent again only when the verdict on its edits of that
+   repository changes; it cannot see writes made through Bash. Start a builder with a prompt
    whose first line is the brief's `brief_line`, followed by the whole
    brief as `changes.brief` prints it now, as plain text, not inside a code
    fence; compact or pretty JSON with keys in any order both pass. The
@@ -62,7 +63,11 @@ blocks is missing.
    `[{"records": ["<path>"], "why": "<reason>"}]`. Obligations the change
    leaves owed go in `owed`, as `[{"rule": "<path>", "why": "<reason>"}]`.
    Both fields take paths, and the gates do not read paths in the text.
-   Keep the plan near 900 words; `plan` refuses one over 3,000.
+   Keep the plan near 900 words; `plan` warns of one over 3,000 and
+   refuses one over 6,000. Read the output's `warnings` before you
+   advance: `plan` writes the plan without each reference that reaches
+   nothing (`changes::ref::dangling`) and names each section the flow
+   requires that the text lacks (`changes::plan::sections_missing`).
    To add the "What the tests prove" or "What the tests do not prove"
    section to an existing plan, such as at land, run `board -C <board>
    changes plan-amend --path /changes/<name>` with `--proves` or

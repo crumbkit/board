@@ -14,6 +14,15 @@
   `board tasks tree` show the repository's tasks once, including after a
   sync moves a pin onto the other mount's commit. Two different
   repositories that both cover the remote still refuse as before.
+- The `board-changes` mod's edit guard remembers the last verdict on each
+  agent's edits of each repository, counting an edit that needed no advice.
+  A later edit by the same agent whose line would say what that verdict
+  said, apart from the file, runs with no line. A line that says something
+  new, such as another phase, branch or change, is given in full, and so is
+  advice that returns after an edit that needed none. Advice
+  that a lookup failed is still given on every edit, and an edit of a
+  board record is still refused every time. The memory lasts until the mod
+  reloads, as on `/clear` and `/resume`.
 - A word an agent guesses after a plugin's name runs the capability it
   means: `changes show` and `changes status` run `changes next`,
   `changes list` runs `changes open`, and `tasks list`, `plans list` and
@@ -24,6 +33,19 @@
   `runs record` are still refused, and their hint says to write the run
   with `board put --new --var suite=<name>` and attach it with
   `board changes attach --ref`.
+- `board changes plan` writes a plan it used to refuse for a fault the
+  gates catch at `advance`, and lists the fault in `warnings`. A plan over
+  3,000 words warns `changes::plan::too_long` and used documents over
+  3,000 words in all warn `changes::plan::uses_too_long`, each with the
+  word count; a plan over 6,000 words is still refused. A reference in
+  `uses`, `considered` or `owed` that reaches nothing is left out of the
+  plan and listed under `changes::ref::dangling`. The new warning
+  `changes::plan::sections_missing` names each heading a `sections` check
+  of the change's flow requires and the text lacks, in any phase, so a
+  development plan learns of its two test sections at plan time. A
+  directory in `uses`, a path outside the mount, a build plan with no
+  paths and a plan headed by another change's title are still refused.
+  `changes plan-amend` keeps its 3,000-word refusal.
 - `board tasks available` does not fetch a notes clone that was fetched
   less than a minute ago and already holds what that fetch brought, so a
   sweep of calls in a row fetches once. A task pushed from elsewhere in that
