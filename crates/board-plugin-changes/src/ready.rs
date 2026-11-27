@@ -25,13 +25,13 @@ use crate::change::{
 use crate::diff::{conflicts, mounted};
 use crate::flow::{self, Actor, Kind as CheckKind, of_change};
 use crate::gates::{
-    Check, Observed, REPORT_TYPE, RUN_TYPE, Read as ReadKind, Status, gate, objects, ran_on, reads,
-    reviewed_head, same_commit,
+    Check, Observed, REPORT_TYPE, RUN_TYPE, Read as ReadKind, Status, fails_unread, gate, objects,
+    ran_on, reads, reviewed_head, same_commit,
 };
 use crate::owed::{OWED_DAYS, Owed, owed_of};
 use crate::phases::{observe_in, plan_file};
 use crate::plan::Answers;
-use crate::records::{ChangeRecord, DONE, DROPPED, PlanRecord, Route};
+use crate::records::{ChangeRecord, DONE, DROPPED, PlanRecord};
 use crate::{PLUGIN, Warning, to_value};
 
 /// The default `limit` (STANDARDS 23).
@@ -345,33 +345,6 @@ fn recheck(host: &dyn Host, owed: Owed, asked: &[Asked]) -> Option<Ready> {
     })
 }
 
-/// Whether the owner's check `each` may apply to a change whose plan gives
-/// `answers` and whose route is `route`. Only the conditions the change
-/// record and its plan record answer are read; any other condition is
-/// taken to hold, so the gate decides it.
-fn may_apply(each: &flow::Check, answers: Answers, route: Option<Route>) -> bool {
-    let Some(when) = &each.when else {
-        return true;
-    };
-    if let Some(routes) = &when.route
-        && !route.is_some_and(|route| routes.contains(&route))
-    {
-        return false;
-    }
-    if let Some(wanted) = when.answers
-        && !answers.meet(wanted)
-    {
-        return false;
-    }
-    // `answers_not` holds only when the plan gives each answer it names.
-    let given = |wanted: Answers| {
-        (wanted.ux.is_none() || answers.ux == wanted.ux)
-            && (wanted.data.is_none() || answers.data == wanted.data)
-            && (wanted.lifecycle.is_none() || answers.lifecycle == wanted.lifecycle)
-    };
-    !when.answers_not.is_some_and(given)
-}
-
 /// What the gate of a done change's owed checks in `flow` reads. When
 /// those checks read only the change's references and plan, as an
 /// understanding check does, only those are read, which leaves out the
@@ -482,7 +455,10 @@ fn row_of(
     mut flow: flow::Flow,
     given: &Given<'_>,
 ) -> Result<(Option<Ready>, Option<Warning>), PluginError> {
-    let applies = |each: &flow::Check| owners(each) && may_apply(each, given.answers, change.route);
+    // The route and answers are judged as the gate judges them, so a `when`
+    // the gate decides on the plan's text is left to the gate.
+    let applies =
+        |each: &flow::Check| owners(each) && !fails_unread(each, change.route, Some(given.answers));
     let done = change.phase == DONE;
     let Some(last) = flow.phases.last_mut() else {
         return Ok((None, None));

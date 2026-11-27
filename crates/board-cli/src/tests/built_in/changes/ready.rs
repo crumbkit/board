@@ -279,3 +279,68 @@ fn a_ready_change_whose_merge_check_git_cannot_answer_is_not_failing_and_warns()
         "changes::ready::merge_unread"
     );
 }
+
+/// A board holding the change `/changes/a` in land on the flow `own`,
+/// whose one owner check does not block, is missing while the change
+/// records no head, and applies `when` the plan's Data section matches
+/// `pattern` and its answers say it stores data. The plan answers that it
+/// stores none.
+fn sectioned(pattern: &str) -> Changes {
+    let board = Changes::new();
+    let check = json!({
+        "id": "signed", "kind": "field", "field": "head", "actor": "owner", "blocks": false,
+        "when": {"section": {"Data": pattern}, "answers": {"data": "stored"}},
+    });
+    board.write(
+        "flows/own.json",
+        &json!({
+            "$type": "changes/flow/v1",
+            "name": "own",
+            "summary": "A flow for a test.",
+            "stop": {"through": "land"},
+            "phases": [{"name": "land", "agent": "lead", "instruction": "Land it.",
+                        "checks": [check]}],
+        })
+        .to_string(),
+    );
+    board.write(
+        "changes/a/plans/1.md",
+        "# A\n\n## Data\n\nOne record is stored.\n",
+    );
+    board.write(
+        "changes/a/plans/1.json",
+        &typed(
+            "changes/plan/v1",
+            &json!({"text": "/changes/a/plans/1.md", "uses": [],
+                    "answers": {"ux": "none", "data": "none", "lifecycle": "none"}}),
+        ),
+    );
+    board.write(
+        "changes/a.json",
+        &typed(
+            "changes/change/v2",
+            &json!({"title": "A landing change", "flow": "/flows/own", "phase": "land",
+                    "route": "owner", "touched": today(), "plan": "/changes/a/plans/1"}),
+        ),
+    );
+    assert_eq!(board.code("/changes/a"), None);
+    board
+}
+
+/// The gate leaves a `when` with a section pattern to the pattern whatever
+/// the answers, and a pattern that is not a regular expression makes the
+/// owner's check missing, so the change waits on the owner and is listed.
+/// Its twin, whose pattern matches, fails on the answers and is not.
+#[test]
+fn an_owner_check_whose_section_pattern_cannot_be_read_is_ready_as_the_gate_says_and_its_twin_is_not()
+ {
+    let board = sectioned("(");
+    let next = board.call("next", &json!({"path": "/changes/a"}));
+    let signed = (next["gate"].as_array().unwrap().iter())
+        .find(|each| each["check"] == "signed")
+        .unwrap();
+    assert_eq!(signed["status"], "missing", "{next}");
+    assert_eq!(ready_paths(&board, &json!({})), ["/changes/a"]);
+    let board = sectioned("stored");
+    assert_eq!(ready_paths(&board, &json!({})), Vec::<String>::new());
+}
