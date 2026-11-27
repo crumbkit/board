@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The `board-changes` mod's edit guard gives each agent a line of advice
+  once for each code, repository and change. A later edit by the same agent
+  that earns the same advice runs with no line, and an edit in another
+  repository, or one that earns another code, is advised in full. Advice
+  that a lookup failed is still given on every edit, and an edit of a
+  board record is still refused every time. The memory lasts until the mod
+  reloads, as on `/clear` and `/resume`.
 - `board tasks available` does not fetch a notes clone that was fetched
   less than a minute ago and already holds what that fetch brought, so a
   sweep of calls in a row fetches once. A task pushed from elsewhere in that
