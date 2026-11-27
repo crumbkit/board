@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- A change's plan can list tasks under a `## Closes at merge` heading,
+  one board path each. The build gate's `tasks` check passes an open
+  attached task listed there, says which tasks close at merge, and misses
+  a listed path that is not a task of the change's, saying to attach it or
+  remove it. When the pull request merges, `changes advance` (which
+  `board github merge --change` runs) and `changes sync` close each listed
+  task through `tasks.done` before they write the change as done. A
+  refused close leaves the change in its phase: `advance` refuses with
+  `changes::land::tasks_not_closed` and `sync` reports `owed`, and a rerun
+  skips the tasks already closed. `sync --dry_run true` names the tasks it
+  would close and closes none.
 - `board tasks available` does not fetch a notes clone that was fetched
   less than a minute ago and already holds what that fetch brought, so a
   sweep of calls in a row fetches once. A task pushed from elsewhere in that

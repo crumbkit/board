@@ -24,6 +24,7 @@ use crate::records::{
 };
 use crate::stop::{Shown, holds, reached, stop_reached};
 use crate::sync::require_merged;
+use crate::tasks::{at_merge, close_at_merge};
 use crate::wip::{Limit, Move, active_days, admit};
 use crate::{PLUGIN, refusal, to_value};
 
@@ -634,6 +635,10 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     };
     if to == DONE {
         require_merged(host, &path, &mut change)?;
+        // The tasks close before the change is written as done, so a
+        // refusal leaves it in its phase and a rerun closes the rest.
+        let closes = at_merge(host, &path, &change)?.closes;
+        close_at_merge(host, &path, &phase, &closes, &advance_command(&path))?;
     }
     change.phase.clone_from(&to);
     let mut limit = None;
@@ -653,6 +658,11 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         to,
         warning: limit,
     }))
+}
+
+/// The command that moves the change at `path` on.
+fn advance_command(path: &str) -> String {
+    format!("board changes advance --path {path}")
 }
 
 /// The command that moves the change at `path` into build past the WIP

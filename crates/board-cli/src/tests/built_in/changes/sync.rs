@@ -247,6 +247,83 @@ fn a_merged_change_with_an_open_task_is_owed_and_moves_once_the_task_is_done() {
     assert_eq!(board.read("changes/merged.json")["phase"], "done");
 }
 
+/// A board with the tasks plugin and the stub gh, holding a change in
+/// land whose merged pull request is 1, with `tasks` attached, each open,
+/// and a plan whose Closes at merge section lists `closes`.
+fn closing(tasks: &[&str], closes: &str) -> Changes {
+    let board = Changes::with_tasks();
+    board.bin.write("gh", Item::Executable(GH));
+    for each in tasks {
+        board.write(each.trim_start_matches('/'), &task("open"));
+    }
+    let plan = format!("# Plan\n\n## Closes at merge\n\n{closes}\n\n## Data\n\nNone.\n");
+    board.write("changes/merged/plans/1.md", &plan);
+    board.change_at(
+        "changes/merged.json",
+        "land",
+        &json!({
+            "pull_request": pull(1),
+            "records": tasks,
+            "plan": "/changes/merged/plans/1.md",
+        }),
+    );
+    board.answers(
+        1,
+        &json!({"state": "closed", "merged": true, "merge_commit_sha": MERGE}),
+    );
+    board
+}
+
+#[test]
+fn sync_closes_each_open_task_the_plan_says_closes_at_merge_and_moves_the_change_to_done() {
+    let board = closing(
+        &["/tasks/left.md"],
+        "- `/tasks/left.md`, whose work this does.",
+    );
+    let entry = board.call("sync", &json!({}))["changes"][0].clone();
+    assert_eq!(
+        (&entry["status"], &entry["to"], &entry["code"]),
+        (&json!("merged"), &json!("done"), &Value::Null),
+        "{entry}"
+    );
+    let detail = entry["detail"].as_str().unwrap();
+    assert!(
+        detail.contains("it closed these tasks: /tasks/left.md"),
+        "{detail}"
+    );
+    let left = board.text("tasks/left.md");
+    assert!(left.contains(r#"status: "done""#), "{left}");
+    assert_eq!(board.read("changes/merged.json")["phase"], "done");
+}
+
+#[test]
+fn sync_is_owed_only_for_an_open_task_the_plan_does_not_name_and_closes_nothing_until_it_closes() {
+    let board = closing(&["/tasks/named.md", "/tasks/left.md"], "/tasks/named.md");
+    let owed = board.call("sync", &json!({}))["changes"][0].clone();
+    assert_eq!(owed["code"], "changes::sync::owed", "{owed}");
+    let detail = owed["detail"].as_str().unwrap();
+    assert!(detail.contains("/tasks/left.md"), "{detail}");
+    assert!(!detail.contains("/tasks/named.md"), "{detail}");
+    assert!(board.text("tasks/named.md").contains("status: open"));
+    board.write("tasks/left.md", &task("done"));
+    assert_eq!(board.call("sync", &json!({}))["changes"][0]["to"], "done");
+    assert!(board.text("tasks/named.md").contains(r#"status: "done""#));
+}
+
+#[test]
+fn a_dry_run_says_which_tasks_sync_would_close_and_closes_none() {
+    let board = closing(&["/tasks/left.md"], "/tasks/left.md");
+    let entry = board.call("sync", &json!({"dry_run": true}))["changes"][0].clone();
+    assert_eq!(entry["to"], "done", "{entry}");
+    let detail = entry["detail"].as_str().unwrap();
+    assert!(
+        detail.contains("sync would close these tasks: /tasks/left.md"),
+        "{detail}"
+    );
+    assert!(board.text("tasks/left.md").contains("status: open"));
+    assert_eq!(board.read("changes/merged.json")["phase"], "land");
+}
+
 #[test]
 fn a_merged_change_with_an_open_v3_task_is_owed() {
     let board = gh();

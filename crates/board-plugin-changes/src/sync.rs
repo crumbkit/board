@@ -6,6 +6,7 @@
 //! writes every move in one commit, or, when gh fails, writes nothing.
 //! `open` and `next` never run gh; they report the day of the last sync.
 
+use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
 use board_model::parse_json;
@@ -18,12 +19,12 @@ use serde_json::{Map, Value, json};
 
 use crate::board::{self, readable, rows, text};
 use crate::change::{
-    OWN, Pull, SYNC_COMMAND, attached, change_types, parsed, pull_of, read, record_sync,
-    referenced, today, write,
+    OWN, Pull, SYNC_COMMAND, attached, change_types, parsed, pull_of, read, record_sync, today,
+    write,
 };
-use crate::gates::open_task;
 use crate::phases::final_phase;
-use crate::records::{ChangeRecord, DONE, DROPPED, TASK_TYPE, is_final};
+use crate::records::{ChangeRecord, DONE, DROPPED, is_final};
+use crate::tasks::{at_merge, close_at_merge};
 use crate::wip::idle_action;
 use crate::{PLUGIN, refusal, to_value};
 
@@ -248,16 +249,6 @@ fn open_changes(host: &dyn Host) -> Result<Vec<(String, ChangeRecord, String)>, 
         .collect())
 }
 
-/// The tasks attached to the change's plans, through any link, that are
-/// neither done nor dropped.
-fn open_tasks(host: &dyn Host, path: &str) -> Result<Vec<String>, PluginError> {
-    let records = referenced(host, &attached(host, path)?)?;
-    Ok((records.of_type(TASK_TYPE))
-        .filter(|(_, body)| open_task(body))
-        .map(|(path, _)| path.to_owned())
-        .collect())
-}
-
 /// The entry of a change Board could not read what it depends on for, such
 /// as a task beneath a mount that cannot be read. It is left as it is, and
 /// the other changes sync. It has no command, because no one command fixes
@@ -308,33 +299,60 @@ fn without_pull(path: &str, change: &ChangeRecord) -> Entry {
     }
 }
 
+/// The `owed` entry of a change whose pull request at `url` merged but
+/// that cannot end yet, for the reason `detail`.
+fn owing(path: &str, change: &ChangeRecord, url: &str, detail: String) -> Entry {
+    Entry {
+        code: Some("changes::sync::owed"),
+        command: Some(SYNC_COMMAND.to_owned()),
+        ..entry(path, change, Some(url), "owed", detail)
+    }
+}
+
 /// A merged pull request's entry, and the change ended in done, or none
-/// while a task is still open.
+/// while a task its plan does not close at merge is still open.
+///
+/// Each task the plan closes at merge closes first, through `tasks.done`,
+/// unless `dry_run`; when one is refused, the change is owed and stays.
 fn merged(
     host: &dyn Host,
     path: &str,
     change: &ChangeRecord,
     pull: &Pull,
     answer: &Map<String, Value>,
+    dry_run: bool,
 ) -> Result<(Entry, Option<ChangeRecord>), PluginError> {
     let url = pull.url.as_str();
-    let owed = open_tasks(host, path)?;
-    if !owed.is_empty() {
+    let tasks = at_merge(host, path, change)?;
+    if !tasks.owed.is_empty() {
         let detail = format!(
             "its pull request merged, but these tasks are not done or dropped: {}; close them \
-             with `board tasks done`, then run `{SYNC_COMMAND}` again",
-            owed.join(", ")
+             with `board tasks done`, or name them in the plan's Closes at merge section, then \
+             run `{SYNC_COMMAND}` again",
+            tasks.owed.join(", ")
         );
-        let owing = Entry {
-            code: Some("changes::sync::owed"),
-            command: Some(SYNC_COMMAND.to_owned()),
-            ..entry(path, change, Some(url), "owed", detail)
-        };
-        return Ok((owing, None));
+        return Ok((owing(path, change, url, detail), None));
     }
+    let closed = if dry_run {
+        Vec::new()
+    } else {
+        match close_at_merge(host, path, &change.phase, &tasks.closes, SYNC_COMMAND) {
+            Ok(closed) => closed,
+            Err(refused) => return Ok((owing(path, change, url, refused.message), None)),
+        }
+    };
     let mut ended = change.clone();
     DONE.clone_into(&mut ended.phase);
     let mut detail = format!("its pull request {url} merged");
+    if dry_run && !tasks.closes.is_empty() {
+        let _ = write!(
+            detail,
+            ", and sync would close these tasks: {}",
+            tasks.closes.join(", ")
+        );
+    } else if !closed.is_empty() {
+        let _ = write!(detail, ", and it closed these tasks: {}", closed.join(", "));
+    }
     ended.merge_commit_url = merge_commit_url(pull, answer);
     if ended.merge_commit_url.is_none() {
         detail.push_str(", and GitHub gave no merge commit, so none is recorded");
@@ -361,6 +379,7 @@ fn synced(
     path: &str,
     change: &ChangeRecord,
     deadline: Instant,
+    dry_run: bool,
 ) -> Result<(Entry, Option<ChangeRecord>), PluginError> {
     let reference = change.pulls().last().cloned().unwrap_or_default();
     let Some(pull) = pull_of(host, &reference)? else {
@@ -392,7 +411,7 @@ fn synced(
         return Ok((missing, None));
     };
     if answer.get("merged") == Some(&Value::Bool(true)) {
-        return merged(host, path, change, &pull, &answer);
+        return merged(host, path, change, &pull, &answer, dry_run);
     }
     if answer.get("state").and_then(Value::as_str) == Some("closed") {
         let closed: String = (answer.get("closed_at").and_then(Value::as_str))
@@ -515,7 +534,7 @@ pub(crate) fn sync(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
             entries.push(without_pull(&path, &change));
             continue;
         }
-        let (found, ended) = match synced(host, &path, &change, deadline) {
+        let (found, ended) = match synced(host, &path, &change, deadline, dry_run) {
             Err(error) if error.code == BOARD_REFUSED => {
                 (unread_or_refused(host, &path, &change, error)?, None)
             }

@@ -169,7 +169,10 @@ fn default(each: &flow::Check) -> String {
         }
         Kind::Tasks => {
             "Finish each open task and close it with `board tasks done`, or drop it with \
-             `board tasks drop`."
+             `board tasks drop`. When the change does a task's work, list the task's board path \
+             under a `## Closes at merge` heading in the plan instead, and Board closes it when \
+             the pull request merges. Each task listed there must be attached with `board \
+             changes attach --path {change} --ref <task>`, or removed from the section."
                 .to_owned()
         }
         Kind::Understood if each.rechecks.is_some() => format!(

@@ -15,7 +15,8 @@ use serde_json::{Map, Value};
 use crate::change::Referenced;
 use crate::flow::{self, Actor, Field, Kind as CheckKind, Part, Scope};
 use crate::plan::answers::Answers;
-use crate::records::{BUILD, ChangeRecord, Kind, Subject, TASK_TYPE};
+use crate::records::{BUILD, ChangeRecord, Kind, Subject};
+use crate::tasks::{tasks_missing, tasks_passed};
 
 pub(crate) const RUN_TYPE: &str = "runs/run/v1";
 pub(crate) const DECISION_TYPE: &str = "plans/decision/v1";
@@ -323,15 +324,15 @@ pub(crate) fn reads(checks: &[flow::Check]) -> BTreeSet<Read> {
         }
         let needs: &[Read] = match kind {
             CheckKind::Sections | CheckKind::Considered => &[Read::Plan],
-            CheckKind::Mockups => &[Read::Plan, Read::References],
+            // A `tasks` check reads the plan's Closes at merge section.
+            CheckKind::Mockups | CheckKind::Tasks => &[Read::Plan, Read::References],
             CheckKind::Records if kinds::answers_count(each) => {
                 &[Read::Plan, Read::References, Read::Approval]
             }
             CheckKind::Records if refs => &[Read::Plan, Read::References],
-            CheckKind::Understood
-            | CheckKind::Records
-            | CheckKind::Tasks
-            | CheckKind::FlowValid => &[Read::References],
+            CheckKind::Understood | CheckKind::Records | CheckKind::FlowValid => {
+                &[Read::References]
+            }
             CheckKind::Exists => &[Read::References, Read::Exists],
             CheckKind::Run => &[Read::Suite, Read::References],
             CheckKind::Paths => &[Read::Diff],
@@ -400,6 +401,9 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
                 (Some(detail), None) => (Status::Missing, detail),
                 (None, _) if each.kind.known() == Some(&CheckKind::Paths) => {
                     (Status::Pass, paths::passed(observed))
+                }
+                (None, _) if each.kind.known() == Some(&CheckKind::Tasks) => {
+                    (Status::Pass, tasks_passed(&plan))
                 }
                 (None, _) => (Status::Pass, kinds::passed(observed, each, &values)),
             };
@@ -541,7 +545,7 @@ fn evaluate(
         CheckKind::Records => kinds::records_missing(observed, each),
         CheckKind::Run => run_missing(observed, each.scope.unwrap_or(Scope::Full)),
         CheckKind::Paths => paths::missing(observed),
-        CheckKind::Tasks => tasks_missing(observed),
+        CheckKind::Tasks => tasks_missing(observed, plan),
         CheckKind::Understood => kinds::understood_missing(observed, each),
         CheckKind::Mockups => match each.part {
             Some(Part::Agreed) => design::ux_missing(observed, plan),
@@ -671,17 +675,6 @@ fn route_missing(observed: &Observed) -> Option<String> {
 pub(crate) fn open_task(body: &Map<String, Value>) -> bool {
     let status = body.get("status").and_then(Value::as_str);
     !matches!(status, Some("done" | "dropped"))
-}
-
-/// Every attached task is done or dropped, except the change's own, which
-/// closes only when the change lands.
-fn tasks_missing(observed: &Observed) -> Option<String> {
-    let own = observed.change.task.as_deref();
-    let left: Vec<&str> = (observed.records.of_type(TASK_TYPE))
-        .filter(|(path, body)| Some(*path) != own && open_task(body))
-        .map(|(path, _)| path)
-        .collect();
-    (!left.is_empty()).then(|| format!("these tasks are not done or dropped: {}", left.join(", ")))
 }
 
 /// Whether `one` names the commit `other` names, either possibly

@@ -426,7 +426,14 @@ of `changes` still fails `review`.
   merge with `board github merge --change <path>` or, for a closed one, to
   drop the change. A gh failure is `changes::land::gh_failed`. Neither
   writes anything. A change that records no pull request moves into
-  `done` without gh. The call receives `GH_TOKEN`, `GITHUB_TOKEN` and
+  `done` without gh. Once GitHub reports the merge, and before it writes
+  the change as `done`, `advance` closes through `tasks.done` each task
+  still open that the plan names under a `## Closes at merge` heading and
+  that is the change's own task or attached to it. When `tasks.done`
+  refuses one, the change stays in its phase, the tasks closed before it
+  stay closed, and `advance` refuses with `changes::land::tasks_not_closed`,
+  naming the task and the refusal; running it again skips the closed
+  tasks. The call receives `GH_TOKEN`, `GITHUB_TOKEN` and
   `GH_CONFIG_DIR` for gh. A paused change is refused with
   `changes::phase::paused`. Leaving `done` or `dropped` is
   `changes::phase::final`, which points to `open` and `start`.
@@ -477,8 +484,8 @@ of `changes` still fails `review`.
 
   | `status` | When | What sync does | `code` |
   | --- | --- | --- | --- |
-  | `merged` | GitHub says it merged | `to` is `done`, and `merge_commit_url` is set; `detail` says when the change left `build` or `review`, whose gates it did not pass, and says when sync moved it from `land` without evaluating the land gates | none |
-  | `owed` | It merged, but a `tasks/task/v2` or `tasks/task/v3` that its plans' `records` reach, through any link, is not done or dropped | Leaves it; `detail` names the tasks | `changes::sync::owed` |
+  | `merged` | GitHub says it merged | Closes each open task the plan names under `## Closes at merge`, as `advance` does, then `to` is `done`, and `merge_commit_url` is set; `detail` names the tasks it closed, or with `--dry_run true` those it would close, says when the change left `build` or `review`, whose gates it did not pass, and says when sync moved it from `land` without evaluating the land gates | none |
+  | `owed` | It merged, but a `tasks/task/v2` or `tasks/task/v3` that its plans' `records` reach, through any link, is not done or dropped and the plan does not name it under `## Closes at merge`; or `tasks.done` refused a task the plan names there | Leaves it and closes nothing more; `detail` names the tasks, or the task and the refusal | `changes::sync::owed` |
   | `closed` | It closed without merging | `to` is `dropped`, and `dropped_reason` says so with the day it closed | none |
   | `open` | It is open | Leaves it | none |
   | `not_found` | GitHub answers 404, which it also answers when gh's account cannot see the repository | Leaves it; `detail` says to check `gh auth status`, and `command` drops it | `changes::sync::pull_not_found` |
@@ -489,10 +496,11 @@ of `changes` still fails `review`.
   Every move is written in one commit, and today's day goes to the cache. With `--dry_run true` nothing is written. When gh fails in any
   other way, cannot run, runs past 20 seconds, or the gh calls together run
   past 540 seconds, sync refuses with
-  `changes::sync::gh_failed` and writes nothing. A merged change moves to `done`
+  `changes::sync::gh_failed` and writes no change; a task an earlier entry
+  closed stays closed, and the next sync skips it. A merged change moves to `done`
   from any of those phases; `from` is in git history, so a change that
-  skipped review shows it. Sync never closes a change's own `task`; each
-  entry names it. The
+  skipped review shows it. Sync closes a change's own `task` only when the
+  plan names it under `## Closes at merge`; each entry names it. The
   call receives `GH_TOKEN`, `GITHUB_TOKEN` and `GH_CONFIG_DIR` for gh, and
   may run for 600 seconds.
 - `open [--kind build|prototype] [--limit <n>]`: read-only. Changes not
@@ -906,7 +914,7 @@ evaluated by kind:
 | `records` | at least `min` attached records of `type` meet `where` (`at_head`, with `unchanged_by` as below, `values`, `no_findings`, `owner_signed`, which counts only a decision the owner signed, or for some checks the owner's answer as below, and `refs`, each of which a record's refs must name: `plan` is the plan, its text or the change), from different actors when `distinct` names a part of `by` |
 | `run` | an attached run of the change's suite with `scope` is clean, passing and on `head` |
 | `paths` | the diff edits only the plan's paths |
-| `tasks` | every attached task but the change's own is done or dropped |
+| `tasks` | every attached task but the change's own is done or dropped, or is named under the plan's `## Closes at merge` heading, which Board closes when the pull request merges; each path that section names, bare or in backticks, is the change's own task or an attached task. The detail of a passing check names the tasks that close at merge |
 | `understood` | a decision the owner signed references an attached understanding check of this change's `subject`, or the option the owner's attached answer chose names both the change and that record; with `rechecks`, each such check also holds rechecks of that many points, and the latest recheck of every point matches |
 | `mockups` | the `agreed` part: each mockup under UX is named by a decision the owner signed, or by the chosen option of the owner's attached answer in its attached question; the `neighbours` part: UX lists its neighbours; the `versioned` part: each mockup item names a version, as `version <id>` or a `/artifacts/<id>/versions/<id>` path; the `built` part: for each mockup version the plan names, a `changes/conformance/v1` at `head` says `match` with no difference listed, and the detail lists each element that is missing or different; both `agreed` and `neighbours` when `part` is left out |
 | `considered` | each path in the change's `surfaced` that still reaches something is in the plan's `uses` or its `considered` field |
@@ -1141,12 +1149,16 @@ A change moves into `done` through these states:
 | last phase, pull request merged | `advance`, gate passes | `done`, with `merge_commit_url` | Board |
 | last phase, pull request open | `github.merge --change`; GitHub reports the merge | `done`, through `advance` | Board |
 | last phase, pull request open | `github.merge --change`; a merge queue holds it | unchanged; `queued` is true | the agent runs `advance` once it merges |
-| any open phase but plan, pull request merged | `sync` | `done`, or left while a task is open | Board |
+| any open phase but plan, pull request merged | `sync` | `done`, after it closes the tasks the plan closes at merge, or left while another task is open | Board |
 | last phase, no pull request | `advance`, gate passes | `done` | Board |
 | last phase | gh fails | unchanged; refused `changes::land::gh_failed` | the agent checks `gh auth status` |
 
 `advance` reads GitHub before it writes, so a crash or a refusal leaves the
-change in its phase, and running it again reads GitHub again. `github.merge`
+change in its phase, and running it again reads GitHub again. It closes
+the tasks the plan closes at merge after GitHub reports the merge and
+before it writes the change, so a crash between them leaves those tasks
+closed and the change in land; running `advance` or `sync` again skips
+them and moves the change. `github.merge`
 sends the merge before it runs `advance`; a crash between them leaves the
 pull request merged and the change in land, and `advance` then moves it.
 The write names the change's blob, so a concurrent writer makes it fail
