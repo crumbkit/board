@@ -61,10 +61,16 @@ pub(crate) struct Asked {
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct Owed {
     pub(crate) path: String,
-    title: String,
-    touched: Option<String>,
-    checks: Vec<Check>,
+    pub(crate) title: String,
+    pub(crate) touched: Option<String>,
+    pub(crate) checks: Vec<Check>,
     questions: Vec<Asked>,
+    /// The change's newest pull request, which `changes.ready` names.
+    #[serde(skip)]
+    pub(crate) pull: Option<String>,
+    /// The change's head commit, which `changes.ready` names.
+    #[serde(skip)]
+    pub(crate) head: Option<String>,
 }
 
 /// The done changes that owe a check, newest touch first.
@@ -113,6 +119,8 @@ pub(crate) fn owed_of(observed: &Observed) -> Option<Owed> {
         touched: observed.change.touched.clone(),
         checks,
         questions,
+        pull: observed.change.pulls().last().cloned(),
+        head: observed.change.head.clone(),
     })
 }
 

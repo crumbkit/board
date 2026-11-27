@@ -126,6 +126,8 @@ blocks is missing.
    passes `owner-approval`, `data-signed` and `mockups`. A plan that
    answers `ux` none and `data` none needs no approval. After a change
    lands, `board -C <board> changes owed` lists the rechecks it still owes.
+   `board -C <board> changes ready` lists the changes that wait only on the
+   owner, with the kind of check each waits on and why one is failing.
 4. Run `board -C <board> changes advance --path /changes/<name>`
    when every check passes. A change that records a pull request moves
    into `done` only once GitHub reports it merged, so land it with

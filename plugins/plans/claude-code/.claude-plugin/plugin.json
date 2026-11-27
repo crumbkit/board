@@ -1,7 +1,7 @@
 {
   "name": "board-plans",
-  "version": "0.6.5",
-  "description": "Shows the owner's open Board questions above the prompt and answers them from a pane, and /yesterday shows the morning report of the previous day's records.",
+  "version": "0.7.1",
+  "description": "Shows the owner's open Board questions and the changes ready to land above the prompt, answers the questions from a pane, and /yesterday shows the morning report of the previous day's records.",
   "types": "./types/index.d.ts",
   "author": {
     "name": "crumbkit"
@@ -12,6 +12,12 @@
       "title": "Board",
       "description": "The directory of the board that holds the questions; the personal board when empty.",
       "default": ""
+    },
+    "failing": {
+      "type": "string",
+      "title": "Failing",
+      "description": "Whether the Ready to land button draws its red part for failing changes: silent, which only records them in ~/.local/state/board/ready-failing.jsonl, or shown.",
+      "default": "silent"
     }
   }
 }

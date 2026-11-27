@@ -77,6 +77,7 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
             ),
             ("open", vec![], None),
             ("owed", vec![], None),
+            ("ready", vec![], None),
             ("ask", vec![], Some(120)),
             ("pr", vec![], None),
             ("plan", vec![], None),
@@ -114,7 +115,15 @@ fn the_manifest_parses_as_a_built_in_one_with_each_capabilitys_variables_and_tim
 }
 
 /// The input properties of `owed` and `ask`.
-const OWED_AND_ASK: [&str; 4] = ["owed.limit", "ask.path", "ask.project", "ask.by"];
+const OWED_AND_ASK: [&str; 7] = [
+    "owed.limit",
+    "ready.limit",
+    "ready.failing",
+    "ready.questions",
+    "ask.path",
+    "ask.project",
+    "ask.by",
+];
 /// The input properties of `plan-amend`.
 const PLAN_AMEND: [&str; 3] = [
     "plan-amend.path",

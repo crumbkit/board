@@ -118,8 +118,9 @@ leaves them out.
 `plans open` lists and returns `total`, `blocking` (how many of them are
 critical), `unreadable` and `line`, one sentence an agent can end its reply
 with, such as "3 questions are waiting for you, 2 of them blocking work. Run
-/ask to answer them." The board-plans mod's Waiting button draws `total` and
-`blocking`.
+/ask to answer them." The board-plans mod's Waiting button draws `total`
+and `blocking`, less the questions that block a change its Ready to land
+button counts.
 
 `board call plans.ask` with `{"project": "<project>", "question": {...}}` on
 stdin files a question, the record as a `plans/question/v1` holds it, under
