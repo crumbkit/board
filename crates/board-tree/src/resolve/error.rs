@@ -165,8 +165,7 @@ impl ResolveError {
                 nearest: path
                     .segments()
                     .nth(ancestor.segments().count())
-                    .map(|missing| nearest(missing, beside))
-                    .unwrap_or_default(),
+                    .map_or_default(|missing| nearest(missing, beside)),
                 ..Fields::at(path)
             },
             Self::Symlink { path, refused, .. } => Fields {
