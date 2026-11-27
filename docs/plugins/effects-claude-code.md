@@ -16,9 +16,9 @@ lists effects and runs `board answer` for the owner.
   counts only those whose status is `ok`. The query is in `hooks/query.ts`, and
   crates/board-cli/src/tests/effects_mod.rs runs it against a real board. It
   returns the board, plugin, op and path of each. The mod reads the list when a
-  session starts and after each answer. It also reads it every 60 seconds
-  from the first time the band is drawn, which a `claude -p` run never does,
-  when the plans mod's [stamp](plans-claude-code.md#open-questions) changed.
+  session starts and after each answer. Once the band is drawn, which a
+  `claude -p` run never does, it reads it each minute its own
+  [stamp](plans-claude-code.md#open-questions) of the personal board changed.
 - The mod's button in the band above the prompt is described in
   [claude-code/band.md](claude-code/band.md). A failed read goes to the
   debug log.

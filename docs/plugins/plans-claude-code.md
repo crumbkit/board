@@ -25,14 +25,16 @@ their buttons. Then:
 - A draw runs them when that read is a minute old.
 - `plans.open` runs for a pane whose list is a minute old, a changed count, an answer, or every read without `plans.waiting`.
 
-A tick or a draw runs `board` only when the commit `.git/HEAD` names, or
-the size or modified time of `.git/index`, changed since the last read that
-worked; `hooks/stamp.ts` reads them as files. `changes.ready` keeps its own
-stamp. An unstaged, uncommitted edit shows with the next commit.
+A tick or band draw runs `board` only when the board's stamp changed since
+the last good read. `hooks/stamp.ts` reads it from files: HEAD's commit and
+the index's size and mtime, in the Git directory a worktree's `.git` names.
+An unstaged edit shows with the next commit.
+`changes.ready` has its own stamp, and reads after a warning or an hour, as
+its conflict marks follow the mounts and its day counts the date.
 
-An undrawn session reads Board once. A failed refresh is logged, keeps
-the last count read and marks the band's button. The pane says why for a
-failed `plans.open`; a failed `plans.waiting` is in the debug log. The band is drawn on the terminal and the desktop app only.
+An undrawn session reads Board once. [claude-code/band.md](claude-code/band.md)
+says how the button shows a failed read. The band is drawn on the terminal and
+the desktop app only.
 
 The button opens the `questions` pane. It lists each question with its project, its
 age and what it blocks, shown as the last path segment of `blocks` or as
