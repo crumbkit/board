@@ -10,6 +10,7 @@
 use std::ffi::OsString;
 use std::path::Path;
 
+use board_model::{CapabilityName, PluginName};
 use board_ops::BuiltIn;
 use board_plugin::{Manifest, Target};
 use clap::CommandFactory as _;
@@ -30,7 +31,7 @@ const WORDS: &[(&str, &str)] = &[
 /// Each plugin, word given after its name and capability of that plugin
 /// the word means. A row runs only when the plugin offers the capability
 /// and not the word, so a plugin that adds the word wins over the row.
-const CAPABILITIES: &[(&str, &str, &str)] = &[
+pub(crate) const CAPABILITIES: &[(&str, &str, &str)] = &[
     ("changes", "show", "next"),
     ("changes", "status", "next"),
     ("changes", "list", "open"),
@@ -51,44 +52,37 @@ pub(crate) struct Called {
 }
 
 impl Called {
-    /// The note that says what ran in place of `board call <plugin>.<word>`.
-    pub(crate) fn call_note(&self) -> String {
+    /// The note that names the command Board reads the guess as: as
+    /// `board <typed> <word>` when `typed`, the plugin's name or alias the
+    /// line gave, is known, else as `board call <plugin>.<word>`.
+    pub(crate) fn note(&self, typed: Option<&str>) -> String {
         let Self {
             plugin,
             word,
             capability,
             ..
         } = self;
-        format!("note: board call {plugin}.{word} ran board call {plugin}.{capability}\n")
-    }
-
-    /// The note that says what ran in place of `board <typed> <word>`,
-    /// where `typed` is the plugin's name or alias as given.
-    pub(crate) fn word_note(&self, typed: &str) -> String {
-        let Self {
-            word, capability, ..
-        } = self;
-        format!("note: board {typed} {word} ran board {typed} {capability}\n")
+        match typed {
+            Some(typed) => format!("note: board {typed} {word} is board {typed} {capability}\n"),
+            None => {
+                format!("note: board call {plugin}.{word} is board call {plugin}.{capability}\n")
+            }
+        }
     }
 }
 
-/// The capability that the target after `call` in `arguments`, before any
-/// `--`, means, by [`CAPABILITIES`], among the plugins `built_in` or, after
-/// them, those installed in `plugins`; `None` when no row fits, so the
-/// target runs, or is refused, as given.
+/// The capability that the target of `call` in `arguments` means, by
+/// [`CAPABILITIES`], among the plugins `built_in` or, after them, those
+/// installed in `plugins`; `None` when no row fits, so the line runs, or is
+/// refused, as given. Only `call`'s own target is read: a `call` or a
+/// `<plugin>.<word>` that is a flag's value, a later word or after `--`
+/// is left as given.
 pub(crate) fn called(
     arguments: &[OsString],
     built_in: BuiltIn,
     plugins: Option<&Path>,
 ) -> Option<Called> {
-    let mut words = (arguments.iter().enumerate())
-        .take_while(|(_, word)| *word != "--")
-        .filter_map(|(at, word)| Some((at, word.to_str()?)));
-    words.find(|(_, word)| *word == "call")?;
-    let (at, plugin, given) = words.find_map(|(at, word)| match word.parse() {
-        Ok(Target::Named { plugin, capability }) => Some((at, plugin, capability)),
-        _ => None,
-    })?;
+    let (at, plugin, given) = target(arguments)?;
     // Only a word some row maps reads a manifest.
     if !(CAPABILITIES.iter()).any(|(_, word, _)| *word == given.as_str()) {
         return None;
@@ -118,6 +112,48 @@ pub(crate) fn called(
         word,
         capability,
     })
+}
+
+/// Where the target of `call` sits in `arguments`, and its plugin and
+/// capability, when `call` is the command the line runs and its first
+/// positional word is `<plugin>.<capability>`.
+fn target(arguments: &[OsString]) -> Option<(usize, PluginName, CapabilityName)> {
+    // Only a line holding `call` and a mapped word builds the command tree.
+    let mapped = |word: &OsString| {
+        word.to_str().is_some_and(|word| {
+            // A former name may stand for the plugin, so any plugin word fits.
+            (CAPABILITIES.iter()).any(|(_, guess, _)| {
+                (word.strip_suffix(guess))
+                    .and_then(|rest| rest.strip_suffix('.'))
+                    .is_some_and(|plugin| !plugin.is_empty())
+            })
+        })
+    };
+    if !arguments.iter().any(|word| word == "call") || !arguments.iter().any(mapped) {
+        return None;
+    }
+    let root = (Cli::command())
+        .disable_help_flag(true)
+        .disable_help_subcommand(true)
+        .ignore_errors(true);
+    let matches = root.try_get_matches_from(arguments).ok()?;
+    let ("call", call) = matches.subcommand()? else {
+        return None;
+    };
+    // clap counts `call`'s words from the word `call`, so the target sits
+    // that far after the `call` that is the command; a `call` given as a
+    // root flag's value has some other word there.
+    let after = call.index_of("target")?;
+    let given = call.get_raw("target")?.next()?;
+    let at = (arguments.iter().enumerate())
+        .filter(|(_, word)| *word == "call")
+        .map(|(at, _)| at + after)
+        .find(|at| arguments.get(*at).is_some_and(|word| word == given))?;
+    let given = given.to_str()?;
+    match given.parse() {
+        Ok(Target::Named { plugin, capability }) => Some((at, plugin, capability)),
+        _ => None,
+    }
 }
 
 /// `output` with `note` before what it printed on stderr.

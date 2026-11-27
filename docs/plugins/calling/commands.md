@@ -63,8 +63,10 @@ the plugin offers that capability:
 
 A plugin that offers the word itself runs its own capability. Each such run
 prints one line on stderr, such as
-`note: board changes show ran board changes next`, and its stdout is what
-the capability prints. Any other word is still refused with
+`note: board changes show is board changes next`, and its stdout is what
+the capability prints. Only the target of `call`, or the word right after a
+plugin's name, is read this way; the same words as a flag's value or after
+`--` are sent as given. Any other word is still refused with
 `board::plugin::no_capability`. `runs run` and `runs record` are refused
 too, with a hint that a suite run is a `runs/run/v1` written with
 `board put --new --var suite=<name>` and attached with

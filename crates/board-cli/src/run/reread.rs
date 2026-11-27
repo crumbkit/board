@@ -8,7 +8,7 @@ use board_ops::{Board, Bulk};
 
 use super::mount::MountCommand;
 use super::putting::{Checking, mending};
-use super::{Command, Putting, run};
+use super::{Command, Putting, run, run_typed};
 use crate::config::Context;
 use crate::effects;
 use crate::render::{self, Printer};
@@ -37,17 +37,9 @@ pub(super) fn reread(
     };
     Some(match resolved {
         Ok(called) => {
-            let guessed =
-                crate::guessed::called(&called, context.built_in, context.plugins.as_deref());
             let typed = crate::alias::first_word(arguments)
                 .and_then(|(at, _)| arguments.get(at)?.to_str().map(str::to_owned));
-            match guessed.zip(typed) {
-                Some((guessed, typed)) => {
-                    let note = guessed.word_note(&typed);
-                    crate::guessed::noted(run(guessed.line, context, stdin, ran), &note)
-                }
-                None => run(called, context, stdin, ran),
-            }
+            run_typed(called, typed.as_deref(), context, stdin, ran)
         }
         Err(refusal) => {
             let printer = Printer {

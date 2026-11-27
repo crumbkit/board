@@ -7,7 +7,7 @@
   `changes list` runs `changes open`, and `tasks list`, `plans list` and
   `evals list` run `tasks available`, `plans open` and `evals open`, with
   the same flags. `board call <plugin>.<word>` does the same. Each prints
-  `note: board changes show ran board changes next` or the like on stderr.
+  `note: board changes show is board changes next` or the like on stderr.
   A plugin that offers the word itself still runs its own. `runs run` and
   `runs record` are still refused, and their hint says to write the run
   with `board put --new --var suite=<name>` and attach it with
