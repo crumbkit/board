@@ -245,8 +245,85 @@
         ]
       }
     },
+    "crates/board-plugin-rules/types/rules/report/v2.schema.json": {
+      "shape": "e6a43088b0cdffde42645c69aecb2e1246583639",
+      "enums": {
+        "/$defs/BudgetChecker/properties/per/enum": [
+          "total",
+          "file"
+        ],
+        "/$defs/BudgetChecker/properties/unit/enum": [
+          "words",
+          "bytes"
+        ],
+        "/$defs/Differs/properties/fields/items/enum": [
+          "requirement",
+          "purpose",
+          "summary",
+          "checker",
+          "kind",
+          "show"
+        ],
+        "/$defs/GroupRow/properties/state/enum": [
+          "failing",
+          "unreadable",
+          "passing",
+          "written",
+          "not_reached"
+        ],
+        "/$defs/PatternChecker/properties/quote/enum": [
+          "match-only",
+          "pattern"
+        ],
+        "/$defs/Refused/properties/severity/enum": [
+          "warning",
+          "refusal"
+        ],
+        "/$defs/Row/properties/checker/properties/check/enum": [
+          "budget",
+          "pattern",
+          "judged",
+          "version",
+          "zero"
+        ],
+        "/$defs/Row/properties/kind/enum": [
+          "standing",
+          "obligation"
+        ],
+        "/$defs/Row/properties/result/enum": [
+          "within",
+          "over",
+          "behind",
+          "zero",
+          "not_zero",
+          "no_run",
+          "stale",
+          "missing_measure",
+          "written",
+          "unmeasured",
+          "unreadable"
+        ],
+        "/$defs/Row/properties/show/enum": [
+          "start",
+          "edit",
+          "failing"
+        ],
+        "/$defs/Row/properties/source/enum": [
+          "imposed",
+          "repository"
+        ],
+        "/$defs/Row/properties/targets/items/enum": [
+          "file",
+          "body"
+        ],
+        "/$defs/SuiteRun/properties/outcome/enum": [
+          "pass",
+          "fail"
+        ]
+      }
+    },
     "crates/board-plugin-rules/types/rules/rule/v1.schema.json": {
-      "shape": "b10cc15af0c366a25ecec4d4bb7afbdd4bd10f1e",
+      "shape": "99390f83288f7f4995cf96ef86884784caafbdf1",
       "enums": {
         "/$defs/BudgetChecker/properties/per/enum": [
           "total",
@@ -14456,7 +14533,7 @@
           "string"
         ],
         "enum": [
-          "rules/report/v1"
+          "rules/report/v2"
         ]
       },
       "output.board": {
@@ -14707,7 +14784,8 @@
           [
             "code",
             "message",
-            "rules"
+            "rules",
+            "severity"
           ]
         ]
       },
@@ -14729,6 +14807,15 @@
       "output.refused[].rules[]": {
         "type": [
           "string"
+        ]
+      },
+      "output.refused[].severity": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "warning",
+          "refusal"
         ]
       },
       "output.repository": {
@@ -14783,15 +14870,19 @@
             "files",
             "groups",
             "id",
+            "judged_by",
             "kind",
             "max",
             "omitted",
             "over",
+            "owed_by",
+            "pins",
             "purpose",
             "requirement",
             "result",
             "show",
             "source",
+            "targets",
             "used",
             "zero"
           ]
@@ -14955,6 +15046,12 @@
           "string"
         ]
       },
+      "output.rules[].judged_by": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
       "output.rules[].kind": {
         "type": [
           "string"
@@ -14978,7 +15075,8 @@
           [
             "behind",
             "files",
-            "over"
+            "over",
+            "pins"
           ]
         ]
       },
@@ -14993,6 +15091,11 @@
         ]
       },
       "output.rules[].omitted.over": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.rules[].omitted.pins": {
         "type": [
           "integer"
         ]
@@ -15019,6 +15122,75 @@
         ]
       },
       "output.rules[].over[].used": {
+        "type": [
+          "integer"
+        ]
+      },
+      "output.rules[].owed_by": {
+        "type": [
+          "null",
+          "object"
+        ],
+        "requires": [
+          [
+            "number",
+            "ref",
+            "type",
+            "url"
+          ]
+        ]
+      },
+      "output.rules[].owed_by.number": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "output.rules[].owed_by.ref": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rules[].owed_by.type": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.rules[].owed_by.url": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "output.rules[].pins": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.rules[].pins[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "file",
+            "found",
+            "line"
+          ]
+        ]
+      },
+      "output.rules[].pins[].file": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rules[].pins[].found": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.rules[].pins[].line": {
         "type": [
           "integer"
         ]
@@ -15070,6 +15242,20 @@
         "enum": [
           "imposed",
           "repository"
+        ]
+      },
+      "output.rules[].targets": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.rules[].targets[]": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "file",
+          "body"
         ]
       },
       "output.rules[].used": {
@@ -18792,12 +18978,14 @@
     "rules::migrate::stale",
     "rules::migrate::unread",
     "rules::pattern::invalid",
+    "rules::report::boundary_unreadable",
     "rules::report::ci_env_invalid",
     "rules::report::file_unreadable",
     "rules::report::group_unreadable",
     "rules::report::member_unmatched",
     "rules::report::no_git",
     "rules::report::no_repository",
+    "rules::report::owed_by_unreadable",
     "rules::report::run_commit_missing",
     "rules::report::run_commit_not_ancestor",
     "rules::report::run_commit_unnamed",

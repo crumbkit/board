@@ -1,11 +1,11 @@
-//! The `rules/report/v1` document `report` prints: its record type, whose
+//! The `rules/report/v2` document `report` prints: its record type, whose
 //! schema is generated from these structs, and the parts it holds.
 
 use std::collections::BTreeMap;
 
 use board_plugin::shape::{
     CodeName, CommitName, DottedVersion, ObjectId, PathKey, Prose, Record, Remote, Repository,
-    Summary, Tag, Timestamp,
+    Summary, Tag, Timestamp, TypeName, Url,
 };
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::Serialize;
@@ -13,14 +13,16 @@ use serde_json::Value;
 
 use crate::records::{Checker, Kind, ShowAt, rule_output_schema};
 
-/// `rules/report/v1`: every rule, group and compliance suite that reaches
+/// `rules/report/v2`: every rule, group and compliance suite that reaches
 /// one repository, what each found, where the repository's own rules differ
 /// from the imposed set, and every refusal met while reading them.
 ///
 /// `board rules report` prints one and writes nothing. File paths are from
 /// the repository's root, so reports from different boards agree. A reader
 /// reads `result`, a group's `state` and a field list through `Open`, so a
-/// value a later Board adds reads as unknown.
+/// value a later Board adds reads as unknown. Board 0.1.3 printed
+/// `rules/report/v1`, which has no `pins`, `targets`, `judged_by`,
+/// `owed_by` or `severity`; Board still ships its schema.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ReportRecord {
@@ -56,8 +58,14 @@ pub(crate) struct ReportRecord {
 }
 
 impl Record for ReportRecord {
-    const TYPE: &'static str = "rules/report/v1";
+    const TYPE: &'static str = "rules/report/v2";
 }
+
+/// The report Board 0.1.3 printed, whose schema Board still ships.
+pub(crate) const REPORT_V1: &str = "rules/report/v1";
+
+/// The schema of [`REPORT_V1`], as Board 0.1.3 shipped it.
+pub(crate) const REPORT_V1_SCHEMA: &str = include_str!("../../types/rules/report/v1.schema.json");
 
 /// The repository a report measured.
 #[derive(Serialize, JsonSchema)]
@@ -200,6 +208,21 @@ pub(crate) struct Row {
     /// know. A pattern checker names its file and never its expressions.
     #[schemars(schema_with = "rule_output_schema")]
     pub(crate) checker: Option<Checker>,
+    /// What the rule applies to: `file` when it reaches a file of the
+    /// repository through `paths` or `applies_to`, and `body` when a
+    /// boundary in the rules board that reaches the repository names it,
+    /// so it applies to text such as a pull request body; both when both
+    /// hold. An unreadable rule and the repository's own rule, whose reach
+    /// is not measured, have `file` when they name any `paths` or
+    /// `applies_to`.
+    pub(crate) targets: Vec<Target>,
+    /// The suite whose audit judges the rule, as the rule's `judged_by`
+    /// names it; null when it names none.
+    #[schemars(schema_with = "or_null::<PathKey>")]
+    pub(crate) judged_by: Option<String>,
+    /// For an obligation, the record its `owed_by` names; null for a
+    /// standing rule or one that names none.
+    pub(crate) owed_by: Option<OwedByRead>,
     /// What the rule found: `within` or `over` a budget, a pin `behind`, a
     /// zero rule's state, `written` for a rule this command does not
     /// measure, `unmeasured` for the repository's own rule, or
@@ -220,7 +243,10 @@ pub(crate) struct Row {
     /// Each file over a per-file budget, at most 20.
     pub(crate) over: Vec<FileOver>,
     /// Each pin older than a version rule's `at_least`, at most 20.
-    pub(crate) behind: Vec<PinBehind>,
+    pub(crate) behind: Vec<Pin>,
+    /// Every pin a version rule found, older or not, at most 20; empty for
+    /// any other rule.
+    pub(crate) pins: Vec<Pin>,
     /// How many items each list above left out.
     pub(crate) omitted: Omitted,
     /// What a zero rule's suite's latest run reported; null for any other
@@ -239,10 +265,39 @@ pub(crate) struct FileOver {
     pub(crate) used: u64,
 }
 
-/// A pin older than a version rule's floor.
+// What a rule applies to. No doc comment, which would describe the inlined
+// enum in the committed schema.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[schemars(inline)]
+pub(crate) enum Target {
+    File,
+    Body,
+}
+
+/// The record an obligation's `owed_by` names.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct PinBehind {
+pub(crate) struct OwedByRead {
+    /// The record's path, as `owed_by` names it.
+    #[serde(rename = "ref")]
+    #[schemars(with = "PathKey")]
+    pub(crate) path: String,
+    /// The record's type; null when Board finds no record there.
+    #[serde(rename = "type")]
+    #[schemars(schema_with = "or_null::<TypeName>")]
+    pub(crate) kind: Option<String>,
+    /// A pull request's number; null for any other record.
+    pub(crate) number: Option<u64>,
+    /// A pull request's page; null for any other record.
+    #[schemars(schema_with = "or_null::<Url>")]
+    pub(crate) url: Option<String>,
+}
+
+/// A version a file pins.
+#[derive(Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Pin {
     /// The file, from the repository's root.
     #[schemars(with = "PathKey")]
     pub(crate) file: String,
@@ -263,6 +318,8 @@ pub(crate) struct Omitted {
     pub(crate) over: u64,
     /// Pins left out of `behind`.
     pub(crate) behind: u64,
+    /// Pins left out of `pins`.
+    pub(crate) pins: u64,
 }
 
 /// What a zero rule's suite's latest qualifying run reported.
@@ -404,13 +461,11 @@ pub(crate) struct SuiteRun {
     /// cannot be counted.
     pub(crate) commits_since: Option<u64>,
     /// Why `commits_since` is null: `rules::report::run_commit_unnamed`
-    /// when the run names no commit, `rules::report::run_commit_missing`
-    /// when the clone lacks it, `rules::report::run_commit_not_ancestor`
-    /// or `rules::report::no_git`; null when it is counted.
-    // `run_commit_unnamed` also stands for a `versions.commit` that is not
-    // 7 to 40 lowercase hex digits and for a run Board cannot read. The
-    // doc comment above is the schema's text, which rules/report/v1 froze
-    // at 0.1.3, so the plugin's README says this instead.
+    /// when the run names no commit, its `versions.commit` is not 7 to 40
+    /// lowercase hex digits or Board cannot read the run,
+    /// `rules::report::run_commit_missing` when the clone lacks it,
+    /// `rules::report::run_commit_not_ancestor` or
+    /// `rules::report::no_git`; null when it is counted.
     #[schemars(schema_with = "or_null::<CodeName>")]
     pub(crate) commits_since_code: Option<String>,
 }
@@ -483,16 +538,27 @@ pub(crate) struct Refused {
     /// Board's or the plugin's code.
     #[schemars(with = "CodeName")]
     pub(crate) code: String,
-    /// The rules or groups it concerns, by path; empty when it concerns
-    /// none.
-    // `rules::report::suite_unreadable` names a suite here. The doc comment
-    // above is the schema's text, which rules/report/v1 froze at 0.1.3, so
-    // the plugin's README says this instead.
+    /// `warning` when every row stays as it is but for a field the warning
+    /// names, and `refusal` when a row is `unreadable` or a rule, group or
+    /// suite has no row.
+    pub(crate) severity: Severity,
+    /// The rules, groups, suites or boundaries it concerns, by path; empty
+    /// when it concerns none.
     #[schemars(with = "Vec<PathKey>")]
     pub(crate) rules: Vec<String>,
     /// What happened, for people.
     #[schemars(with = "Prose")]
     pub(crate) message: String,
+}
+
+// Whether a refused entry changed what the rows show. No doc comment,
+// which would describe the inlined enum in the committed schema.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[schemars(inline)]
+pub(crate) enum Severity {
+    Warning,
+    Refusal,
 }
 
 /// `T` or null, as an `anyOf`, so a shared string shape stays whole.

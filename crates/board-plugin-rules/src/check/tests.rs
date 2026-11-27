@@ -171,7 +171,12 @@ pub(crate) fn enabling_in(
     let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
     scenario.write(".board/board.json", Item::File(config));
     let mut board = Board::open(scenario.workdir(), None).unwrap();
-    board.build_in(&[&Rules, &board_plugin_runs::Runs]);
+    board.build_in(&[
+        &Rules,
+        &board_plugin_runs::Runs,
+        &board_plugin_boundary::Boundary,
+        &board_plugin_github::Github,
+    ]);
     for plugin in plugins {
         (board.plugin_enable(None, None, &plugin.parse().unwrap(), &[])).unwrap();
     }

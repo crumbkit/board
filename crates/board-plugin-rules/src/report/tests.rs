@@ -3,6 +3,7 @@
 
 use std::ffi::OsString;
 
+use board_model::canonical_json;
 use board_ops::{Plugin, Variables};
 use board_scenario::Scenario;
 use serde_json::json;
@@ -22,10 +23,13 @@ fn with_git(mut host: Recording, variables: &[(&str, &str)]) -> Recording {
     host
 }
 
-/// A board that enables rules and runs, holding `files`, with git on the
-/// host's `PATH` and `variables` set.
+/// The type `report` prints.
+const REPORT: &str = "rules/report/v2";
+
+/// A board that enables rules, runs, boundary and github, holding
+/// `files`, with git on the host's `PATH` and `variables` set.
 fn board(files: &[(&str, &str)], variables: &[(&str, &str)]) -> (Scenario, Recording) {
-    let (scenario, host) = enabling(&["rules", "runs"], files);
+    let (scenario, host) = enabling(&["rules", "runs", "boundary", "github"], files);
     (scenario, with_git(host, variables))
 }
 
@@ -177,8 +181,8 @@ fn every_result_comes_out_and_a_degraded_rule_is_one_unreadable_row_while_the_ot
     );
     assert_eq!(report["drift"]["not_reached"], json!(["/rules/elsewhere"]));
     assert_eq!(report["imposed"], json!({"root": "/rules"}));
-    assert_eq!(report["$type"], "rules/report/v1");
-    shipped("rules/report/v1").validate(&report).unwrap();
+    assert_eq!(report["$type"], REPORT);
+    shipped(REPORT).validate(&report).unwrap();
 }
 
 #[test]
@@ -297,7 +301,7 @@ fn a_rule_in_two_groups_counts_in_both_and_each_group_rolls_up_to_its_state() {
     assert_eq!(whole["drift"]["not_reached"], json!(["/rules/go/vet"]));
     let applying = crate::for_path::for_path(&host, &json!({"path": "/rules/groups/rust"}));
     assert_eq!(applying.unwrap()["rules"], json!([]));
-    shipped("rules/report/v1").validate(&report).unwrap();
+    shipped(REPORT).validate(&report).unwrap();
 }
 
 #[test]
@@ -362,7 +366,7 @@ fn source_run_is_filled_only_from_all_four_ci_variables() {
         report["refused"][0]["code"],
         "rules::report::ci_env_invalid"
     );
-    shipped("rules/report/v1").validate(&report).unwrap();
+    shipped(REPORT).validate(&report).unwrap();
 }
 
 #[test]
@@ -399,7 +403,10 @@ fn lists_are_cut_at_20_and_say_how_many_they_left_out() {
     let each = row(&report, "/rules/each");
     assert_eq!(each["files"].as_array().unwrap().len(), LISTED);
     assert_eq!(each["over"].as_array().unwrap().len(), LISTED);
-    assert_eq!(each["omitted"], json!({"files": 3, "over": 3, "behind": 0}));
+    assert_eq!(
+        each["omitted"],
+        json!({"files": 3, "over": 3, "behind": 0, "pins": 0})
+    );
     assert_eq!(each["result"], "over");
 }
 
@@ -506,7 +513,7 @@ fn commits_since_counts_a_run_three_commits_back_and_says_why_it_cannot_count_a_
         !report.to_string().contains(RUNNER),
         "no run's `by`: {report}"
     );
-    shipped("rules/report/v1").validate(&report).unwrap();
+    shipped(REPORT).validate(&report).unwrap();
     let report = reported_at(
         &scenario,
         "compliance",
@@ -581,7 +588,7 @@ fn a_run_that_names_no_commit_says_so_apart_from_a_commit_the_clone_lacks() {
         (&run["commits_since"], &run["commits_since_code"]),
         (&Value::Null, &json!("rules::report::run_commit_unnamed"))
     );
-    shipped("rules/report/v1").validate(&report).unwrap();
+    shipped(REPORT).validate(&report).unwrap();
 }
 
 #[test]
@@ -608,7 +615,7 @@ fn a_group_board_marks_invalid_is_a_refusal_and_no_group_row() {
             &json!(["/rules/groups/untitled"])
         )]
     );
-    shipped("rules/report/v1").validate(&report).unwrap();
+    shipped(REPORT).validate(&report).unwrap();
 }
 
 /// A board laid over a history whose one compliance suite names
@@ -644,7 +651,7 @@ fn a_suite_file_that_is_not_json_is_no_record_so_the_report_neither_lists_nor_re
     let report = report_of(&host);
     assert_eq!(suite_ids(&report), [&json!("/suites/app")], "{report}");
     assert_eq!(refusals(&report), [], "{report}");
-    shipped("rules/report/v1").validate(&report).unwrap();
+    shipped(REPORT).validate(&report).unwrap();
 }
 
 #[test]
@@ -681,7 +688,7 @@ fn a_zero_rule_keeps_a_measure_recorded_as_a_label_apart_from_one_not_recorded()
         row(&report, "/rules/zero")["zero"]["measures"],
         json!({"remaining": 0, "status": "unknown", "absent": null})
     );
-    shipped("rules/report/v1").validate(&report).unwrap();
+    shipped(REPORT).validate(&report).unwrap();
 }
 
 #[test]
@@ -689,4 +696,310 @@ fn a_path_below_the_root_drops_the_root_and_any_other_path_is_kept() {
     assert_eq!(below("/rules/rust/version", "/rules"), "rust/version");
     assert_eq!(below("/rulesx/a", "/rules"), "/rulesx/a");
     assert_eq!(below("/other/a", "/rules"), "/other/a");
+}
+
+#[test]
+fn a_version_rule_lists_every_pin_it_found_passing_or_not_and_counts_those_past_20() {
+    let within = rule(&["rust-toolchain.toml"], &pinned("1.80"));
+    let behind = rule(&["rust-toolchain.toml"], &pinned("1.99"));
+    let many = rule(&["pins.txt"], &pinned("1.0"));
+    let written = rule(&["pins.txt"], &json!({}));
+    let lines: Vec<String> = (0..23).map(|at| format!("channel = \"1.{at}\"")).collect();
+    let lines = lines.join("\n");
+    let (_scenario, host) = board(
+        &[
+            ("rust-toolchain.toml", "channel = \"1.90\"\n"),
+            ("pins.txt", &lines),
+            ("rules/within.json", &within),
+            ("rules/behind.json", &behind),
+            ("rules/many.json", &many),
+            ("rules/written.json", &written),
+        ],
+        &[],
+    );
+    let report = report_of(&host);
+    let pin = json!([{"file": "/rust-toolchain.toml", "line": 1, "found": "1.90"}]);
+    let within = row(&report, "/rules/within");
+    assert_eq!(within["result"], "within");
+    assert_eq!(within["pins"], pin, "a passing pin is listed: {report}");
+    assert_eq!(within["behind"], json!([]));
+    assert_eq!(row(&report, "/rules/behind")["pins"], pin);
+    let many = row(&report, "/rules/many");
+    let pins = many["pins"].as_array().unwrap();
+    assert_eq!(pins.len(), LISTED);
+    assert_eq!(
+        pins[19],
+        json!({"file": "/pins.txt", "line": 20, "found": "1.19"})
+    );
+    assert_eq!(many["omitted"]["pins"], 3);
+    assert_eq!(row(&report, "/rules/written")["pins"], json!([]));
+    shipped(REPORT).validate(&report).unwrap();
+}
+
+/// A `boundary/boundary/v1` record checking `rules` on the way to `to`,
+/// with `fields` added.
+fn boundary(to: &str, rules: &[&str], fields: &Value) -> String {
+    let checks: Vec<Value> = (rules.iter())
+        .map(|rule| json!({"rule": rule, "parts": ["pr.*"]}))
+        .collect();
+    let mut record = json!({
+        "$type": "boundary/boundary/v1",
+        "to": to,
+        "actions": ["github.*"],
+        "checks": checks,
+    });
+    for (name, value) in fields.as_object().unwrap() {
+        record[name] = value.clone();
+    }
+    record.to_string()
+}
+
+/// Each row's id and targets.
+fn targets(report: &Value) -> Vec<(String, Value)> {
+    (report["rules"].as_array().unwrap().iter())
+        .map(|row| {
+            (
+                row["id"].as_str().unwrap().to_owned(),
+                row["targets"].clone(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_rule_a_boundary_to_the_repository_names_targets_a_body_and_a_rule_with_paths_a_file() {
+    let file = rule(&["docs/*"], &json!({}));
+    let both = rule(&["docs/*"], &words(9));
+    let body = json!({"$type": "rules/rule/v1", "requirement": "R.", "purpose": "P."});
+    let body = body.to_string();
+    let (_scenario, host) = board(
+        &[
+            ("docs/a.md", "one two three"),
+            ("rules/file.json", &file),
+            ("rules/both.json", &both),
+            ("rules/body.json", &body),
+            ("rules/other-to.json", &body),
+            ("rules/other-from.json", &body),
+            ("rules/own-from.json", &body),
+            (
+                "boundaries/app.json",
+                &boundary(
+                    "github:Owner/*",
+                    &["/rules/both", "/rules/body"],
+                    &json!({}),
+                ),
+            ),
+            (
+                "boundaries/other-to.json",
+                &boundary("github:owner/other", &["/rules/other-to"], &json!({})),
+            ),
+            (
+                "boundaries/other-from.json",
+                &boundary(
+                    "github:owner/*",
+                    &["/rules/other-from"],
+                    &json!({"from": ["/repos/other"]}),
+                ),
+            ),
+            (
+                "boundaries/own-from.json",
+                &boundary("slack:*", &["/rules/own-from"], &json!({"from": ["/"]})),
+            ),
+        ],
+        &[],
+    );
+    let report = report_of(&host);
+    assert_eq!(
+        targets(&report),
+        [
+            ("/rules/body".to_owned(), json!(["body"])),
+            ("/rules/both".to_owned(), json!(["file", "body"])),
+            ("/rules/file".to_owned(), json!(["file"])),
+            ("/rules/own-from".to_owned(), json!(["body"])),
+        ],
+        "a boundary whose from or to misses the repository adds no target: {report}"
+    );
+    assert_eq!(row(&report, "/rules/body")["result"], "written");
+    assert_eq!(
+        report["drift"]["not_reached"],
+        json!(["/rules/other-from", "/rules/other-to"])
+    );
+    assert_eq!(refusals(&report), [], "{report}");
+    shipped(REPORT).validate(&report).unwrap();
+}
+
+#[test]
+fn a_boundary_board_marks_degraded_gives_its_rules_no_body_and_is_a_refusal() {
+    let body = json!({"$type": "rules/rule/v1", "requirement": "R.", "purpose": "P."});
+    let body = body.to_string();
+    let file = rule(&["docs/*"], &json!({}));
+    let broken = boundary(
+        "github:owner/*",
+        &["/rules/body", "/rules/file"],
+        &json!({"actions": []}),
+    );
+    let (_scenario, host) = board(
+        &[
+            ("docs/a.md", "one"),
+            ("rules/body.json", &body),
+            ("rules/file.json", &file),
+            ("boundaries/broken.json", &broken),
+        ],
+        &[],
+    );
+    let report = report_of(&host);
+    assert_eq!(
+        targets(&report),
+        [("/rules/file".to_owned(), json!(["file"]))],
+        "{report}"
+    );
+    assert_eq!(report["drift"]["not_reached"], json!(["/rules/body"]));
+    let [refusal] = report["refused"].as_array().unwrap().as_slice() else {
+        panic!("one refusal: {report}")
+    };
+    assert_eq!(refusal["code"], "rules::report::boundary_unreadable");
+    assert_eq!(refusal["rules"], json!(["/boundaries/broken"]));
+    assert_eq!(refusal["severity"], "refusal");
+    shipped(REPORT).validate(&report).unwrap();
+}
+
+#[test]
+fn a_rule_names_the_suite_that_judges_it_and_a_suite_board_cannot_read_keeps_the_path_with_a_warning()
+ {
+    let judged = |suite: &str| rule(&["docs/*"], &json!({"judged_by": suite}));
+    let suite = json!({"$type": "runs/suite/v1", "method": "Review the repository."});
+    let invalid = json!({"$type": "runs/suite/v1"});
+    let (_scenario, host) = board(
+        &[
+            ("docs/a.md", "one"),
+            ("suites/review.json", &suite.to_string()),
+            ("suites/broken.json", &invalid.to_string()),
+            ("rules/judged.json", &judged("/suites/review")),
+            ("rules/unread.json", &judged("/suites/broken")),
+            ("rules/plain.json", &rule(&["docs/*"], &json!({}))),
+        ],
+        &[],
+    );
+    let report = report_of(&host);
+    assert_eq!(row(&report, "/rules/judged")["judged_by"], "/suites/review");
+    assert_eq!(row(&report, "/rules/plain")["judged_by"], Value::Null);
+    let unread = row(&report, "/rules/unread");
+    assert_eq!(unread["judged_by"], "/suites/broken");
+    assert_eq!(unread["result"], "written", "{report}");
+    let [refusal] = report["refused"].as_array().unwrap().as_slice() else {
+        panic!("one refusal: {report}")
+    };
+    assert_eq!(
+        (&refusal["code"], &refusal["rules"], &refusal["severity"]),
+        (
+            &json!("rules::report::suite_unreadable"),
+            &json!(["/rules/unread"]),
+            &json!("warning")
+        )
+    );
+    shipped(REPORT).validate(&report).unwrap();
+}
+
+#[test]
+fn an_obligation_names_the_pull_request_that_left_it_owed_and_one_board_cannot_read_keeps_its_path()
+{
+    let pull = json!({
+        "$type": "github/pull/v1",
+        "owner": "owner",
+        "repo": "app",
+        "number": 1460,
+        "url": "https://github.com/owner/app/pull/1460",
+        "title": "A change.",
+    });
+    let owed = |by: &str| rule(&["docs/*"], &json!({"kind": "obligation", "owed_by": by}));
+    let (_scenario, host) = board(
+        &[
+            ("docs/a.md", "one"),
+            ("github/owner/app/pulls/1460.json", &pull.to_string()),
+            ("rules/owed.json", &owed("/github/owner/app/pulls/1460")),
+            ("rules/gone.json", &owed("/github/owner/app/pulls/9")),
+            ("rules/standing.json", &rule(&["docs/*"], &json!({}))),
+        ],
+        &[],
+    );
+    let report = report_of(&host);
+    assert_eq!(
+        row(&report, "/rules/owed")["owed_by"],
+        json!({
+            "ref": "/github/owner/app/pulls/1460",
+            "type": "github/pull/v1",
+            "number": 1460,
+            "url": "https://github.com/owner/app/pull/1460",
+        })
+    );
+    assert_eq!(row(&report, "/rules/standing")["owed_by"], Value::Null);
+    let gone = row(&report, "/rules/gone");
+    assert_eq!(
+        gone["owed_by"],
+        json!({"ref": "/github/owner/app/pulls/9", "type": null, "number": null, "url": null}),
+        "{report}"
+    );
+    let owed_by: Vec<(&Value, &Value)> = (report["refused"].as_array().unwrap().iter())
+        .filter(|refusal| refusal["code"] == "rules::report::owed_by_unreadable")
+        .map(|refusal| (&refusal["rules"], &refusal["severity"]))
+        .collect();
+    assert_eq!(owed_by, [(&json!(["/rules/gone"]), &json!("warning"))]);
+    shipped(REPORT).validate(&report).unwrap();
+}
+
+#[test]
+fn each_refused_entry_says_whether_it_is_a_warning_or_a_refusal() {
+    let dangling = rule(&["docs/*"], &json!({"applies_to": ["/nothing/here"]}));
+    let (_scenario, host) = board(
+        &[
+            ("docs/a.md", "one"),
+            ("rules/broken.json", &dangling),
+            (
+                "rules/groups/none.json",
+                &group("None", &["/rules/python/*"]),
+            ),
+        ],
+        &[("GITHUB_RUN_ID", "1")],
+    );
+    let report = report_of(&host);
+    let severities: Vec<(&Value, &Value)> = (report["refused"].as_array().unwrap().iter())
+        .map(|refusal| (&refusal["code"], &refusal["severity"]))
+        .collect();
+    assert_eq!(
+        severities,
+        [
+            (&json!("rules::report::ci_env_invalid"), &json!("warning")),
+            (&json!("board::ref::dangling"), &json!("refusal")),
+            (&json!("rules::report::member_unmatched"), &json!("warning")),
+        ],
+        "{report}"
+    );
+    shipped(REPORT).validate(&report).unwrap();
+}
+
+#[test]
+fn the_v2_schema_says_refused_rules_can_name_a_suite_and_run_commit_unnamed_covers_an_unreadable_run()
+ {
+    let (_, schema) = (Rules.schemas().into_iter())
+        .find(|(record_type, _)| record_type.as_str() == REPORT)
+        .unwrap();
+    let described = |pointer: &str| {
+        (schema.pointer(pointer))
+            .and_then(|field| field["description"].as_str())
+            .unwrap_or_else(|| panic!("no description at {pointer}"))
+            .to_owned()
+    };
+    let rules = described("/$defs/Refused/properties/rules");
+    assert!(rules.contains("suite"), "{rules}");
+    let code = described("/$defs/SuiteRun/properties/commits_since_code");
+    assert!(code.contains("cannot read the run"), "{code}");
+    assert!(code.contains("7 to 40"), "{code}");
+    let v1 = (Rules.schemas().into_iter())
+        .find(|(record_type, _)| record_type.as_str() == "rules/report/v1")
+        .map(|(_, schema)| canonical_json(&schema).as_str().to_owned());
+    assert_eq!(
+        v1.as_deref(),
+        Some(include_str!("../../types/rules/report/v1.schema.json")),
+        "Board keeps shipping rules/report/v1 as it was released"
+    );
 }

@@ -1,6 +1,6 @@
 //! `board rules report` through the binary: a controls board with imposed
 //! rules, groups and a compliance suite, mounting a repository that holds
-//! rules of its own, prints one `rules/report/v1` document that the schema
+//! rules of its own, prints one `rules/report/v2` document that the schema
 //! `board schemas show` prints admits.
 
 use board_scenario::seed::mount_of;
@@ -154,7 +154,7 @@ fn the_report_lists_imposed_and_own_rules_rolls_up_the_group_and_names_the_drift
         (version.split('.')).all(|part| part.parse::<u64>().is_ok()),
         "{version}"
     );
-    shown(&board, "rules/report/v1").validate(&report).unwrap();
+    shown(&board, "rules/report/v2").validate(&report).unwrap();
 }
 
 #[test]
@@ -185,7 +185,7 @@ fn board_rules_report_prints_the_document_and_exits_0_with_a_failing_rule() {
     ]);
     assert_eq!(output.code, 0, "{}", text(&output.stderr));
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["$type"], "rules/report/v1");
+    assert_eq!(report["$type"], "rules/report/v2");
     assert_eq!(report["rules"][1]["result"], "over");
 }
 
@@ -235,7 +235,7 @@ fn help_for_the_report_shows_its_example_commands() {
         "board rules report --path /repos/app --repository owner/app",
         "board rules report --path /repos/app --imposed /rules/imposed",
         "board rules report --path /",
-        "board schemas show rules/report/v1",
+        "board schemas show rules/report/v2",
     ] {
         assert!(help.contains(example), "{example}: {help}");
     }
@@ -315,4 +315,102 @@ fn a_whole_clone_counts_the_commits_since_the_run_and_a_depth_1_clone_says_the_r
         (&Value::Null, &json!("rules::report::run_commit_missing")),
         "{shallow}"
     );
+}
+
+#[test]
+fn a_mounted_repository_s_report_gives_body_targets_the_judging_suite_and_the_owing_pull_request() {
+    let board = Fixture::enabling(&["rules", "runs", "boundary", "github"]);
+    let body = json!({"$type": "rules/rule/v1", "requirement": "No names.", "purpose": "A test."});
+    let boundary = |rule: &str, from: &str| {
+        json!({
+            "$type": "boundary/boundary/v1",
+            "to": "github:*",
+            "from": [from],
+            "actions": ["github.pr-create"],
+            "checks": [{"rule": rule, "parts": ["pr.*"]}],
+        })
+        .to_string()
+    };
+    let owed = json!({
+        "checker": {"check": "version", "at_least": "1.0", "capture": "version = \"([0-9.]+)\""},
+        "kind": "obligation",
+        "owed_by": "/github/owner/app/pulls/1460",
+        "judged_by": "/suites/review",
+    });
+    board
+        .write("rules/pr/names.json", &body.to_string())
+        .write("rules/pr/elsewhere.json", &body.to_string())
+        .write(
+            "rules/rust/pinned.json",
+            &imposed("Pin a release.", &["repos/app/Cargo.toml"], &owed),
+        )
+        .write(
+            "boundaries/app.json",
+            &boundary("/rules/pr/names", "/repos/app"),
+        )
+        .write(
+            "boundaries/other.json",
+            &boundary("/rules/pr/elsewhere", "/repos/other"),
+        )
+        .write(
+            "suites/review.json",
+            &json!({"$type": "runs/suite/v1", "method": "Review the repository."}).to_string(),
+        )
+        .write(
+            "github/owner/app/pulls/1460.json",
+            &json!({
+                "$type": "github/pull/v1",
+                "owner": "owner",
+                "repo": "app",
+                "number": 1460,
+                "url": "https://github.com/owner/app/pull/1460",
+            })
+            .to_string(),
+        );
+    let (repository, commit) = repository(
+        &["rules"],
+        &[("Cargo.toml", "version = \"1.9.8\"\n".to_owned())],
+    );
+    mount(&board, "repos/app.json", &repository, commit);
+    let report = reported(&board);
+    let rows: Vec<(&Value, &Value, &Value)> = (report["rules"].as_array().unwrap().iter())
+        .map(|row| (&row["id"], &row["result"], &row["targets"]))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (
+                &json!("/rules/pr/names"),
+                &json!("written"),
+                &json!(["body"])
+            ),
+            (
+                &json!("/rules/rust/pinned"),
+                &json!("within"),
+                &json!(["file"])
+            ),
+        ],
+        "{report}"
+    );
+    let pinned = &report["rules"][1];
+    assert_eq!(
+        pinned["pins"],
+        json!([{"file": "/Cargo.toml", "line": 1, "found": "1.9.8"}])
+    );
+    assert_eq!(pinned["judged_by"], "/suites/review");
+    assert_eq!(
+        pinned["owed_by"],
+        json!({
+            "ref": "/github/owner/app/pulls/1460",
+            "type": "github/pull/v1",
+            "number": 1460,
+            "url": "https://github.com/owner/app/pull/1460",
+        })
+    );
+    assert_eq!(
+        report["drift"]["not_reached"],
+        json!(["/rules/pr/elsewhere"])
+    );
+    assert_eq!(report["refused"], json!([]), "{report}");
+    shown(&board, "rules/report/v2").validate(&report).unwrap();
 }

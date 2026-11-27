@@ -137,6 +137,10 @@ pub(crate) struct Pinned {
     pub(crate) at_least: String,
     pub(crate) files: Vec<String>,
     pub(crate) behind: Vec<FileBehind>,
+    /// Every version the files pin, older or not, which `report` lists and
+    /// `check` leaves out.
+    #[serde(skip)]
+    pub(crate) pins: Vec<FileBehind>,
     pub(crate) unreadable: Vec<Unreadable>,
     pub(crate) kind: Kind,
     pub(crate) show: ShowAt,
@@ -149,7 +153,8 @@ pub(crate) struct Pinned {
     pub(crate) owed_by: Option<String>,
 }
 
-/// A version a file pins that is older than the rule's, and its line.
+/// A version a file pins, and its line: in `behind`, one older than the
+/// rule's.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct FileBehind {
@@ -695,15 +700,17 @@ fn pinned(
     unreadable: Vec<Unreadable>,
 ) -> Result<Pinned, PluginError> {
     let expression = version::compile(logical, rule)?;
-    let mut behind = Vec::new();
+    let (mut behind, mut pins) = (Vec::new(), Vec::new());
     for (path, data) in texts {
         let text = String::from_utf8_lossy(data);
-        let found = version::behind(&expression, &rule.at_least, &text);
-        behind.extend(found.into_iter().map(|old| FileBehind {
+        let at = |pin: version::Pin| FileBehind {
             file: path.to_string(),
-            line: old.line,
-            found: old.found,
-        }));
+            line: pin.line,
+            found: pin.found,
+        };
+        let found = version::behind(&expression, &rule.at_least, &text);
+        behind.extend(found.into_iter().map(at));
+        pins.extend(version::every(&expression, &text).into_iter().map(at));
     }
     Ok(Pinned {
         rule: logical.to_owned(),
@@ -711,6 +718,7 @@ fn pinned(
         at_least: rule.at_least.clone(),
         files: listed(texts, &unreadable),
         behind,
+        pins,
         unreadable,
         kind: control.kind(),
         show: control.show(),

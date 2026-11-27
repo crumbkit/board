@@ -9,9 +9,9 @@ use board_ops::PluginError;
 use crate::evaluate::lines;
 use crate::records::Version;
 
-/// A captured version older than the rule's, and the line it is on.
+/// A captured version and the line it is on.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Behind {
+pub(crate) struct Pin {
     pub(crate) line: usize,
     pub(crate) found: String,
 }
@@ -39,11 +39,19 @@ pub(crate) fn compile(control: &str, rule: &Version) -> Result<Regex, PluginErro
 
 /// Each version `expression`'s first group captures in `text` that is older
 /// than `at_least`, by line.
-pub(crate) fn behind(expression: &Regex, at_least: &str, text: &str) -> Vec<Behind> {
+pub(crate) fn behind(expression: &Regex, at_least: &str, text: &str) -> Vec<Pin> {
     let floor = numbers(at_least).expect("the schema admits only dotted numbers as at_least");
     (pins(expression, text).into_iter())
         .filter(|(_, pinned, _)| older(pinned, &floor))
-        .map(|(line, _, found)| Behind { line, found })
+        .map(|(line, _, found)| Pin { line, found })
+        .collect()
+}
+
+/// Each version `expression`'s first group captures in `text`, older or
+/// not, by line.
+pub(crate) fn every(expression: &Regex, text: &str) -> Vec<Pin> {
+    (pins(expression, text).into_iter())
+        .map(|(line, _, found)| Pin { line, found })
         .collect()
 }
 

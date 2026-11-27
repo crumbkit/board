@@ -469,6 +469,8 @@ dependencies = [
  "board-model",
  "board-ops",
  "board-plugin",
+ "board-plugin-boundary",
+ "board-plugin-github",
  "board-plugin-runs",
  "board-scenario",
  "board-validate",

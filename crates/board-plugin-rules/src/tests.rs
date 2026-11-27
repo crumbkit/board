@@ -12,10 +12,11 @@ use crate::check::tests::recording;
 use crate::records::CONTROL_TYPE;
 
 /// The types the plugin ships: its own, then those before the rename.
-const TYPES: [&str; 6] = [
+const TYPES: [&str; 7] = [
     "rules/rule/v1",
     "rules/source/v1",
     "rules/group/v1",
+    "rules/report/v2",
     "rules/report/v1",
     "controls/control/v1",
     "controls/source/v1",
@@ -390,6 +391,34 @@ fn a_rule_names_its_checker_checker_and_its_source_has_its_own_type_and_the_old_
     assert_eq!(
         new.validate(&source(old)).unwrap_err().code(),
         Code::RecordInvalid
+    );
+}
+
+#[test]
+fn a_rule_may_name_the_suite_that_judges_it_by_reference_and_nothing_else() {
+    let schema = shipped(RuleRecord::TYPE);
+    let rule = |judged_by: Value| json!({"$type": RuleRecord::TYPE, "requirement": "R.", "purpose": "P.", "judged_by": judged_by});
+    let references = schema.references(&rule(json!("/suites/review")));
+    let pointers: Vec<String> = references.into_iter().map(|each| each.pointer).collect();
+    assert_eq!(pointers, ["/judged_by"]);
+    let schemas = Rules.schemas();
+    let (_, raw) = (schemas.iter())
+        .find(|(name, _)| name.as_str() == RuleRecord::TYPE)
+        .unwrap();
+    let accepts = &raw["properties"]["judged_by"]["x-board-type"];
+    assert!(
+        *accepts == json!("runs/suite/v1") || *accepts == json!(["runs/suite/v1"]),
+        "{accepts}"
+    );
+    pairs(
+        &schema,
+        &[
+            (
+                rule(json!(["/suites/review"])),
+                rule(json!("/suites/review")),
+            ),
+            (rule(Value::Null), rule(json!("/suites/other"))),
+        ],
     );
 }
 

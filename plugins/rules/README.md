@@ -105,6 +105,9 @@ such as a pull request body, instead of files.
   record's other text may still say so in words. `check`, `for-path` and
   `for-paths` return it. On a standing rule, `check` warns
   `rules::rule::owed_by_standing` in its `warnings`.
+- `judged_by` references the `runs/suite/v1` whose audit judges the rule,
+  such as `/suites/review`, for a rule a reader judges. `report` gives it in
+  the rule's row.
 - `show` says when to show the rule: `start` at session start, `edit`
   before the first edit of a file it covers, or `failing` only when `check`
   reports it failing. Left out, an obligation shows at `start`, a rule
@@ -357,7 +360,7 @@ of the rename deletes them.
   in a cell, such as `<br>`, reads as a space, and an ID written as inline
   code is read without its backticks.
 
-- `board rules report --path /repos/app` prints one `rules/report/v1`
+- `board rules report --path /repos/app` prints one `rules/report/v2`
   document of the repository mounted at `/repos/app`, for its CI to upload,
   and writes nothing. `--path /` reports on the board's own tree. The
   document holds:
@@ -379,8 +382,28 @@ of the rename deletes them.
     version rule `within` or `behind`, a zero rule takes its state, a rule
     this command does not measure is `written`, and a degraded rule, an
     invalid capture or an unreadable file is `unreadable` with its `code`.
-    File paths are from the repository's root, and `files`, `over` and
-    `behind` list at most 20, with the rest counted in `omitted`.
+    File paths are from the repository's root, and `files`, `over`,
+    `behind` and `pins` list at most 20, with the rest counted in
+    `omitted`. A rule also reaches the repository when a
+    `boundary/boundary/v1` in the rules board checks it and reaches the
+    repository: the boundary's `from` holds the repository's mount or a
+    path above it, or it has no `from` and its `to` matches
+    `github:<repository.name>`, without case. A rule only a boundary
+    reaches is `written`. Each row also gives:
+    - `pins`: every version a version rule found, with its `file`, `line`
+      and `found`, behind or not; empty for any other rule.
+    - `targets`: `file` when the rule reaches a file through `paths` or
+      `applies_to`, and `body` when a boundary that reaches the
+      repository checks it, so it applies to text such as a pull request
+      body. An unreadable rule and the repository's own rule have `file`
+      when they name any `paths` or `applies_to`. A reader treats a value
+      it does not know as unknown.
+    - `judged_by`: the suite the rule's `judged_by` names, or null.
+    - `owed_by`: for an obligation, the record its `owed_by` names, with
+      its `ref`, its `type` (null when Board finds no record there), and
+      for a `github/pull/v1` its `number` and `url`; null otherwise.
+    The repository's own rule names `judged_by` and `owed_by` paths in the
+    repository, and the report looks them up below its mount.
   - `groups`: each `rules/group/v1` record and the state its members roll
     up to: `failing` when one fails, `unreadable` when one is unreadable
     and none fails, `passing` when every measured member passes, `written`
@@ -401,13 +424,22 @@ of the rename deletes them.
   - `drift`: the repository's own rules with no imposed rule of the same
     path below the imposed root in `extra`, those whose fields differ in
     `differs`, and the imposed rules that reach no file in `not_reached`.
-  - `refused`: each refusal and warning met, with the rules, groups or
-    suites it concerns in `rules`. A warning leaves every row as it is:
+  - `refused`: each refusal and warning met, with the rules, groups,
+    suites or boundaries it concerns in `rules`, and `severity`, `warning`
+    or `refusal`. A warning leaves every row as it is but for the field it
+    names:
     - `rules::report::member_unmatched`: a group member pattern matches no
       rule.
     - `rules::report::ci_env_invalid`: `GITHUB_RUN_ID` is set but is not
       a whole number, or another CI variable is missing or malformed, so
       `source_run` is null.
+    - `rules::report::suite_unreadable`: a rule's `judged_by` names no
+      suite Board reads as valid. The row keeps the path.
+    - `rules::report::owed_by_unreadable`: an obligation's `owed_by` names
+      no valid `github/pull/v1`, `review/report/v1` or
+      `plans/decision/v1`, or a pull request without its number and page.
+      The row keeps `ref` and `type`, with `number` and `url` null;
+      `board github ref` writes the pull request's record.
 
     A refusal marks a row `unreadable` or leaves a group or suite without
     a row:
@@ -418,6 +450,9 @@ of the rename deletes them.
       with. The refusal names the rule, and its row carries the same code.
     - `rules::report::group_unreadable`: Board marks a group invalid, and
       the group has no `groups` row.
+    - `rules::report::boundary_unreadable`: Board marks a boundary invalid,
+      and the rules it checks gain no `body` target from it, so a rule only
+      it reaches has no row. It names the boundary.
     - `rules::report::suite_unreadable`: a suite's body does not parse, and
       the suite has no `suites` row. The report reads every suite in the
       board, in every mount, so such a suite shows in the report of every

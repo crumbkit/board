@@ -1,4 +1,4 @@
-//! `report`: one `rules/report/v1` document of every rule, group and
+//! `report`: one `rules/report/v2` document of every rule, group and
 //! compliance suite that reaches a repository, what each found, where the
 //! repository's own rules differ from the imposed set, and every refusal.
 //! It writes nothing; a repository's CI uploads what it prints.
@@ -19,8 +19,8 @@ use crate::records::{Checker, GroupRecord, Kind, RULE_TYPES, ShowAt};
 use crate::version;
 use crate::zero;
 
-/// The most items a row's `files`, `over` and `behind` list; `omitted`
-/// counts the rest.
+/// The most items a row's `files`, `over`, `behind` and `pins` list;
+/// `omitted` counts the rest.
 pub(crate) const LISTED: usize = 20;
 
 /// The imposed set's root when `--imposed` is left out.
@@ -74,10 +74,18 @@ pub(crate) fn report(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         uncommitted: place.uncommitted(host),
         commit,
     };
-    let (mut rules, imposed_set) = imposed_rows(host, &scope, &place, &imposed, &mut refused)?;
+    let bodies = links::bodies(host, &place, &repository.name, &mut refused)?;
+    let reading = Reading {
+        scope: &scope,
+        place: &place,
+        root: &imposed,
+        bodies: &bodies,
+    };
+    let (mut rules, imposed_set) = imposed_rows(host, &reading, &mut refused)?;
     let own = own_rows(host, &place)?;
     let drift = drift(&imposed_set, &imposed, &own);
     rules.extend(own.into_iter().map(|(row, _)| row));
+    links::linked(host, &place, &mut rules, &mut refused)?;
     let groups = groups(host, &mut rules, &imposed_set, &mut refused)?;
     let suites = suites(host, &place, &repository, &mut refused)?;
     let report = ReportRecord {
@@ -127,6 +135,7 @@ fn source_run(host: &dyn Host, refused: &mut Vec<Refused>) -> Option<SourceRun> 
     }
     refused.push(Refused {
         code: "rules::report::ci_env_invalid".to_owned(),
+        severity: Severity::Warning,
         rules: Vec::new(),
         message: "GITHUB_RUN_ID is set, but GITHUB_REPOSITORY (owner/name), GITHUB_RUN_ID or \
                   GITHUB_RUN_NUMBER (whole numbers) or GITHUB_SHA (a full commit id) is missing \
@@ -197,15 +206,32 @@ impl Compared {
     }
 }
 
+/// What [`imposed_rows`] reads by: the path reported on, where the
+/// repository lies, the imposed set's root, and the rules a boundary
+/// reaching the repository checks.
+struct Reading<'a> {
+    scope: &'a LogicalPath,
+    place: &'a Place,
+    root: &'a LogicalPath,
+    bodies: &'a BTreeSet<String>,
+}
+
 /// The imposed rules' rows, each that reaches the repository measured as
-/// `check` measures it, and the imposed set by path below its root.
+/// `check` measures it, and the imposed set by path below its root. A rule
+/// reaches the repository when it reaches a file there or a boundary that
+/// reaches the repository checks it; one that only a boundary reaches is
+/// `written`.
 fn imposed_rows(
     host: &dyn Host,
-    scope: &LogicalPath,
-    place: &Place,
-    root: &LogicalPath,
+    reading: &Reading,
     refused: &mut Vec<Refused>,
 ) -> Result<(Vec<Row>, BTreeMap<String, ImposedRule>), PluginError> {
+    let Reading {
+        scope,
+        place,
+        root,
+        bodies,
+    } = *reading;
     let in_set = |logical: &str| logical.parse().is_ok_and(|path| under(&path, root));
     let mut measured = index::controls(host)?;
     measured.retain(|logical, _| in_set(logical));
@@ -219,6 +245,7 @@ fn imposed_rows(
     let reached = check::reach(host, scope, &measured)?;
     let touches_a_file =
         |logical: &str| !reached.files[logical].is_empty() || reached.unnamed.contains_key(logical);
+    let checked_by_a_boundary = |logical: &str| bodies.contains(logical);
     // Under the root `check` lists every rule; the report lists only those that reach a file.
     let applying: Vec<&String> = (reached.applying.iter())
         .filter(|logical| touches_a_file(logical))
@@ -246,51 +273,74 @@ fn imposed_rows(
         rows.push(zero_row(&measured[&zeroed.rule], zeroed, refused));
     }
     let shown: BTreeSet<String> = rows.iter().map(|row| row.id.clone()).collect();
-    for logical in applying {
+    let bodied = (measured.keys()).filter(|logical| checked_by_a_boundary(logical));
+    let listed: BTreeSet<&String> = applying.into_iter().chain(bodied).collect();
+    for logical in listed {
         if !shown.contains(logical) {
             rows.push(Row::of(logical, Source::Imposed, Some(&measured[logical])));
         }
     }
+    for row in &mut rows {
+        if touches_a_file(&row.id) {
+            row.targets.push(Target::File);
+        }
+    }
     for (logical, (code, message)) in &unreadable {
         let mut row = Row::of(logical, Source::Imposed, kept.get(logical));
+        if kept.get(logical).is_some_and(names_files) {
+            row.targets.push(Target::File);
+        }
         row.result = Outcome::Unreadable;
         row.code = Some(code.clone());
         refused.push(Refused {
             code: code.clone(),
+            severity: Severity::Refusal,
             rules: vec![logical.clone()],
             message: message.clone(),
         });
         rows.push(row);
     }
+    for row in &mut rows {
+        if checked_by_a_boundary(&row.id) {
+            row.targets.push(Target::Body);
+        }
+    }
     rows.sort_by(|one, other| one.id.cmp(&other.id));
-    let key = |logical: &str| below(logical, root.as_str());
-    let mut set: BTreeMap<String, ImposedRule> = BTreeMap::new();
-    for (logical, control) in &measured {
-        let reached = touches_a_file(logical);
-        let fields = Some(Compared::of(control));
-        let id = logical.clone();
-        set.insert(
-            key(logical),
-            ImposedRule {
-                id,
-                fields,
-                reached,
-            },
-        );
-    }
-    for logical in unreadable.keys() {
-        let fields = kept.get(logical).map(Compared::of);
-        let id = logical.clone();
-        set.insert(
-            key(logical),
-            ImposedRule {
-                id,
-                fields,
-                reached: true,
-            },
-        );
-    }
+    let in_reach = |logical: &str| touches_a_file(logical) || checked_by_a_boundary(logical);
+    let set = imposed_set(root, &measured, &kept, unreadable.keys(), &in_reach);
     Ok((rows, set))
+}
+
+/// The imposed set by path below `root`: each rule `measured`, which
+/// `reaches` says whether it reaches the repository, and each rule
+/// `unreadable`, which counts as reaching it, with its fields when `kept`
+/// holds them.
+fn imposed_set<'a>(
+    root: &LogicalPath,
+    measured: &BTreeMap<String, Control>,
+    kept: &BTreeMap<String, Control>,
+    unreadable: impl Iterator<Item = &'a String>,
+    reaches: &dyn Fn(&str) -> bool,
+) -> BTreeMap<String, ImposedRule> {
+    let key = |logical: &str| below(logical, root.as_str());
+    let mut set = BTreeMap::new();
+    for (logical, control) in measured {
+        let rule = ImposedRule {
+            id: logical.clone(),
+            fields: Some(Compared::of(control)),
+            reached: reaches(logical),
+        };
+        set.insert(key(logical), rule);
+    }
+    for logical in unreadable {
+        let rule = ImposedRule {
+            id: logical.clone(),
+            fields: kept.get(logical).map(Compared::of),
+            reached: true,
+        };
+        set.insert(key(logical), rule);
+    }
+    set
 }
 
 /// The imposed rules `report` cannot measure, each with its code and why:
@@ -363,14 +413,22 @@ fn version_row(
     } else {
         Outcome::Behind
     };
-    let behind: Vec<PinBehind> = (pinned.behind.iter())
-        .map(|pin| PinBehind {
+    let behind: Vec<Pin> = (pinned.behind.iter())
+        .map(|pin| Pin {
             file: place.relative(&pin.file),
             line: u64::try_from(pin.line).expect("a line number fits in u64"),
             found: pin.found.clone(),
         })
         .collect();
     (row.behind, row.omitted.behind) = cut(behind);
+    let pins: Vec<Pin> = (pinned.pins.iter())
+        .map(|pin| Pin {
+            file: place.relative(&pin.file),
+            line: u64::try_from(pin.line).expect("a line number fits in u64"),
+            found: pin.found.clone(),
+        })
+        .collect();
+    (row.pins, row.omitted.pins) = cut(pins);
     (row.files, row.omitted.files) = cut(place.all_relative(&pinned.files));
     unreadable_row(&mut row, &pinned.unreadable, refused);
     row
@@ -391,6 +449,7 @@ fn zero_row(control: &Control, zeroed: zero::Zeroed, refused: &mut Vec<Refused>)
     if let Some(code) = &zeroed.code {
         refused.push(Refused {
             code: code.clone(),
+            severity: Severity::Refusal,
             rules: vec![zeroed.rule.clone()],
             message: format!(
                 "the zero rule {} could not read the latest run of {}",
@@ -426,6 +485,7 @@ fn unreadable_row(row: &mut Row, files: &[check::Unreadable], refused: &mut Vec<
     let named: Vec<&str> = files.iter().map(|file| file.file.as_str()).collect();
     refused.push(Refused {
         code,
+        severity: Severity::Refusal,
         rules: vec![row.id.clone()],
         message: format!(
             "Board cannot read {}, which {} reaches",
@@ -466,6 +526,14 @@ impl Row {
             show: control.map_or(ShowAt::Edit, Control::show),
             checker: (control.and_then(|control| control.checker.clone()))
                 .filter(|checker| !matches!(checker, Checker::Other(_))),
+            targets: Vec::new(),
+            judged_by: control.and_then(|control| control.judged_by.clone()),
+            owed_by: (control.and_then(Control::owed)).map(|path| OwedByRead {
+                path,
+                kind: None,
+                number: None,
+                url: None,
+            }),
             result: Outcome::Written,
             code: None,
             used: None,
@@ -473,6 +541,7 @@ impl Row {
             files: Vec::new(),
             over: Vec::new(),
             behind: Vec::new(),
+            pins: Vec::new(),
             omitted: Omitted::default(),
             zero: None,
         }
@@ -502,6 +571,9 @@ fn own_rows(host: &dyn Host, place: &Place) -> Result<Vec<(Row, Option<Compared>
             .and_then(|record| Control::deserialize(&record).ok());
         let id = place.relative(logical);
         let mut out = Row::of(&id, Source::Repository, control.as_ref());
+        if control.as_ref().is_some_and(names_files) {
+            out.targets.push(Target::File);
+        }
         out.result = Outcome::Unmeasured;
         if status != "ok" {
             out.result = Outcome::Unreadable;
@@ -510,6 +582,13 @@ fn own_rows(host: &dyn Host, place: &Place) -> Result<Vec<(Row, Option<Compared>
         rows.push((out, control.as_ref().map(Compared::of)));
     }
     Ok(rows)
+}
+
+/// Whether `control` names files through `paths` or `applies_to`, which
+/// stands for reaching a file where the report does not measure reach.
+fn names_files(control: &Control) -> bool {
+    let named = |list: &Option<Vec<String>>| list.as_ref().is_some_and(|list| !list.is_empty());
+    named(&control.paths) || named(&control.applies_to)
 }
 
 /// Where the repository's own rules differ from the imposed set.
@@ -558,6 +637,7 @@ const INVALID_GROUPS: &str = "SELECT logical, COALESCE(code, '') FROM records \
 fn group_unreadable(logical: String, code: &str) -> Refused {
     Refused {
         code: "rules::report::group_unreadable".to_owned(),
+        severity: Severity::Refusal,
         message: format!(
             "Board marks the group {logical} invalid with {code}; run `board check {logical}` for why"
         ),
@@ -596,6 +676,7 @@ fn groups(
             if !known.iter().any(|id| glob(pattern, id)) {
                 refused.push(Refused {
                     code: "rules::report::member_unmatched".to_owned(),
+                    severity: Severity::Warning,
                     rules: vec![logical.clone()],
                     message: format!(
                         "the group {logical}'s member pattern {pattern} matches no rule"
@@ -638,6 +719,7 @@ pub(crate) fn rolled_up(results: &[Outcome]) -> GroupState {
 }
 
 mod document;
+mod links;
 mod place;
 mod suites;
 

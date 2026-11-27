@@ -321,6 +321,12 @@
       "$ref": "#/$defs/Checker",
       "description": "What a program checks of the files; left out for a requirement only\na reader can judge, which `check` reports as described."
     },
+    "judged_by": {
+      "description": "The suite whose audit judges the rule, such as `/suites/review`, for\na rule a reader judges.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "runs/suite/v1"
+    },
     "kind": {
       "description": "`standing`, the default, for a rule that stays until it is changed,\nor `obligation` for work a landed change left owed, which the work\nthat discharges it deletes.",
       "enum": [
