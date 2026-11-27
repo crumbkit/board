@@ -65,10 +65,99 @@ pub(crate) fn mockups(found: &BTreeMap<String, String>) -> Vec<String> {
     named
 }
 
-fn named_by_decisions(observed: &Observed) -> BTreeSet<&str> {
-    (signed_decisions(observed))
-        .flat_map(|(_, body)| strings(body, "urls").chain(strings(body, "refs")))
-        .collect()
+/// One owner's agreement of a mockup: the record that holds it, and the
+/// version of the mockup it names, none when it names none.
+struct Agreement<'a> {
+    by: &'a str,
+    version: Option<String>,
+}
+
+/// The version an agreement's `text` names for `name`: the id after the
+/// word `version` that follows `name`.
+fn version_after(text: &str, name: &str) -> Option<String> {
+    (text.match_indices(name)).find_map(|(at, _)| {
+        let found = AGREED_VERSION.captures(&text[at + name.len()..])?;
+        Some(found.get(1)?.as_str().to_owned())
+    })
+}
+
+static AGREED_VERSION: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"(?i)^[\s,;:(]*version[ :]+`?([A-Za-z0-9_-]*[0-9][A-Za-z0-9_-]*)`?"));
+
+/// Each agreement of `mockup` by the owner: an attached decision the owner
+/// signed that names it, or its artifact, in its urls or refs, or an
+/// attached answer from the owner whose chosen option names it whole. An
+/// agreement naming the mockup's own `/versions/` path names that version;
+/// otherwise the words after the mockup in the decision or the option say
+/// which.
+fn agreements<'a>(observed: &'a Observed, mockup: &str) -> Vec<Agreement<'a>> {
+    let artifact = artifact_of(mockup);
+    let names: Vec<&str> = std::iter::once(mockup).chain(artifact).collect();
+    let version = |text: &str, exact: bool| {
+        (exact.then(|| version_in(mockup)).flatten())
+            .or_else(|| names.iter().find_map(|name| version_after(text, name)))
+    };
+    let mut found = Vec::new();
+    for (by, body) in signed_decisions(observed) {
+        let listed: BTreeSet<&str> = strings(body, "urls").chain(strings(body, "refs")).collect();
+        if names.iter().any(|name| listed.contains(name)) {
+            let words = body
+                .get("decision")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let version = version(words, listed.contains(mockup));
+            found.push(Agreement { by, version });
+        }
+    }
+    for (by, text) in owner_choices(observed) {
+        if names.iter().any(|name| names_whole(text, name)) {
+            let version = version(text, names_whole(text, mockup));
+            found.push(Agreement { by, version });
+        }
+    }
+    found
+}
+
+/// How the owner's agreements stand for each mockup the plan lists: those
+/// none agrees, and for a mockup whose version the plan names, the
+/// agreements of other versions when none names the plan's or no version,
+/// and the agreements that name no version when none names the plan's.
+struct Agreed<'a> {
+    unagreed: Vec<String>,
+    other: Vec<(String, Agreement<'a>, String)>,
+    unversioned: Vec<(String, &'a str, String)>,
+}
+
+fn agreed<'a>(observed: &'a Observed, found: &BTreeMap<String, String>) -> Agreed<'a> {
+    let versions = versioned(found);
+    let mut agreed = Agreed {
+        unagreed: Vec::new(),
+        other: Vec::new(),
+        unversioned: Vec::new(),
+    };
+    for mockup in mockups(found) {
+        let all = agreements(observed, &mockup);
+        if all.is_empty() {
+            agreed.unagreed.push(mockup);
+            continue;
+        }
+        let Some((_, wanted)) = versions.iter().find(|(each, _)| *each == mockup) else {
+            continue;
+        };
+        if all.iter().any(|each| each.version.as_ref() == Some(wanted)) {
+            continue;
+        }
+        let bare = all
+            .iter()
+            .find(|each| each.version.is_none())
+            .map(|each| each.by);
+        if let Some(by) = bare {
+            (agreed.unversioned).push((mockup, by, wanted.clone()));
+        } else if let Some(first) = all.into_iter().next() {
+            agreed.other.push((mockup, first, wanted.clone()));
+        }
+    }
+    agreed
 }
 
 pub(crate) fn ux_missing(observed: &Observed, found: &BTreeMap<String, String>) -> Option<String> {
@@ -94,21 +183,42 @@ pub(crate) fn ux_missing(observed: &Observed, found: &BTreeMap<String, String>) 
             "this item of the Mockups list names no artifact by URL or board path: {unnamed}"
         ));
     }
-    let agreed = named_by_decisions(observed);
-    let chosen: Vec<&str> = owner_choices(observed).map(|(_, text)| text).collect();
-    let named =
-        |name: &str| agreed.contains(name) || (chosen.iter()).any(|text| names_whole(text, name));
-    let unagreed: Vec<String> = (mockups(found).into_iter())
-        .filter(|mockup| !named(mockup) && !artifact_of(mockup).is_some_and(named))
-        .collect();
-    (!unagreed.is_empty()).then(|| {
-        format!(
+    let Agreed {
+        unagreed, other, ..
+    } = agreed(observed, found);
+    let mut said = Vec::new();
+    if !unagreed.is_empty() {
+        said.push(format!(
             "these mockups have neither an attached plans/decision/v1 the owner signed that \
              names them in its urls or refs, nor an attached plans/answer/v1 from the owner whose \
              chosen option, in its attached question, names them: {}",
             unagreed.join(", ")
-        )
-    })
+        ));
+    }
+    for (mockup, agreement, wanted) in other {
+        let version = agreement.version.unwrap_or_default();
+        said.push(format!(
+            "the owner agreed {mockup} version {version} in {}, and the plan names version \
+             {wanted}; ask the owner to agree version {wanted}",
+            agreement.by
+        ));
+    }
+    (!said.is_empty()).then(|| said.join("; "))
+}
+
+/// What a passing check of agreed mockups says: for each mockup whose
+/// version the plan names that only an agreement naming no version agrees,
+/// that the agreement counts for the plan's version.
+pub(crate) fn passed(observed: &Observed, found: &BTreeMap<String, String>) -> String {
+    let notes: Vec<String> = (agreed(observed, found).unversioned.into_iter())
+        .map(|(mockup, by, wanted)| {
+            format!(
+                "the owner's agreement {by} names no version of {mockup}, so it counts for \
+                 version {wanted}, the one the plan names"
+            )
+        })
+        .collect();
+    notes.join("; ")
 }
 
 /// The artifact a `/artifacts/<id>/versions/<id>` path names a version of,

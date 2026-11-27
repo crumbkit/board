@@ -974,7 +974,7 @@ change's path in the text of the option that approves it, and to attach
 the question and the answer with
 `board changes attach --path <change> --ref <path>`.
 
-Such a check also counts the owner's Touch ID approval of the current plan.
+Such a check also counts the owner's Touch ID approval of a plan revision.
 `changes.approve --path <change>` refuses with `changes::approve::not_chosen`
 unless an attached answer chose an option that names the change. Otherwise it
 asks Board's `decide` for the capability `changes.approve` at the change's
@@ -992,6 +992,34 @@ allowed signers file each time. When Board cannot read the approval, the
 check's detail says why.
 The questions pane runs `changes.approve` after an answer whose chosen option
 names the change it was attached to.
+
+Each approval such a check counts binds to one revision of the plan, a
+record under `<change>/plans/`. A decision whose refs name a revision, or an
+answer whose chosen option names one, such as the option `changes ask`
+writes, approves that revision. Any other decision or answer approves the
+earliest revision whose `records` list holds it, which is the revision that
+was current when it was attached. A Touch ID approval approves the revision
+whose digest it signed; `next` tries each revision, newest first. The
+approval counts while the current plan does not differ from that revision
+in substance. The plan differs in substance when its `answers` differ, or
+when the text of its Outcome, Out of scope, UX or Data section differs once
+runs of whitespace are collapsed. A missing section counts as empty text.
+Any other change, such as `paths`, `owed`, `uses`, `considered`, the Tests
+sections, Problem or a decision log, is routine. A passing check whose
+approval is of an earlier revision names that revision and the routine
+parts changed since, and the reviewer raises a finding when such a change
+alters what the owner approved. A missing check names the approved revision
+and the parts the current plan changes. When Board cannot tell which
+revision an approval approved, or cannot read the revision it names, the
+approval counts and the detail says so. When Board refuses to list the
+revisions, the check is missing and quotes the refusal.
+
+The `mockups` check compares versions too. An agreement that names a
+version of a mockup, as `version <id>` after the mockup's URL or path in a
+decision's `decision` or in the chosen option, or as the mockup's own
+`/versions/<id>` path, counts only for that version. When the plan's Mockups
+item names another version, the check is missing and names both. An
+agreement that names no version counts, and the passing detail says so.
 
 Only the signed approval proves the owner chose. An answer's `by` and
 `written_by`, and a decision's `by.person`, are claims any writer can make.

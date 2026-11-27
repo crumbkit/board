@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value, json};
 
 use super::design::mockups;
-use super::{Observed, Read, Status, applies, fails_unread, gate, reads, sections};
+use super::{Observed, Read, Revision, Status, applies, fails_unread, gate, reads, sections};
 use crate::change::Referenced;
 use crate::flow::development;
 use crate::records::Kind;
@@ -62,6 +62,10 @@ struct Given {
     /// The number of points the flow's `rechecks` check wants, when it is
     /// not the shipped flow's.
     rechecks: Option<u32>,
+    /// The plan's revisions, oldest first, each with its record and its
+    /// text; none gives the one current revision, to which every record is
+    /// attached.
+    revisions: Option<Result<Vec<Revision>, String>>,
 }
 
 /// The version of the development flow shipped before plans gave typed
@@ -97,6 +101,7 @@ fn given(phase: &'static str) -> Given {
         answers: json!({"ux": "none", "data": "none", "lifecycle": "none"}),
         prose: false,
         rechecks: None,
+        revisions: None,
     }
 }
 
@@ -122,6 +127,12 @@ impl Given {
     /// The flow's `rechecks` check wants `wanted` points.
     fn rechecks(mut self, wanted: u32) -> Self {
         self.rechecks = Some(wanted);
+        self
+    }
+
+    /// The plan has these revisions, or Board refuses to list them.
+    fn revisions(mut self, revisions: Result<Vec<Revision>, String>) -> Self {
+        self.revisions = Some(revisions);
         self
     }
 
@@ -209,6 +220,18 @@ impl Given {
                 ((*rule).to_owned(), Some(files))
             })
             .collect();
+        observed.revisions = self.revisions.clone().unwrap_or_else(|| {
+            let attached: Vec<&str> = self.records.iter().map(|(path, _)| *path).collect();
+            let record = json!({
+                "text": "/changes/t/plans/1.md", "uses": [], "answers": self.answers,
+                "records": attached,
+            });
+            Ok(vec![revision(
+                "/changes/t/plans/1",
+                &record,
+                self.plan.as_deref(),
+            )])
+        });
         observed
     }
 
@@ -253,6 +276,16 @@ impl Given {
             "missing"
         };
         (status, found.detail)
+    }
+}
+
+/// A revision of the fixture change's plan at `path`, with `record` and
+/// `text`.
+fn revision(path: &str, record: &Value, text: Option<&str>) -> Revision {
+    Revision {
+        path: path.to_owned(),
+        record: record.as_object().unwrap().clone(),
+        text: text.map(str::to_owned),
     }
 }
 
@@ -1550,6 +1583,7 @@ mod design;
 mod owner_answers;
 mod rechecks;
 mod review_head;
+mod revision;
 
 /// At land, a plan that lacks the test sections takes them through
 /// `changes plan-amend`, which adds only those headings, so the land gate's

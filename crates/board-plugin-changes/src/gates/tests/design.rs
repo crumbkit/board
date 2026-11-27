@@ -495,3 +495,66 @@ fn a_chosen_option_counts_for_every_path_it_names_whatever_it_says() {
         "an option that rejects the mockup but names it agrees it"
     );
 }
+
+/// The plan names version 2e27 of the fixture mockup.
+fn plan_naming(version: &str) -> String {
+    plan_listing(&format!("The install sheet: {MOCKUP} version {version}"))
+}
+
+#[test]
+fn an_answer_agreeing_another_version_of_the_mockup_does_not_count_and_the_same_version_does() {
+    let owner = json!({"person": PERSON});
+    let agreeing = |agreed: &str| {
+        let text = format!("Agree {MOCKUP} version {agreed} as the mockup");
+        at_plan(&plan_naming("1795531196-2e27"))
+            .records(asked(&text, "agree", &owner))
+            .check("mockups")
+    };
+    assert_eq!(
+        agreeing("1795519815-da06"),
+        (
+            "missing",
+            format!(
+                "the owner agreed {MOCKUP} version 1795519815-da06 in /a/m, and the plan names \
+                 version 1795531196-2e27; ask the owner to agree version 1795531196-2e27"
+            )
+        )
+    );
+    assert_eq!(agreeing("1795531196-2e27"), ("pass", String::new()));
+}
+
+#[test]
+fn a_decision_agreeing_another_version_does_not_count_and_one_naming_no_version_counts_with_a_note()
+{
+    let decided = |words: &str| {
+        let body = json!({
+            "decision": words, "urls": [MOCKUP], "refs": [], "by": {"person": PERSON},
+        });
+        at_plan(&plan_naming("1795531196-2e27"))
+            .records(vec![("/d/ux", ("plans/decision/v1", body))])
+            .check("mockups")
+    };
+    let other = decided(&format!(
+        "Sign off {MOCKUP} version 1795519815-da06 as shown."
+    ));
+    assert_eq!(other.0, "missing");
+    assert!(
+        other.1.contains("version 1795519815-da06 in /d/ux"),
+        "{}",
+        other.1
+    );
+    let same = decided(&format!(
+        "Sign off {MOCKUP} version 1795531196-2e27 as shown."
+    ));
+    assert_eq!(same, ("pass", String::new()));
+    assert_eq!(
+        decided("Sign off the install sheet as shown."),
+        (
+            "pass",
+            format!(
+                "the owner's agreement /d/ux names no version of {MOCKUP}, so it counts for \
+                 version 1795531196-2e27, the one the plan names"
+            )
+        )
+    );
+}

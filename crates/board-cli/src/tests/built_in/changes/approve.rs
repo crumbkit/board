@@ -239,11 +239,24 @@ fn a_plan_record_repointed_to_other_text_after_the_owner_signs_makes_the_approva
 }
 
 #[test]
-fn repointing_the_plan_away_makes_the_approval_missing_and_back_only_while_its_text_is_unchanged() {
+fn a_later_revision_keeps_the_approval_until_it_changes_the_outcome_and_back_only_while_unedited() {
     let personal = signed();
     personal.write("changes/t/plans/2.md", PLAN);
     plan_record(&personal, "2", "/changes/t/plans/2.md");
     point_at(&personal, "/changes/t/plans/2");
+    assert_eq!(
+        approval(&personal),
+        (
+            "pass".to_owned(),
+            "the owner approved plans/1 with Touch ID, and the current plan changes nothing that \
+             needs a new approval"
+                .to_owned()
+        )
+    );
+    personal.write(
+        "changes/t/plans/2.md",
+        &PLAN.replace("A suite stops.", "A suite stops and retries."),
+    );
     assert_eq!(approval(&personal).0, "missing");
     point_at(&personal, "/changes/t/plans/1");
     assert_eq!(approval(&personal).0, "pass");
@@ -252,6 +265,65 @@ fn repointing_the_plan_away_makes_the_approval_missing_and_back_only_while_its_t
         &format!("{PLAN}\nRewound and edited.\n"),
     );
     assert_eq!(approval(&personal).0, "missing");
+}
+
+/// Writes a new revision of /changes/t's plan through `changes.plan`, with
+/// `text` and `paths`.
+fn revise(personal: &Personal, text: &str, paths: &[&str]) {
+    let input = json!({
+        "path": "/changes/t", "text": text, "uses": [], "paths": paths, "answers": stores(),
+    });
+    let ran = personal.run_in(
+        personal.board.workdir(),
+        &["--json", "call", "changes.plan"],
+        &input.to_string(),
+    );
+    assert_eq!(ran.code, 0, "{}", super::text(&ran.stderr));
+}
+
+#[test]
+fn a_plan_revised_through_changes_plan_keeps_the_signed_approval_for_paths_and_loses_it_for_data() {
+    let personal = signed();
+    revise(&personal, PLAN, &["/src/**"]);
+    let (status, detail) = approval(&personal);
+    assert_eq!(status, "pass", "{detail}");
+    assert_eq!(
+        detail,
+        "the owner approved plans/1 with Touch ID, and the current plan changes only its `paths` \
+         since, which needs no new approval"
+    );
+    let data = PLAN.replace("## Data\n\nNone.", "## Data\n\nOne row per run.");
+    revise(&personal, &data, &["/src/**"]);
+    let (status, detail) = approval(&personal);
+    assert_eq!(status, "missing");
+    assert!(
+        detail.starts_with(
+            "the owner approved plans/1 with Touch ID, and the current plan changes its Data \
+             section; ask the owner again"
+        ),
+        "{detail}"
+    );
+}
+
+#[test]
+fn a_plan_revised_through_changes_plan_after_the_panes_answer_makes_owner_approval_missing() {
+    let personal = asked("Approve the plan at /changes/t.");
+    answered(&personal, &["--written_by", "plans/pane-answer"]);
+    assert_eq!(approval(&personal), ("pass".to_owned(), String::new()));
+    revise(
+        &personal,
+        &PLAN.replace("A suite stops.", "A suite stops and retries."),
+        &["/src/**"],
+    );
+    let (status, detail) = approval(&personal);
+    assert_eq!(status, "missing");
+    assert!(
+        detail.starts_with(&format!(
+            "the owner approved plans/1 in {ANSWER}, and the current plan changes its Outcome \
+             section;"
+        )),
+        "{detail}"
+    );
 }
 
 #[test]

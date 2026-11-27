@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The `owner-approval` check binds each owner approval to the plan revision
+  it approved, and stops counting it once a later revision changes the
+  plan's typed answers or its Outcome, Out of scope, UX or Data section.
+  A rewrite of the plan's paths, Tests sections or other routine parts keeps
+  the approval, including a Touch ID approval, and the check's detail names
+  the approved revision and what changed since. The `mockups` check counts
+  an agreement that names a mockup version only for that version.
 - `board tasks available` does not fetch a notes clone that was fetched
   less than a minute ago and already holds what that fetch brought, so a
   sweep of calls in a row fetches once. A task pushed from elsewhere in that

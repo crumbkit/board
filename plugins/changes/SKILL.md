@@ -99,11 +99,19 @@ blocks is missing.
    that is not empty, as an answer from the questions pane, Board.app or
    /ask is, and the option the owner chose names the change's path, such
    as `/changes/<name>`, in its text. Such a check also counts the owner's
-   Touch ID approval of the current plan: run
+   Touch ID approval of a plan revision: run
    `board call changes.approve --path /changes/<name>`, which the pane runs
    after such an answer, and the owner approves the effect it names. Only
    that signed approval proves the owner chose; `by` and `written_by` are
-   claims any writer can make. When you ask for approval with /ask, put
+   claims any writer can make. Each approval binds to the plan
+   revision it names, or else the one current when it was attached, and
+   lapses when a later revision changes the plan's `answers` or its
+   Outcome, Out of scope, UX or Data section. Other rewrites, such as
+   `paths` or the Tests sections, keep it, and the passing detail names the
+   approved revision and what changed since; as a reviewer, raise a finding
+   when such a change alters what the owner approved. When it lapses, ask
+   the owner again with `changes ask` or `changes approve`. A mockup
+   agreement that names a version counts only for that version. When you ask for approval with /ask, put
    the change's path in the text of the option that approves it and in no
    other option, because any chosen option that names the path counts.
    A path followed by `#` is a longer name: an option naming

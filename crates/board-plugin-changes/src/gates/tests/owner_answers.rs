@@ -54,7 +54,10 @@ fn a_decision_written_by_a_hook_still_does_not_pass_owner_approval_though_an_ans
 #[test]
 fn the_owners_signed_approval_passes_owner_approval_and_no_approval_does_not() {
     assert_eq!(
-        approval_with(Vec::new(), Approval::Signed),
+        approval_with(
+            Vec::new(),
+            Approval::Signed("/changes/t/plans/1".to_owned())
+        ),
         (Status::Pass, String::new())
     );
     assert_eq!(
