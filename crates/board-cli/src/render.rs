@@ -83,7 +83,7 @@ pub(crate) const LEAVES: &[Leaf] = &[
     ui::LEAVES[1].effects(READS),
     ui::LEAVES[2].effects(READS),
     ui::LEAVES[3].effects(READS.open_world()),
-    (Leaf::new(&["timing", "check"]).document(TIMING_CHECK)).effects(ADDS),
+    (Leaf::new(&["timing", "check"]).document(TIMING_CHECK)).effects(ADDS.open_world()),
     crate::skills::INSTALL.effects(CHANGES.idempotent()),
     crate::skills::LIST.effects(READS),
     crate::completion::INSTALL,
@@ -192,7 +192,7 @@ const REPO_ADD: Document<Answer> = prose(
 const URI: Document<Answer> = prose("uri-report", "A record's board:// URI and its path.");
 pub(crate) const TIMING_CHECK: Document<Answer> = prose(
     "timing-check-report",
-    "Each hot command's p50 and p90 against its budget, and the speed run recorded, if any.",
+    "Each hot command's p50 and p90 against its budgets and its mode, the commands live, the speed run recorded, if any, and any warnings.",
 );
 /// The sync report is at version 3: `replayed` gave way to `merged`,
 /// `conflicts`, `pins` and `failing`. Nothing reads version 2.

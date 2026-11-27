@@ -26,7 +26,7 @@ import {
   reminder,
   sections,
   staleText,
-  SPEED_CHECK,
+  speedLine,
   stateBadges,
 } from './rules'
 
@@ -50,7 +50,6 @@ const WHERE = `PATH=${PATH} exec board --json ls / --limit 1 < /dev/null`
 // A configured badge's command runs with the PATH the board calls use, each
 // value of its argv its own argument through "$@".
 const BADGE = `PATH=${PATH} exec "$@" < /dev/null`
-const SPEED = `PATH=${PATH} ${SPEED_CHECK}`
 const PANE = 'board-rules'
 
 // A slow or hung board holds an edit no longer than this, and a session start
@@ -134,7 +133,9 @@ async function readState($: EngineInterface, cwd: string, root: string): Promise
 /** Starts the speed check detached; a check that cannot start is logged and changes nothing else. */
 async function speed($: EngineInterface, root: string) {
   try {
-    await $.process.run(['/bin/sh', '-c', SPEED], { cwd: root, timeoutMs: TIMEOUT_MS })
+    // The desktop app names this session's `local_` id, the form questions use.
+    const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
+    await $.process.run(['/bin/sh', '-c', speedLine(PATH, host)], { cwd: root, timeoutMs: TIMEOUT_MS })
   } catch (error) {
     $.ui.log(`board: the speed check did not start: ${String(error)}`, { to: 'debug' })
   }

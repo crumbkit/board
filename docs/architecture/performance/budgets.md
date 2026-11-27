@@ -116,25 +116,43 @@ These budgets judge the hot commands as agents run them on the owner's
 personal board. `board timing check` reads them from
 `crates/board-cli/src/timing/budgets.rs`, and a test checks that this table
 matches. A budget is the p90 of the command's last 20 top-level runs at a
-load no higher than the core count (timing.md, The speed check). The owner
-set them on 23 November 2026: 100 ms for queries, checks and the commands a
-session's start runs, and half the first proposal for the rest. A call is
-named by its capability. `tasks.available` is judged as it usually runs,
-syncing notes repositories; the bench row above times it with `--repo /`.
+load no higher than the core count (timing.md, The speed check); a median
+budget also holds their p50 to it. The owner set the first eleven on 23
+November 2026: 100 ms for queries, checks and the commands a session's
+start runs, and half the first proposal for the rest. On 26 November he
+added the medians and the `ls`, `changes.advance` and `changes.brief` rows
+(/projects/board/answers/20261125T0018Z-speed-check-live). A call is named
+by its capability. `tasks.available` is judged as it usually runs, syncing
+notes repositories; the bench rows time it with `--repo /`.
 
-| Command | Budget (p90) | Session start |
-| --- | --- | --- |
-| `get` | 25 ms | no |
-| `put` | 150 ms | no |
-| `query` | 100 ms | no |
-| `plans.open` | 250 ms | no |
-| `plans.waiting` | 100 ms | yes |
-| `orders.pinned` | 100 ms | yes |
-| `rules.check` | 100 ms | yes |
-| `rules.for-path` | 500 ms | no |
-| `tasks.available` | 1,500 ms | no |
-| `changes.open` | 1,500 ms | no |
-| `changes.next` | 10,000 ms | no |
+| Command | Budget (p90) | Budget (median) | Session start |
+| --- | --- | --- | --- |
+| `get` | 25 ms | - | no |
+| `put` | 150 ms | - | no |
+| `query` | 100 ms | - | no |
+| `ls` | 500 ms | - | yes |
+| `plans.open` | 250 ms | - | no |
+| `plans.waiting` | 100 ms | - | yes |
+| `orders.pinned` | 100 ms | - | yes |
+| `rules.check` | 100 ms | - | yes |
+| `rules.for-path` | 500 ms | - | no |
+| `tasks.available` | 1,500 ms | - | no |
+| `changes.open` | 1,500 ms | - | no |
+| `changes.next` | 10,000 ms | 2,000 ms | no |
+| `changes.advance` | 10,000 ms | 2,000 ms | no |
+| `changes.brief` | 10,000 ms | 2,000 ms | no |
 
-A session-start command whose run is killed counts as far too slow, as
-one over three times its budget does.
+A command over three times its budget, or a session-start command whose
+run is killed, counts as far too slow.
+
+`cargo xtask bench --hot` times each row of this table in process on the
+generated board, which for these rows also enables the plans, orders,
+rules, changes and runs plugins and holds 100 open changes in the plan phase of the shipped development flow.
+Each row runs once unjudged, then 10 times, and reports its p50 and p90
+against the row's budgets. A generated change meets no gate, so
+`changes.advance` ends each run refused with `changes::gate::unmet` after
+checking every gate, as most advances in use do, and the row times that. It only reports, and exits 0 whatever the times. A call
+that Board refuses is reported as an error with its code, and judged by
+nothing. With `--json` it prints the `runs/run/v1` of
+`/suites/board-speed-ci` that timing.yml uploads (timing.md, The CI timing
+run).

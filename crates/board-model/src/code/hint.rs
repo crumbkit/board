@@ -183,6 +183,7 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
         | Code::PluginSchemaDiffers
         | Code::PluginAmbiguous
         | Code::PluginDuplicate
+        | Code::PluginNoCapability
         | Code::PluginBadInput => plugin(code, fields)?,
         Code::QueryInvalid => query(fields.known.as_ref()?),
         Code::SettingsAsked | Code::SettingsRefused => {
@@ -211,6 +212,14 @@ fn plugin(code: Code, fields: &Fields) -> Option<String> {
         Code::PluginDuplicate => format!(
             "remove the installed copy, the directory `$XDG_DATA_HOME/board/plugins/{plugin}`; this Board has the plugin built in"
         ),
+        // `runs run` and `runs record` are guesses at writing a suite run,
+        // which is a record put like any other.
+        Code::PluginNoCapability
+            if plugin.as_str() == "runs"
+                && matches!(capability()?.as_str(), "run" | "record") =>
+        {
+            "the runs plugin reads suite runs and does not write them. Write the run as a `runs/run/v1` on stdin to `board put --new --var suite=<name>`, which prints its path, then attach it to its change with `board changes attach --path /changes/<name> --ref <path>`".to_owned()
+        }
         Code::PluginBadInput => format!(
             "give the input as the flags that `board call {plugin}.{0} -h` lists, or as JSON on stdin that matches the capability's `inputSchema`; `board plugin find --capability {0} --json` shows the schema",
             capability()?

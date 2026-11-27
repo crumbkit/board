@@ -24,6 +24,17 @@
   mockup version only for that version. It reads the version anywhere in
   the agreement's words when the agreement names one mockup, and only right
   after each mockup's name when it names several.
+||||||| fbf25f53
+- A word an agent guesses after a plugin's name runs the capability it
+  means: `changes show` and `changes status` run `changes next`,
+  `changes list` runs `changes open`, and `tasks list`, `plans list` and
+  `evals list` run `tasks available`, `plans open` and `evals open`, with
+  the same flags. `board call <plugin>.<word>` does the same. Each prints
+  `note: board changes show is board changes next` or the like on stderr.
+  A plugin that offers the word itself still runs its own. `runs run` and
+  `runs record` are still refused, and their hint says to write the run
+  with `board put --new --var suite=<name>` and attach it with
+  `board changes attach --ref`.
 - `board tasks available` does not fetch a notes clone that was fetched
   less than a minute ago and already holds what that fetch brought, so a
   sweep of calls in a row fetches once. A task pushed from elsewhere in that
@@ -31,6 +42,24 @@
   call that asks `host.refs`, finds each path's references by a lookup built
   once per run in place of a scan of every reference for each path. The
   answers are the same as before.
+- `board timing check` goes live one command at a time. A command turns
+  live once it has 100 judged local results, 14 CI results once CI has
+  timed it, and under 1 in 10 of its over-budget results cleared at the
+  next one, and it never turns silent again. Only a live command over
+  budget opens `/tasks/board-speed-<command>.md`. The first live command
+  writes the zero rules `/rules/board/speed-budgets` and
+  `/rules/board/speed-budgets-ci`, so the rules badge shows a live command
+  over budget in every session. Once the lines changed in `/repos/board`
+  since the task opened pass `overflow-agent-grace` (200 by default), a
+  check run with `--session <local_ id>` files one question for the owner,
+  named as that session's; the rules mod now passes it. The check also
+  judges a median budget, prints each command's median budget and mode,
+  and gains budgets for `ls`, `changes.advance` and `changes.brief`.
+- On each push to main, timing.yml times every budgeted command on Linux
+  with `cargo xtask bench --hot` on a generated board with 100 open
+  changes, reporting only, and uploads the run. `board timing check
+  --record` imports the newest one into `/suites/board-speed-ci` through
+  gh; when gh cannot, it warns and still records the local run.
 
 ## 0.1.5 (2026-11-27)
 
