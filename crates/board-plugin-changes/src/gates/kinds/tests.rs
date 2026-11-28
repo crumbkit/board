@@ -182,13 +182,18 @@ fn records_whose_refs_must_name_an_attached_type_and_be_owner_signed() {
 
 #[test]
 fn an_owners_answer_counts_only_where_refs_name_the_plan_or_the_change_and_no_head_is_named() {
-    let options = json!([{"id": "a", "text": format!("Approve {PATH}.")}]);
+    let options =
+        json!([{"id": "approve", "text": format!("Approve {PATH} as planned in {PATH}/plans/1.")}]);
     let records = [
-        ("/q", "plans/question/v1", json!({"options": options})),
+        (
+            "/q",
+            "plans/question/v1",
+            json!({"options": options, "blocks": PATH}),
+        ),
         (
             "/a",
             "plans/answer/v1",
-            json!({"question": "/q", "choice": "a", "by": {"person": PERSON}}),
+            json!({"question": "/q", "choice": "approve", "by": {"person": PERSON}}),
         ),
     ];
     let found = |rules: Value| {

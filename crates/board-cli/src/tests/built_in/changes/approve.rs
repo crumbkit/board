@@ -11,7 +11,7 @@ const ANSWER: &str = "/projects/a/answers/q";
 /// The owner's personal board, enabling plans and changes, holding the
 /// change /changes/t in plan with its plan, which stores data so it needs
 /// the owner's approval, and an open question that
-/// blocks it whose option `a` says `approve`. The question is attached to
+/// blocks it whose option `approve` says `approve`. The question is attached to
 /// the change, as the asking session attaches it.
 fn asked(approve: &str) -> Personal {
     let personal = Personal::enabling(&["plans", "changes"]);
@@ -26,7 +26,7 @@ fn asked(approve: &str) -> Personal {
     let question = json!({
         "$type": "plans/question/v1", "question": "Approve?", "by": {"session": "local_0a1b"},
         "asked": "2026-11-20T09:00:00Z", "status": "open", "blocks": "/changes/t",
-        "options": [{"id": "a", "text": approve}, {"id": "b", "text": "Hold the work."}],
+        "options": [{"id": "approve", "text": approve}, {"id": "b", "text": "Hold the work."}],
     });
     personal
         .write("changes/t.json", &change.to_string())
@@ -63,9 +63,9 @@ fn called(personal: &Personal, capability: &str, flags: &[&str]) -> (u8, Value) 
     (ran.code, json(&ran))
 }
 
-/// Answers the question with option `a`, with `flags` added.
+/// Answers the question with option `approve`, with `flags` added.
 fn answered(personal: &Personal, flags: &[&str]) -> Value {
-    let mut given = vec!["--path", QUESTION, "--option", "a"];
+    let mut given = vec!["--path", QUESTION, "--option", "approve"];
     given.extend(flags);
     let (code, document) = called(personal, "plans.answer", &given);
     assert_eq!(code, 0, "{document}");
@@ -90,12 +90,69 @@ fn approval(personal: &Personal) -> (String, String) {
 
 #[test]
 fn the_panes_answer_to_an_option_naming_the_change_passes_owner_approval_and_its_twin_does_not() {
-    let personal = asked("Approve the plan at /changes/t.");
+    let personal = asked("Approve /changes/t as planned in /changes/t/plans/1.");
     let output = answered(&personal, &["--written_by", "plans/pane-answer"]);
     assert_eq!(output["attached"], json!({"change": "/changes/t"}));
     assert_eq!(approval(&personal).0, "pass");
     let twin = asked("Approve the plan.");
     answered(&twin, &["--written_by", "plans/pane-answer"]);
+    assert_eq!(approval(&twin).0, "missing");
+}
+
+/// Records the owner's decision with `board plans decide` and `flags`, and
+/// attaches it to the change.
+fn decided(personal: &Personal, flags: &[&str]) {
+    let mut given = vec![
+        "plans",
+        "decide",
+        "--project",
+        "a",
+        "--decision",
+        "pat approves the plan.",
+        "--why",
+        "Asked whether he approves the plan, pat answered \"Approve\".",
+        "--person",
+        "pat",
+        "--session",
+        "local_0a1b",
+    ];
+    given.extend(flags);
+    let ran = personal.run(&[["--json"].as_slice(), &given].concat());
+    assert_eq!(ran.code, 0, "{}", text(&ran.stderr));
+    let path = json(&ran)["data"]["output"]["path"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let attach = [
+        "call",
+        "changes.attach",
+        "--path",
+        "/changes/t",
+        "--ref",
+        &path,
+    ];
+    let attached = personal.run(&attach);
+    assert_eq!(attached.code, 0, "{}", text(&attached.stderr));
+}
+
+/// The owner's decision that `board plans decide` writes with `--decides`
+/// naming the current revision and `--refs` naming the change passes
+/// owner-approval; its twin that names the revision only in `--refs`
+/// decides nothing and does not.
+#[test]
+fn a_decision_written_with_decides_naming_the_revision_passes_owner_approval_and_its_twin_does_not()
+{
+    let personal = asked("Approve /changes/t as planned in /changes/t/plans/1.");
+    decided(
+        &personal,
+        &["--decides", "/changes/t/plans/1", "--refs", "/changes/t"],
+    );
+    assert_eq!(approval(&personal).0, "pass");
+    let twin = asked("Approve /changes/t as planned in /changes/t/plans/1.");
+    decided(
+        &twin,
+        &["--refs", "/changes/t", "--refs", "/changes/t/plans/1"],
+    );
     assert_eq!(approval(&twin).0, "missing");
 }
 
@@ -105,7 +162,7 @@ fn the_panes_answer_to_an_option_naming_the_change_passes_owner_approval_and_its
     reason = "it signs the approval with a key the allowed signers file does not list"
 )]
 fn approve_asks_the_owner_and_owner_approval_passes_once_the_owner_signs_it() {
-    let personal = asked("Approve the plan at /changes/t.");
+    let personal = asked("Approve /changes/t as planned in /changes/t/plans/1.");
     let refused = called(&personal, "changes.approve", &["--path", "/changes/t"]).1;
     assert_eq!(refused["code"], "changes::approve::not_chosen", "{refused}");
     assert_eq!(personal.pending(), Vec::<String>::new());
@@ -131,7 +188,7 @@ fn approve_asks_the_owner_and_owner_approval_passes_once_the_owner_signs_it() {
         (
             &json!("Let a suite declare a timeout"),
             &json!(ANSWER),
-            &json!("Approve the plan at /changes/t.")
+            &json!("Approve /changes/t as planned in /changes/t/plans/1.")
         )
     );
     assert!(
@@ -166,7 +223,7 @@ fn approve_asks_the_owner_and_owner_approval_passes_once_the_owner_signs_it() {
 /// The fixture with an answer that chose the option naming the change, and
 /// the owner's signed approval of the plan as it is: owner-approval passes.
 fn signed() -> Personal {
-    let personal = asked("Approve the plan at /changes/t.");
+    let personal = asked("Approve /changes/t as planned in /changes/t/plans/1.");
     answered(&personal, &[]);
     let asked = called(&personal, "changes.approve", &["--path", "/changes/t"]).1;
     let effect = asked["data"]["output"]["effect"]
@@ -239,11 +296,24 @@ fn a_plan_record_repointed_to_other_text_after_the_owner_signs_makes_the_approva
 }
 
 #[test]
-fn repointing_the_plan_away_makes_the_approval_missing_and_back_only_while_its_text_is_unchanged() {
+fn a_later_revision_keeps_the_approval_until_it_changes_the_outcome_and_back_only_while_unedited() {
     let personal = signed();
     personal.write("changes/t/plans/2.md", PLAN);
     plan_record(&personal, "2", "/changes/t/plans/2.md");
     point_at(&personal, "/changes/t/plans/2");
+    assert_eq!(
+        approval(&personal),
+        (
+            "pass".to_owned(),
+            "the owner approved plans/1 with Touch ID, and the current plan changes nothing that \
+             needs a new approval"
+                .to_owned()
+        )
+    );
+    personal.write(
+        "changes/t/plans/2.md",
+        &PLAN.replace("A suite stops.", "A suite stops and retries."),
+    );
     assert_eq!(approval(&personal).0, "missing");
     point_at(&personal, "/changes/t/plans/1");
     assert_eq!(approval(&personal).0, "pass");
@@ -254,9 +324,68 @@ fn repointing_the_plan_away_makes_the_approval_missing_and_back_only_while_its_t
     assert_eq!(approval(&personal).0, "missing");
 }
 
+/// Writes a new revision of /changes/t's plan through `changes.plan`, with
+/// `text` and `paths`.
+fn revise(personal: &Personal, text: &str, paths: &[&str]) {
+    let input = json!({
+        "path": "/changes/t", "text": text, "uses": [], "paths": paths, "answers": stores(),
+    });
+    let ran = personal.run_in(
+        personal.board.workdir(),
+        &["--json", "call", "changes.plan"],
+        &input.to_string(),
+    );
+    assert_eq!(ran.code, 0, "{}", super::text(&ran.stderr));
+}
+
+#[test]
+fn a_plan_revised_through_changes_plan_keeps_the_signed_approval_for_paths_and_loses_it_for_data() {
+    let personal = signed();
+    revise(&personal, PLAN, &["/src/**"]);
+    let (status, detail) = approval(&personal);
+    assert_eq!(status, "pass", "{detail}");
+    assert_eq!(
+        detail,
+        "the owner approved plans/1 with Touch ID, and the current plan changes only its `paths` \
+         since, which needs no new approval"
+    );
+    let data = PLAN.replace("## Data\n\nNone.", "## Data\n\nOne row per run.");
+    revise(&personal, &data, &["/src/**"]);
+    let (status, detail) = approval(&personal);
+    assert_eq!(status, "missing");
+    assert!(
+        detail.starts_with(
+            "the owner approved plans/1 with Touch ID, and the current plan changes its Data \
+             section; ask the owner again"
+        ),
+        "{detail}"
+    );
+}
+
+#[test]
+fn a_plan_revised_through_changes_plan_after_the_panes_answer_makes_owner_approval_missing() {
+    let personal = asked("Approve /changes/t as planned in /changes/t/plans/1.");
+    answered(&personal, &["--written_by", "plans/pane-answer"]);
+    assert_eq!(approval(&personal), ("pass".to_owned(), String::new()));
+    revise(
+        &personal,
+        &PLAN.replace("A suite stops.", "A suite stops and retries."),
+        &["/src/**"],
+    );
+    let (status, detail) = approval(&personal);
+    assert_eq!(status, "missing");
+    assert!(
+        detail.starts_with(&format!(
+            "the owner approved plans/1 in {ANSWER}, and the current plan changes its Outcome \
+             section;"
+        )),
+        "{detail}"
+    );
+}
+
 #[test]
 fn approve_reports_a_refusal_the_owner_gave_and_owner_approval_stays_missing() {
-    let personal = asked("Approve the plan at /changes/t.");
+    let personal = asked("Approve /changes/t as planned in /changes/t/plans/1.");
     answered(&personal, &[]);
     let asked = called(&personal, "changes.approve", &["--path", "/changes/t"]).1;
     let effect = asked["data"]["output"]["effect"]

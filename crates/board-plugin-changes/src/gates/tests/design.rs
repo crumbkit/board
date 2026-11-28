@@ -481,8 +481,18 @@ fn a_chosen_option_counts_for_every_path_it_names_whatever_it_says() {
     let statuses = given.statuses();
     assert_eq!(
         (statuses["mockups"], statuses["owner-approval"]),
-        ("pass", "pass"),
-        "an option naming the mockup and the bare change path also approves the plan"
+        ("pass", "missing"),
+        "an option naming the mockup and the bare change path, but no plan revision, approves \
+         no plan"
+    );
+    let revision = format!("Agree {MOCKUP} as the mockup for /changes/t/plans/1 of /changes/t");
+    let given = at_plan(&named_version()).records(asked(&revision, "agree", &owner));
+    let statuses = given.statuses();
+    assert_eq!(
+        (statuses["mockups"], statuses["owner-approval"]),
+        ("pass", "missing"),
+        "an option agreeing the mockup approves no plan, though it names the change and a plan \
+         revision, because it is not the approval question's approve option"
     );
     let mockup_only = format!("Agree {MOCKUP} as the mockup");
     let given = at_plan(&named_version()).records(asked(&mockup_only, "agree", &owner));
@@ -493,5 +503,124 @@ fn a_chosen_option_counts_for_every_path_it_names_whatever_it_says() {
         given.statuses()["mockups"],
         "pass",
         "an option that rejects the mockup but names it agrees it"
+    );
+}
+
+/// The plan names version 2e27 of the fixture mockup.
+fn plan_naming(version: &str) -> String {
+    plan_listing(&format!("The install sheet: {MOCKUP} version {version}"))
+}
+
+#[test]
+fn an_answer_agreeing_another_version_of_the_mockup_does_not_count_and_the_same_version_does() {
+    let owner = json!({"person": PERSON});
+    let agreeing = |agreed: &str| {
+        let text = format!("Agree {MOCKUP} version {agreed} as the mockup");
+        at_plan(&plan_naming("1795531196-2e27"))
+            .records(asked(&text, "agree", &owner))
+            .check("mockups")
+    };
+    assert_eq!(
+        agreeing("1795519815-da06"),
+        (
+            "missing",
+            format!(
+                "the owner agreed {MOCKUP} version 1795519815-da06 in /a/m, and the plan names \
+                 version 1795531196-2e27; ask the owner to agree version 1795531196-2e27"
+            )
+        )
+    );
+    assert_eq!(agreeing("1795531196-2e27"), ("pass", String::new()));
+}
+
+#[test]
+fn a_decision_agreeing_another_version_does_not_count_and_one_naming_no_version_counts_with_a_note()
+{
+    let decided = |words: &str| {
+        let body = json!({
+            "decision": words, "urls": [MOCKUP], "refs": [], "by": {"person": PERSON},
+        });
+        at_plan(&plan_naming("1795531196-2e27"))
+            .records(vec![("/d/ux", ("plans/decision/v1", body))])
+            .check("mockups")
+    };
+    let other = decided(&format!(
+        "Sign off {MOCKUP} version 1795519815-da06 as shown."
+    ));
+    assert_eq!(other.0, "missing");
+    assert!(
+        other.1.contains("version 1795519815-da06 in /d/ux"),
+        "{}",
+        other.1
+    );
+    let same = decided(&format!(
+        "Sign off {MOCKUP} version 1795531196-2e27 as shown."
+    ));
+    assert_eq!(same, ("pass", String::new()));
+    assert_eq!(
+        decided("Sign off the install sheet as shown."),
+        (
+            "pass",
+            format!(
+                "the owner's agreement /d/ux names no version of {MOCKUP}, so it counts for \
+                 version 1795531196-2e27, the one the plan names"
+            )
+        )
+    );
+}
+
+/// An agreement names a version wherever its words say `version <id>`, so
+/// a decision that names the mockup only in `urls` and puts the version
+/// before or after other words still names it.
+#[test]
+fn an_agreement_names_the_version_its_words_give_anywhere() {
+    let decided = |words: &str| {
+        let body = json!({
+            "decision": words, "urls": [MOCKUP], "refs": [], "by": {"person": PERSON},
+        });
+        at_plan(&plan_naming("1795531196-2e27"))
+            .records(vec![("/d/ux", ("plans/decision/v1", body))])
+            .check("mockups")
+    };
+    for words in [
+        "Signs off the install sheet mockup (version 1795519815-da06).",
+        "Agreed version 1795519815-da06 of the install sheet.",
+    ] {
+        let other = decided(words);
+        assert_eq!(other.0, "missing", "{words}");
+        assert!(
+            other.1.contains("version 1795519815-da06 in /d/ux"),
+            "{}",
+            other.1
+        );
+    }
+    let same = decided("Signs off the install sheet mockup (version 1795531196-2e27).");
+    assert_eq!(same, ("pass", String::new()));
+}
+
+/// An option agreeing two mockups names a version of each, and agrees the
+/// plan's version when it names that one among them.
+#[test]
+fn an_option_naming_several_versions_agrees_the_one_the_plan_names() {
+    let owner = json!({"person": PERSON});
+    let text = format!(
+        "Agree {MOCKUP} version 1795531196-2e27, and the mockups `/artifacts/m2` version v9"
+    );
+    let given = at_plan(&plan_naming("1795531196-2e27")).records(asked(&text, "agree", &owner));
+    assert_eq!(given.check("mockups"), ("pass", String::new()));
+}
+
+/// An option naming two mockups reads only the version that follows each
+/// one, so the version of the other mockup does not agree this one.
+#[test]
+fn an_option_naming_two_mockups_reads_the_version_after_each() {
+    let owner = json!({"person": PERSON});
+    let text = format!("Agree {MOCKUP} version 8, and the mockups `/artifacts/m2` version 2");
+    let given = at_plan(&plan_naming("2")).records(asked(&text, "agree", &owner));
+    let (status, detail) = given.check("mockups");
+    assert_eq!(status, "missing");
+    assert!(
+        detail.contains(&format!("{MOCKUP} version 8 in /a/m")),
+        "{detail}"
     );
 }

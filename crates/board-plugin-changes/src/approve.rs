@@ -2,9 +2,10 @@
 //! with Touch ID, once the owner's attached answer chose an option that
 //! names the change. The owner-approval check counts that signed approval,
 //! which only the owner's key can make, where an answer's `by` and
-//! `written_by` are claims any writer can make. The approval covers the
-//! plan's content, so any edit to the plan after the owner signs needs a
-//! new approval.
+//! `written_by` are claims any writer can make. The approval covers one
+//! revision of the plan and its content: an edit to that revision after the
+//! owner signs voids it, and a later revision keeps it only while it
+//! changes nothing the approval covers (`gates::revision`).
 
 use board_model::{Code, Digest, Refusal, canonical_json, parse_json};
 use board_ops::{DecideReport, Host, PluginError, Shown};
@@ -67,14 +68,19 @@ fn shown(observed: &Observed, plan: &str, content: &Content, answer: &str, chose
 /// The plan at `plan` as it is now.
 fn content(host: &dyn Host, observed: &Observed, plan: &str) -> Result<Content, PluginError> {
     let bytes = get(host, &[plan.to_owned()])?.into_iter().next().flatten();
-    let mut record = (bytes.and_then(|bytes| parse_json(&bytes).ok())).unwrap_or(Value::Null);
-    if let Some(fields) = record.as_object_mut() {
-        fields.remove("records");
-    }
+    let record = (bytes.and_then(|bytes| parse_json(&bytes).ok())).unwrap_or(Value::Null);
     let text = match record.get("text").and_then(Value::as_str) {
         Some(file) => get_text(host, file)?.unwrap_or_default(),
         None => String::new(),
     };
+    Ok(content_of(observed, record, &text))
+}
+
+/// The plan whose record is `record` and whose text is `text`.
+fn content_of(observed: &Observed, mut record: Value, text: &str) -> Content {
+    if let Some(fields) = record.as_object_mut() {
+        fields.remove("records");
+    }
     let title = (text.lines())
         .find_map(|line| line.strip_prefix("# "))
         .map_or_else(
@@ -83,7 +89,7 @@ fn content(host: &dyn Host, observed: &Observed, plan: &str) -> Result<Content, 
         );
     let whole = canonical_json(&json!({"record": record, "text": text}));
     let digest = Digest::of(whole.as_bytes()).to_string();
-    Ok(Content { title, digest })
+    Content { title, digest }
 }
 
 /// Each attached answer whose chosen option names the change, with that
@@ -167,9 +173,10 @@ fn outcome(
     })
 }
 
-/// What `Host::decided` finds of the owner's approval of the change's
-/// current plan and its content, following any attached answer that chose
-/// an option naming the change. No personal board means no approval.
+/// What `Host::decided` finds of the owner's approval of a revision of the
+/// change's plan and its content, following any attached answer that chose
+/// an option naming the change: the newest revision the owner approved.
+/// No personal board means no approval.
 pub(crate) fn approval(host: &dyn Host, observed: &Observed) -> Result<Approval, PluginError> {
     let Some(plan) = &observed.change.plan else {
         return Ok(Approval::None);
@@ -178,20 +185,57 @@ pub(crate) fn approval(host: &dyn Host, observed: &Observed) -> Result<Approval,
     if answers.is_empty() {
         return Ok(Approval::None);
     }
-    let content = content(host, observed, plan)?;
     let at = logical(&observed.path, "decided")?;
-    for (answer, option) in answers {
-        let shown = shown(observed, plan, &content, answer, option);
-        match host.decided(APPROVE, &at, Some(&shown)) {
-            Ok(Some(_)) => return Ok(Approval::Signed),
-            Ok(None) => {}
-            Err(refusal) if refusal.code.as_str() == Code::SettingsNoPersonal.as_str() => {
-                return Ok(Approval::None);
+    let revisions = revisions(host, observed, plan)?;
+    Ok(signed(observed, &revisions, &answers, |shown| {
+        host.decided(APPROVE, &at, Some(shown))
+    }))
+}
+
+/// Each revision of the change's plan with its content, newest first: those
+/// observe listed, and the current plan as it is now when they leave it
+/// out.
+fn revisions(
+    host: &dyn Host,
+    observed: &Observed,
+    plan: &str,
+) -> Result<Vec<(String, Content)>, PluginError> {
+    let listed = observed.revisions.as_deref().unwrap_or_default();
+    let mut found: Vec<(String, Content)> = (listed.iter().rev())
+        .map(|each| {
+            let text = each.text.as_deref().unwrap_or_default();
+            let content = content_of(observed, Value::Object(each.record.clone()), text);
+            (each.path.clone(), content)
+        })
+        .collect();
+    if !listed.iter().any(|each| each.path == plan) {
+        found.insert(0, (plan.to_owned(), content(host, observed, plan)?));
+    }
+    Ok(found)
+}
+
+/// The newest of `revisions` whose statement, following one of `answers`,
+/// `decided` finds the owner signed; none when the owner signed none or
+/// has no personal board, or Board's refusal to read the first it cannot.
+fn signed(
+    observed: &Observed,
+    revisions: &[(String, Content)],
+    answers: &[(&str, &str)],
+    decided: impl Fn(&Shown) -> Result<Option<DecideReport>, Box<Refusal>>,
+) -> Approval {
+    for (revision, content) in revisions {
+        for (answer, option) in answers {
+            match decided(&shown(observed, revision, content, answer, option)) {
+                Ok(Some(_)) => return Approval::Signed(revision.clone()),
+                Ok(None) => {}
+                Err(refusal) if refusal.code.as_str() == Code::SettingsNoPersonal.as_str() => {
+                    return Approval::None;
+                }
+                Err(refusal) => return Approval::Unread(refusal),
             }
-            Err(refusal) => return Ok(Approval::Unread(refusal)),
         }
     }
-    Ok(Approval::None)
+    Approval::None
 }
 
 #[cfg(test)]
