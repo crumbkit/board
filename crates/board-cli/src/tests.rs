@@ -2622,6 +2622,7 @@ mod help;
 mod hints;
 mod history;
 mod known;
+mod not_found;
 mod plugins;
 mod query;
 mod recoveries;

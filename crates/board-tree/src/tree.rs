@@ -79,6 +79,30 @@ pub(crate) trait Tree {
         vec![]
     }
 
+    /// The segments of `directory`'s entries nearest `missed`, a segment
+    /// that names nothing in it, as [`crate::resolve::nearest`] ranks them;
+    /// empty when it holds more than
+    /// [`MAX_NEAREST_LISTED`](crate::MAX_NEAREST_LISTED) entries or cannot be
+    /// listed.
+    fn beside(&mut self, directory: &Self::Directory, missed: &str) -> Vec<String> {
+        let Ok(listed) = self.list(directory) else {
+            return Vec::new();
+        };
+        if listed.len() > crate::MAX_NEAREST_LISTED {
+            return Vec::new();
+        }
+        let mut segments: Vec<String> = listed
+            .iter()
+            .filter_map(|entry| {
+                let directory = matches!(entry.kind, Kind::Directory(_) | Kind::Submodule);
+                segment_of(&entry.name, directory)
+            })
+            .collect();
+        segments.sort();
+        segments.dedup();
+        crate::resolve::nearest(missed, &segments)
+    }
+
     /// Gives `visit` the listing of `start`, then of each directory `visit`
     /// returns, each with the payload it was returned with, in any order.
     /// A commit's tree lists one directory at a time; the working tree
@@ -122,6 +146,18 @@ pub(crate) trait Tree {
             pointers.shadows(record, || self.read(directory, record))
         })
     }
+}
+
+/// The segment of the entry `name`, if it is a valid one: a file's leaves
+/// out `.json`, as [`address::segment`] does.
+pub(crate) fn segment_of(name: &[u8], directory: bool) -> Option<String> {
+    let name = std::str::from_utf8(name).ok()?;
+    let segment = if directory {
+        name
+    } else {
+        name.strip_suffix(".json").unwrap_or(name)
+    };
+    address::child(&LogicalPath::root(), segment).map(|_| segment.to_owned())
 }
 
 /// The listing of a directory, or why it could not be listed.

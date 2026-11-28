@@ -95,10 +95,7 @@ fn report(rows: Vec<Vec<Value>>) -> QueryReport {
 }
 
 fn absent(path: &LogicalPath) -> ResolveError {
-    ResolveError::NotFound {
-        path: path.clone(),
-        ancestor: LogicalPath::root(),
-    }
+    ResolveError::not_found(path, LogicalPath::root())
 }
 
 impl Host for Ruled {

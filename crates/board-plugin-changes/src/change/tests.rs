@@ -51,10 +51,7 @@ impl Host for Stopping {
                         repository: "/failing".into(),
                     })
                 } else {
-                    ResolveError::NotFound {
-                        path: path.clone(),
-                        ancestor: LogicalPath::root(),
-                    }
+                    ResolveError::not_found(path, LogicalPath::root())
                 };
                 Err(RefsError::Read {
                     source: ReadError::Resolve { source },
