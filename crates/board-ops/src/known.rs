@@ -313,7 +313,7 @@ fn root_of(root: &Path, home: Option<&Path>) -> Result<PathBuf, Box<Refusal>> {
         _ => {
             let message = format!(
                 "--board names {}, which is not the root of a board",
-                root.display()
+                lexical(root).display()
             );
             let hint = "give --board the root of a board, the directory that holds .board/board.json, such as one of the boards in the known boards file";
             let refusal = Refusal::new(Code::ConfigNotFound, message, &Fields::default());

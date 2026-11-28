@@ -89,7 +89,7 @@ pub(crate) struct Cli {
     checkout: bool,
     /// Read through the board whose root is this directory, when more than one known board mounts the repository.
     ///
-    /// Board then reads only that board's mounts and repo records, so two known boards that mount one clone are no longer ambiguous, while the run keeps the directory it started in. The directory must be a board's root, the one that holds .board/board.json; a relative one is read from the directory Board started in. Works with and without --checkout.
+    /// Board then reads only that board's mounts and repo records, so two known boards that mount one clone are no longer ambiguous, while the run keeps the directory it started in. The directory must be a board's root, the one that holds .board/board.json; a relative one is read from the directory Board started in. Works with and without --checkout; refused for init and answer.
     #[arg(long = "board", value_name = "DIR", conflicts_with = "personal", hide_short_help = true, value_hint = clap::ValueHint::DirPath, value_parser = clap::builder::OsStringValueParser::new())]
     through: Option<OsString>,
     #[command(flatten)]

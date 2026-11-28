@@ -243,6 +243,14 @@ fn checkout_with_two_pointers_mounting_the_repository_is_refused_and_with_one_is
     );
     let two = checkout.run_in(&checkout.linked, &arguments, false);
     assert_eq!(refused_code(&two), "board::config::ambiguous");
+    // Both places are in one board, so the hint does not send the person to
+    // --board, which chooses among boards.
+    let hint = json(&two)["recovery"]["text"].to_string();
+    assert!(!hint.contains("--board"), "{hint}");
+    assert!(
+        hint.contains("leave one mount or repo record of this repository in the board listed"),
+        "{hint}"
+    );
 }
 
 #[test]
@@ -508,4 +516,53 @@ fn board_with_personal_is_refused_and_board_alone_is_admitted() {
     assert_eq!(refused_code(&both), "board::cli::usage");
     let alone = checkout.run_in(&checkout.linked, &["--board", &root, "ls", "."], false);
     assert_eq!(alone.code, 0, "{}", text(&alone.stdout));
+}
+
+#[test]
+fn board_with_init_or_answer_is_refused_and_each_without_it_is_admitted() {
+    let checkout = Checkout::new();
+    let root = checkout.board.board.path();
+    let fresh = Scenario::new();
+    fresh.commit(&[("README.md", "x")]);
+    let refused = checkout.run_in(fresh.workdir(), &["--board", &root, "init"], false);
+    assert_eq!(refused_code(&refused), "board::cli::usage");
+    let hint = json(&refused)["recovery"]["text"].to_string();
+    assert!(hint.contains("without --board"), "{hint}");
+    assert!(!fresh.workdir().join(".board").exists());
+    let init = checkout.run_in(fresh.workdir(), &["init"], false);
+    assert_eq!(init.code, 0, "{}", text(&init.stdout));
+    let id = "0".repeat(64);
+    let answer = ["answer", id.as_str(), "refuse"];
+    let with: Vec<&str> = ["--board", root.as_str()]
+        .into_iter()
+        .chain(answer)
+        .collect();
+    let refused = checkout.run_in(&checkout.linked, &with, false);
+    assert_eq!(refused_code(&refused), "board::cli::usage");
+    let hint = json(&refused)["recovery"]["text"].to_string();
+    assert!(hint.contains("without --board"), "{hint}");
+    let without = checkout.run_in(&checkout.linked, &answer, false);
+    assert_ne!(
+        json(&without)["code"],
+        "board::cli::usage",
+        "{}",
+        text(&without.stdout)
+    );
+}
+
+#[test]
+fn a_relative_board_is_read_from_the_start_directory_and_not_from_the_c_directory() {
+    let checkout = Checkout::new();
+    let root = checkout.board.board.workdir();
+    let (parent, name) = (root.parent().unwrap(), root.file_name().unwrap());
+    let name = name.to_str().unwrap();
+    let from_start = ["-C", name, "--board", name, "ls", "/"];
+    let admitted = checkout.run_in(parent, &from_start, false);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stdout));
+    // `.` is the start directory, which is no board, though -C is one.
+    let dot = checkout.run_in(parent, &["-C", name, "--board", ".", "ls", "/"], false);
+    assert_eq!(refused_code(&dot), "board::config::not_found");
+    let message = json(&dot)["message"].as_str().unwrap().to_owned();
+    let named = format!("--board names {}, which", parent.display());
+    assert!(message.contains(&named), "{message}");
 }
