@@ -323,7 +323,7 @@
       }
     },
     "crates/board-plugin-rules/types/rules/rule/v1.schema.json": {
-      "shape": "653285379b108ba7686fc666daf54e8fc60e131e",
+      "shape": "62cdc9fad9da5c2b6b8519470a2b527fbc631f39",
       "enums": {
         "/$defs/BudgetChecker/properties/per/enum": [
           "total",

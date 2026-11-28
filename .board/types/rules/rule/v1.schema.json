@@ -360,11 +360,13 @@
     }
   },
   "additionalProperties": false,
-  "description": "`rules/rule/v1`: a requirement on files, why it exists, and optionally\na checker a program runs.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`. A rule whose `show` is an\nobject must set `provides`.",
+  "description": "`rules/rule/v1`: a requirement on files, why it exists, and optionally\na checker a program runs.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`. A rule whose `show` is an\nobject, so not a string, must set `provides`.",
   "if": {
     "properties": {
       "show": {
-        "type": "object"
+        "not": {
+          "type": "string"
+        }
       }
     },
     "required": [

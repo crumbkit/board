@@ -20,11 +20,11 @@ use serde_json::{Map, Value, json};
 ///
 /// It applies to the entries `applies_to` references and to every entry of
 /// the board whose path matches one of `paths`. A rule whose `show` is an
-/// object must set `provides`.
+/// object, so not a string, must set `provides`.
 #[derive(Debug, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(extend(
-    "if" = {"properties": {"show": {"type": "object"}}, "required": ["show"]},
+    "if" = {"properties": {"show": {"not": {"type": "string"}}}, "required": ["show"]},
     "then" = {"required": ["provides"]},
 ))]
 pub struct RuleRecord {
