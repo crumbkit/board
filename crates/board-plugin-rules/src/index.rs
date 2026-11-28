@@ -38,13 +38,14 @@ pub(crate) fn string_pairs<C: FromIterator<(String, String)>>(
 }
 
 /// Whether Board reads a record as valid, as an SQL condition: it marks
-/// it ok, or degraded only because a reference dangles, reaches the wrong
-/// type or reaches through a mount, which Board checks only of a valid
-/// record. A macro, so `concat!` builds queries with it.
+/// it ok, or degraded only because a reference dangles, could not be read
+/// through a mount, reaches the wrong type or reaches through a mount,
+/// which Board checks only of a valid record. A macro, so `concat!` builds
+/// queries with it.
 macro_rules! readable {
     () => {
-        "(status = 'ok' OR code IN ('board::ref::dangling', 'board::ref::wrong_type', \
-         'board::ref::through_mount'))"
+        "(status = 'ok' OR code IN ('board::ref::dangling', 'board::ref::unreadable', \
+         'board::ref::wrong_type', 'board::ref::through_mount'))"
     };
 }
 pub(crate) use readable;

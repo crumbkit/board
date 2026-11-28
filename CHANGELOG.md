@@ -21,6 +21,26 @@
     and `reopen`, `plan`, `lifecycle`, `reflow` and `run` on any done or
     dropped change, are still refused with `changes::phase::final`.
 
+- A reference that Board cannot follow because a mounted repository or its
+  pinned commit could not be read is now `board::ref::unreadable`, a new
+  code, where it was `board::ref::dangling`. Board does not know whether
+  such a target exists. `board::ref::dangling` now means Board read where
+  the target would be and found nothing there. `put` and `check` give the
+  same code. The detail's `at` names the path Board could not read, and
+  the hint says the record is not known to be broken, names
+  `board check` on that path, and says not to delete the record. A record
+  with an unreadable reference and a dangling one is coded dangling, with
+  both counted. A script that looks for `board::ref::dangling` to find
+  broken records no longer sees failed reads.
+
+- `rules.check` no longer fails with `rules::rule::degraded` for a rule
+  whose only fault is an unreadable reference. It checks the rule as a
+  live rule, names it in `warnings` with code `board::ref::unreadable` and
+  each reference it could not read, and sets `passed` to false. A rule
+  degraded for any other reason still fails the call. Plugins that read a
+  record degraded only by a reference, such as `tasks` and `boundary`,
+  read one degraded by `board::ref::unreadable` the same way.
+
 - `board changes next` takes `--through <phase>`, a phase of the change's
   flow such as `land`. Its output then adds `ahead`, which lists each phase
   after the current one up to that phase, with each check's id, whether it

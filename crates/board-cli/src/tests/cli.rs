@@ -194,6 +194,7 @@ fn every_command_a_hint_names_parses() {
             .replace("<plugin>.<capability>", "tasks.due")
             .replace("<command>", "get")
             .replace("<path>", "/a")
+            .replace("<mount>", "/a")
             .replace("<name>", "due")
     };
     let known = Fields {

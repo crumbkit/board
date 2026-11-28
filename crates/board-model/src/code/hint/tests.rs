@@ -94,3 +94,20 @@ fn the_personal_elsewhere_hint_says_the_named_board_stays_and_how_to_move_it_by_
     assert!(text.contains("by hand"), "{text}");
     assert!(!text.contains("`board "), "{text}");
 }
+
+#[test]
+fn the_unreadable_reference_hint_says_to_check_again_then_repair_the_mount_and_never_to_delete() {
+    assert_eq!(
+        hint(Code::RefUnreadable),
+        "the record is not known to be broken; run `board check <path>` again, and if it \
+         still fails, run `board check` on the mount the message names, whose hint says how \
+         to repair it, such as `board mount update <mount>`; do not delete the record"
+    );
+    let fields = Fields::at(&"/vendor".parse().unwrap());
+    assert_eq!(
+        Code::RefUnreadable.hint(&fields),
+        "the record is not known to be broken; Board could not read /vendor, which it \
+         references; run `board check /vendor`, whose hint says how to make it readable, then \
+         check the record again; do not delete the record"
+    );
+}

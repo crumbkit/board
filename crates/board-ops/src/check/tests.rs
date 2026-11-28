@@ -4,11 +4,11 @@
 use std::time::{Duration, Instant};
 
 use board_index::{Fallback, Index};
-use board_model::{Change, Code, Kind, Source};
+use board_model::{Change, Code, Kind, LogicalPath, ObjectId, Source};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
 
-use crate::check::Tally;
+use crate::check::{Failed, Tally};
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, stand_in, task};
 use crate::{CheckReport, Checked, Detail, Refreshed};
 
@@ -252,8 +252,8 @@ fn a_warm_check_hashes_nothing_even_resolving_references_into_a_large_directory(
 
 #[test]
 fn a_tally_names_its_first_failing_reference_as_a_predicate_and_counts_every_one() {
-    let dangling = (Code::RefDangling, "nothing is at /nowhere".to_owned());
-    let wrong = (
+    let dangling = Failed::new(Code::RefDangling, "nothing is at /nowhere".to_owned());
+    let wrong = Failed::new(
         Code::RefWrongType,
         "/p is not a record of type lr/project/v1".to_owned(),
     );
@@ -329,4 +329,96 @@ fn a_degraded_entry_hints_at_its_fix_where_its_file_is_and_an_ok_one_has_no_hint
         ..degraded
     };
     assert_eq!(ok.hint(), None);
+}
+
+/// A board mounting at `/vendor` a library of one project, through `mount`,
+/// which gives the mount's text from the library's path and commit, with
+/// a task at `tasks/a.json` holding `fields`.
+fn referring_through(
+    mount: impl Fn(&str, ObjectId) -> String,
+    fields: &str,
+) -> (Scenario, Scenario) {
+    let library = Scenario::new();
+    let commit = library.commit(&[("projects/x.json", r#"{"$type": "lr/project/v1"}"#)]);
+    let scenario = board();
+    scenario
+        .write("vendor.json", Item::File(&mount(&library.path(), commit)))
+        .write("tasks/a.json", Item::File(&task(fields)));
+    (library, scenario)
+}
+
+fn mount_text(repo: &str, commit: ObjectId) -> String {
+    format!(
+        r#"{{"$type": "board/mount/v1", "repo": "{repo}", "follow": "main", "commit": "{commit}"}}"#
+    )
+}
+
+/// The hint `check` gives for `tasks/a.json`.
+fn entry_hint(scenario: &Scenario) -> Option<String> {
+    task_entry(scenario).hint()
+}
+
+/// What `check` reports for `tasks/a.json`.
+fn task_entry(scenario: &Scenario) -> Checked {
+    let report = open(scenario).check(None, None).unwrap();
+    (report.entries.into_iter())
+        .find(|entry| entry.path == "tasks/a.json")
+        .unwrap()
+}
+
+#[test]
+fn a_reference_through_a_mount_whose_repository_or_commit_is_missing_is_unreadable() {
+    let see = r#", "see": "/vendor/projects/x""#;
+    let gone = |repo: &str, commit| mount_text(&format!("{repo}/nowhere"), commit);
+    let unpinned = |repo: &str, _| mount_text(repo, ObjectId::Sha1([9; 20]));
+    for (name, mount) in [
+        ("repository", &gone as &dyn Fn(&str, ObjectId) -> String),
+        ("commit", &unpinned),
+    ] {
+        let (_library, scenario) = referring_through(mount, see);
+        let entry = task_entry(&scenario);
+        assert_eq!(
+            entry.status,
+            Status::Degraded(Code::RefUnreadable),
+            "missing {name}"
+        );
+        let detail = entry.detail.unwrap();
+        assert_eq!(detail.failures, 1, "missing {name}");
+        assert!(
+            detail.reason.contains("/vendor"),
+            "the reason quotes the inner error: {}",
+            detail.reason
+        );
+        assert_eq!(
+            detail.at.as_ref().map(LogicalPath::as_str),
+            Some("/vendor"),
+            "missing {name}"
+        );
+        assert_eq!(
+            entry_hint(&scenario).as_deref(),
+            Some(
+                "the record is not known to be broken; Board could not read /vendor, which it \
+                 references; run `board check /vendor`, whose hint says how to make it \
+                 readable, then check the record again; do not delete the record"
+            )
+        );
+    }
+    let (_library, scenario) = referring_through(mount_text, see);
+    assert_eq!(task_entry(&scenario).status, Status::Ok, "the twin reads");
+}
+
+#[test]
+fn a_reference_to_nothing_dangles_and_beside_an_unreadable_one_dangles_with_both_counted() {
+    let unpinned = |repo: &str, _| mount_text(repo, ObjectId::Sha1([9; 20]));
+    let (_library, scenario) = referring_through(unpinned, r#", "see": "/nowhere""#);
+    let entry = task_entry(&scenario);
+    assert_eq!(entry.status, Status::Degraded(Code::RefDangling));
+    // The unreadable reference comes first, and the dangling one is kept.
+    let both = r#", "project": "/vendor/projects/x", "see": "/nowhere""#;
+    let (_library, scenario) = referring_through(unpinned, both);
+    let entry = task_entry(&scenario);
+    assert_eq!(entry.status, Status::Degraded(Code::RefDangling));
+    let detail = entry.detail.unwrap();
+    assert_eq!(detail.failures, 2);
+    assert_eq!(detail.pointer.as_deref(), Some("/see"));
 }

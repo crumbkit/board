@@ -1143,12 +1143,44 @@ fn a_write_left_with_no_view_reports_the_error_at_its_pointer_or_each_reference(
     );
     assert_eq!(detail.reason, format!("does not resolve: {reason}"));
     let (code, detail) = Board::unresolvable(&referring, &error).unwrap();
-    assert_eq!((code, detail.failures), (Code::RefDangling, 2));
+    assert_eq!(
+        (code, detail.failures),
+        (Code::RefUnreadable, 2),
+        "a repository that cannot be read leaves each target unknown"
+    );
     assert_eq!(
         detail.reason,
         format!(r#"holds a reference at "/project": {reason}"#)
     );
     assert_eq!(Board::unresolvable(&plain, &error), None);
+}
+
+#[test]
+fn a_write_whose_reference_reaches_an_unreadable_mount_reports_what_check_reports() {
+    let library = Scenario::new();
+    library.commit(&[("projects/x.json", r#"{"$type": "lr/project/v1"}"#)]);
+    let scenario = board();
+    let unpinned = format!(
+        r#"{{"$type": "board/mount/v1", "repo": "{}", "follow": "main", "commit": "{}"}}"#,
+        library.path(),
+        ObjectId::Sha1([9; 20])
+    );
+    scenario.write("vendor.json", Item::File(&unpinned));
+    let report = put(
+        &scenario,
+        "/tasks/a",
+        Expect::Any,
+        &task(r#", "see": "/vendor/projects/x""#),
+    )
+    .unwrap();
+    let (code, detail) = report.writes[0].degraded.clone().unwrap();
+    assert_eq!(code, Code::RefUnreadable);
+    let checked = open(&scenario).check(None, None).unwrap();
+    let entry = (checked.entries.iter())
+        .find(|entry| entry.path == "tasks/a.json")
+        .unwrap();
+    assert_eq!(entry.status, Status::Degraded(code));
+    assert_eq!(entry.detail.as_ref(), Some(&detail));
 }
 
 #[test]

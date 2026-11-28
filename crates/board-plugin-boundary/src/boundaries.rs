@@ -20,8 +20,9 @@ const MOVE_OUT: &str = "move each entry that is not a boundary out of /boundarie
 const NOT_A_DIRECTORY: &str = "is not a directory";
 const MAKE_DIRECTORY: &str = "make /boundaries/ a directory, not a symlink or a file";
 
-/// A valid record: one Board marks ok, or degraded only for a reference
-/// that dangles or reaches the wrong type.
+/// A valid record: one Board marks ok, or degraded only for a code in
+/// `TREE_CODES`, such as a reference that dangles, could not be read
+/// through a mount or reaches the wrong type.
 pub(crate) fn valid() -> String {
     let codes: Vec<String> = TREE_CODES.iter().map(|code| literal(code)).collect();
     format!("(status = 'ok' OR code IN ({}))", codes.join(", "))

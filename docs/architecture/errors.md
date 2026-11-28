@@ -13,7 +13,7 @@ The codes, which change as STANDARDS.md 3 and 4 say:
 | `record` | `bad_type`, `unknown_type`, `invalid`, `not_a_record` |
 | `config` | `not_found`, `invalid`, `ambiguous`, `personal_elsewhere` |
 | `schema` | `invalid`, `differs` |
-| `ref` | `malformed`, `dangling`, `wrong_type` |
+| `ref` | `malformed`, `dangling`, `unreadable`, `wrong_type` |
 | `path` | `malformed`, `shadowed`, `case_collision`, `not_found` |
 | `repo` | `unreadable`, `submodule`, `duplicate_remote`, `local_remote`, `invalid`, `path_mismatch`, `too_long` |
 | `symlink` | `outside`, `loop`, `dangling`; see docs/architecture/paths/symlinks.md |

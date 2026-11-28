@@ -236,6 +236,26 @@ fn put_and_check_share_one_rule_and_give_a_binding_that_does_not_fit_the_same_co
 }
 
 #[test]
+fn a_binding_whose_slot_reaches_an_unreadable_mount_is_unreadable_in_put_and_check_and_its_twin_fits()
+ {
+    let library = Scenario::new();
+    let commit = library.commit(&[("tasks/a.json", r#"{"$type": "lr/task/v1", "title": "A"}"#)]);
+    let mount = |commit: String| {
+        format!(
+            r#"{{"$type": "board/mount/v1", "repo": "{}", "follow": "main", "commit": "{commit}"}}"#,
+            library.path()
+        )
+    };
+    let scenario = scenario();
+    scenario.write("vendor.json", Item::File(&mount("09".repeat(20))));
+    let record = binding(markdown(), json!({"ref": "/vendor/tasks/a"}));
+    let expected = Some(at(Code::RefUnreadable, "/slots/task/ref"));
+    assert_eq!(judged(&scenario, &record), (expected.clone(), expected));
+    scenario.write("vendor.json", Item::File(&mount(commit.to_string())));
+    assert_eq!(judged(&scenario, &record), (None, None), "the twin reads");
+}
+
+#[test]
 fn put_and_check_share_one_rule_and_admit_a_binding_that_fits_alike() {
     let scenario = diff_scenario();
     for record in [
