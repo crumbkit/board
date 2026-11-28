@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `board changes next` and `board changes advance` record the HEAD of the
+  caller's checkout as the head of a change that has none, when the
+  checkout is of the change's mount and on a branch other than the one the
+  mount follows, and record the route `unowned` for a change that has
+  none. Each prints what it recorded in `filled`, such as `head filled
+  from <checkout> at <sha>`; `changes attach` sets another value. A change
+  with no task is not filled, but when exactly one open task has the
+  change's title, the `task` check's remedy names the `changes attach
+  --task` command for it. `changes attach --head` and `github ci` accept a
+  unique abbreviation of 7 or more hex digits and store the full commit
+  from the mount's clone; an abbreviation that names several commits is
+  refused with `changes::attach::head_ambiguous` and the matches, and one
+  that names none with `changes::attach::head_unknown`.
 - `board rules report` prints `rules/report/v2`. Each rule row gains
   `pins`, every version a version rule found with its file and line, behind
   or not; `targets`, `file` and `body`, where `body` means a boundary that

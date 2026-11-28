@@ -315,6 +315,29 @@ fn ci_of_a_change_with_no_suite_is_refused_without_gh_and_one_with_a_suite_is_ad
 }
 
 #[test]
+fn ci_of_a_change_with_a_short_head_stores_the_full_commit_and_one_naming_no_commit_is_refused() {
+    let desk = desk();
+    let head = desk.commit("lever");
+    lever(&desk, &json!({"head": "eeeeeee"}));
+    answers(&desk, &passing(), &suite("completed"), &[]);
+    let (ran, document) = desk.call("ci", &["--change", CHANGE]);
+    assert_eq!(
+        (ran.code, &document["code"], &document["fields"]["code"]),
+        (
+            1,
+            &json!("github::board::refused"),
+            &json!("changes::attach::head_unknown")
+        ),
+        "{document}"
+    );
+    assert_eq!(desk.gh_calls(), 0);
+    lever(&desk, &json!({"head": &head[..7]}));
+    let output = desk.output("ci", &["--change", CHANGE]);
+    assert_eq!(output["head"], json!(head));
+    assert_eq!(desk.record(CHANGE).unwrap()["head"], json!(head));
+}
+
+#[test]
 fn ci_writes_the_run_past_an_old_app_suite_with_no_check_runs_and_its_twin_with_one_is_pending() {
     let desk = desk();
     lever(&desk, &json!({}));

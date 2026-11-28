@@ -486,7 +486,20 @@ impl Changes {
         stdin: &str,
         inherited: &[(&str, &str)],
     ) -> (Output, Ran) {
+        self.run_called(self.root(), arguments, stdin, inherited)
+    }
+
+    /// [`Changes::run_traced`] in the board's root, with `caller` as the
+    /// caller's directory, as from an agent's checkout beside the board.
+    fn run_called(
+        &self,
+        caller: &Path,
+        arguments: &[&str],
+        stdin: &str,
+        inherited: &[(&str, &str)],
+    ) -> (Output, Ran) {
         let root = self.root().to_path_buf();
+        let caller = caller.to_path_buf();
         let context = Context {
             start: root.clone(),
             home: None,
@@ -501,7 +514,7 @@ impl Changes {
                 home: (inherited.iter())
                     .find(|(name, _)| *name == "HOME")
                     .map(|(_, value)| OsString::from(value)),
-                caller: Some(root.into_os_string()),
+                caller: Some(caller.into_os_string()),
                 inherited: (inherited.iter())
                     .filter(|(name, _)| *name != "HOME")
                     .map(|(name, value)| (OsString::from(name), OsString::from(value)))
@@ -575,6 +588,19 @@ impl Changes {
         } else {
             Err(document)
         }
+    }
+
+    /// The output of `board changes <capability>` with `given` as flags,
+    /// called from `caller`, which must succeed.
+    fn call_from(&self, caller: &Path, capability: &str, given: &Value) -> Value {
+        let target = format!("changes.{capability}");
+        let given_flags = flags(given);
+        let mut arguments = vec!["--json", "call", target.as_str()];
+        arguments.extend(given_flags.iter().map(String::as_str));
+        let (output, _) = self.run_called(caller, &arguments, "", &[]);
+        let document = json(&output);
+        assert_eq!(output.code, 0, "{capability} {given}: {document}");
+        document["data"]["output"].clone()
     }
 
     /// The output of `board changes <capability>` with `given` as

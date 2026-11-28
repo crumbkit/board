@@ -119,7 +119,8 @@ pub(crate) struct AttachInput {
     route: Option<Route>,
     #[schemars(
         regex(pattern = "^[0-9a-f]{7,40}$"),
-        description = "The commit under test and review."
+        description = "The commit under test and review. A unique abbreviation of 7 or more \
+                       hex digits is stored as the full commit it names in the mount's clone."
     )]
     head: Option<String>,
     #[schemars(
@@ -147,7 +148,11 @@ pub(crate) struct AttachInput {
 /// out, such as `owner-approval` for a plan that answers `ux` none and
 /// `data` none. `amended` lists, oldest first, what each `changes.plan-amend`
 /// since the last plan `changes.plan` wrote added to it; it is left out when
-/// there is none.
+/// there is none. `filled` says what Board recorded for the change before
+/// it read the gate: the HEAD of the caller's checkout as the head of a
+/// change with none, when the checkout is of the change's mount and on a
+/// branch other than the one the mount follows, and `unowned` as the route
+/// of a change with none; it is left out when Board recorded nothing.
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct NextOutput {
     pub(crate) path: String,
@@ -167,6 +172,8 @@ pub(crate) struct NextOutput {
     pub(crate) amended: Vec<crate::amend::Amended>,
     pub(crate) instruction: String,
     pub(crate) sync: LastSync,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) filled: Vec<String>,
 }
 
 /// The change written, and how many records its plans now hold.
@@ -176,8 +183,9 @@ pub(crate) struct AttachOutput {
     records: usize,
 }
 
-/// The phase the change left and the phase it entered, and the warning
-/// when it went past the WIP limit.
+/// The phase the change left and the phase it entered, the warning when
+/// it went past the WIP limit, and what Board recorded for the change
+/// before it read the gate, as `next` says it in `filled`.
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct Moved {
     path: String,
@@ -185,6 +193,8 @@ pub(crate) struct Moved {
     to: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     warning: Option<Limit>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    filled: Vec<String>,
 }
 
 /// What to do in the change's phase: its flow's instruction for it, with
@@ -368,7 +378,11 @@ fn waiting(observed: &Observed, checks: &[Check]) -> (Vec<Actor>, Option<String>
 /// The change's flow and phase, route, its gate's checks, whom it waits
 /// on, and the next instruction.
 pub(crate) fn next_of(host: &dyn Host, path: &str) -> Result<NextOutput, PluginError> {
-    Ok(step_of(host, path)?.0)
+    let filled = crate::fill::missing(host, path)?;
+    let (mut next, observed) = step_of(host, path)?;
+    crate::fill::name_task(host, &observed, &mut next.gate)?;
+    next.filled = filled;
+    Ok(next)
 }
 
 /// What `next` says of the change at `path`, and what its gate read.
@@ -412,6 +426,7 @@ pub(crate) fn step_of(host: &dyn Host, path: &str) -> Result<(NextOutput, Observ
         stop,
         amended: crate::amend::chain(host, path, change.plan.as_deref())?,
         sync: last_sync(host, sync_reads(path, &change))?,
+        filled: Vec::new(),
     };
     Ok((next, observed))
 }
@@ -458,7 +473,9 @@ pub(crate) fn attach(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         change.suite = Some(suite);
     }
     change.route = asked.route.or(change.route);
-    change.head = asked.head.or(change.head);
+    if let Some(head) = asked.head {
+        change.head = Some(crate::fill::full_head(host, &path, &change.mount, head)?);
+    }
     let change = touch(host, change);
     lines.push(line(&path, &blob, &change));
     board::put(host, &lines)?;
@@ -566,6 +583,7 @@ pub(crate) fn final_phase(path: &str, phase: &str, why: String) -> PluginError {
 
 pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let AdvanceInput { path, over_limit } = PluginError::read_input(PLUGIN, "advance", input)?;
+    let filled = crate::fill::missing(host, &path)?;
     let (mut change, blob) = read(host, &path)?;
     let phase = change.phase.clone();
     if is_final(&phase) {
@@ -620,6 +638,7 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
                 ("phase", json!(phase)),
                 ("missing", json!(names)),
                 ("remedies", json!(remedies)),
+                ("filled", json!(filled)),
             ],
         ));
     }
@@ -663,6 +682,7 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         from: phase,
         to,
         warning: limit,
+        filled,
     }))
 }
 

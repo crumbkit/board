@@ -12,6 +12,7 @@ mod board;
 mod brief;
 mod change;
 mod diff;
+mod fill;
 mod flow;
 mod gates;
 mod lifecycle;

@@ -878,6 +878,11 @@ fn a_lifecycle_put_with_a_refused_line_after_the_text_writes_no_line_and_its_twi
 #[test]
 fn next_on_a_plan_phase_says_what_board_changes_lifecycle_reads_on_stdin_and_build_does_not() {
     let board = planned();
+    // With no task the plan gate is unmet, so `next` gives the phase's
+    // instruction; Board fills the route but never the task.
+    let mut change = board.read("changes/t.json");
+    change.as_object_mut().unwrap().remove("task");
+    board.write("changes/t.json", &change.to_string());
     let said = board.call("next", &json!({"path": CHANGE}))["instruction"]
         .as_str()
         .unwrap()

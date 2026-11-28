@@ -87,7 +87,14 @@ blocks is missing.
    repository file where the table lands) and `external` to
    `board -C <board> changes lifecycle`. The builder's brief names its text.
    Set the commit under test with `--head <sha>` after each push, and the
-   check suite with `--suite <path>` when the change names none.
+   check suite with `--suite <path>` when the change names none. A short
+   head of 7 or more hex digits is stored as the full commit it names in
+   the mount's clone; `changes::attach::head_ambiguous` lists the commits
+   it could name, so give more digits. `next` and `advance` record the
+   route `unowned` for a change with none, and, run from a checkout of the
+   mount on a branch other than the one the mount follows, record that
+   checkout's HEAD for a change with no head. `filled` names each value
+   recorded; attach another to replace it.
    `board github pr-create --change /changes/<name>`, run from the checkout
    as the github skill says, opens the pull request and attaches it. When
    its output has `change_note`, run the command the note gives. Record

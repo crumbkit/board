@@ -144,6 +144,10 @@ pub(crate) fn ci(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let (owner, repo) = remote::repository(host, &top)?;
     let board = own(host)?;
     let (head, _, _, suite) = recorded_change(&*board, &change)?;
+    let head = match head {
+        Some(short) if !is_full_commit(&short) => full_head(&*board, &change, &short)?,
+        head => head,
+    };
     let (Some(head), Some(suite)) = (head.filter(|head| is_full_commit(head)), suite) else {
         return Err(PluginError {
             code: "github::ci::change".to_owned(),
@@ -224,6 +228,20 @@ pub(crate) fn ci(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
         checks: runs.len(),
         ignored,
     }))
+}
+
+/// The full commit the change at `change` names by its short head `short`,
+/// which `changes.attach` resolves in the mount's clone and records on the
+/// change, or its refusal, whose code, such as
+/// `changes::attach::head_ambiguous`, is in `fields.code`.
+fn full_head(board: &dyn Host, change: &str, short: &str) -> Result<Option<String>, PluginError> {
+    let target: Target = "changes.attach"
+        .parse()
+        .expect("changes.attach is <plugin>.<capability>");
+    let attach = json!({"path": change, "head": short});
+    (board.call(&target, &attach))
+        .map_err(|refusal| PluginError::board_refused("github", "changes attach", &refusal))?;
+    Ok(recorded_change(board, change)?.0)
 }
 
 /// `github::gh::failed` for the endpoint `what` under `commit`, which
