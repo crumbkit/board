@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- A plugin call refused with `board::plugin::not_enabled` in a board's own
+  tree, such as a linked worktree of a repository that holds its own board,
+  now names in its hint each known board that mounts that repository and
+  enables the plugin, as `board --board <dir> call <plugin>.<capability>`
+  to run with the same input, in place of suggesting `board plugin enable`.
+  This happens only when no `-C`, `--personal` or `--board` chose the
+  board. The refusal's code, message, fields and exit code are unchanged,
+  and the call does not run through the other board.
+
 - Three commands that refused a repeat of something already done now
   succeed and write nothing, so an agent that retries after a timeout, or
   two sessions acting on one message, no longer need a second call to learn

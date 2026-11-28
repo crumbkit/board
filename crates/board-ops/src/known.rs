@@ -295,6 +295,49 @@ pub fn open_at(
     Ok((board, Some(place.prefix())))
 }
 
+/// The root of each known board, as `known` lists it, other than the board
+/// whose root is `opened`, that has a mount or repo record for the
+/// repository holding `start` and enables `plugin`. It only reads: a board
+/// that cannot be opened, refreshed or read, or that has two places for
+/// `start` of its best rank, is passed over, and outside a git repository
+/// no board is read.
+pub fn enabling(
+    known: &KnownBoards,
+    opened: &Path,
+    start: &Path,
+    plugin: &PluginName,
+    home: Option<&Path>,
+    cache: Option<&Path>,
+) -> Vec<PathBuf> {
+    if board_tree::repository_root(start).is_none() {
+        return Vec::new();
+    }
+    // A board listed under several spellings counts once, and the opened
+    // board never counts.
+    let mut seen = HashSet::from([opened.to_path_buf()]);
+    let enables = |root: &PathBuf, seen: &mut HashSet<PathBuf>| {
+        let Ok(board) = Board::open(root, home.map(Path::to_path_buf)) else {
+            return false;
+        };
+        if !seen.insert(board.repository().path().to_path_buf())
+            || !board.config().plugins.contains(plugin)
+        {
+            return false;
+        }
+        let Ok(places) = board.places(start, cache) else {
+            return false;
+        };
+        let best = places.iter().map(Place::rank).min();
+        (places.iter())
+            .filter(|place| Some(place.rank()) == best)
+            .count()
+            == 1
+    };
+    (known.boards().into_iter())
+        .filter(|root| enables(root, &mut seen))
+        .collect()
+}
+
 /// The root of the board at `root`, as an opened board names it, or the
 /// refusal when `root` is not a board's root, which names `root` and
 /// `--board`.

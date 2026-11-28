@@ -2,10 +2,11 @@
 
 use std::ffi::OsString;
 use std::io::Read;
+use std::path::Path;
 
-use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, RecordType, Refusal, Role};
+use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, PluginName, RecordType, Refusal, Role};
 use board_ops::agent::AGENT_VARIABLE;
-use board_ops::{Board, Expect};
+use board_ops::{Board, Expect, KnownBoards};
 use board_plugin::Target;
 use clap::Subcommand;
 use serde_json::{Map, Value};
@@ -143,15 +144,19 @@ pub(crate) enum Input<'a> {
 /// `call`: the target, or the capability alone, with the input as flags or,
 /// when no flag is given, from `stdin`. A terminal on stdin, or nothing read
 /// from it, is no input. A `bad_input` refusal of a call that left stdin
-/// holding data says so in its help.
+/// holding data says so in its help. `unchosen` is the directory the run
+/// started in when no `-C`, `--personal` or `--board` chose the board; a
+/// `not_enabled` refusal there names in its hint the known boards that could
+/// run the call ([`elsewhere`]).
 pub(crate) fn call(
     board: &Board,
     context: &Context,
     printer: Printer,
-    target: &Target,
+    calling: (&Target, Option<&Path>),
     flags: Option<Map<String, Value>>,
     mut stdin: Input<'_>,
 ) -> Output {
+    let (target, unchosen) = calling;
     let read = match (flags.filter(|flags| !flags.is_empty()), &mut stdin) {
         (Some(flags), _) => Ok(Value::Object(flags).to_string().into_bytes()),
         (None, Input::Stdin(stdin)) if !context.terminal => bounded(&mut **stdin),
@@ -186,9 +191,69 @@ pub(crate) fn call(
                     None => why,
                 });
             }
+            if let Some(start) = unchosen
+                && let Some(hint) = elsewhere(board, context, &known, start, target, &refusal)
+            {
+                refusal.hint = Some(hint);
+            }
             render::refused(printer, refusal)
         }
     }
+}
+
+/// The hint for `refusal` when it refuses `target` as not enabled in the
+/// board whose own tree holds `start`, naming each other known board that
+/// mounts the repository holding `start` and enables the plugin, or `None`
+/// when the refusal is another or no such board is known.
+fn elsewhere(
+    board: &Board,
+    context: &Context,
+    known: &KnownBoards,
+    start: &Path,
+    target: &Target,
+    refusal: &Refusal,
+) -> Option<String> {
+    if refusal.code.as_str() != Code::PluginNotEnabled.as_str() {
+        return None;
+    }
+    let opened = board.repository().path();
+    if board_tree::discover(start).as_deref() != Some(opened) {
+        return None;
+    }
+    let plugin: PluginName = refusal.fields.get("plugin")?.as_str()?.parse().ok()?;
+    let capability = match target {
+        Target::Named { capability, .. } | Target::Capability(capability) => capability,
+    };
+    let (home, cache) = (context.home.as_deref(), context.cache.as_deref());
+    let roots = board_ops::enabling(known, opened, start, &plugin, home, cache);
+    let commands: Vec<String> = (roots.iter())
+        .map(|root| {
+            format!(
+                "`board --board {} call {plugin}.{capability}`",
+                root.display()
+            )
+        })
+        .collect();
+    let (boards, run) = match commands.as_slice() {
+        [] => return None,
+        [one] => (
+            format!("the known board {}", roots[0].display()),
+            one.clone(),
+        ),
+        _ => {
+            let named: Vec<String> = roots
+                .iter()
+                .map(|root| root.display().to_string())
+                .collect();
+            let boards = format!("the known boards {}", named.join(", "));
+            (boards, commands.join(" or "))
+        }
+    };
+    Some(format!(
+        "the board at {}, whose own tree holds this directory, does not enable {plugin}, but {boards} mount{s} this repository and enable{s} it; run {run} with the same input",
+        opened.display(),
+        s = if roots.len() == 1 { "s" } else { "" },
+    ))
 }
 
 /// `type add`: the schema on stdin, with a note when the board already
