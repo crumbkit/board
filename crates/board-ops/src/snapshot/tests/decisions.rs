@@ -33,7 +33,11 @@ pub(super) fn query_as(scenario: &Scenario, cache: &Path, build: &'static str) -
     let cold = filled(&board, Index::open(None, &root).unwrap());
     let unordered = "SELECT source, path, code FROM entries LIMIT 7";
     for sql in EVERY_TABLE.iter().chain([&unordered]) {
-        let [warm, cold] = [&warm, &cold].map(|filled| filled.view.query(sql, 10_000, None));
+        let [warm, cold] = [&warm, &cold].map(|filled| {
+            filled
+                .view
+                .query(sql, 10_000, None, crate::query::TYPED_QUERY_TIME)
+        });
         assert_eq!(warm.unwrap(), cold.unwrap(), "{sql}");
     }
     let [warm_check, cold_check] = [Some(cache), None].map(|cache| board.check(None, cache));
@@ -107,7 +111,7 @@ fn a_mount_moved_to_another_commit_with_the_same_tree_is_kept_and_named_by_the_n
     let sources = "SELECT DISTINCT source FROM entries WHERE source <> 'worktree'";
     let rows = filled(&board, index)
         .view
-        .query(sources, 10, None)
+        .query(sources, 10, None, crate::query::TYPED_QUERY_TIME)
         .unwrap()
         .rows;
     assert_eq!(rows, [[serde_json::Value::from(second.to_string())]]);
@@ -137,7 +141,7 @@ fn a_mount_moved_to_a_longer_route_is_decided_again_and_a_path_too_long_beneath_
     let sql = format!("SELECT code FROM entries WHERE path = '{long}'");
     let rows = filled(&board, index)
         .view
-        .query(&sql, 1, None)
+        .query(&sql, 1, None, crate::query::TYPED_QUERY_TIME)
         .unwrap()
         .rows;
     assert_eq!(rows, [["board::path::malformed"]]);
@@ -275,7 +279,11 @@ fn code(scenario: &Scenario, cache: &Path, path: &str) -> (usize, Option<String>
     let root = board.repository().path().to_path_buf();
     let warm = filled(&board, Index::open(Some(cache), &root).unwrap());
     let sql = format!("SELECT code FROM entries WHERE source <> 'worktree' AND path = '{path}'");
-    let rows = warm.view.query(&sql, 1, None).unwrap().rows;
+    let rows = warm
+        .view
+        .query(&sql, 1, None, crate::query::TYPED_QUERY_TIME)
+        .unwrap()
+        .rows;
     let code = rows[0][0].as_str().map(str::to_owned);
     (warm.report.work.kept, code)
 }
@@ -393,7 +401,11 @@ fn another_build_lists_pointers_and_decides_again_and_the_same_build_keeps_both(
         board.built_by(second);
         let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
         let sql = "SELECT count(DISTINCT scan) FROM main.pointers";
-        let rows = filled(&board, index).view.query(sql, 1, None).unwrap().rows;
+        let rows = filled(&board, index)
+            .view
+            .query(sql, 1, None, crate::query::TYPED_QUERY_TIME)
+            .unwrap()
+            .rows;
         assert_eq!(rows, [[lists]], "{second}");
     }
 }
@@ -460,7 +472,11 @@ fn note_code(scenario: &Scenario, cache: &Path) -> Vec<Vec<serde_json::Value>> {
     let board = open(scenario);
     let index = Index::open(Some(cache), board.repository().path()).unwrap();
     let sql = "SELECT code FROM entries WHERE path = 'notes/n.md'";
-    filled(&board, index).view.query(sql, 1, None).unwrap().rows
+    filled(&board, index)
+        .view
+        .query(sql, 1, None, crate::query::TYPED_QUERY_TIME)
+        .unwrap()
+        .rows
 }
 
 #[test]
@@ -545,7 +561,11 @@ fn an_empty_build_keeps_and_stores_nothing_and_a_named_one_keeps_each_source() {
         board.built_by(build);
         let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
         let sql = "SELECT (SELECT count(*) FROM main.decided) + (SELECT count(DISTINCT scan) FROM main.pointers) > 0";
-        let rows = filled(&board, index).view.query(sql, 1, None).unwrap().rows;
+        let rows = filled(&board, index)
+            .view
+            .query(sql, 1, None, crate::query::TYPED_QUERY_TIME)
+            .unwrap()
+            .rows;
         assert_eq!(rows, [[stored]], "{build:?}");
     }
 }
