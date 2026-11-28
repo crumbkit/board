@@ -4,14 +4,18 @@
 
 - The development flow's suite-run remedy names only commands that exist.
   When the change names no suite, it says to name one with `board changes
-  attach --suite`, write a `runs/suite/v1` with `board put /suites/<name>`,
-  or ask the owner to waive the check. Otherwise it says to record CI's
+  attach --suite`, or to write a `runs/suite/v1` with `board put
+  /suites/<name>` and then name it with `board changes attach --suite`, or
+  to ask the owner to waive the check. Otherwise it says to record CI's
   run with `board github ci --change`, or to write the run with `board put
-  --new --var suite=<name>` and attach it with `board changes attach
-  --ref`. It no longer names `board runs define` or `board runs run`,
-  which the runs plugin does not offer. A test fails when an instruction
-  or remedy in a shipped flow names a `board` command that no built-in
-  plugin offers and Board does not have. A change already on an older
+  --new --var suite=<name>`, where `<name>` is the last segment of the
+  suite's path, and attach it with `board changes attach --ref`. It no
+  longer names `board runs define` or `board runs run`, which the runs
+  plugin does not offer. A test fails when an instruction or remedy in a
+  shipped flow names a `board` command, or a dotted capability such as
+  `changes.attach`, that no built-in plugin offers and Board does not
+  have, or follows a Board word such as `plugin` or `mount` with a
+  subcommand it does not have. A change already on an older
   stored flow version prints the old remedy until `board changes reflow
   --path <change>` moves it to the shipped one.
 - `board rules report` prints `rules/report/v2`. Each rule row gains

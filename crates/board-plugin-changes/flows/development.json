@@ -43,7 +43,7 @@
       "checks": [
         {"id": "head", "kind": "field", "field": "head"},
         {"id": "suite-run", "kind": "run", "scope": "full", "waivable": true,
-         "remedy": "When {suite} is empty, the repository names no check suite: name one with `board changes attach --path {change} --suite /suites/<name>`, write a new runs/suite/v1 with `board put /suites/<name>`, or ask the owner to waive this check. Otherwise, once CI has passed on {head}, record its check runs as a run of {suite} with `board github ci --change {change}`, which also attaches the run. Or run the repository's gates on {head}, write the run as a runs/run/v1 with `board put --new --var suite=<name>`, and attach it with `board changes attach --path {change} --ref <run>`."},
+         "remedy": "When {suite} is empty, the repository names no check suite: name one with `board changes attach --path {change} --suite /suites/<name>`; or write a new runs/suite/v1 with `board put /suites/<name>` and then name it with that same `board changes attach --suite` command; or ask the owner to waive this check. Otherwise, once CI has passed on {head}, record its check runs as a run of {suite} with `board github ci --change {change}`, which also attaches the run. Or run the repository's gates on {head}, write the run as a runs/run/v1 with `board put --new --var suite=<name>`, where <name> is the last segment of {suite}, such as board-gates for /suites/board-gates, and attach it with `board changes attach --path {change} --ref <run>`."},
         {"id": "tasks", "kind": "tasks"}
       ]
     },

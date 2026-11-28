@@ -751,19 +751,52 @@ fn board_words() -> Vec<String> {
         .collect()
 }
 
-/// Each command in backticks in `text` that starts with `board` and names
-/// a word no built-in plugin offers or a Board word that does not exist.
+/// Each Board word that has subcommands and the names of those subcommands,
+/// read from the `board commands list` golden that board-cli's help test
+/// checks against the built binary. A word the golden lists with no
+/// subcommand rows, such as `put`, is left out. The golden does not list
+/// every root word: `skills`, `completion`, `commands` and `schemas` have
+/// subcommands it leaves out, so their second word goes unchecked.
+fn board_subcommands() -> Vec<(String, Vec<String>)> {
+    let listed = include_str!("../../../board-cli/src/tests/help/examples/board-commands-list.txt");
+    let mut lines = listed.lines();
+    let width = lines.next().unwrap().find("ABOUT").unwrap();
+    let mut words: Vec<(String, Vec<String>)> = Vec::new();
+    for line in lines {
+        let path: Vec<&str> = line[..width].split_whitespace().collect();
+        let [_, word, subcommand] = path[..] else {
+            continue;
+        };
+        match words.iter_mut().find(|(name, _)| name == word) {
+            Some((_, subcommands)) => subcommands.push(subcommand.to_owned()),
+            None => words.push((word.to_owned(), vec![subcommand.to_owned()])),
+        }
+    }
+    words
+}
+
+/// Each command in backticks in `text` that no built-in plugin offers or
+/// Board does not have. A command is a span that starts with `board`, or a
+/// span that starts with a built-in plugin's dotted capability, such as
+/// `changes.attach --task`. A Board word with subcommands in
+/// [`board_subcommands`] must be followed by one of them.
 fn unknown_commands(
     text: &str,
     plugins: &[(String, Vec<String>)],
     words: &[String],
 ) -> Vec<String> {
-    let spans = regex::Regex::new(r"`(board(?: [^`]*)?)`").unwrap();
+    let spans =
+        regex::Regex::new(r"`(board(?: [^`]*)?|[a-z][a-z-]*\.[a-z][a-z-]*(?: [^`]*)?)`").unwrap();
+    let subcommands = board_subcommands();
     let offers = |plugin: &str, capability: &str| {
         (plugins.iter())
             .any(|(name, offered)| name == plugin && offered.iter().any(|each| each == capability))
     };
     let known = |command: &str| {
+        let head = command.split_whitespace().next().unwrap_or_default();
+        if let Some((plugin, capability)) = head.split_once('.') {
+            return !plugins.iter().any(|(name, _)| name == plugin) || offers(plugin, capability);
+        }
         let mut tokens = command.split_whitespace().skip(1).peekable();
         while let Some(flag) = tokens.next_if(|token| token.starts_with('-')) {
             if flag == "-C" {
@@ -779,7 +812,13 @@ fn unknown_commands(
                 .is_some_and(|(plugin, capability)| offers(plugin, capability));
         }
         if words.iter().any(|word| word == first) {
-            return true;
+            let Some((_, offered)) = subcommands.iter().find(|(word, _)| word == first) else {
+                return true;
+            };
+            let mut rest = tokens.skip_while(|token| token.starts_with('-'));
+            return rest
+                .next()
+                .is_none_or(|second| offered.iter().any(|each| each == second));
         }
         match tokens.next() {
             Some(capability) => offers(first, capability),
@@ -807,6 +846,50 @@ fn a_command_no_plugin_offers_is_caught_and_its_twin_that_exists_is_not() {
     assert_eq!(caught, ["board runs run"]);
     let twin = "Write it with `board put --new --var suite=<name>`, attach it with `board changes \
         attach --path {change} --ref <run>`, or call `board --personal call changes.next`.";
+    assert_eq!(
+        unknown_commands(twin, &plugins, &words),
+        Vec::<String>::new()
+    );
+}
+
+/// A remedy naming the dotted capability `runs.run`, which the runs plugin
+/// does not offer, is caught, and its twin naming `changes.attach --task`,
+/// which exists, is not. A dotted span whose first word names no built-in
+/// plugin, such as a file name, is not a command.
+#[test]
+fn a_dotted_capability_no_plugin_offers_is_caught_and_its_twin_that_exists_is_not() {
+    let (plugins, words) = (built_in_capabilities(), board_words());
+    let caught = unknown_commands(
+        "Run {suite} with `runs.run` and attach it.",
+        &plugins,
+        &words,
+    );
+    assert_eq!(caught, ["runs.run"]);
+    let twin = "Attach it with `changes.attach --task <path>` and read `home.toml`.";
+    assert_eq!(
+        unknown_commands(twin, &plugins, &words),
+        Vec::<String>::new()
+    );
+}
+
+/// A Board word that has subcommands, such as `plugin` or `mount`, followed
+/// by a word that is not one of them is caught, and its twin naming
+/// `board plugin list` and `board mount add` is not. A word with no
+/// subcommands, such as `put`, takes a path as its second word.
+#[test]
+fn a_board_word_with_a_subcommand_that_does_not_exist_is_caught() {
+    let (plugins, words) = (built_in_capabilities(), board_words());
+    let caught = unknown_commands(
+        "Try `board plugin bogus` or `board -C ~/Code/board mount bogus /x`.",
+        &plugins,
+        &words,
+    );
+    assert_eq!(
+        caught,
+        ["board plugin bogus", "board -C ~/Code/board mount bogus /x"]
+    );
+    let twin = "Read `board plugin list --json`, `board mount add <clone> /repos/x` and \
+        `board put /suites/<name>`.";
     assert_eq!(
         unknown_commands(twin, &plugins, &words),
         Vec::<String>::new()
