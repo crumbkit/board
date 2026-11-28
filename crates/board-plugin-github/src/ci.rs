@@ -218,10 +218,14 @@ pub(crate) fn ci(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let target: Target = "changes.attach"
         .parse()
         .expect("changes.attach is <plugin>.<capability>");
-    // Only the run, so a newer head attached meanwhile stays, and the full
-    // commit of a short head while the change still records that short head.
+    // Attach the run, and the full commit of a short head only when the
+    // change still recorded that short head when it was read again here.
+    // A head attached between that read and the attach is overwritten. When
+    // the read fails, the run is attached without a head.
     let mut attach = json!({"path": change, "ref": path});
-    if expanded.is_some() && recorded_change(&*board, &change)?.0 == short {
+    if expanded.is_some()
+        && recorded_change(&*board, &change).is_ok_and(|recorded| recorded.0 == short)
+    {
         attach["head"] = json!(head);
     }
     board.call(&target, &attach).map_err(|refusal| {

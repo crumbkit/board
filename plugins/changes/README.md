@@ -414,11 +414,19 @@ of `changes` still fails `review`.
   checkout's own ref of the followed branch decides. The head is filled
   only when the change's plan has paths and the checkout's commits since
   the followed branch touch one of them. Otherwise it is only suggested,
-  in a `filled` line that starts `head not filled:`, and so it is when
-  another open change on the mount records that commit, or when another
-  open change records a commit beyond the followed branch that it builds
-  on or that builds on it, or when another open change with no head plans
-  paths those commits touch. Board never fills a task.
+  in a `filled` line that starts `head not filled:`. The head is also
+  only suggested in four other cases. Another open change on the mount
+  records that commit. Another open change records a commit beyond the
+  followed branch that the commit builds on, or that builds on the commit.
+  The checkout's branch has the name of another open change on the mount,
+  such as a branch `a` while `/changes/a` is open. Another open change in
+  build, review or land that records no head plans paths those commits
+  touch; a change in plan or paused does not count, because its work is
+  not on a branch yet. Board can still fill the wrong head in two cases,
+  and the `review` check, which judges the head, is where they are caught.
+  The first is commits of another change that records no head and whose
+  plan has no paths yet. The second is commits of work that has no change.
+  Board never fills a task.
 - `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--task <path>] [--route <route>] [--head <sha>] [--suite <path>]`
   adds a reference once or sets the fields. `--head` takes a full commit as
   given, and stores the full commit that 7 or more hex digits name in the

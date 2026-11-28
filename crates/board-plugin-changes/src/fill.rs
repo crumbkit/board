@@ -7,9 +7,10 @@
 //! the change's mount, on a branch other than the one the mount follows,
 //! and hold a commit that branch lacks, and its commits since that branch
 //! must touch the change's planned paths. When that commit may be another
-//! change's work, they only suggest it. `attach` stores the full commit a short head names in the mount's
-//! clone. A change with no task is not filled: the task remedy names the
-//! one open task whose title is the change's.
+//! change's work, they only suggest it. `attach` stores the full commit a
+//! short head names in the mount's clone. A change with no task is not
+//! filled: the task remedy names the one open task whose title is the
+//! change's.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -18,7 +19,7 @@ use board_ops::{Host, PluginError, literal};
 use serde_json::json;
 
 use crate::board::{rows, text};
-use crate::change::{change_types, plan_at, read, touch, write};
+use crate::change::{change_types, name_in, plan_at, read, touch, write};
 use crate::diff::{Mounted, exited, git, mounted, outside};
 use crate::flow::{Field, Kind};
 use crate::gates::{Check, Observed, Status};
@@ -142,6 +143,7 @@ fn checkout(host: &dyn Host, path: &str, change: &ChangeRecord) -> Result<Found,
         at: &at,
         top: &top,
         head: &head,
+        branch,
     };
     if let Some(why) = tie.unproven(path, change)? {
         return Ok(Found::Suggest { head, why });
@@ -176,11 +178,13 @@ fn beyond_followed(host: &dyn Host, at: &Mounted, top: &Path, head: &str) -> boo
 }
 
 /// Another open change on the same mount: its path, its head when it
-/// records one, and its plan's paths.
+/// records one, its plan's paths, and whether it is in build, review or
+/// land, where its work may be on a branch now.
 struct Other {
     path: String,
     head: Option<String>,
     paths: Vec<String>,
+    working: bool,
 }
 
 /// What ties the checkout's `head` at `top` to a change on the mount `at`
@@ -190,6 +194,7 @@ struct Tie<'a> {
     at: &'a Mounted,
     top: &'a Path,
     head: &'a str,
+    branch: &'a str,
 }
 
 impl Tie<'_> {
@@ -198,8 +203,10 @@ impl Tie<'_> {
     ///
     /// Another open change on the mount records `head`. The change's plan
     /// names no paths, or the commits from where `head` left the followed
-    /// branch touch none of them. Another open change with no head plans
-    /// paths those commits touch. Or another open change records a commit
+    /// branch touch none of them. The checkout's branch has the name of
+    /// another open change. Another open change in build, review or land
+    /// with no head plans paths those commits touch. Or another open
+    /// change records a commit
     /// beyond the followed branch that `head` builds on, or that builds on
     /// `head`. Strings are compared before git runs, and the ancestry of
     /// every recorded head takes two git processes in all.
@@ -238,7 +245,16 @@ impl Tie<'_> {
                 self.at.follow
             )));
         }
-        for other in others.iter().filter(|other| other.head.is_none()) {
+        if let Some(other) = others
+            .iter()
+            .find(|other| name_in(&other.path) == self.branch)
+        {
+            return Ok(Some(format!(
+                "the checkout's branch {} has the name of {}",
+                self.branch, other.path
+            )));
+        }
+        for other in (others.iter()).filter(|other| other.head.is_none() && other.working) {
             if self.touches(&files, &other.paths)? {
                 return Ok(Some(format!(
                     "{}, which records no head, plans paths these commits touch too",
@@ -253,8 +269,8 @@ impl Tie<'_> {
     /// with its head and its plan's paths, read in one query.
     fn others(&self, path: &str, mount: &str) -> Result<Vec<Other>, PluginError> {
         let sql = format!(
-            "SELECT c.logical, json_extract(c.body, '$.head'), json_extract(p.body, '$.paths') \
-             FROM records AS c LEFT JOIN records AS p ON p.logical = json_extract(c.body, \
+            "SELECT c.logical, json_extract(c.body, '$.head'), json_extract(p.body, '$.paths'), \
+             coalesce(json_extract(c.body, '$.phase'), '') IN ('build', 'review', 'land') FROM records AS c LEFT JOIN records AS p ON p.logical = json_extract(c.body, \
              '$.plan') WHERE c.type IN ({}) AND c.code IS NULL AND json_extract(c.body, \
              '$.mount') = {} AND c.logical <> {} AND coalesce(json_extract(c.body, '$.phase'), \
              '') NOT IN ('done', 'dropped') ORDER BY c.logical",
@@ -271,6 +287,9 @@ impl Tie<'_> {
                     path: text(row.first())?.to_owned(),
                     head: text(row.get(1)).map(str::to_owned),
                     paths,
+                    working: row
+                        .get(3)
+                        .is_some_and(|working| working.as_i64() == Some(1)),
                 })
             })
             .collect())

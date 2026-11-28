@@ -98,9 +98,10 @@ blocks is missing.
    head, once its plan has paths those commits touch. `filled` names each
    value recorded; attach another to replace it. A `filled` line that
    starts `head not filled:` only suggests the HEAD, because the plan has
-   no paths, its commits touch none of them, or another open change
-   records that line of work or plans paths they touch; attach it yourself
-   when it is this change's work.
+   no paths, its commits touch none of them, the branch has another open
+   change's name, or another open change records that line of work or is
+   in build, review or land and plans paths they touch; attach it yourself
+   when it is this change's work. Name the branch after the change.
    `board github pr-create --change /changes/<name>`, run from the checkout
    as the github skill says, opens the pull request and attaches it. When
    its output has `change_note`, run the command the note gives. Record

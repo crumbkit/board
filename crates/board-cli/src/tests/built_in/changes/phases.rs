@@ -2459,3 +2459,47 @@ fn a_change_whose_head_is_on_the_followed_branch_blocks_no_fill_and_one_whose_he
         "{said:?}"
     );
 }
+
+#[test]
+fn a_headless_sibling_in_plan_or_paused_that_plans_the_touched_paths_does_not_block_the_fill() {
+    let board = Changes::new();
+    let (_, head) = board.edited(&[("src/a.rs", "a\n")]);
+    for (name, phase) in [("a", "plan"), ("p", "paused")] {
+        board.change_at(
+            &format!("changes/{name}.json"),
+            phase,
+            &json!({"route": "owner"}),
+        );
+        let sibling = format!("/changes/{name}");
+        board.call_stdin("plan", &plan_input(&sibling, &["/repos/x/src/**"]));
+    }
+    building_planned(&board);
+    let checkout = checkout_of_x(&board);
+    let said = filled(&board.call_from(&checkout, "next", &path()));
+    assert_eq!(
+        board.read("changes/t.json")["head"],
+        json!(head),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn next_suggests_the_head_from_a_branch_named_for_another_open_change_and_fills_from_another_branch()
+ {
+    let board = Changes::new();
+    let (_, head) = board.edited(&[("src/a.rs", "a\n")]);
+    board.change_at("changes/a.json", "plan", &json!({"route": "owner"}));
+    building_planned(&board);
+    let checkout = checkout_of_x(&board);
+    git(&checkout, &["checkout", "-qb", "a"]);
+    let said = filled(&board.call_from(&checkout, "next", &path()));
+    assert_eq!(board.read("changes/t.json").get("head"), None);
+    assert!(
+        said.iter().any(|line| line
+            .starts_with("head not filled: the checkout's branch a has the name of /changes/a")),
+        "{said:?}"
+    );
+    git(&checkout, &["checkout", "-qb", "t"]);
+    board.call_from(&checkout, "next", &path());
+    assert_eq!(board.read("changes/t.json")["head"], json!(head));
+}

@@ -9,10 +9,11 @@
   change's plan has paths that the commits since that branch touch. When
   the plan has no paths or they are untouched, or another open change on
   the mount records that commit or one on its line of work, or another
-  open change with no head plans paths those commits touch, they only
-  suggest it. A change with no route takes the route its mount's CODEOWNERS gives,
-  as `changes start` derives it, and `unowned` when CODEOWNERS names no
-  owners. Each prints what it recorded or suggests in `filled`, and each
+  open change in build, review or land with no head plans paths those
+  commits touch, or the checkout's branch has another open change's name,
+  they only suggest it. A change with no route takes the route its mount's
+  CODEOWNERS gives, as `changes start` derives it, and `unowned` when
+  CODEOWNERS names no owners. Each prints what it recorded or suggests in `filled`, and each
   refusal of `advance` after a fill carries `filled` too; `changes attach`
   sets another value. A change with no task is not filled, but when
   exactly one open task has the change's title, the `task` check's remedy
