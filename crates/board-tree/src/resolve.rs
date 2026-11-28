@@ -17,6 +17,7 @@ use crate::write::Target;
 
 mod error;
 
+pub(crate) use error::{MAX_NEAREST, nearest, ranked};
 pub use error::{MAX_NEAREST_LISTED, ResolveError};
 
 /// The most pointers one resolution follows, as POSIX allows symlinks.
@@ -200,7 +201,7 @@ impl Repositories {
                 pointers,
             )?
             else {
-                return Err(missing(from_link, trail).beside(|| tree.beside(&current)));
+                return Err(missing(from_link, trail).beside(|at| tree.beside(&current, at)));
             };
             let entry = tree.settle(&current, entry);
             from_link = usize::saturating_sub(from_link, 1);

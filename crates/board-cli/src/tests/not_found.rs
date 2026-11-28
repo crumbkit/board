@@ -93,7 +93,7 @@ fn the_hint_names_the_nearest_entries_and_the_listing_of_all() {
 }
 
 #[test]
-fn a_missing_path_with_no_close_name_offers_none() {
+fn a_missing_path_with_no_close_name_offers_none_and_its_close_twin_offers_one() {
     let scenario = decisions();
     let failure = refused(&scenario, &format!("/{DECISIONS}/qqqq"));
     assert_eq!(failure["fields"].get("nearest"), None, "{failure}");
@@ -103,18 +103,43 @@ fn a_missing_path_with_no_close_name_offers_none() {
             "run `board ls /{DECISIONS}` to see what is there; paths leave out `.json`"
         ))
     );
+    let twin = refused(&scenario, &format!("/{DECISIONS}/note"));
+    assert_eq!(twin["fields"]["nearest"], json!(["notes.md"]), "{twin}");
 }
 
 #[test]
-fn a_directory_over_the_entry_cap_offers_no_names() {
+fn a_directory_over_the_entry_cap_offers_no_names_and_one_at_the_cap_does() {
     let scenario = board();
     for number in 0..=board_tree::MAX_NEAREST_LISTED {
         scenario.write(&format!("crowd/entry-{number}.md"), Item::File(""));
+        if number < board_tree::MAX_NEAREST_LISTED {
+            scenario.write(&format!("room/entry-{number}.md"), Item::File(""));
+        }
     }
     let failure = refused(&scenario, "/crowd/entry-1");
     assert_eq!(failure["fields"].get("nearest"), None, "{failure}");
     assert_eq!(
         failure["recovery"]["text"],
         json!("run `board ls /crowd` to see what is there; paths leave out `.json`")
+    );
+    let twin = refused(&scenario, "/room/entry-1");
+    assert_eq!(twin["fields"]["nearest"][0], json!("entry-1.md"), "{twin}");
+}
+
+#[test]
+fn a_file_git_ignores_is_never_offered() {
+    let scenario = board();
+    scenario
+        .write(".gitignore", Item::File("secret-plans.md\n"))
+        .write("docs/secret-plans.md", Item::File("# s\n"))
+        .write("docs/secret-plan.md", Item::File("# p\n"))
+        .write("docs/other.md", Item::File("# o\n"));
+    let ignored = board_in(scenario.workdir(), &["get", "/docs/secret-plans.md"]);
+    assert_eq!(ignored.error.as_deref(), Some("board::path::not_found"));
+    let failure = refused(&scenario, "/docs/secret-plans");
+    assert_eq!(
+        failure["fields"]["nearest"],
+        json!(["secret-plan.md"]),
+        "{failure}"
     );
 }
