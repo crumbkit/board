@@ -1,7 +1,7 @@
 //! The inputs of the write calls, as their schemas describe them to a
 //! caller.
 
-use board_plugin::shape::Slug;
+use board_plugin::shape::{BoardPath, Slug};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::Deserialize;
 
@@ -201,25 +201,6 @@ pub(crate) struct AddInput {
                        of the directory board was started in."
     )]
     pub(crate) remote: Option<String>,
-}
-
-/// A logical path, which `board call` takes as a flag read from the current
-/// directory and refuses with a comma in it.
-#[derive(Debug)]
-enum BoardPath {}
-
-impl JsonSchema for BoardPath {
-    fn inline_schema() -> bool {
-        true
-    }
-
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "BoardPath".into()
-    }
-
-    fn json_schema(_: &mut SchemaGenerator) -> Schema {
-        json_schema!({"type": "string", "pattern": "^/", "format": "board-path"})
-    }
 }
 
 fn kind(_: &mut SchemaGenerator) -> Schema {

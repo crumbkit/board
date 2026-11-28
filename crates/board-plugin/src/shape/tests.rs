@@ -380,6 +380,34 @@ fn a_logical_glob_without_a_leading_slash_is_refused_and_one_with_it_is_admitted
     assert_eq!(code("/repos/x/**"), None);
 }
 
+/// A board path input starts at the board's root, is marked as a board
+/// path so `board call` reads a relative flag from the current directory,
+/// and is inlined where a field uses it.
+#[test]
+fn a_board_path_without_a_leading_slash_is_refused_and_one_with_it_is_admitted() {
+    #[derive(JsonSchema)]
+    struct Paths {
+        #[schemars(with = "Vec<BoardPath>")]
+        uses: Vec<String>,
+    }
+    let schema = schema_of::<BoardPath>(SchemaSettings::draft2020_12());
+    assert_eq!(
+        schema,
+        json!({"title": "BoardPath", "type": "string", "pattern": "^/", "format": "board-path"})
+    );
+    let code = refusal_of::<BoardPath>();
+    assert_eq!(
+        code(json!("changes/x")),
+        Some(board_model::Code::RecordInvalid)
+    );
+    assert_eq!(code(json!("/changes/x")), None);
+    let properties = &schema_of::<Paths>(SchemaSettings::draft2020_12())["properties"];
+    assert_eq!(
+        properties["uses"]["items"],
+        json!({"type": "string", "pattern": "^/", "format": "board-path"})
+    );
+}
+
 /// Compiles the schema of `T` and gives the code each value is refused
 /// with, or none when it is admitted.
 fn refusal_of<T: JsonSchema>() -> impl Fn(Value) -> Option<board_model::Code> {
