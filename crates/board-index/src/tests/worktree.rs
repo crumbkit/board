@@ -316,9 +316,90 @@ fn the_working_tree_load_gives_each_stored_row_the_fact_and_links_a_blob_lookup_
             expected.insert((blob, role), fact);
         }
     }
-    assert_eq!(loaded, expected);
+    assert_eq!(held(&loaded), expected);
     assert_eq!(loaded.len(), 2, "{loaded:?}");
-    assert_eq!(loaded[&(blob(1), Role::Markdown)].links, markdown().links);
+    let links = &loaded.get(blob(1), Role::Markdown).unwrap().links;
+    assert_eq!(*links, markdown().links);
+}
+
+/// Each blob and role the load gave, with its fact.
+fn held(
+    loaded: &crate::StoredFacts,
+) -> std::collections::HashMap<(ObjectId, Role), crate::BlobFact> {
+    loaded
+        .iter()
+        .map(|(key, fact)| (*key, fact.clone()))
+        .collect()
+}
+
+/// One blob stored in two roles, at two paths whose roles differ, gives
+/// each path its own role's fact, and each fact can be found by its blob
+/// and role among blobs on either side of it, and beside a blob that
+/// begins with the same bytes.
+#[test]
+fn the_working_tree_load_gives_one_blob_the_fact_of_each_role_its_paths_have() {
+    let writer = Index::open(None, Path::new(ROOT)).unwrap().write().unwrap();
+    for byte in [1, 2, 3] {
+        writer
+            .put_blob(blob(byte), Role::Markdown, &markdown())
+            .unwrap();
+        writer.put_blob(blob(byte), Role::Json, &record()).unwrap();
+    }
+    let mut near = [9; 20];
+    near[..2].copy_from_slice(&[2, 2]);
+    let near = ObjectId::Sha1(near);
+    writer.put_blob(near, Role::Json, &record()).unwrap();
+    let entries = [
+        file("a.md", 2, 0),
+        file("a.json", 2, 0),
+        file("b.json", 1, 0),
+        file("c.md", 3, 0),
+        Entry {
+            blob: Some(near),
+            ..file("d.json", 0, 0)
+        },
+    ];
+    let worktree = writer.worktree().unwrap();
+    writer.sync_worktree(worktree, &entries).unwrap();
+    let loaded = writer.worktree().unwrap().take_facts();
+    let mut keys: Vec<_> = held(&loaded).into_keys().collect();
+    keys.sort_by_key(|(blob, role)| (*blob, role.as_str()));
+    assert_eq!(
+        keys,
+        [
+            (blob(1), Role::Json),
+            (blob(2), Role::Json),
+            (blob(2), Role::Markdown),
+            (near, Role::Json),
+            (blob(3), Role::Markdown),
+        ]
+    );
+    assert_eq!(loaded.get(near, Role::Json), Some(&record()));
+    assert_eq!(loaded.get(blob(2), Role::Json), Some(&record()));
+    assert_eq!(loaded.get(blob(2), Role::Markdown), Some(&markdown()));
+    assert_eq!(loaded.get(blob(1), Role::Markdown), None);
+    assert_eq!(loaded.get(blob(3), Role::Json), None);
+}
+
+/// A blobs row whose blob is not an object id, which only a foreign writer
+/// could store, is passed over, and the rows around it still load.
+#[test]
+fn the_working_tree_load_passes_over_a_blobs_row_that_names_no_object() {
+    let writer = Index::open(None, Path::new(ROOT)).unwrap().write().unwrap();
+    writer.put_blob(blob(1), Role::Json, &record()).unwrap();
+    writer.put_blob(blob(2), Role::Json, &record()).unwrap();
+    writer
+        .connection()
+        .execute(
+            "INSERT INTO main.blobs (blob, role, kind) VALUES (?1, 'json', 'record')",
+            [format!("{}z", &blob(1).to_string()[..39])],
+        )
+        .unwrap();
+    let entries = [file("a.json", 1, 0), file("b.json", 2, 0)];
+    let worktree = writer.worktree().unwrap();
+    writer.sync_worktree(worktree, &entries).unwrap();
+    let loaded = writer.worktree().unwrap().take_facts();
+    assert_eq!(loaded.len(), 2, "{loaded:?}");
 }
 
 #[test]
@@ -352,7 +433,7 @@ fn the_working_tree_load_gives_no_fact_for_a_blob_no_stored_row_has() {
         .unwrap();
     let loaded = writer.worktree().unwrap().take_facts();
     assert_eq!(
-        loaded.into_keys().collect::<Vec<_>>(),
+        held(&loaded).into_keys().collect::<Vec<_>>(),
         [(blob(1), Role::Json)]
     );
 }
@@ -378,5 +459,41 @@ fn a_sync_of_an_unchanged_row_with_a_logical_path_writes_nothing_and_a_moved_one
         let worktree = writer.worktree().unwrap();
         writer.sync_worktree(worktree, &[addressed(seen)]).unwrap();
         assert_eq!(writer.wrote().unwrap(), writes, "{seen}");
+    }
+}
+
+/// The load keeps a logical path the row's own path gives as that fact and
+/// copies any other, so each kind compares as stored: seen again unchanged
+/// it writes nothing, and seen as another kind it writes.
+#[test]
+fn a_sync_compares_each_kind_of_stored_logical_path_with_the_one_a_walk_sees() {
+    let own = Some("/tasks/a");
+    let mounted = Some("/repos/team/a");
+    for (stored, seen, writes) in [
+        (own, own, false),
+        (mounted, mounted, false),
+        (None, None, false),
+        (own, mounted, true),
+        (mounted, own, true),
+        (None, own, true),
+        (own, None, true),
+        (Some("/tasks/a.json"), own, true),
+    ] {
+        let cache = tempfile::tempdir().unwrap();
+        let open = || Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+        let addressed = |logical: Option<&str>| Entry {
+            logical: logical.map(|logical| logical.parse().unwrap()),
+            ..file("tasks/a.json", 1, 0)
+        };
+        let writer = open().write().unwrap();
+        let worktree = writer.worktree().unwrap();
+        writer
+            .sync_worktree(worktree, &[addressed(stored)])
+            .unwrap();
+        writer.decide(Vec::new()).unwrap();
+        let writer = open().deferred().unwrap();
+        let worktree = writer.worktree().unwrap();
+        writer.sync_worktree(worktree, &[addressed(seen)]).unwrap();
+        assert_eq!(writer.wrote().unwrap(), writes, "{stored:?} then {seen:?}");
     }
 }

@@ -41,7 +41,7 @@ pub use crate::timing::{
     Summarise, Timings, append_timing, read_timings, stamp_timing, timing_stamped,
 };
 pub use crate::values::{cache, cached};
-pub use crate::worktree::Worktree;
+pub use crate::worktree::{StoredFacts, Worktree};
 
 #[cfg(test)]
 mod tests;

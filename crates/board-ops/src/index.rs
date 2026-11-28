@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use board_index::{
-    BlobFact, Decided, Index, IndexError, RefFact, Resolved, ValidationFact, Writer,
+    BlobFact, Decided, Index, IndexError, RefFact, Resolved, StoredFacts, ValidationFact, Writer,
 };
 use board_model::{
     Canonical, Classified, Code, Content, MAX_RECORD_BYTES, ObjectId, RecordType, Role, Source,
@@ -63,7 +63,7 @@ pub(crate) struct Kept {
     facts: HashMap<(ObjectId, Role), BlobFact>,
     /// The facts the index held for the working tree's stored rows, loaded
     /// before the walk, so a blob among them is not looked up again.
-    stored: HashMap<(ObjectId, Role), BlobFact>,
+    stored: StoredFacts,
     /// Each record's parsed value.
     values: HashMap<ObjectId, Value>,
     /// Each schema compiled, or `None` when validation could not read it.
@@ -111,7 +111,7 @@ pub(crate) fn plain<'f>(
 
 /// The blobs whose `stored` facts say they hold no pointer, so a walk need
 /// not read them to learn whether they hide a directory.
-fn plain_stored(stored: &HashMap<(ObjectId, Role), BlobFact>) -> HashSet<ObjectId> {
+fn plain_stored(stored: &StoredFacts) -> HashSet<ObjectId> {
     stored
         .iter()
         .filter(|((_, role), fact)| board_model::holds_no_pointer(*role, fact.kind, fact.code))
@@ -378,7 +378,7 @@ impl Kept {
         writer: &Writer,
         (blob, role): (ObjectId, Role),
     ) -> Result<Option<BlobFact>, IndexError> {
-        match self.stored.get(&(blob, role)) {
+        match self.stored.get(blob, role) {
             Some(fact) => Ok(Some(fact.clone())),
             None => writer.blob(blob, role),
         }
@@ -453,15 +453,32 @@ pub(crate) fn facts(
     work: &mut Refreshed,
     kept: &mut Kept,
 ) -> Result<HashMap<String, Indexed>, RefreshError> {
-    let mut facts: HashMap<String, Indexed> = HashMap::new();
-    let reader = &mut repository.reader();
-    // The index is keyed by blob, so blob order visits its keys in order.
-    let mut entries: Vec<&Entry> = entries.iter().collect();
-    entries.sort_unstable_by_key(|entry| entry.blob);
+    let mut facts: HashMap<String, Indexed> = HashMap::with_capacity(entries.len());
+    let indexed = |blob, role, fact| Indexed {
+        blob,
+        role,
+        fact,
+        validation: None,
+    };
+    // A fact the walk kept or the load found is taken as it is. Only the
+    // rest are looked up or read, in blob order, which visits the index's
+    // keys in order.
+    let mut missed: Vec<(&Entry, ObjectId, Role)> = Vec::new();
     for entry in entries {
         let (Some(blob), Some(role)) = (entry.blob, Role::of(&entry.path)) else {
             continue;
         };
+        let known = (kept.facts.get(&(blob, role))).or_else(|| kept.stored.get(blob, role));
+        match known {
+            Some(fact) => {
+                facts.insert(entry.path.clone(), indexed(blob, role, fact.clone()));
+            }
+            None => missed.push((entry, blob, role)),
+        }
+    }
+    missed.sort_unstable_by_key(|&(_, blob, _)| blob);
+    let reader = &mut repository.reader();
+    for (entry, blob, role) in missed {
         let fact = if let Some(fact) = kept.facts.get(&(blob, role)) {
             fact.clone()
         } else if let Some(fact) = kept.indexed(writer, (blob, role))? {
@@ -483,13 +500,7 @@ pub(crate) fn facts(
             }
             fact
         };
-        let indexed = Indexed {
-            blob,
-            role,
-            fact,
-            validation: None,
-        };
-        facts.insert(entry.path.clone(), indexed);
+        facts.insert(entry.path.clone(), indexed(blob, role, fact));
     }
     Ok(facts)
 }

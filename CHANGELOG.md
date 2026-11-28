@@ -6,7 +6,9 @@
   one pass, and no longer opens a record beside its directory whose blob
   the index already knows holds no pointer. Every command that reads the
   board, such as `search`, `query`, `check` and each plugin call, spends
-  less time on its snapshot. Output is unchanged.
+  less time on its snapshot. On a copy of a board of about 36,000 files,
+  a warm search's snapshot took a median of 128 ms, against 213 ms before.
+  Output is unchanged.
 
 - Three commands that refused a repeat of something already done now
   succeed and write nothing, so an agent that retries after a timeout, or

@@ -28,9 +28,6 @@ pub struct BlobFact {
     pub links: Vec<String>,
 }
 
-/// A `blobs` row as stored: kind, type, code and reason.
-pub(crate) type BlobRow = (String, Option<String>, Option<String>, Option<String>);
-
 /// What checking one record blob against one schema blob found.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ValidationFact {
@@ -180,26 +177,26 @@ impl Writer {
 
     pub fn blob(&self, blob: ObjectId, role: Role) -> Result<Option<BlobFact>, IndexError> {
         self.blobs_read.set(self.blobs_read.get() + 1);
-        let row: Option<BlobRow> = self
+        let mut fact = self
             .connection()
             .prepare_cached(
                 "SELECT kind, type, code, reason FROM main.blobs WHERE blob = ?1 AND role = ?2",
             )?
-            .query_row(params![blob.to_string(), role.as_str()], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-            })
-            .optional()?;
-        let links = match (&row, role) {
-            (Some(_), Role::Markdown) => self
+            .query_row(params![blob.to_string(), role.as_str()], |row| fact(row, 0))
+            .optional()?
+            .flatten();
+        if let Some(fact) = &mut fact
+            && role == Role::Markdown
+        {
+            fact.links = self
                 .connection()
                 .prepare_cached(
                     "SELECT destination FROM main.links WHERE blob = ?1 ORDER BY ordinal",
                 )?
                 .query_map(params![blob.to_string()], |row| row.get(0))?
-                .collect::<Result<_, _>>()?,
-            _ => Vec::new(),
-        };
-        Ok(row.and_then(|row| fact(row, links)))
+                .collect::<Result<_, _>>()?;
+        }
+        Ok(fact)
     }
 
     pub fn put_blob(&self, blob: ObjectId, role: Role, fact: &BlobFact) -> Result<(), IndexError> {
@@ -596,25 +593,36 @@ impl Writer {
     }
 }
 
-/// The fact a `blobs` row and its `links` hold, or `None` when the row does
-/// not parse.
-pub(crate) fn fact(
-    (kind, record_type, code, reason): BlobRow,
-    links: Vec<String>,
-) -> Option<BlobFact> {
-    Some(BlobFact {
-        kind: Kind::parse(&kind)?,
-        record_type: match record_type {
-            Some(text) => Some(text.parse().ok()?),
-            None => None,
-        },
-        code: match code {
-            Some(text) => Some(Code::parse(&text)?),
-            None => None,
-        },
-        reason,
-        links,
-    })
+/// The fact that the `kind`, `type`, `code` and `reason` columns of a
+/// `blobs` row hold, starting at column `at` of `row`, with no links, or
+/// `None` when they do not parse. Only the type and reason are copied out of
+/// the row.
+pub(crate) fn fact(row: &rusqlite::Row<'_>, at: usize) -> rusqlite::Result<Option<BlobFact>> {
+    let text = |at| {
+        row.get_ref(at)?
+            .as_str_or_null()
+            .map_err(rusqlite::Error::from)
+    };
+    let Some(kind) = text(at)?.and_then(Kind::parse) else {
+        return Ok(None);
+    };
+    let record_type = match text(at + 1)?.map(|text| RecordType::try_from(text.to_owned())) {
+        Some(Ok(record_type)) => Some(record_type),
+        Some(Err(_)) => return Ok(None),
+        None => None,
+    };
+    let code = match text(at + 2)?.map(Code::parse) {
+        Some(Some(code)) => Some(code),
+        Some(None) => return Ok(None),
+        None => None,
+    };
+    Ok(Some(BlobFact {
+        kind,
+        record_type,
+        code,
+        reason: row.get(at + 3)?,
+        links: Vec::new(),
+    }))
 }
 
 /// A tree entry's name as the trees table holds it: text when it is UTF-8,
