@@ -18,6 +18,7 @@ mod pointer;
 mod record;
 mod refusal;
 mod repo;
+mod stage;
 mod stat;
 mod time;
 mod ui;
@@ -59,6 +60,7 @@ pub use crate::repo::{
     Repo, RepositoryError, RepositoryRecord, URI_SCHEME, github_remote, origin_identity,
     record_uri, repo_identity, repository_schema, shown_remote,
 };
+pub use crate::stage::{AgentKind, Stage, UnknownName};
 pub use crate::stat::{Change, Stat};
 pub use crate::time::{moment, utc, utc_seconds};
 pub use crate::ui::{

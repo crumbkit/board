@@ -5,6 +5,7 @@ mod check;
 mod evaluate;
 mod for_path;
 mod for_paths;
+mod for_stage;
 mod glob;
 mod index;
 mod judged;
@@ -87,6 +88,7 @@ impl Plugin for Rules {
         match capability.as_str() {
             "for-path" => for_path::for_path(host, &input),
             "for-paths" => for_paths::for_paths(host, &input),
+            "for-stage" => for_stage::for_stage(host, &input),
             "check" => check::check(host, &input),
             "evaluate" => evaluate::evaluate(host, &input),
             "from-standards" => standards::from_standards(host, &input),
@@ -95,7 +97,7 @@ impl Plugin for Rules {
             other => Err(PluginError {
                 code: "rules::call::unknown_capability".to_owned(),
                 message: format!(
-                    "rules offers no capability {other}; it offers for-path, for-paths, check, evaluate, from-standards, migrate and report"
+                    "rules offers no capability {other}; it offers for-path, for-paths, for-stage, check, evaluate, from-standards, migrate and report"
                 ),
                 fields: Map::new(),
                 hint: None,
@@ -237,7 +239,38 @@ fn manifest() -> Value {
                 "openWorldHint": false,
             },
             "_meta": {},
-        }, report_capability()],
+        }, report_capability(), for_stage_capability()],
+    })
+}
+
+/// What the `for-stage` capability does, as its manifest describes it,
+/// with the commands help shows at its top.
+const FOR_STAGE: &str = "The skills and context that the rules under /rules/imposed/ register \
+    against one workflow stage give one kind of agent, in at most 150 words: each skill as its \
+    name, file and summary, each context file's text, the rules the word limit left out, and \
+    one refused row for each rule whose file is missing or that Board marks degraded. A registration is a rule whose `show` \
+    is {\"stage\": ..., \"agent\": ...} and whose `provides` names a skill's SKILL.md or a \
+    context file; check, for-path and the mod never list one. --path must \
+    resolve, but it does not yet narrow the registrations: every registration of the stage and \
+    kind of agent is given, whatever repository it names. Stages: orient, plan, mockup, \
+    build, review, land, handoff. Agent kinds: lead, ux, builder, reviewer. Examples:\n\
+    board rules for-stage --path /repos/app --stage orient --agent builder\n\
+    board rules for-stage --path / --stage review --agent reviewer";
+
+/// The `for-stage` capability, as the manifest lists it.
+fn for_stage_capability() -> Value {
+    json!({
+        "name": "for-stage",
+        "description": FOR_STAGE,
+        "inputSchema": schema_of::<for_stage::Input>(SchemaSettings::draft2020_12()),
+        "outputSchema": schema_of::<for_stage::Output>(SchemaSettings::draft2020_12().for_serialize()),
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false,
+        },
+        "_meta": {},
     })
 }
 

@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- `board rules for-stage --path <repository> --stage <stage> --agent <kind>`
+  prints the skills and context that rules under `/rules/imposed/` register
+  for one kind of agent at one workflow stage, in at most 150 words. A
+  `rules/rule/v1` registers by setting `show` to
+  `{"stage": ..., "agent": ...}` and `provides` to a skill's `SKILL.md` or a
+  context file. The stages are `orient`, `plan`, `mockup`, `build`,
+  `review`, `land` and `handoff`, and the kinds are `lead`, `ux`, `builder`
+  and `reviewer`. A rule whose `show` is an object must set `provides`. A
+  registration whose file is missing is one `refused` row with
+  `rules::stage::file_missing`, one that Board marks degraded for another
+  reason is one with `rules::stage::degraded`, and the others are still
+  given. `rules check`, `rules for-path` and the rules mod never list a
+  registration; `rules check` still fails on a degraded one, except an
+  imposed one whose file is missing. A board refuses rules calls with
+  `board::plugin::schema_differs` until `board plugin enable rules` writes
+  the new schema. Once one machine has done that, an older Board on any
+  other machine that reads the same board refuses every rules call,
+  including the rules mod's at session start, whether or not a
+  registration exists, so upgrade every machine before any machine
+  re-enables the rules plugin. A program that reads the schema finds
+  `show`'s values at `/properties/show/anyOf/0/enum`, no longer at
+  `/properties/show/enum`.
 - The development flow's suite-run remedy names only commands that exist.
   When the change names no suite, it says to name one with `board changes
   attach --suite`, or to write a `runs/suite/v1` with `board put

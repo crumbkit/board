@@ -188,6 +188,64 @@
         ]
       }
     },
+    "Provides": {
+      "additionalProperties": false,
+      "description": "What a rule registered against a stage gives the agent.",
+      "properties": {
+        "file": {
+          "description": "The skill's `SKILL.md`, or the context file. Keep a context file\nunder 120 words, or it may not fit in the 150 words `for-stage`\ngives a stage.",
+          "format": "board-ref",
+          "type": "string"
+        },
+        "provide": {
+          "description": "`skill` for a skill, named by the directory that holds its\n`SKILL.md`, or `context` for a file whose text the agent receives.",
+          "enum": [
+            "skill",
+            "context"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "provide",
+        "file"
+      ],
+      "type": "object"
+    },
+    "Slot": {
+      "additionalProperties": false,
+      "description": "A workflow stage and the kind of agent a rule registered against it\nreaches.",
+      "properties": {
+        "agent": {
+          "description": "The kind of agent that receives it.",
+          "enum": [
+            "lead",
+            "ux",
+            "builder",
+            "reviewer"
+          ],
+          "type": "string"
+        },
+        "stage": {
+          "description": "The stage the rule registers against.",
+          "enum": [
+            "orient",
+            "plan",
+            "mockup",
+            "build",
+            "review",
+            "land",
+            "handoff"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage",
+        "agent"
+      ],
+      "type": "object"
+    },
     "VersionChecker": {
       "description": "A version rule: every version the first group of `capture` finds is at\nleast `at_least`, compared over the numbers the version names.",
       "else": {
@@ -302,7 +360,19 @@
     }
   },
   "additionalProperties": false,
-  "description": "`rules/rule/v1`: a requirement on files, why it exists, and optionally\na checker a program runs.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`.",
+  "description": "`rules/rule/v1`: a requirement on files, why it exists, and optionally\na checker a program runs.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`. A rule whose `show` is an\nobject, so not a string, must set `provides`.",
+  "if": {
+    "properties": {
+      "show": {
+        "not": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "show"
+    ]
+  },
   "properties": {
     "$type": {
       "const": "rules/rule/v1",
@@ -354,6 +424,10 @@
       },
       "type": "array"
     },
+    "provides": {
+      "$ref": "#/$defs/Provides",
+      "description": "What a rule registered against a stage gives the agent: a skill, by\nits `SKILL.md`, or a context file. Required when `show` is an object."
+    },
     "purpose": {
       "description": "Why the requirement exists.",
       "type": "string",
@@ -365,13 +439,20 @@
       "x-board-prose": true
     },
     "show": {
-      "description": "When to show the control: `start` at session start, `edit` before\nthe first edit of a file it covers, or `failing` only when `check`\nreports it failing. Left out, an obligation shows at `start`, a\ncontrol `check` measures when `failing`, and any other at `edit`.",
-      "enum": [
-        "start",
-        "edit",
-        "failing"
+      "anyOf": [
+        {
+          "enum": [
+            "start",
+            "edit",
+            "failing"
+          ],
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/Slot"
+        }
       ],
-      "type": "string"
+      "description": "When to show the control: `start` at session start, `edit` before\nthe first edit of a file it covers, or `failing` only when `check`\nreports it failing. Left out, an obligation shows at `start`, a\ncontrol `check` measures when `failing`, and any other at `edit`.\nAn object `{\"stage\": ..., \"agent\": ...}` registers the rule against\na workflow stage instead: `for-stage` gives what it `provides` to\nthat kind of agent at that stage, and `check`, `for-path` and the\nmod never show it."
     },
     "sources": {
       "description": "What justifies the rule, such as a source note (`rules/source/v1`)\nor an eval.",
@@ -392,6 +473,11 @@
     "requirement",
     "purpose"
   ],
+  "then": {
+    "required": [
+      "provides"
+    ]
+  },
   "title": "RuleRecord",
   "type": "object"
 }

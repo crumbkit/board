@@ -113,7 +113,16 @@ such as a pull request body, instead of files.
   reports it failing. Left out, an obligation shows at `start`, a rule
   with a budget, version or zero checker when `failing`, and any other rule at
   `edit`. `check` reports failing only a rule with a budget, version or zero checker, so a rule without one that says
-  `failing` is never shown.
+  `failing` is never shown. An object `{"stage": ..., "agent": ...}`
+  registers the rule against a workflow stage instead, as the next section
+  says.
+- `provides`, which a rule registered against a stage must set, says what
+  it gives the agent: `{"provide": "skill", "file": "/skills/<name>/SKILL.md"}`,
+  a skill named by the directory that holds its `SKILL.md`, or
+  `{"provide": "context", "file": "/<file>.md"}`, a file whose text the
+  agent receives. Keep a context file under 120 words, or it may not fit
+  in the 150 words `for-stage` gives a stage; nothing refuses a longer one,
+  and a budget rule with `per: file` can hold such files to a limit.
 - `sources` holds references to what justifies the rule, such as a
   source note or an eval. Board checks them as it checks `applies_to`, so a
   dangling source makes `check` fail with `rules::rule::degraded`.
@@ -140,6 +149,32 @@ The plugin ships both schemas. `board plugin enable rules` writes them to
 `controls/control` and `controls/source` schemas under
 `.board/types/controls/`, which Board still reads until a later pull request
 of the rename deletes them.
+
+## Rules registered against a stage
+
+A rule whose `show` is `{"stage": ..., "agent": ...}` gives what it
+`provides` to one kind of agent at one workflow stage. The stages are
+`orient`, `plan`, `mockup`, `build`, `review`, `land` and `handoff`, and the
+kinds of agent are `lead`, `ux`, `builder` and `reviewer`. Both lists are
+fixed in Board.
+
+```json
+{
+  "$type": "rules/rule/v1",
+  "requirement": "A reviewer follows the review skill.",
+  "purpose": "Every review checks the same things.",
+  "summary": "Follow the review skill.",
+  "show": {"stage": "review", "agent": "reviewer"},
+  "provides": {"provide": "skill", "file": "/skills/review/SKILL.md"}
+}
+```
+
+Write each registration under `/rules/imposed/` in the board, because
+`for-stage` reads only that directory. A registration anywhere else reaches
+no agent, and nothing yet says so. `check`, `for-path`, `for-paths`,
+`evaluate`, `report` and the mod never list a registration, so no agent is
+told it twice. A Board released before `for-stage` refuses a rule that uses either
+field.
 
 ## Capabilities
 
@@ -359,6 +394,24 @@ of the rename deletes them.
   two, or when the map lists a profile twice. Inline HTML
   in a cell, such as `<br>`, reads as a space, and an ID written as inline
   code is read without its backticks.
+
+- `board rules for-stage --path /repos/app --stage orient --agent builder`
+  prints what the registrations under `/rules/imposed/` give a builder at
+  the orient stage: `skills`, each as its `rule`, `name`, `file` and
+  `summary` (the rule's, or else its requirement's first sentence);
+  `context`, each context file's text whole with its `rule`; `left_out`,
+  the rules that did not fit; and `refused`. Registrations are fitted by
+  rule path into 150 words, skipping any that do not fit, and `left_out`
+  and `refused` count outside the 150. A registration whose file is missing
+  is one `refused` row with `rules::stage::file_missing`, and one that Board
+  marks degraded for another reason, such as a dangling source, is one with
+  `rules::stage::degraded`; the others are still given, and the call exits
+  0. `rules check` still fails on the second kind, and on any degraded
+  stage rule outside `/rules/imposed/`; it skips only an imposed stage rule
+  whose file is missing. `--path` must resolve, but it does not yet narrow
+  the registrations. An unknown stage or kind of agent exits 1 with
+  `rules::stage::unknown`, and a `--path` Board cannot resolve exits 1 with
+  `rules::board::refused`. It writes nothing.
 
 - `board rules report --path /repos/app` prints one `rules/report/v2`
   document of the repository mounted at `/repos/app`, for its CI to upload,
