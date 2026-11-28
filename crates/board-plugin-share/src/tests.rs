@@ -113,13 +113,8 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
         .collect();
     assert_eq!(names, ["to"]);
     assert_eq!(super::manifest()["description"], skill_description());
-    let start = "Start with `board -C <board> share to --path /<record> --to /<mount>`, which \
-                 lists";
-    assert!(
-        skill_description().contains(start),
-        "{}",
-        skill_description()
-    );
+    let skill = include_str!("../../../plugins/share/SKILL.md");
+    assert!(skill.contains("Run `board -C <board> share to --path /<record> --to /<mount>`"));
 }
 
 #[test]
