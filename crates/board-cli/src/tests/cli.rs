@@ -199,6 +199,7 @@ fn every_command_a_hint_names_parses() {
     let known = Fields {
         path: Some("/tasks/a".parse().unwrap()),
         ancestor: Some("/tasks".parse().unwrap()),
+        nearest: Vec::new(),
         blob: Some(ObjectId::Sha1([1; 20])),
         pointer: Some("/title".to_owned()),
         record_type: Some("lr/task/v1".parse().unwrap()),
@@ -225,8 +226,12 @@ fn every_command_a_hint_names_parses() {
         known: Some(board_model::Known::Tables(vec!["entries".to_owned()])),
         ..Fields::default()
     };
+    let nearest = Fields {
+        nearest: vec!["b".to_owned()],
+        ..known.clone()
+    };
     let mut filled = 0;
-    for fields in [Fields::default(), known, no_blob, tables] {
+    for fields in [Fields::default(), known, no_blob, tables, nearest] {
         for code in Code::ALL {
             let generic = code.hint(&Fields::default());
             let hint = code.hint(&fields);
