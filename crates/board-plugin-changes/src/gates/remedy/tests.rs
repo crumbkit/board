@@ -109,12 +109,15 @@ fn an_owner_approval_check_says_to_attach_the_owners_answer_and_one_with_type_re
     let said = of(&approval(serde_json::json!(["plan"])), &values(None));
     assert_eq!(
         said,
-        "Ask the owner with /ask, with /changes/t in the text of the option that approves it \
-         and in no other option, because any chosen option that names it counts. Then attach the question and the owner's answer, each with `board changes attach \
-         --path /changes/t --ref <path>`. A plans/decision/v1 the owner signs with by.person \
-         whose refs name /changes/t also counts. The owner's Touch ID approval of \
-         changes.approve for the current plan also counts: run `board call changes.approve \
-         --path /changes/t` and approve the effect it names."
+        "Ask the owner with the question `board changes ask` files, which blocks /changes/t \
+         and whose `approve` option names its current plan revision /changes/t/plans/1; only \
+         an answer choosing that option approves the plan. Then attach the question and the owner's \
+         answer, each with `board changes attach --path /changes/t --ref <path>`. A \
+         plans/decision/v1 the owner signs with by.person whose refs name /changes/t and whose \
+         `decides` is the plan revision it approves, such as /changes/t/plans/1, also counts; \
+         `board plans decide` writes it given `--decides /changes/t/plans/1` and `--refs \
+         /changes/t`. The owner's Touch ID approval of changes.approve for the current plan also counts: run \
+         `board call changes.approve --path /changes/t` and approve the effect it names."
     );
     let typed = of(
         &approval(serde_json::json!(["evals/eval/v1"])),

@@ -6,6 +6,7 @@ use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 
 use super::remedy::{Values, fill, unfilled};
+use super::revision::{self, NONE, Standing, TOUCH_ID, meeting};
 use super::{
     Approval, DECISION_TYPE, NO_HEAD, Observed, UNDERSTANDING_TYPE, objects, owner_answered,
     owner_signed, reviewed_head, route_missing, same_commit, signed_decisions, strings,
@@ -20,7 +21,7 @@ use crate::rules::current;
 /// The most paths a detail names (STANDARDS 23); it counts the rest.
 const SHOWN: usize = 10;
 pub(crate) const ANSWER_TYPE: &str = "plans/answer/v1";
-const QUESTION_TYPE: &str = "plans/question/v1";
+pub(super) const QUESTION_TYPE: &str = "plans/question/v1";
 
 /// Whether `each` also counts the owner's answer whose chosen option names
 /// the change: it counts decisions the owner signed, names no head, and
@@ -273,7 +274,7 @@ fn names(observed: &Observed, target: &Target, each: &str) -> bool {
 
 /// Whether the record `body` meets every condition of `rules`, with the
 /// change's `head` when they name one.
-fn meets(
+pub(super) fn meets(
     observed: &Observed,
     body: &Map<String, Value>,
     rules: &Where,
@@ -365,9 +366,10 @@ fn not_after(observed: &Observed, each: &flow::Check, rules: &Where) -> String {
         .collect()
 }
 
-/// Whether the option `answer` chose names the change.
+/// Whether `answer` chose the `approve` option of the approval question
+/// `changes ask` files for the change, which names a revision of its plan.
 fn chose_change(observed: &Observed, answer: &Map<String, Value>) -> bool {
-    chosen_text(observed, answer).is_some()
+    revision::approved(observed, answer, true).is_some()
 }
 
 /// The text of the option `answer` chose, when it names the change whole.
@@ -457,66 +459,75 @@ fn either(items: &[String]) -> String {
 }
 
 /// At least `min` attached records of the check's type meet its `where`,
-/// each from a different actor when it names `distinct`.
+/// each from a different actor when it names `distinct`. `interpret`
+/// judges a check that counts the owner's answers through
+/// [`owners_judged`] and never reaches this for it.
 pub(super) fn records_missing(observed: &Observed, each: &flow::Check) -> Option<String> {
     let Some(kind) = &each.record_type else {
         return Some(unset(each, "type"));
     };
-    let none = Where {
-        at_head: None,
-        values: None,
-        no_findings: None,
-        owner_signed: None,
-        refs: None,
-        unchanged_by: None,
-    };
-    let rules = each.conditions.as_ref().unwrap_or(&none);
+    let rules = each.conditions.as_ref().unwrap_or(&NONE);
     let head = match (rules.at_head, &observed.change.head) {
         (None, _) => None,
         (Some(_), None) => return Some(NO_HEAD.to_owned()),
         (Some(_), Some(head)) => Some(head.as_str()),
     };
-    let answers = answers_count(each).then(|| observed.records.of_type(ANSWER_TYPE));
-    let passing = (observed.records.of_type(kind))
-        .filter(|(_, body)| meets(observed, body, rules, head, false))
-        .chain(
-            (answers.into_iter().flatten())
-                .filter(|(_, body)| meets(observed, body, rules, head, true)),
-        );
-    let count = match each.distinct {
+    let count = counted(meeting(observed, each, rules, head), each);
+    let min = each.min.map_or(1, |min| min as usize);
+    (count < min)
+        .then(|| records_detail(each, kind, rules, head, min) + &not_after(observed, each, rules))
+}
+
+/// How many of `passing` count: each, or each different actor when the
+/// check names `distinct`.
+fn counted<'a>(
+    passing: impl Iterator<Item = (&'a str, &'a Map<String, Value>, bool)>,
+    each: &flow::Check,
+) -> usize {
+    match each.distinct {
         None => passing.count(),
         Some(part) => (passing
-            .filter_map(|(_, body)| body.get("by")?.get(part.part())?.as_str())
+            .filter_map(|(_, body, _)| body.get("by")?.get(part.part())?.as_str())
             .collect::<BTreeSet<_>>())
         .len(),
-    };
-    // The owner's Touch ID approval of the current plan counts once.
-    let approved = answers_count(each) && observed.approval == Approval::Signed;
-    let count = count + usize::from(approved);
+    }
+}
+
+/// For a check that counts the owner's answers, what its detail says when
+/// it passes, or what is missing: at least `min` explicit approvals, each
+/// from a different actor when it names `distinct`, with the owner's Touch
+/// ID approval counted once, and none whose plan revision the current plan
+/// changes in substance or that Board no longer reads. None for any other
+/// check.
+pub(super) fn owners_judged(
+    observed: &Observed,
+    each: &flow::Check,
+) -> Option<Result<String, String>> {
+    if !answers_count(each) {
+        return None;
+    }
+    let rules = each.conditions.as_ref().unwrap_or(&NONE);
+    if let Err(refusal) = &observed.revisions {
+        return Some(Err(revision::unlisted(observed, refusal)));
+    }
+    let judged = revision::approvals(observed, each, rules, None);
+    let lapsed =
+        |path: &str| (judged.iter()).any(|(by, standing)| by == path && !standing.counts());
+    let passing = meeting(observed, each, rules, None).filter(|(path, _, _)| !lapsed(path));
+    let count = counted(passing, each);
+    // The owner's Touch ID approval counts once.
+    let signed = matches!(observed.approval, Approval::Signed(_)) && !lapsed(TOUCH_ID);
+    let count = count + usize::from(signed);
     let min = each.min.map_or(1, |min| min as usize);
-    (count < min).then(|| {
-        let detail =
-            records_detail(each, kind, rules, head, min) + &not_after(observed, each, rules);
-        if answers_count(each) {
-            let path = &observed.path;
-            let unread = match &observed.approval {
-                Approval::Unread(refusal) => format!(
-                    "; Board could not read that approval: {} {}",
-                    refusal.code.as_str(),
-                    refusal.message
-                ),
-                Approval::None | Approval::Signed => String::new(),
-            };
-            format!(
-                "{detail}, nor a {ANSWER_TYPE} from the owner (one that names `by.person`, or was \
-                 written through the owner's questions pane, Board.app or /ask) whose chosen \
-                 option, in its attached question, names {path}, nor the owner's Touch ID \
-                 approval of changes.approve for the current plan{unread}"
-            )
-        } else {
-            detail
-        }
-    })
+    if count >= min {
+        let counted: Vec<(String, Standing)> = (judged.into_iter())
+            .filter(|(_, standing)| standing.counts())
+            .collect();
+        return Some(Ok(revision::passed(observed, &counted)));
+    }
+    Some(Err(
+        revision::lapsed(observed, &judged).unwrap_or_else(|| revision::unmet(observed))
+    ))
 }
 
 /// What is missing when too few records meet a `records` check.

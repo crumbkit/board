@@ -146,13 +146,15 @@ fn default(each: &flow::Check) -> String {
                 .to_owned()
         }
         Kind::Field => field(each.field),
-        Kind::Records if answers_count(each) => "Ask the owner with /ask, with {change} in the \
-             text of the option that approves it and in no other option, because any chosen \
-             option that names it counts. Then attach the question and the owner's \
-             answer, each with `board changes attach --path {change} --ref <path>`. A \
-             plans/decision/v1 the owner signs with by.person whose refs name {change} also \
-             counts. The owner's Touch ID approval of changes.approve for the current plan also \
-             counts: run `board call changes.approve --path {change}` and approve the effect it \
+        Kind::Records if answers_count(each) => "Ask the owner with the question `board \
+             changes ask` files, which blocks {change} and whose `approve` option names its \
+             current plan revision {plan}; only an answer choosing that option approves the \
+             plan. Then attach the question and the owner's answer, each with `board changes attach --path \
+             {change} --ref <path>`. A plans/decision/v1 the owner signs with by.person whose \
+             refs name {change} and whose `decides` is the plan revision it approves, such as \
+             {plan}, also counts; `board plans decide` writes it given `--decides {plan}` and \
+             `--refs {change}`. The owner's Touch ID approval of changes.approve for the current \
+             plan also counts: run `board call changes.approve --path {change}` and approve the effect it \
              names."
             .to_owned(),
         Kind::Records => format!("{ask}write the record the detail describes and {ATTACH}."),

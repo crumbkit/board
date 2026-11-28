@@ -11,7 +11,7 @@ use crate::approve::approval;
 use crate::board::{self, get_text};
 use crate::change::{
     NOT_FOUND, Referenced, attached, current, kind_of, listed, plan_at, pull_of, referenced,
-    whole_record_at,
+    revisions, whole_record_at,
 };
 use crate::diff::{Step, accepted, after, edited, mounted, outside};
 use crate::flow::{self, Kind as CheckKind, of_change};
@@ -144,6 +144,8 @@ pub(crate) fn observe_known(
         planned_rules(host, &mut found, &mut on_planned)?;
     }
     if wanted.contains(&Read::Approval) {
+        found.revisions = revisions(host, path)
+            .map_err(|refusal| format!("{} {}", refusal.code, refusal.message));
         found.approval = approval(host, &found)?;
     }
     if wanted.contains(&Read::AfterReview) {

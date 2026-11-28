@@ -59,6 +59,9 @@ pub(crate) struct Input {
     #[serde(default)]
     #[schemars(with = "Vec<Url>")]
     urls: Vec<String>,
+    /// The one board path the decision decides, such as the plan revision `/changes/<name>/plans/<id>` it approves.
+    #[schemars(with = "Option<Ref>")]
+    decides: Option<String>,
 }
 
 /// The decision written. `path` is where, `line` says so in one sentence,
@@ -95,6 +98,7 @@ pub(crate) fn decide(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         alternatives,
         refs,
         urls,
+        decides,
     } = PluginError::read_input("plans", "decide", input)?;
     if session.is_none() && person.is_none() {
         return Err(PluginError {
@@ -134,6 +138,9 @@ pub(crate) fn decide(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         if !list.is_empty() {
             record.insert(name.to_owned(), json!(list));
         }
+    }
+    if let Some(decides) = decides {
+        record.insert("decides".to_owned(), json!(decides));
     }
     if review {
         record.insert("review".to_owned(), json!("wanted"));

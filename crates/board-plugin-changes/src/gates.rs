@@ -136,6 +136,9 @@ pub(crate) struct Observed {
     pub(crate) held: BTreeSet<String>,
     /// The owner's Touch ID approval of `changes.approve` for the change.
     pub(crate) approval: Approval,
+    /// Each revision of the change's plan, oldest first, or Board's refusal
+    /// to list them, which a check that counts the owner's approval reads.
+    pub(crate) revisions: Result<Vec<Revision>, String>,
     /// For each commit an attached record covers that is not the change's
     /// head, as the record names it: the commits after it to the head,
     /// when each edits only paths a check's `unchanged_by` allows or
@@ -147,14 +150,24 @@ pub(crate) struct Observed {
 }
 
 /// What `Host::decided` found of the owner's approval of `changes.approve`
-/// for the change's current plan and its content: none, the owner's
-/// signed approval, or Board's refusal to read it.
+/// for one revision of the change's plan and its content: none, the
+/// owner's signed approval of the revision it names, or Board's refusal to
+/// read it.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) enum Approval {
     #[default]
     None,
-    Signed,
+    Signed(String),
     Unread(Box<Refusal>),
+}
+
+/// One revision of the change's plan: its path, its record as Board holds
+/// it, and its text, none when Board reads no text for it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Revision {
+    pub(crate) path: String,
+    pub(crate) record: Map<String, Value>,
+    pub(crate) text: Option<String>,
 }
 
 impl Observed {
@@ -189,6 +202,7 @@ impl Observed {
             on_planned_unread: None,
             held: BTreeSet::new(),
             approval: Approval::None,
+            revisions: Ok(Vec::new()),
             after_review: BTreeMap::new(),
             amended: Vec::new(),
         }
@@ -380,13 +394,23 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
             // A check that reads an answer the plan does not give is the
             // agent's to clear, by writing the plan again.
             let left_out = left_out(observed, each);
+            // What a check that counts the owner's answers says when it
+            // passes, judged once with its count.
+            let mut note = None;
             let missing = match applies(observed, &plan, each) {
                 Ok(false) => return None,
                 Ok(true) if !left_out.is_empty() => Some(format!(
                     "the plan gives no typed answer for {}, which this check reads",
                     left_out.join(" and ")
                 )),
-                Ok(true) => evaluate(observed, &plan, each),
+                Ok(true) => match kinds::owners_judged(observed, each) {
+                    Some(Ok(said)) => {
+                        note = Some(said);
+                        None
+                    }
+                    Some(Err(missing)) => Some(missing),
+                    None => evaluate(observed, &plan, each),
+                },
                 Err(detail) => Some(detail),
             };
             let waiver = missing.as_ref().and_then(|_| waived_by(observed, each));
@@ -399,11 +423,18 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
                     (Status::Missing, format!("{detail}{unanchored}"))
                 }
                 (Some(detail), None) => (Status::Missing, detail),
+                (None, _) if note.is_some() => (Status::Pass, note.take().unwrap_or_default()),
                 (None, _) if each.kind.known() == Some(&CheckKind::Paths) => {
                     (Status::Pass, paths::passed(observed))
                 }
                 (None, _) if each.kind.known() == Some(&CheckKind::Tasks) => {
                     (Status::Pass, tasks_passed(observed))
+                }
+                (None, _)
+                    if each.kind.known() == Some(&CheckKind::Mockups)
+                        && matches!(each.part, None | Some(Part::Agreed)) =>
+                {
+                    (Status::Pass, design::passed(observed, &plan))
                 }
                 (None, _) => (Status::Pass, kinds::passed(observed, each, &values)),
             };
@@ -753,6 +784,7 @@ pub(crate) use design::{mockups, ux_missing};
 pub(crate) mod kinds;
 mod paths;
 pub(crate) mod remedy;
+pub(crate) mod revision;
 mod when;
 pub(crate) use when::fails_unread;
 use when::{off_route, unanswered};
