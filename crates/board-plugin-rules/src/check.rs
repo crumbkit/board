@@ -137,6 +137,10 @@ pub(crate) struct Pinned {
     pub(crate) at_least: String,
     pub(crate) files: Vec<String>,
     pub(crate) behind: Vec<FileBehind>,
+    /// Every version the files pin, older or not, which `report` lists and
+    /// `check` leaves out.
+    #[serde(skip)]
+    pub(crate) pins: Vec<FileBehind>,
     pub(crate) unreadable: Vec<Unreadable>,
     pub(crate) kind: Kind,
     pub(crate) show: ShowAt,
@@ -149,8 +153,9 @@ pub(crate) struct Pinned {
     pub(crate) owed_by: Option<String>,
 }
 
-/// A version a file pins that is older than the rule's, and its line.
-#[derive(Serialize, JsonSchema)]
+/// A version a file pins, and its line: in `behind`, one older than the
+/// rule's.
+#[derive(Clone, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct FileBehind {
     pub(crate) file: String,
@@ -695,22 +700,28 @@ fn pinned(
     unreadable: Vec<Unreadable>,
 ) -> Result<Pinned, PluginError> {
     let expression = version::compile(logical, rule)?;
-    let mut behind = Vec::new();
+    let mut pins = Vec::new();
     for (path, data) in texts {
         let text = String::from_utf8_lossy(data);
-        let found = version::behind(&expression, &rule.at_least, &text);
-        behind.extend(found.into_iter().map(|old| FileBehind {
-            file: path.to_string(),
-            line: old.line,
-            found: old.found,
-        }));
+        pins.extend(
+            (version::every(&expression, &text).into_iter()).map(|pin| FileBehind {
+                file: path.to_string(),
+                line: pin.line,
+                found: pin.found,
+            }),
+        );
     }
+    let behind = (pins.iter())
+        .filter(|pin| version::is_behind(&pin.found, &rule.at_least))
+        .cloned()
+        .collect();
     Ok(Pinned {
         rule: logical.to_owned(),
         requirement: control.requirement.clone(),
         at_least: rule.at_least.clone(),
         files: listed(texts, &unreadable),
         behind,
+        pins,
         unreadable,
         kind: control.kind(),
         show: control.show(),

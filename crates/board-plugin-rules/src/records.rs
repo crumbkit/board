@@ -62,7 +62,21 @@ pub struct RuleRecord {
     /// merge owes it, the review report that found it, or the decision that
     /// accepted it.
     pub owed_by: Option<Ref<OwedBy>>,
+    /// The suite whose audit judges the rule, such as `/suites/review`, for
+    /// a rule a reader judges.
+    pub judged_by: Option<Ref<JudgedBy>>,
 }
+
+/// What may judge a rule: a suite, whose runs record its audits.
+#[derive(Debug)]
+pub enum JudgedBy {}
+
+impl Accepts for JudgedBy {
+    const TYPES: &'static [&'static str] = &[SUITE_TYPE];
+}
+
+/// The type of a suite, which a rule's `judged_by` names.
+pub(crate) const SUITE_TYPE: &str = "runs/suite/v1";
 
 /// What may leave an obligation owed.
 #[derive(Debug)]

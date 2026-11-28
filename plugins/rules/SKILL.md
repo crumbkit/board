@@ -84,7 +84,7 @@ To run a command in a board other than the one you are in, add `-C <path>`.
 
        board --checkout rules report --path /repos/<name> > rules-report.json
 
-   It prints one `rules/report/v1` document of every rule, group and
+   It prints one `rules/report/v2` document of every rule, group and
    compliance suite that reaches the repository and exits 0 whatever they
    found. Pass `--repository owner/name` when the clone has no origin.
 

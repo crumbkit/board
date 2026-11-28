@@ -9,7 +9,7 @@ use board_plugin::Target;
 use serde_json::{Value, json};
 
 use super::place::{Place, Ran, git};
-use super::{FailedCase, Refused, RepositoryRead, SuiteRow, SuiteRun, Verdict};
+use super::{FailedCase, Refused, RepositoryRead, Severity, SuiteRow, SuiteRun, Verdict};
 use crate::{check, index};
 
 /// Each suite, wherever it is.
@@ -35,6 +35,7 @@ pub(crate) fn suites(
         let Ok(suite) = parse_json(body.as_bytes()) else {
             refused.push(Refused {
                 code: "rules::report::suite_unreadable".to_owned(),
+                severity: Severity::Refusal,
                 message: format!("the suite {logical}'s body is not JSON"),
                 rules: vec![logical],
             });
