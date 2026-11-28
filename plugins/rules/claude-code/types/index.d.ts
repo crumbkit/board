@@ -20,8 +20,11 @@ export type Rule = {
  * check, at that time in milliseconds; `pending` is a first check still
  * running.
  */
+/** Something `rules.check` says of a rule without failing it, such as `board::ref::unreadable`. */
+export type Warning = { code: string; detail: string }
+
 export type Checked =
-  | { kind: 'read'; root: string; rules: Rule[]; at?: number; stale?: { code: string; message: string } }
+  | { kind: 'read'; root: string; rules: Rule[]; warnings?: Warning[]; at?: number; stale?: { code: string; message: string } }
   | { kind: 'failed'; root: string; code: string; message: string }
   | { kind: 'pending'; root: string }
 

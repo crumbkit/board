@@ -17,6 +17,7 @@ import {
   recalled,
   remembering,
   rulesBadge,
+  sameRules,
   sections,
   SPEED_CHECK,
 } from '../hooks/rules'
@@ -199,6 +200,26 @@ test('a version rule with pins behind and a budget over its max with an unreadab
     '- /rules/crumbkit/docs-1: AGENTS.md has at most 200 words. (now 300 of 200 words, over budget, 1 unreadable)\n' +
       '- /rules/toolchains/rust: Pin the latest Rust. (now 1 older than 1.99.1)',
   )
+})
+
+test('the context block prints each rules.check warning with its code, even beside no rules', () => {
+  const warning = {
+    code: 'board::ref::unreadable',
+    detail: 'the control /rules/owed names /vendor/x through a mount Board could not read, so it is still owed; do not delete it',
+  }
+  const checked = parseCheck(ROOT, 0, report({ passed: false, measured: [], stated: [README], warnings: [warning] }), '')
+  expect(checked === null ? null : contextText(checked)).toContain(
+    '- /rules/example/readme: Keep the usage section of the README current.\n\n' +
+      'Board warns about these rules:\n' +
+      `- board::ref::unreadable: ${warning.detail}`,
+  )
+  const alone = parseCheck(ROOT, 0, report({ passed: false, measured: [], stated: [], warnings: [warning] }), '')
+  expect(alone === null ? null : contextText(alone)).toContain(`- board::ref::unreadable: ${warning.detail}`)
+  const plain = parseCheck(ROOT, 0, report({ measured: [], stated: [README] }), '')
+  expect(plain === null ? null : contextText(plain)).not.toContain('Board warns')
+  expect(sameRules(checked, plain)).toBe(false)
+  expect(freshText(checked, ROOT)).toContain(`Board warns about these rules:\n- board::ref::unreadable: ${warning.detail}`)
+  expect(freshText(alone, ROOT)).toContain(`- board::ref::unreadable: ${warning.detail}`)
 })
 
 test('parseCheck shows a zero rule with its measures and run age', () => {

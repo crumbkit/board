@@ -437,7 +437,7 @@ fn generic(code: Code) -> &'static str {
             "create what the reference names, or change the reference; `board refs <path>` lists them"
         }
         Code::RefUnreadable => {
-            "the record is not known to be broken; run `board check <path>` again, and if it still fails, run `board check` on the mount the message names, whose hint says how to repair it, such as `board mount update <path>`; do not delete the record"
+            "the record is not known to be broken; run `board check <path>` again, and if it still fails, run `board check` on the mount the message names, whose hint says how to repair it, such as `board mount update <mount>`; do not delete the record"
         }
         Code::RefThroughMount => {
             "this field names only files in the record's own board; a crossing between boards is an exchange message (docs/guide/exchange.md), so name your own copy of the request or reply, or remove the reference"

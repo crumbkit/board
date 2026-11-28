@@ -14,7 +14,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::board::Board;
-use crate::check::Detail;
+use crate::check::{Detail, unfollowed};
 use crate::read::{ReadError, read_at};
 
 /// Reads the record at a path, or gives the code and reason it cannot.
@@ -253,7 +253,7 @@ pub(crate) fn fitted(
 ) -> Option<(Code, Detail)> {
     let read = &mut |path: &LogicalPath| {
         let location = (resolve(path))
-            .map_err(|error| (Code::RefDangling, format!("does not resolve: {error}")))?;
+            .map_err(|error| (unfollowed(&error), format!("does not resolve: {error}")))?;
         let reason = match location.object {
             Object::Blob(blob) => match read_blob(&location, blob) {
                 Ok(None) => "is too large to read",

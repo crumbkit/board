@@ -101,7 +101,7 @@ fn the_unreadable_reference_hint_says_to_check_again_then_repair_the_mount_and_n
         hint(Code::RefUnreadable),
         "the record is not known to be broken; run `board check <path>` again, and if it \
          still fails, run `board check` on the mount the message names, whose hint says how \
-         to repair it, such as `board mount update <path>`; do not delete the record"
+         to repair it, such as `board mount update <mount>`; do not delete the record"
     );
     let fields = Fields::at(&"/vendor".parse().unwrap());
     assert_eq!(

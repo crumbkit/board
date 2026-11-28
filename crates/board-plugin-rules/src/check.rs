@@ -54,7 +54,7 @@ pub(crate) struct Output {
 /// Something `check` says of a control without failing it.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct Warning {
+pub(crate) struct Warning {
     code: &'static str,
     #[schemars(with = "Prose")]
     detail: String,
@@ -737,43 +737,6 @@ fn pinned(
     })
 }
 
-/// A warning for each control in `unread`, naming each reference Board
-/// could not read. Board codes a control `board::ref::unreadable` only when
-/// each of its failing references is one, so each that resolved nowhere is.
-fn unreadable_controls(
-    host: &dyn Host,
-    unread: &[(String, Value)],
-) -> Result<Vec<Warning>, PluginError> {
-    if unread.is_empty() {
-        return Ok(Vec::new());
-    }
-    let paths = (unread.iter())
-        .map(|(control, _)| logical(control))
-        .collect::<Result<Vec<LogicalPath>, PluginError>>()?;
-    let refused = |error: &RefsError| PluginError::board_refused("rules", "refs", &error.refusal());
-    let answers = host
-        .refs(&paths, Absent::Refuse, &[])
-        .map_err(|e| refused(&e))?;
-    let mut warnings = Vec::new();
-    for ((control, _), answer) in unread.iter().zip(answers) {
-        let report = answer.map_err(|e| refused(&e))?;
-        let targets: Vec<String> = (report.from.iter())
-            .filter(|outgoing| outgoing.location.is_none())
-            .map(|outgoing| outgoing.target.to_string())
-            .collect();
-        warnings.push(Warning {
-            code: Code::RefUnreadable.as_str(),
-            detail: format!(
-                "the control {control} names {} through a mount Board could not read, so it is \
-                 still owed; do not delete it; run the check again, and if it still fails, run \
-                 `board mount update` for that mount",
-                targets.join(", ")
-            ),
-        });
-    }
-    Ok(warnings)
-}
-
 fn degraded(broken: &[(String, Value)]) -> PluginError {
     let names: Vec<String> = (broken.iter())
         .map(|(logical, code)| format!("{logical} ({})", code.as_str().unwrap_or("None")))
@@ -793,8 +756,12 @@ fn degraded(broken: &[(String, Value)]) -> PluginError {
 }
 
 mod reach;
+mod unread;
 
 pub(crate) use reach::{Reached, reach};
+#[cfg(test)]
+pub(crate) use unread::unread_detail;
+use unread::unreadable_controls;
 
 #[cfg(test)]
 pub(crate) mod tests;

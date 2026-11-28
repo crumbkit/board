@@ -169,7 +169,7 @@ impl Tally {
 /// `board::ref::unreadable` when a mounted repository or commit could not
 /// be read, so Board does not know whether the target exists. Any other
 /// error is a fault Board read, and dangles.
-fn unfollowed(error: &ResolveError) -> Code {
+pub(crate) fn unfollowed(error: &ResolveError) -> Code {
     match error {
         ResolveError::Unreadable { .. }
         | ResolveError::RepoMissing { .. }

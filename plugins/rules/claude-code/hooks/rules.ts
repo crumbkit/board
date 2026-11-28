@@ -1,7 +1,7 @@
 // What the rules capabilities answered, and the words a session and the
 // owner read from them. Pure functions, so the tests can pin every word.
 
-import type { Checked, Kind, Rule, StateBadge } from '../types'
+import type { Checked, Kind, Rule, StateBadge, Warning } from '../types'
 
 /**
  * The speed check, which session start runs detached: the shell returns at
@@ -154,7 +154,11 @@ export function parseCheck(root: string, exitCode: number, stdout: string, stder
       ...(s.state === 'described' ? { described: true } : {}),
       ...closing(s),
     }))
-    return { kind: 'read', root, rules: [...measured, ...versions, ...zeros, ...stated] }
+    const warnings = (Array.isArray(found.warnings) ? (found.warnings as Warning[]) : []).filter(
+      w => typeof w?.code === 'string' && typeof w?.detail === 'string',
+    )
+    const rules = [...measured, ...versions, ...zeros, ...stated]
+    return { kind: 'read', root, rules, ...(warnings.length > 0 ? { warnings } : {}) }
   }
   const failed = failure(exitCode, stdout, stderr)
   if (failed.code === NO_BOARD) return null
@@ -178,6 +182,12 @@ export function parseForPath(exitCode: number, stdout: string): Rule[] | null {
 /** A remembered check's time, such as `2026-11-25 01:56 UTC`. */
 export const checkedAt = (at: number) => `${new Date(at).toISOString().slice(0, 16).replace('T', ' ')} UTC`
 
+/** Each warning `rules.check` gave, one line each after a blank line, or nothing. */
+function warnings(checked: { warnings?: Warning[] }): string {
+  const warned = (checked.warnings ?? []).map(w => `- ${w.code}: ${w.detail}`)
+  return warned.length === 0 ? '' : `\n\nBoard warns about these rules:\n${warned.join('\n')}`
+}
+
 /** The context block's text, or `null` when there is nothing to say. */
 export function contextText(checked: Checked): string | null {
   if (checked.kind === 'pending') {
@@ -193,7 +203,8 @@ export function contextText(checked: Checked): string | null {
       'Before you edit a file, run `board call rules.for-path --path <file>` in its directory.'
     )
   }
-  if (checked.rules.length === 0) return null
+  const warns = warnings(checked)
+  if (checked.rules.length === 0 && warns === '') return null
   const lines = checked.rules.map(line)
   const from =
     checked.at === undefined
@@ -203,7 +214,7 @@ export function contextText(checked: Checked): string | null {
         : ` These are from the check at ${checkedAt(checked.at)}. A fresh check runs now, and this session is told if it finds other rules.`
   return (
     `The board's rules state requirements on files in ${checked.root}. Follow each one that applies to a ` +
-    `file you change. \`board get <rule>\` shows which files a rule names.${from}\n\n${lines.join('\n')}`
+    `file you change. \`board get <rule>\` shows which files a rule names.${from}\n\n${lines.join('\n')}${warns}`
   )
 }
 
@@ -217,7 +228,7 @@ export function staleText(root: string, at: number, failed: { code: string; mess
 
 /** Whether two answers tell a session the same rules, whenever each was checked. */
 export function sameRules(a: Checked | null, b: Checked | null): boolean {
-  const text = (c: Checked | null) => (c === null ? null : contextText(c.kind === 'read' ? { kind: 'read', root: c.root, rules: c.rules } : c))
+  const text = (c: Checked | null) => (c === null ? null : contextText(c.kind === 'read' ? { kind: 'read', root: c.root, rules: c.rules, warnings: c.warnings } : c))
   return text(a) === text(b)
 }
 
@@ -232,11 +243,14 @@ export function freshText(checked: Checked | null, root: string): string {
       'Before you edit a file, run `board call rules.for-path --path <file>` in its directory.'
     )
   }
-  if (checked.rules.length === 0) return `The rules check for ${root} has answered since this session started: no rules apply to its files.`
+  if (checked.rules.length === 0) {
+    return `The rules check for ${root} has answered since this session started: no rules apply to its files.${warnings(checked)}`
+  }
   return (
     `The rules check for ${root} has answered since this session started, and these rules replace any listed before. ` +
     `Follow each one that applies to a file you change. \`board get <rule>\` shows which files a rule names.\n\n` +
-    checked.rules.map(line).join('\n')
+    checked.rules.map(line).join('\n') +
+    warnings(checked)
   )
 }
 
