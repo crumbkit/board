@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `board changes next` takes `--through <phase>`, a phase of the change's
+  flow such as `land`. Its output then adds `ahead`, which lists each phase
+  after the current one up to that phase, with each check's id, whether it
+  blocks, and whether it applies under the plan's answers. A check that
+  reads only the plan or the change record, such as `test-sections`, is
+  judged now as `pass` or `missing` with its remedy. A check that needs
+  later work, such as a suite run or a review, is `later`, with its remedy.
+  A `--through` that names no phase of the flow is refused with
+  `changes::next::bad_through`, which names the flow's phases. Without
+  `--through`, `next` prints what it printed before. The changes skill says
+  to run `changes next --through land` once when the plan is written.
+
 - `board get` of an open `plans/question/v1` prints one line on stderr, in
   text and in `--json`, that names the answer at the question's id under
   `answers/` with its time, choice and first 80 characters of words. When
