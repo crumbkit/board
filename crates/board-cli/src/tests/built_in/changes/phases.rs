@@ -2005,3 +2005,135 @@ fn a_fix_record_naming_a_finding_the_review_lacks_counts_for_nothing() {
         "{review}"
     );
 }
+
+// `next --through <phase>`: the checks of each later phase, judged ahead
+// where the plan or the change record already settles them.
+
+/// A plan-phase /changes/t whose plan file holds `text`.
+fn planned_with(text: &str) -> Changes {
+    let board = Changes::new();
+    board.change_at(
+        "changes/t.json",
+        "plan",
+        &json!({"plan": "/changes/t/plan.md", "route": "owner", "records": [board.approved()]}),
+    );
+    board.write("changes/t/plan.md", text);
+    board
+}
+
+/// The check `id` that `next --through land` lists ahead for `board`.
+fn ahead_check(board: &Changes, id: &str) -> Value {
+    let next = board.call("next", &at(&json!({"through": "land"})));
+    (next["ahead"].as_array().unwrap().iter())
+        .flat_map(|phase| phase["checks"].as_array().unwrap().iter())
+        .find(|each| each["check"] == id)
+        .unwrap_or_else(|| panic!("no {id} ahead: {next}"))
+        .clone()
+}
+
+#[test]
+fn next_through_land_lists_each_later_phase_and_judges_what_the_plan_settles() {
+    let board = planned_with(PLAN);
+    let next = board.call("next", &at(&json!({"through": "land"})));
+    let phases: Vec<&str> = (next["ahead"].as_array().unwrap().iter())
+        .map(|phase| phase["phase"].as_str().unwrap())
+        .collect();
+    assert_eq!(phases, ["build", "review", "land"], "{next}");
+    let tests = ahead_check(&board, "test-sections");
+    assert_eq!(
+        (&tests["status"], &tests["blocks"], &tests["applies"]),
+        (&json!("missing"), &json!(true), &json!(true)),
+        "{tests}"
+    );
+    let remedy = tests["remedy"].as_str().unwrap();
+    assert!(
+        remedy.contains("board changes plan-amend --path /changes/t"),
+        "{remedy}"
+    );
+    let run = ahead_check(&board, "suite-run");
+    assert_eq!(run["status"], "later", "{run}");
+    // The head is not known yet, so the remedy names it as a placeholder.
+    let remedy = run["remedy"].as_str().unwrap();
+    assert!(remedy.contains("once CI has passed on <head>"), "{remedy}");
+    let review = ahead_check(&board, "review");
+    let remedy = review["remedy"].as_str().unwrap();
+    assert!(remedy.contains("a checkout of <head>,"), "{remedy}");
+    // A head, a pull request and a diff come only from later work, so the
+    // checks that read them wait for it.
+    for later in [
+        "head",
+        "pull-request",
+        "ui-paths",
+        "lifecycle-paths-at-land",
+    ] {
+        let each = ahead_check(&board, later);
+        assert_eq!(each["status"], "later", "{each}");
+    }
+    // The plan answers ux none, so the design-conformance check does not
+    // apply and is not judged.
+    let design = ahead_check(&board, "design-conformance");
+    assert_eq!(design["applies"], false, "{design}");
+    assert!(design.get("status").is_none(), "{design}");
+
+    let board = planned_with(&format!(
+        "{PLAN}\n## What the tests prove\n\nA suite stops.\n\n## What the tests do not prove\n\n\
+         That it stops in time.\n"
+    ));
+    let tests = ahead_check(&board, "test-sections");
+    assert_eq!(tests["status"], "pass", "{tests}");
+    assert!(tests.get("remedy").is_none(), "{tests}");
+}
+
+#[test]
+fn next_without_through_prints_what_it_printed_before() {
+    let board = planned_with(PLAN);
+    let plain = board.call("next", &path());
+    assert!(plain.get("ahead").is_none(), "{plain}");
+    let mut through = board.call("next", &at(&json!({"through": "land"})));
+    through.as_object_mut().unwrap().remove("ahead");
+    assert_eq!(
+        serde_json::to_string(&plain).unwrap(),
+        serde_json::to_string(&through).unwrap()
+    );
+}
+
+#[test]
+fn next_through_a_phase_the_flow_lacks_is_refused_naming_the_phases() {
+    let board = planned_with(PLAN);
+    let refused = board.refusal("next", &at(&json!({"through": "nowhere"})));
+    assert_eq!(refused["code"], "changes::next::bad_through", "{refused}");
+    let message = refused["message"].as_str().unwrap();
+    assert!(
+        message.contains("plan, build, review and land"),
+        "{message}"
+    );
+    assert_eq!(
+        refused["fields"]["phases"],
+        json!(["plan", "build", "review", "land"]),
+        "{refused}"
+    );
+    // Through the change's own phase there is nothing ahead.
+    let next = board.call("next", &at(&json!({"through": "plan"})));
+    assert_eq!(next["ahead"], json!([]), "{next}");
+}
+
+#[test]
+fn next_through_land_marks_a_later_check_missing_when_its_when_reads_an_answer_the_plan_lacks() {
+    let board = planned_with(PLAN);
+    let mut plan = board.read("changes/t/plans/1.json");
+    plan["answers"] = json!({"ux": "none", "lifecycle": "none"});
+    board.write("changes/t/plans/1.json", &plan.to_string());
+    let rechecks = ahead_check(&board, "rechecks");
+    assert_eq!(
+        (&rechecks["status"], &rechecks["applies"]),
+        (&json!("missing"), &json!(true)),
+        "{rechecks}"
+    );
+    let detail = rechecks["detail"].as_str().unwrap();
+    assert!(detail.contains("no typed answer for data"), "{detail}");
+    let remedy = rechecks["remedy"].as_str().unwrap();
+    assert!(
+        remedy.starts_with("Write the plan again with `board changes plan --path /changes/t`"),
+        "{remedy}"
+    );
+}

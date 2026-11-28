@@ -372,7 +372,7 @@ of `changes` still fails `review`.
   change earns the output's `warnings` entry
   `changes::stop::question_unlinked`, and the stop is still recorded. Each
   call writes a new record.
-- `next --path /changes/<name>`: read-only. The change's `flow` (its name
+- `next --path /changes/<name> [--through <phase>]`: read-only. The change's `flow` (its name
   and phases), its phase, each gate check as `pass` or `missing` with a
   `detail`, its `actor`, whether it `blocks`, and when missing its
   `remedy`; the instruction, with its placeholders filled; and `sync`.
@@ -390,6 +390,26 @@ of `changes` still fails `review`.
   built from those checks' details and remedies. `amended` lists the headings each
   `plan-amend` since the last full plan filled, and is left out when there
   is none.
+  `--through` names a phase of the change's flow, such as `land`. The
+  output then adds `ahead`: for each phase after the current one, up to and
+  including that phase, the phase's name and each of its checks with
+  `check`, `blocks` and `applies`, which says whether the check's `when`
+  holds under the plan. A check that applies has a `status`. A `sections`,
+  `considered`, `field`, `exists`, `rule-paths` or `planned-rule-paths`
+  check reads only the plan or the change record, so it is judged now as
+  `pass` or `missing`, with its `detail` and, when missing, its `remedy`.
+  Every other kind needs work that has not happened yet, such as a run or
+  a review, so its status is `later`, with its `remedy`. So is a `field`
+  check on `head` or `pulls` while the change has none, and a `rule-paths`
+  check, which reads the diff, while the change records no head. A `later`
+  remedy names a value that is not known yet as a placeholder, such as
+  `<head>` or `<suite>`. A check whose `when` reads an answer the plan
+  leaves out, or a section pattern that cannot be read, is `missing` with
+  the detail and remedy the gate in its phase would give. A check judged
+  `pass` ahead can still fail when its phase comes, after a later edit.
+  Without `--through` there is no `ahead`, and the output is unchanged. A
+  `--through` that names no phase of the flow is refused with
+  `changes::next::bad_through`, whose `phases` lists the flow's phases.
 - `sync` in the output of `open` and `next` is `{synced, stale, code,
   command}`: the day of the last sync, or null; `stale` when that is
   before today in UTC or null and sync has a pull request to read, with

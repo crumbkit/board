@@ -25,6 +25,10 @@ blocks is missing.
    whenever you start a phase or lose context;
    `board -C <board> changes open` lists the changes in progress when you
    need one to resume. Do what `instruction` says and fix each check whose `status` is `missing`, following its `remedy`.
+   Once the plan is written, run `board -C <board> changes next --path
+   /changes/<name> --through land` once: its `ahead` lists every later
+   check, and fix now each one whose `status` is `missing`, such as the
+   test sections the land gate reads.
    When `ask` is set, only the owner or a reviewer can pass the checks
    left: put `ask` to them. Stop where the change's `stop` says, or the
    flow's when it has none, unless told otherwise; once `next` returns

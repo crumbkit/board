@@ -134,10 +134,13 @@ const CAPABILITIES: [Capability; 25] = [
     Capability {
         name: "next",
         description: "The change's flow and phase, each check of its gate as pass or missing with \
-            who can pass it and the remedy, whom it waits on, and what to do now.",
+            who can pass it and the remedy, whom it waits on, and what to do now. With `through`, \
+            a phase of the flow, `ahead` lists the checks of each later phase up to it, each \
+            judged pass or missing where the plan or the change record already settles it and \
+            later otherwise.",
         run: phases::next,
-        input: input::<phases::PathInput>,
-        output: output::<phases::NextOutput>,
+        input: input::<phases::NextInput>,
+        output: output::<phases::Next>,
         hints: [true, false, true, false],
         env: &[],
         timeout: None,

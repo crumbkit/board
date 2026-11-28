@@ -28,10 +28,12 @@ use crate::tasks::{at_merge, close_at_merge, refuse_owed, refuse_unmerged};
 use crate::wip::{Limit, Move, active_days, admit};
 use crate::{PLUGIN, refusal, to_value};
 
+mod ahead;
 mod moves;
 mod observe;
 mod reflow;
 
+pub(crate) use ahead::{Next, NextInput};
 use moves::latest_reason;
 pub(crate) use moves::{ReopenInput, pause, reopen, resume};
 pub(crate) use observe::{
@@ -417,8 +419,8 @@ pub(crate) fn step_of(host: &dyn Host, path: &str) -> Result<(NextOutput, Observ
 }
 
 pub(crate) fn next(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let PathInput { path } = PluginError::read_input(PLUGIN, "next", input)?;
-    Ok(to_value(next_of(host, &path)?))
+    let NextInput { path, through } = PluginError::read_input(PLUGIN, "next", input)?;
+    ahead::next(host, &path, through.as_deref())
 }
 
 /// Adds `reference` to `listed` once.
