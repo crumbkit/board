@@ -56,7 +56,8 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
             "evaluate",
             "from-standards",
             "migrate",
-            "report"
+            "report",
+            "for-stage"
         ]
     );
     assert_eq!(manifest.description, skill_description());
@@ -242,6 +243,75 @@ fn the_control_schema_refuses_a_bad_kind_show_or_sources_and_admits_their_twins(
             (
                 control(fields("summary", json!("Two\nlines."))),
                 control(fields("summary", json!("One line."))),
+            ),
+        ],
+    );
+}
+
+#[test]
+fn the_rule_schema_admits_both_forms_of_show_and_refuses_an_unknown_stage_agent_or_provide() {
+    let rule = |fields: Value| {
+        let base = json!({
+            "$type": "rules/rule/v1",
+            "requirement": "A reviewer follows the review skill.",
+            "purpose": "Every review checks the same things.",
+            "show": {"stage": "review", "agent": "reviewer"},
+            "provides": {"provide": "skill", "file": "/skills/review/SKILL.md"},
+        });
+        with(base, &fields)
+    };
+    let fields = |name: &str, value: Value| json!({ name: value });
+    let schema = shipped(RuleRecord::TYPE);
+    schema
+        .validate(&rule(fields("show", json!("edit"))))
+        .unwrap();
+    pairs(
+        &schema,
+        &[
+            (
+                rule(fields(
+                    "show",
+                    json!({"stage": "deploy", "agent": "reviewer"}),
+                )),
+                rule(fields(
+                    "show",
+                    json!({"stage": "land", "agent": "reviewer"}),
+                )),
+            ),
+            (
+                rule(fields(
+                    "show",
+                    json!({"stage": "review", "agent": "designer"}),
+                )),
+                rule(fields("show", json!({"stage": "review", "agent": "ux"}))),
+            ),
+            (
+                rule(fields("show", json!({"stage": "review"}))),
+                rule(fields("show", json!({"stage": "review", "agent": "lead"}))),
+            ),
+            (
+                rule(fields(
+                    "show",
+                    json!({"stage": "review", "agent": "lead", "why": "x"}),
+                )),
+                rule(json!({})),
+            ),
+            (
+                rule(fields(
+                    "provides",
+                    json!({"provide": "prompt", "file": "/c.md"}),
+                )),
+                rule(fields(
+                    "provides",
+                    json!({"provide": "context", "file": "/c.md"}),
+                )),
+            ),
+            (
+                rule(fields("provides", json!({"provide": "skill"}))),
+                rule(fields(
+                    "provides",
+                    json!({"provide": "skill", "file": "/s/SKILL.md"}),
+                )),
             ),
         ],
     );
@@ -459,7 +529,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_check_is_answered() {
     assert_eq!(refused.code, "rules::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "rules offers no capability budgets; it offers for-path, for-paths, check, evaluate, from-standards, migrate and report"
+        "rules offers no capability budgets; it offers for-path, for-paths, for-stage, check, evaluate, from-standards, migrate and report"
     );
     let check: CapabilityName = "check".parse().unwrap();
     let answered = Rules.call(&host, &check, json!({})).unwrap();

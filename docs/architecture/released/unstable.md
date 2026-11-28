@@ -62,6 +62,14 @@ a rule that names `judged_by`, because `rules/rule/v1` admits no field it
 does not list, so no rule should name `judged_by` until every machine that
 reads the board runs a Board with this change.
 
+After 0.1.6, `rules/rule/v1` gained a second form of `show`, an object
+`{"stage": ..., "agent": ...}` that registers the rule against a workflow
+stage, and an optional `provides`, in place, for the same reason, and
+released.json's entry for it is rewritten again. Both are optional, and
+`show` keeps every value it had. A Board older than this change refuses a
+rule that uses either, so registrations should be written only once every
+machine that reads the board runs a Board with this change.
+
 The `--json` report of `board timing check`, `board/timing-check-report/v2`,
 changes in place while the command timing budgets run silently in their first
 week, because what that week shows may change the report's fields. The

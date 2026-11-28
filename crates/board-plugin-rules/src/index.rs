@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::glob;
-use crate::records::{Checker, Kind, ShowAt, rule_types};
+use crate::records::{Checker, Kind, Provides, ShowAt, Slot, rule_types};
 
 /// Each file a pattern can match, with `full`: its display path without the
 /// leading `/`, with `.json` put back when the display path dropped it. A
@@ -58,11 +58,16 @@ const CONTROLS: &str = concat!(
 );
 
 /// Each control in the board's own tree that Board marks degraded, by its
-/// logical path, or by its path when it has none.
+/// logical path, or by its path when it has none. A rule registered against
+/// a workflow stage that is [`readable`] is left out: `for-stage` reports
+/// its missing file as one row, and no other capability lists it.
 const DEGRADED: &str = concat!(
     "SELECT COALESCE(logical, path), code FROM records WHERE type IN ",
     rule_types!(),
-    " AND status != 'ok' AND source = 'worktree' ORDER BY logical"
+    " AND status != 'ok' AND source = 'worktree' AND NOT (",
+    readable!(),
+    " AND CASE WHEN json_valid(body) THEN json_type(body, '$.show') END IS 'object')",
+    " ORDER BY logical"
 );
 
 /// A rule as the board's own copy of the schema admits it, which equals
@@ -172,18 +177,57 @@ pub(crate) fn first_strings<C: FromIterator<String>>(
         .collect())
 }
 
-/// Every valid control in the board's own tree, by its logical path.
+/// Every valid control in the board's own tree, by its logical path,
+/// except a rule registered against a workflow stage, whose `show` is an
+/// object: only `for-stage` gives one, so `check`, `for-path`, the mod and
+/// the other capabilities never list it.
 pub(crate) fn controls(host: &dyn Host) -> Result<BTreeMap<String, Control>, PluginError> {
+    Ok((records(host)?.into_iter())
+        .filter(|(_, record)| !staged(record))
+        .filter_map(|(logical, record)| Some((logical, Control::deserialize(&record).ok()?)))
+        .collect())
+}
+
+/// Every valid rule in the board's own tree, by its logical path, as JSON.
+fn records(host: &dyn Host) -> Result<Vec<(String, Value)>, PluginError> {
     let report = rows(host, CONTROLS)?;
-    Ok((report.rows.iter())
-        .filter_map(|row| {
-            let [Value::String(logical), Value::String(body)] = &row[..] else {
-                return None;
-            };
-            let record = parse_json(body.as_bytes()).ok()?;
-            let control = Control::deserialize(&record).ok()?;
-            Some((logical.clone(), control))
+    Ok((report.rows.into_iter())
+        .filter_map(|row| match <[Value; 2]>::try_from(row) {
+            Ok([Value::String(logical), Value::String(body)]) => {
+                Some((logical, parse_json(body.as_bytes()).ok()?))
+            }
+            _ => None,
         })
+        .collect())
+}
+
+/// Whether `record` is registered against a workflow stage: its `show` is
+/// an object.
+fn staged(record: &Value) -> bool {
+    record.get("show").is_some_and(Value::is_object)
+}
+
+/// A rule registered against a workflow stage, as `for-stage` reads it.
+#[derive(Deserialize)]
+pub(crate) struct Registration {
+    pub(crate) requirement: String,
+    pub(crate) summary: Option<String>,
+    pub(crate) show: Slot,
+    pub(crate) provides: Option<Provides>,
+}
+
+/// Each valid rule under `root` registered against a workflow stage, by
+/// its logical path. One whose slot names a stage or agent kind this Board
+/// does not know, such as one an edited copy of the schema admits, is
+/// left out.
+pub(crate) fn registrations(
+    host: &dyn Host,
+    root: &LogicalPath,
+) -> Result<BTreeMap<String, Registration>, PluginError> {
+    let beneath = format!("{}/", root.as_str());
+    Ok((records(host)?.into_iter())
+        .filter(|(logical, record)| logical.starts_with(&beneath) && staged(record))
+        .filter_map(|(logical, record)| Some((logical, Registration::deserialize(&record).ok()?)))
         .collect())
 }
 

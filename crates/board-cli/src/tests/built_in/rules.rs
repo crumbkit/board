@@ -10,6 +10,7 @@ mod check;
 mod checkout;
 mod evaluate;
 mod for_paths;
+mod for_stage;
 mod from_standards;
 mod owed_by;
 mod rename;

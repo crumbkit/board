@@ -6,6 +6,7 @@
 
 use std::borrow::Cow;
 
+use board_model::{AgentKind, Stage};
 use board_plugin::shape::{
     Accepts, Date, DottedVersion, Glob, LogicalGlob, Open, PathKey, Prose, Record, Ref, Summary,
     Tag, Url,
@@ -54,7 +55,14 @@ pub struct RuleRecord {
     /// the first edit of a file it covers, or `failing` only when `check`
     /// reports it failing. Left out, an obligation shows at `start`, a
     /// control `check` measures when `failing`, and any other at `edit`.
-    pub show: Option<ShowAt>,
+    /// An object `{"stage": ..., "agent": ...}` registers the rule against
+    /// a workflow stage instead: `for-stage` gives what it `provides` to
+    /// that kind of agent at that stage, and `check`, `for-path` and the
+    /// mod never show it.
+    pub show: Option<Show>,
+    /// What a rule registered against a stage gives the agent: a skill, by
+    /// its `SKILL.md`, or a context file of at most 120 words.
+    pub provides: Option<Provides>,
     /// What justifies the rule, such as a source note (`rules/source/v1`)
     /// or an eval.
     pub sources: Option<Vec<Ref>>,
@@ -211,6 +219,47 @@ pub enum ShowAt {
     Start,
     Edit,
     Failing,
+}
+
+// When to show a rule: at a point of a session, or at a workflow stage.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(inline)]
+pub enum Show {
+    At(ShowAt),
+    Stage(Slot),
+}
+
+/// A workflow stage and the kind of agent a rule registered against it
+/// reaches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Slot {
+    /// The stage the rule registers against.
+    pub stage: Stage,
+    /// The kind of agent that receives it.
+    pub agent: AgentKind,
+}
+
+/// What a rule registered against a stage gives the agent.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Provides {
+    /// `skill` for a skill, named by the directory that holds its
+    /// `SKILL.md`, or `context` for a file whose text the agent receives.
+    pub provide: Provide,
+    /// The skill's `SKILL.md`, or the context file of at most 120 words.
+    #[schemars(with = "Ref")]
+    pub file: String,
+}
+
+// Whether a registration gives a skill or context.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[schemars(inline)]
+pub enum Provide {
+    Skill,
+    Context,
 }
 
 impl ShowAt {

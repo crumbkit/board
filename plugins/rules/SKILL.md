@@ -88,4 +88,13 @@ To run a command in a board other than the one you are in, add `-C <path>`.
    compliance suite that reaches the repository and exits 0 whatever they
    found. Pass `--repository owner/name` when the clone has no origin.
 
+6. To get the skills and context registered for a workflow stage, name
+   the repository, the stage and your kind of agent:
+
+       board -C <board> rules for-stage --path /repos/<name> --stage orient --agent builder
+
+   Load each skill in `skills` from its `file` when you need it, and follow
+   each `context` text. A registration is a rule under `/rules/imposed/`
+   whose `show` is `{"stage": ..., "agent": ...}`; write one there.
+
 The plugin's README.md gives the rule record's fields and rules.

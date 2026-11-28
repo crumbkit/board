@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- `board rules for-stage --path <repository> --stage <stage> --agent <kind>`
+  prints the skills and context that rules under `/rules/imposed/` register
+  for one kind of agent at one workflow stage, in at most 150 words. A
+  `rules/rule/v1` registers by setting `show` to
+  `{"stage": ..., "agent": ...}` and `provides` to a skill's `SKILL.md` or a
+  context file. The stages are `orient`, `plan`, `mockup`, `build`,
+  `review`, `land` and `handoff`, and the kinds are `lead`, `ux`, `builder`
+  and `reviewer`. A registration whose file is missing is one `refused`
+  row with `rules::stage::file_missing`, and the others are still given.
+  `rules check`, `rules for-path` and the rules mod never list a
+  registration. A board refuses rules calls with
+  `board::plugin::schema_differs` until `board plugin enable rules` writes
+  the new schema, and a Board older than this one refuses a rule that uses
+  either field.
 - `board rules report` prints `rules/report/v2`. Each rule row gains
   `pins`, every version a version rule found with its file and line, behind
   or not; `targets`, `file` and `body`, where `body` means a boundary that

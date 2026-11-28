@@ -323,7 +323,7 @@
       }
     },
     "crates/board-plugin-rules/types/rules/rule/v1.schema.json": {
-      "shape": "99390f83288f7f4995cf96ef86884784caafbdf1",
+      "shape": "3d39d1cb270887fb549acda70e1df05282ed49bd",
       "enums": {
         "/$defs/BudgetChecker/properties/per/enum": [
           "total",
@@ -344,11 +344,30 @@
           "match-only",
           "pattern"
         ],
+        "/$defs/Provides/properties/provide/enum": [
+          "skill",
+          "context"
+        ],
+        "/$defs/Slot/properties/agent/enum": [
+          "lead",
+          "ux",
+          "builder",
+          "reviewer"
+        ],
+        "/$defs/Slot/properties/stage/enum": [
+          "orient",
+          "plan",
+          "mockup",
+          "build",
+          "review",
+          "land",
+          "handoff"
+        ],
         "/properties/kind/enum": [
           "standing",
           "obligation"
         ],
-        "/properties/show/enum": [
+        "/properties/show/anyOf/0/enum": [
           "start",
           "edit",
           "failing"
@@ -14170,6 +14189,175 @@
         ]
       }
     },
+    "rules.for-stage": {
+      "input": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "agent",
+            "path",
+            "stage"
+          ]
+        ]
+      },
+      "input.agent": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.path": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.stage": {
+        "type": [
+          "string"
+        ]
+      },
+      "output": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "agent",
+            "context",
+            "left_out",
+            "refused",
+            "skills",
+            "stage"
+          ]
+        ]
+      },
+      "output.agent": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "lead",
+          "ux",
+          "builder",
+          "reviewer"
+        ]
+      },
+      "output.context": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.context[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "rule",
+            "text"
+          ]
+        ]
+      },
+      "output.context[].rule": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.context[].text": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.left_out": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.left_out[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.refused": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.refused[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "code",
+            "message",
+            "rule"
+          ]
+        ]
+      },
+      "output.refused[].code": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.refused[].message": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.refused[].rule": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.skills": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.skills[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "file",
+            "name",
+            "summary"
+          ]
+        ]
+      },
+      "output.skills[].file": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.skills[].name": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.skills[].summary": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.stage": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "orient",
+          "plan",
+          "mockup",
+          "build",
+          "review",
+          "land",
+          "handoff"
+        ]
+      }
+    },
     "rules.from-standards": {
       "input": {
         "type": [
@@ -19003,6 +19191,9 @@
     "rules::rule::degraded",
     "rules::rule::not_found",
     "rules::rule::owed_by_standing",
+    "rules::stage::file_missing",
+    "rules::stage::provides_nothing",
+    "rules::stage::unknown",
     "rules::standards::bad_id",
     "rules::standards::duplicate_rule",
     "rules::standards::empty_rule",
