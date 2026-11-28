@@ -254,15 +254,15 @@
     {
       "rule": "help-budget/command",
       "applies_to": "board get",
-      "reason": "get has two output formats, --fetch and --at, and a reader needs to know on one page that without --fetch get prints an attachment record and never reaches the store, and that --at reads every path in one commit.",
+      "reason": "get has two output formats, --fetch and --at, and a reader needs to know on one page that without --fetch get prints an attachment record and never reaches the store, that --at reads every path in one commit, and that beside an open question a line on stderr names its answer while the stored status stays open.",
       "costs": [
-        "Each read of the page can cost 300 bytes more than the default, about 75 tokens."
+        "Each read of the page can cost 500 bytes more than the default, about 125 tokens."
       ],
       "budget": {
-        "bytes": 1500,
+        "bytes": 1700,
         "default": 1200,
-        "extra_bytes": 300,
-        "extra_tokens": 75
+        "extra_bytes": 500,
+        "extra_tokens": 125
       }
     },
     {

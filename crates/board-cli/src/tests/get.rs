@@ -446,6 +446,7 @@ fn planned(scenario: &Scenario, arguments: &[&str]) -> Output {
 /// /projects/a/questions/q, and the answer `answer` beside it when given.
 fn asked(answer: Option<Item<'_>>) -> Scenario {
     let scenario = board();
+    scenario.identified();
     let enabled = planned(&scenario, &["plugin", "enable", "plans"]);
     assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
     scenario.write("projects/a/questions/q.json", Item::File(QUESTION));
