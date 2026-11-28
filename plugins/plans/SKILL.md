@@ -96,7 +96,10 @@ in. `<project>` names what the record concerns, such as the repository
 
    It writes the `plans/answer/v1` at `/projects/<project>/answers/<id>`,
    with the question's id. `--option none` with `--words` records an answer
-   that chooses no option.
+   that chooses no option. The question's stored `status` stays `open`.
+   `board -C <board> get` of the question prints a line on stderr that
+   names the answer, or says no answer is at the question's id and to run
+   `board refs <question>` to find one at another path.
 4. Withdraw the questions whose work ended, whose asking sessions are all archived, or
    whose words a question answered in the same project already asked, with `board -C <board> plans sweep --archived <local_ id>
    --apply true`; leave out `--apply` to see the list first.

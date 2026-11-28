@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `board get` of an open `plans/question/v1` prints one line on stderr, in
+  text and in `--json`, that names the answer at the question's id under
+  `answers/` with its time, choice and first 80 characters of words. When
+  no answer to the question is there, the line says so and names
+  `board refs <question>` to find one at another path. stdout keeps the
+  file's bytes, `board/get-report/v2` gains no field, and the question's
+  stored status stays `open`. A built-in plugin declares such a line with
+  the new `Plugin::get_notes`.
+
 - `board rules report` prints `rules/report/v2`. Each rule row gains
   `pins`, every version a version rule found with its file and line, behind
   or not; `targets`, `file` and `body`, where `body` means a boundary that

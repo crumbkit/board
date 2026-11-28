@@ -166,6 +166,7 @@ fn rendered(scenario: &Scenario, paths: &[&str], format: bool, budget: usize) ->
         &paths,
         board.get_each(&paths),
         &std::convert::identity,
+        Vec::new,
     )
 }
 
@@ -272,6 +273,7 @@ fn an_over_budget_get_recovers_with_the_callers_flags_and_without_its_words_name
             &asked,
             board.get_each(&asked),
             &std::convert::identity,
+            Vec::new,
         )
     };
     let budget = rendered(&scenario, &paths[..1], true, usize::MAX)
@@ -341,6 +343,7 @@ fn a_board_that_cannot_be_read_answers_every_path_with_its_one_error() {
         &paths,
         failed(),
         &std::convert::identity,
+        Vec::new,
     );
     let failures = json(&ran)["failures"].as_array().cloned().unwrap();
     assert_eq!(failures.len(), 2);
@@ -354,6 +357,7 @@ fn a_board_that_cannot_be_read_answers_every_path_with_its_one_error() {
         &paths,
         failed(),
         &std::convert::identity,
+        Vec::new,
     );
     assert_eq!(ran.code, 1);
     let lines = text(&ran.stderr);
@@ -431,4 +435,135 @@ fn get_fetch_prints_an_attachments_bytes_from_the_store_and_without_fetch_its_re
         text(&gone.stderr)
     );
     assert_eq!(run(&["get", "/files/blob.bin"], b"").code, 0);
+}
+
+/// Runs `board` in `scenario` with the binary's built-in plugins.
+fn planned(scenario: &Scenario, arguments: &[&str]) -> Output {
+    super::built_in::built_in(scenario.workdir(), None, arguments).0
+}
+
+/// A board that enables plans and holds the open question
+/// /projects/a/questions/q, and the answer `answer` beside it when given.
+fn asked(answer: Option<Item<'_>>) -> Scenario {
+    let scenario = board();
+    let enabled = planned(&scenario, &["plugin", "enable", "plans"]);
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    scenario.write("projects/a/questions/q.json", Item::File(QUESTION));
+    if let Some(answer) = answer {
+        scenario.write("projects/a/answers/q.json", answer);
+    }
+    scenario
+}
+
+const QUESTION: &str = r#"{"$type": "plans/question/v1", "question": "Ship it?", "by": {"session": "local_0a1b"}, "asked": "2026-10-01T09:00:00Z", "status": "open", "options": [{"id": "ship", "text": "Ship it"}]}"#;
+
+const ANSWER: &str = r#"{"$type": "plans/answer/v1", "question": "/projects/a/questions/q", "choice": "ship", "words": "Yes, ship it today.", "answered": "2026-10-02T09:00:00Z"}"#;
+
+const ANSWERED: &str = "/projects/a/questions/q: answered by /projects/a/answers/q (2026-10-02T09:00:00Z): ship, \"Yes, ship it today.\"\n";
+
+#[test]
+fn get_of_an_answered_question_keeps_stdout_and_names_the_answer_on_stderr_in_text_and_json() {
+    let scenario = asked(Some(Item::File(ANSWER)));
+    let run = |arguments: &[&str]| planned(&scenario, arguments);
+    let shown = run(&["get", "/projects/a/questions/q"]);
+    assert_eq!((shown.code, shown.error.as_deref()), (0, None));
+    assert_eq!(text(&shown.stdout), QUESTION, "the file's bytes, unchanged");
+    assert_eq!(text(&shown.stderr), ANSWERED);
+    let report = run(&["get", "/projects/a/questions/q", "--json"]);
+    assert_eq!((report.code, report.error.as_deref()), (0, None));
+    assert_eq!(text(&report.stderr), ANSWERED);
+    let answer = got(&report);
+    let fields: Vec<&String> = answer.as_object().unwrap().keys().collect();
+    assert_eq!(
+        fields,
+        ["blob", "location", "record", "text"],
+        "--json gains no field"
+    );
+    assert_eq!(answer["text"], QUESTION);
+}
+
+#[test]
+fn get_of_a_question_with_nothing_beside_it_names_board_refs() {
+    let scenario = asked(None);
+    let shown = planned(&scenario, &["get", "/projects/a/questions/q"]);
+    assert_eq!((shown.code, shown.error.as_deref()), (0, None));
+    assert_eq!(text(&shown.stdout), QUESTION);
+    assert_eq!(
+        text(&shown.stderr),
+        "/projects/a/questions/q: no answer at /projects/a/answers/q; run board refs /projects/a/questions/q to find an answer at another path\n"
+    );
+}
+
+#[test]
+fn get_of_a_question_whose_answer_cannot_be_read_keeps_the_file_and_exit_code() {
+    let scenario = asked(Some(Item::Unreadable(ANSWER)));
+    let shown = planned(&scenario, &["get", "/projects/a/questions/q"]);
+    assert_eq!((shown.code, shown.error.as_deref()), (0, None));
+    assert_eq!(text(&shown.stdout), QUESTION);
+    let stderr = text(&shown.stderr);
+    assert!(
+        stderr.starts_with("/projects/a/questions/q: answer not read: board::"),
+        "{stderr}"
+    );
+    assert_eq!(stderr.lines().count(), 1, "{stderr}");
+}
+
+#[test]
+fn get_of_another_type_or_a_withdrawn_question_prints_no_line() {
+    let scenario = asked(Some(Item::File(ANSWER)));
+    scenario.write(
+        "projects/a/questions/w.json",
+        Item::File(&QUESTION.replace("\"open\"", "\"withdrawn\"")),
+    );
+    for path in [
+        "/projects/p",
+        "/projects/a/answers/q",
+        "/projects/a/questions/w",
+    ] {
+        let shown = planned(&scenario, &["get", path]);
+        assert_eq!((shown.code, shown.error.as_deref()), (0, None), "{path}");
+        assert_eq!(text(&shown.stderr), "", "{path}");
+    }
+}
+
+/// Each file under `root`, other than git's, as a path from `root` and its
+/// text.
+fn tree(root: &std::path::Path, under: &std::path::Path, files: &mut Vec<(String, String)>) {
+    for entry in std::fs::read_dir(under).unwrap() {
+        let path = entry.unwrap().path();
+        if path.file_name().is_some_and(|name| name == ".git") {
+            continue;
+        }
+        if path.is_dir() {
+            tree(root, &path, files);
+        } else {
+            let relative = path.strip_prefix(root).unwrap().display().to_string();
+            files.push((relative, std::fs::read_to_string(&path).unwrap()));
+        }
+    }
+}
+
+#[test]
+fn get_at_a_commit_reads_the_answer_beside_a_question_at_that_commit() {
+    let scenario = asked(Some(Item::File(ANSWER)));
+    let mut files = Vec::new();
+    tree(scenario.workdir(), scenario.workdir(), &mut files);
+    let borrowed: Vec<(&str, &str)> = (files.iter())
+        .map(|(path, text)| (path.as_str(), text.as_str()))
+        .collect();
+    let commit = scenario.commit(&borrowed).to_string();
+    scenario.write("projects/a/answers/q.json", Item::Deleted);
+    let now = planned(&scenario, &["get", "/projects/a/questions/q"]);
+    assert!(
+        text(&now.stderr).contains(": no answer at "),
+        "{}",
+        text(&now.stderr)
+    );
+    let then = planned(
+        &scenario,
+        &["get", "--at", &commit, "/projects/a/questions/q"],
+    );
+    assert_eq!((then.code, then.error.as_deref()), (0, None));
+    assert_eq!(text(&then.stdout), QUESTION);
+    assert_eq!(text(&then.stderr), ANSWERED);
 }

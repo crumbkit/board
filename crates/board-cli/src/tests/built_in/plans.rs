@@ -1107,3 +1107,53 @@ fn put_refuses_a_misspelt_field_whose_right_spelling_the_record_lacks() {
         "{stderr}"
     );
 }
+
+/// A question `plans.ask` files and `plans.answer` answers is named with
+/// its answer on stderr by `board get`, which prints the question's stored
+/// bytes, still `open`, on stdout.
+#[test]
+fn get_of_a_question_that_plans_answer_answered_names_the_answer() {
+    let board = board();
+    let options = json!([{"id": "ship", "text": "Ship it."}]);
+    let asking = json!({
+        "project": "a",
+        "question": {"question": "Ship it?", "by": {"person": "ana"}, "options": options},
+    });
+    let filed = board.run_with(&["--json", "call", "plans.ask"], &asking.to_string());
+    assert_eq!(filed.code, 0, "{}", text(&filed.stderr));
+    let path = json(&filed)["data"]["output"]["path"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let unanswered = board.run(&["get", &path]);
+    assert_eq!(
+        text(&unanswered.stderr),
+        format!(
+            "{path}: no answer at {}; run board refs {path} to find an answer at another path\n",
+            path.replace("/questions/", "/answers/")
+        )
+    );
+    let answered = board.call(
+        "plans.answer",
+        &[
+            "--path",
+            &path,
+            "--option",
+            "ship",
+            "--words",
+            "Ship it today.",
+        ],
+    );
+    let shown = board.run(&["get", &path]);
+    assert_eq!(shown.code, 0, "{}", text(&shown.stderr));
+    let stored: Value = serde_json::from_slice(&shown.stdout).unwrap();
+    assert_eq!(stored["status"], "open", "the stored status stays open");
+    assert_eq!(
+        text(&shown.stderr),
+        format!(
+            "{path}: answered by {} ({}): ship, \"Ship it today.\"\n",
+            answered["answer"].as_str().unwrap(),
+            answered["answered"].as_str().unwrap()
+        )
+    );
+}

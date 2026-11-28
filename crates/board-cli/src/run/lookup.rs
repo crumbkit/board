@@ -1,7 +1,9 @@
 //! `board get` and `board refs`: the reads that answer each path they are given.
 
+use std::cell::RefCell;
+
 use board_model::{LogicalPath, Refusal};
-use board_ops::{Absent, At, Board, MAX_LIMIT};
+use board_ops::{Absent, Asked, At, Board, GetReport, MAX_LIMIT, ReadError};
 
 use super::{Given, Page};
 use crate::config::Context;
@@ -27,7 +29,10 @@ pub(super) struct Refs {
 
 /// `get` of `paths`, in the working tree or in the commit `at` names, with
 /// each attachment's bytes when `fetch` is set, passing each refusal
-/// through `behind`.
+/// through `behind`. Each record a built-in plugin's note names is kept, and
+/// the paths beside them are read in one more read at the same commit, for
+/// the lines on stderr (docs/architecture/records/get.md, Notes beside a
+/// record).
 pub(super) fn get(
     board: &Board,
     printer: Printer,
@@ -35,18 +40,37 @@ pub(super) fn get(
     fetch: bool,
     behind: &dyn Fn(Refusal) -> Refusal,
 ) -> Output {
-    let fetched = move |answer| match answer {
-        Ok(report) if fetch => board.fetched(report),
-        answer => answer,
+    let asked: RefCell<Vec<Asked>> = RefCell::new(Vec::new());
+    let kept = |path: &LogicalPath, answer: Result<GetReport, ReadError>| {
+        if let Ok(report) = &answer
+            && let Some(record) = board.asked(path, report)
+        {
+            asked.borrow_mut().push(record);
+        }
+        match answer {
+            Ok(report) if fetch => board.fetched(report),
+            answer => answer,
+        }
     };
+    let notes = || board.noted(at, &asked.borrow());
     match at {
         None => {
-            let answers = board.get_each(paths).map(|each| each.map(fetched));
-            render::get(printer, paths, answers, behind)
+            let answers = (board.get_each(paths)).map(|each| {
+                paths
+                    .iter()
+                    .zip(each)
+                    .map(|(path, answer)| kept(path, answer))
+            });
+            render::get(printer, paths, answers, behind, notes)
         }
         Some(at) => {
-            let answers = board.get_each_at(at, paths).map(|each| each.map(fetched));
-            render::get(printer, paths, answers, behind)
+            let answers = (board.get_each_at(at, paths)).map(|each| {
+                paths
+                    .iter()
+                    .zip(each)
+                    .map(|(path, answer)| kept(path, answer))
+            });
+            render::get(printer, paths, answers, behind, notes)
         }
     }
 }

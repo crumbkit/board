@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
 
-use super::kit::{Printer, Refused};
+use super::kit::{Note, Printer, Refused};
 use super::location;
 use crate::report::Output;
 
@@ -27,6 +27,10 @@ names the paths `left_out`.
 Without --fetch, get prints a board/attachment/v1 record and never reaches
 the store that holds its bytes.
 
+Beside an open plans/question/v1, a line on stderr names the answer at its id
+under answers/, or says to run `board refs <question>`. The question's stored
+status stays `open`.
+
 Examples:
   board get /projects/p
   board get /projects/p --json
@@ -38,12 +42,14 @@ Examples:
 /// the paths after it with one `board::output::over_budget`. When the board
 /// could not be read at all, every path is answered with that one error.
 /// Each path's refusal passes through `behind`. Exit 1 when any path is
-/// refused.
+/// refused. Once every answer is read, `notes` gives the lines that print on
+/// stderr in text and in `--json`, such as the answer beside a question.
 pub(crate) fn get(
     printer: Printer,
     paths: &[LogicalPath],
     answers: Result<impl Iterator<Item = Result<GetReport, ReadError>>, ReadError>,
     behind: &dyn Fn(Refusal) -> Refusal,
+    notes: impl FnOnce() -> Vec<String>,
 ) -> Output {
     let mut room = printer.view.room(GET);
     let mut batch = Batch::new(&["get"], "paths", paths);
@@ -65,7 +71,8 @@ pub(crate) fn get(
         };
         batch.push(answer.map_err(Refused::new));
     }
-    let mut output = printer.print(GET, Ok(batch));
+    let notes = notes().into_iter().map(Note::Always).collect();
+    let mut output = printer.noted(GET, batch, notes);
     if output.code != 0 && output.error.is_none() {
         output.error = Some(Code::OutputOverBudget.as_str().to_owned());
     }
