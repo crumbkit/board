@@ -17,7 +17,8 @@ use crate::write::Target;
 
 mod error;
 
-pub use error::ResolveError;
+pub(crate) use error::{MAX_NEAREST, nearest, ranked};
+pub use error::{MAX_NEAREST_LISTED, ResolveError};
 
 /// The most pointers one resolution follows, as POSIX allows symlinks.
 pub const MAX_HOPS: usize = 40;
@@ -200,7 +201,7 @@ impl Repositories {
                 pointers,
             )?
             else {
-                return Err(missing(from_link, trail));
+                return Err(missing(from_link, trail).beside(|at| tree.beside(&current, at)));
             };
             let entry = tree.settle(&current, entry);
             from_link = usize::saturating_sub(from_link, 1);
@@ -551,10 +552,7 @@ impl<'k> Resolver<'_, 'k> {
                 Err(error) => return Err(error),
             }
         }
-        Err(ResolveError::NotFound {
-            path: path.clone(),
-            ancestor: LogicalPath::root(),
-        })
+        Err(ResolveError::not_found(path, LogicalPath::root()))
     }
 }
 
@@ -754,10 +752,7 @@ fn pointer<T: Tree>(
 /// `path`, so the segments of `path` before those resolved.
 fn not_found(path: &LogicalPath, remaining: usize) -> ResolveError {
     let resolved = path.segments().count().saturating_sub(remaining + 1);
-    ResolveError::NotFound {
-        path: path.clone(),
-        ancestor: path.prefix(resolved),
-    }
+    ResolveError::not_found(path, path.prefix(resolved))
 }
 
 /// The commit the ref `follow` names now in `mounted`, or

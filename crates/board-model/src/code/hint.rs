@@ -19,6 +19,21 @@ impl Code {
     }
 }
 
+/// The hint for a path that names nothing: the entries nearest it in its
+/// deepest ancestor that resolves, when any is near, else that ancestor's
+/// listing.
+fn not_found(fields: &Fields) -> Option<String> {
+    let ancestor = fields.ancestor.as_ref()?;
+    Some(if fields.nearest.is_empty() {
+        format!("run `board ls {ancestor}` to see what is there; paths leave out `.json`")
+    } else {
+        format!(
+            "nearest entries in {ancestor}: {}; run `board ls {ancestor}` for all",
+            fields.nearest.join(", ")
+        )
+    })
+}
+
 /// The hint for a mount at `path` that `board mount update` can mend.
 fn updating(code: Code, path: &LogicalPath) -> String {
     let update = format!("`board mount update {path}`");
@@ -159,10 +174,7 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             fields.directory.as_ref()?,
             crate::MAX_PATH_BYTES
         ),
-        Code::PathNotFound => format!(
-            "run `board ls {}` to see what is there; paths leave out `.json`",
-            fields.ancestor.as_ref()?
-        ),
+        Code::PathNotFound => not_found(fields)?,
         Code::RefDangling => dangling(fields)?,
         Code::SymlinkOutside | Code::SymlinkLoop | Code::SymlinkDangling => symlink(code, fields)?,
         Code::MountCommitMissing

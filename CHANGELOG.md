@@ -7,6 +7,22 @@
   the index already knows holds no pointer. Every command that reads the
   board, such as `search`, `query`, `check` and each plugin call, spends
   less time on its snapshot. Output is unchanged.
+- A change's plan can list tasks under a `## Closes at merge` heading,
+  one board path each. The build gate's `tasks` check passes an open
+  attached task listed there, says which tasks close at merge, and misses
+  a listed path that is not a task of the change's, saying to attach it or
+  remove it. When the pull request merges, `changes advance` (which
+  `board github merge --change` runs) and `changes sync` close each listed
+  task through `tasks.done` before they write the change as done. A
+  refused close leaves the change in its phase: `advance` refuses with
+  `changes::land::tasks_not_closed` and `sync` reports `owed`, and a rerun
+  skips the tasks already closed. `sync --dry_run true` names the tasks it
+  would close and closes none. `advance` into done refuses with
+  `changes::land::tasks_open` while an attached task the plan does not
+  name is open, and with `changes::land::no_merge` while a named task is
+  open on a change that records no pull request, which never closes a
+  task. Only a level-two heading counts, a fenced code block is not read,
+  and a Markdown link's target counts as a path.
 - A `plans/decision/v1` can name the one board entry it decides in
   `decides`, which `board plans decide --decides <path>` sets. The
   `owner-approval` check counts only an explicit approval of the plan that
@@ -50,6 +66,17 @@
   that a lookup failed is still given on every edit, and an edit of a
   board record is still refused every time. The memory lasts until the mod
   reloads, as on `/clear` and `/resume`.
+- A refusal with `board::path::not_found` names, in a `nearest` field and
+  in its hint, at most 5 entries in the deepest ancestor that resolves
+  that are close to the segment that missed: first each that starts with
+  it, such as `notes.md` for `notes`, then each within an edit distance of
+  a third of its length, such as a stamp one minute off, then each that
+  shares a long prefix with it, such as a slug cut at another length. The
+  hint reads `nearest entries in /projects/p/decisions: <names>; run
+  board ls /projects/p/decisions for all`. A directory of over 10,000
+  entries, or one with no close name, offers none, and the hint says to
+  run `board ls` as before. Board never reads a nearest path in place of
+  the one asked for.
 - A word an agent guesses after a plugin's name runs the capability it
   means: `changes show` and `changes status` run `changes next`,
   `changes list` runs `changes open`, and `tasks list`, `plans list` and

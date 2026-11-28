@@ -14,6 +14,7 @@ board-validate.workspace = true
 crumbkit-durable.workspace = true
 crumbkit-process.workspace = true
 gix.workspace = true
+strsim.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

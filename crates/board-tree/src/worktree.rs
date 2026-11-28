@@ -474,6 +474,40 @@ impl<T: Send> Tree for WorkingTree<'_, '_, T> {
             .collect())
     }
 
+    /// Ranks the directory's items by name as it listed them, then
+    /// classifies the candidates in rank order and keeps the first that git
+    /// sees, so a miss in a large directory stats a handful of items and
+    /// never offers one git ignores.
+    fn beside(&mut self, directory: &PathBuf, missed: &str) -> Vec<String> {
+        let Ok(listing) = self.listing(directory) else {
+            return Vec::new();
+        };
+        if listing.items.len() > crate::MAX_NEAREST_LISTED {
+            return Vec::new();
+        }
+        let mut items: HashMap<String, Vec<usize>> = HashMap::new();
+        for (at, item) in listing.items.iter().enumerate() {
+            let directory = item.file_type == Some(ItemType::Directory);
+            if let Some(segment) = crate::tree::segment_of(&item.name, directory) {
+                items.entry(segment).or_default().push(at);
+            }
+        }
+        let segments: Vec<String> = items.keys().cloned().collect();
+        let mut kept = Vec::new();
+        for segment in crate::resolve::ranked(missed, &segments) {
+            if kept.len() == crate::resolve::MAX_NEAREST {
+                break;
+            }
+            let seen = items[segment]
+                .iter()
+                .any(|at| self.entry(directory, *at).is_some());
+            if seen {
+                kept.push(segment.clone());
+            }
+        }
+        kept
+    }
+
     fn followed_symlink(&mut self) {
         if let Some(reads) = &self.reads {
             reads.borrow_mut().push(crate::reads::ANY.to_owned());

@@ -394,6 +394,7 @@ fn a_path_naming_an_existing_record_by_its_file_is_not_found_and_a_new_records_f
         refused.refusal().fields,
         Fields {
             ancestor: Some(path("/tasks")),
+            nearest: vec!["a".to_owned()],
             ..Fields::at(&path("/tasks/a.json"))
         }
         .json()

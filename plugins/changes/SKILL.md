@@ -169,6 +169,12 @@ blocks is missing.
    merging. Add `--dry_run true` to see what it would do first. Close the
    task of each change it ends. An entry with `changes::sync::owed` still
    has open tasks; close them and sync again.
+   When a change does the work of a queued task, attach the task and list
+   its board path in the plan under a `## Closes at merge` heading of its
+   own. The build gate's `tasks` check then passes it while it is open, and
+   `advance` into done, which `board github merge --change` runs, or
+   `sync`, closes it through `tasks.done` once the pull request merges.
+   Never close such a task yourself before the merge.
 7. At most three active build changes per repository are in `build`, and
    apart from them three active prototypes exploring. Mounts of one
    repository count together; `repository` in the refusal names it, and

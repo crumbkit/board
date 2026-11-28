@@ -29,7 +29,9 @@ pub use crate::mounts::{
     Probed, Reached, Scopes, head_of, in_scope, origin, own_origin, within,
 };
 pub use crate::repositories::{Checkout, Repositories, WriteGate, take_unchecked_notes};
-pub use crate::resolve::{Ancestor, InCommit, MAX_HOPS, ResolveError, Resolver};
+pub use crate::resolve::{
+    Ancestor, InCommit, MAX_HOPS, MAX_NEAREST_LISTED, ResolveError, Resolver,
+};
 pub use crate::symlink::Refused;
 pub use crate::through::{Inside, Through};
 pub use crate::transport::{Deadline, GIT_DEADLINE, Upstream};
