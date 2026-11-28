@@ -30,6 +30,11 @@ takes the board's lock or uploads an attachment, and a nested call reads the
 same checkout. A board a plugin opens elsewhere, such as the personal
 board, is read at its pins.
 
+A plugin call refused with `board::plugin::not_enabled` in a board's own
+tree, when no `-C`, `--personal` or `--board` chose that board, names in
+its hint each other known board that mounts the tree's repository and
+enables the plugin, as `board --board <dir> call <plugin>.<capability>`.
+
 A run without `--checkout` that finds its board through a mount of the
 directory's own repository records that mount and the directory. Board
 reads nothing more from the checkout until a built-in plugin asks.

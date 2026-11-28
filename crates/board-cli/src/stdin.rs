@@ -2,11 +2,12 @@
 
 use std::ffi::OsString;
 use std::io::Read;
+use std::path::Path;
 
-use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, RecordType, Refusal, Role};
+use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, PluginName, RecordType, Refusal, Role};
 use board_ops::agent::AGENT_VARIABLE;
-use board_ops::{Board, Expect};
-use board_plugin::Target;
+use board_ops::{Board, CallFailed, Expect, KnownBoards, quoted};
+use board_plugin::{CallError, Target};
 use clap::Subcommand;
 use serde_json::{Map, Value};
 
@@ -143,17 +144,23 @@ pub(crate) enum Input<'a> {
 /// `call`: the target, or the capability alone, with the input as flags or,
 /// when no flag is given, from `stdin`. A terminal on stdin, or nothing read
 /// from it, is no input. A `bad_input` refusal of a call that left stdin
-/// holding data says so in its help.
+/// holding data says so in its help. `unchosen` is the directory the run
+/// started in when no `-C`, `--personal` or `--board` chose the board; a
+/// `not_enabled` refusal there names in its hint the known boards that could
+/// run the call ([`elsewhere`]).
 pub(crate) fn call(
     board: &Board,
     context: &Context,
     printer: Printer,
-    target: &Target,
+    calling: (&Target, Option<&Path>),
     flags: Option<Map<String, Value>>,
     mut stdin: Input<'_>,
 ) -> Output {
-    let read = match (flags.filter(|flags| !flags.is_empty()), &mut stdin) {
-        (Some(flags), _) => Ok(Value::Object(flags).to_string().into_bytes()),
+    let (target, unchosen) = calling;
+    let given =
+        (flags.filter(|flags| !flags.is_empty())).map(|flags| Value::Object(flags).to_string());
+    let read = match (&given, &mut stdin) {
+        (Some(json), _) => Ok(json.clone().into_bytes()),
         (None, Input::Stdin(stdin)) if !context.terminal => bounded(&mut **stdin),
         (None, _) => Ok(Vec::new()),
     };
@@ -186,9 +193,79 @@ pub(crate) fn call(
                     None => why,
                 });
             }
+            if let (Some(start), Some(plugin)) = (unchosen, not_enabled(&error))
+                && let Some(hint) = elsewhere(
+                    board,
+                    context,
+                    &known,
+                    start,
+                    (target, plugin),
+                    given.as_deref(),
+                )
+            {
+                refusal.hint = Some(hint);
+            }
             render::refused(printer, refusal)
         }
     }
+}
+
+/// The plugin `error` refuses as not enabled, if it does.
+fn not_enabled(error: &CallFailed) -> Option<&PluginName> {
+    match error {
+        CallFailed::Call {
+            source: CallError::NotEnabled { plugin },
+        } => Some(plugin),
+        _ => None,
+    }
+}
+
+/// The hint for a call of `target` refused because the board whose own
+/// tree holds `start` does not enable `plugin`, naming each other known
+/// board that mounts the repository holding `start` and enables it, or
+/// `None` when the opened board's own tree does not hold `start` or no
+/// such board is known. `given` is the input a plugin word's flags gave,
+/// which `board call` reads as JSON on stdin.
+fn elsewhere(
+    board: &Board,
+    context: &Context,
+    known: &KnownBoards,
+    start: &Path,
+    (target, plugin): (&Target, &PluginName),
+    given: Option<&str>,
+) -> Option<String> {
+    let opened = board.repository().path();
+    if board_tree::discover(start).as_deref() != Some(opened) {
+        return None;
+    }
+    let capability = match target {
+        Target::Named { capability, .. } | Target::Capability(capability) => capability,
+    };
+    let (home, cache) = (context.home.as_deref(), context.cache.as_deref());
+    let roots = board_ops::enabling(known, opened, start, plugin, home, cache);
+    let named: Vec<String> = (roots.iter())
+        .map(|root| quoted(&root.display().to_string()))
+        .collect();
+    let commands: Vec<String> = (named.iter())
+        .map(|root| format!("`board --board {root} call {plugin}.{capability}`"))
+        .collect();
+    let (boards, run) = match named.as_slice() {
+        [] => return None,
+        [one] => (format!("the known board {one}"), commands.join("")),
+        _ => (
+            format!("the known boards {}", named.join(", ")),
+            commands.join(" or "),
+        ),
+    };
+    let input = given.map_or_else(
+        || "the same input".to_owned(),
+        |json| format!("`{json}` as JSON on stdin"),
+    );
+    Some(format!(
+        "the board at {}, whose own tree holds this directory, does not enable {plugin}, but {boards} mount{s} this repository and enable{s} it; run {run} with {input}",
+        quoted(&opened.display().to_string()),
+        s = if roots.len() == 1 { "s" } else { "" },
+    ))
 }
 
 /// `type add`: the schema on stdin, with a note when the board already
