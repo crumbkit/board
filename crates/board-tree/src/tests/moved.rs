@@ -54,7 +54,7 @@ fn a_miss_under_both_prefixes_names_the_path_as_written() {
     assert!(
         matches!(
             &error,
-            crate::ResolveError::NotFound { path: at, ancestor }
+            crate::ResolveError::NotFound { path: at, ancestor, .. }
                 if *at == path("/controls/z") && *ancestor == LogicalPath::root()
         ),
         "{error:?}"

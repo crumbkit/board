@@ -24,6 +24,7 @@ use crate::records::{
 };
 use crate::stop::{Shown, holds, reached, stop_reached};
 use crate::sync::require_merged;
+use crate::tasks::{at_merge, close_at_merge, refuse_owed, refuse_unmerged};
 use crate::wip::{Limit, Move, active_days, admit};
 use crate::{PLUGIN, refusal, to_value};
 
@@ -633,7 +634,17 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         ));
     };
     if to == DONE {
-        require_merged(host, &path, &mut change)?;
+        // An open task the plan does not close at merge refuses the move
+        // before GitHub is read, as `sync` leaves such a change owed.
+        let tasks = at_merge(host, &path, &change)?;
+        refuse_owed(&path, &phase, &tasks)?;
+        if require_merged(host, &path, &mut change)? {
+            // The tasks close before the change is written as done, so a
+            // refusal leaves it in its phase and a rerun closes the rest.
+            close_at_merge(host, &path, &phase, &tasks.closes, &advance_command(&path))?;
+        } else {
+            refuse_unmerged(&path, &phase, &tasks)?;
+        }
     }
     change.phase.clone_from(&to);
     let mut limit = None;
@@ -653,6 +664,11 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         to,
         warning: limit,
     }))
+}
+
+/// The command that moves the change at `path` on.
+fn advance_command(path: &str) -> String {
+    format!("board changes advance --path {path}")
 }
 
 /// The command that moves the change at `path` into build past the WIP

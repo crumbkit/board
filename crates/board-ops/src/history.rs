@@ -69,10 +69,19 @@ impl Board {
         let mut view = (repositories.in_commit(repositories.root(), start)).map_err(git)?;
         let location = match Self::located(path, |path| view.resolve(path)) {
             Err(ReadError::Resolve {
-                source: ResolveError::NotFound { path, ancestor },
+                source:
+                    ResolveError::NotFound {
+                        path,
+                        ancestor,
+                        beside,
+                    },
             }) => {
                 let holder = (view.resolve(&ancestor).ok()).and_then(|at| mount_holder(&at));
-                let source = ResolveError::NotFound { path, ancestor };
+                let source = ResolveError::NotFound {
+                    path,
+                    ancestor,
+                    beside,
+                };
                 return Err(match holder {
                     Some(holder) => ReadError::BeneathMount { source, holder },
                     None => ReadError::Resolve { source },

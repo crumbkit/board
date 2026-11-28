@@ -112,8 +112,8 @@ that one record.
   `/controls/` or a `controls/control/v1` reads as its `/rules/` form.
   `board check` does not follow `rule`, because an obligation is deleted
   once its work is done and a plan snapshot never changes. `plan` checks the
-  path when it writes it: a record that is missing is
-  `changes::ref::dangling`, and an owed path that is no rule is
+  path when it writes it: a record that is missing is left out with the
+  warning `changes::ref::dangling`, and an owed path that is no rule is
   `changes::ref::wrong_type`. A plan's text
   takes no such paths: the `considered` and `obligations` checks read only
   these fields. A `### Considered` or `## Obligations left owed` heading
@@ -292,7 +292,8 @@ A v1 change and a migrated one both meet the development flow's gates,
 below, which block on more than the gates before flows did:
 
 - leaving plan, `owner-approval` needs a `plans/decision/v1` that the owner
-  signed, whose `refs` name the plan or the change, on every route, unless
+  signed, whose `refs` name the change and whose `decides` names a revision
+  of the plan, or an answer that approves the plan, on every route, unless
   the plan answers `ux` none and `data` none. Before
   flows only an `ask-first` change needed a decision, and any decision
   passed, a rejection or an agent's stub included. `considered` is new, and
@@ -426,7 +427,22 @@ of `changes` still fails `review`.
   merge with `board github merge --change <path>` or, for a closed one, to
   drop the change. A gh failure is `changes::land::gh_failed`. Neither
   writes anything. A change that records no pull request moves into
-  `done` without gh. The call receives `GH_TOKEN`, `GITHUB_TOKEN` and
+  `done` without gh. Once GitHub reports the merge, and before it writes
+  the change as `done`, `advance` closes through `tasks.done` each task
+  still open that the plan names under a `## Closes at merge` heading and
+  that is the change's own task or attached to it. When `tasks.done`
+  refuses one, the change stays in its phase, the tasks closed before it
+  stay closed, and `advance` refuses with `changes::land::tasks_not_closed`,
+  naming the task and the refusal; running it again skips the closed
+  tasks. Before it reads GitHub, `advance` into `done` refuses with
+  `changes::land::tasks_open` while a task attached to the change is
+  neither done nor dropped and the current plan does not name it under
+  `## Closes at merge`, as `sync` leaves such a change `owed`; a plan whose
+  text Board cannot read names no task. A change that records no pull
+  request has no merge to close its named tasks, so while one of them is
+  open `advance` refuses with `changes::land::no_merge` and closes nothing;
+  the remedy is to attach the pull request, or for the owner to close each
+  task. The call receives `GH_TOKEN`, `GITHUB_TOKEN` and
   `GH_CONFIG_DIR` for gh. A paused change is refused with
   `changes::phase::paused`. Leaving `done` or `dropped` is
   `changes::phase::final`, which points to `open` and `start`.
@@ -477,8 +493,8 @@ of `changes` still fails `review`.
 
   | `status` | When | What sync does | `code` |
   | --- | --- | --- | --- |
-  | `merged` | GitHub says it merged | `to` is `done`, and `merge_commit_url` is set; `detail` says when the change left `build` or `review`, whose gates it did not pass, and says when sync moved it from `land` without evaluating the land gates | none |
-  | `owed` | It merged, but a `tasks/task/v2` or `tasks/task/v3` that its plans' `records` reach, through any link, is not done or dropped | Leaves it; `detail` names the tasks | `changes::sync::owed` |
+  | `merged` | GitHub says it merged | Closes each open task the plan names under `## Closes at merge`, as `advance` does, then `to` is `done`, and `merge_commit_url` is set; `detail` names the tasks it closed, or with `--dry_run true` those it would close, says when the change left `build` or `review`, whose gates it did not pass, and says when sync moved it from `land` without evaluating the land gates | none |
+  | `owed` | It merged, but a `tasks/task/v2` or `tasks/task/v3` that its plans' `records` reach, through any link, is not done or dropped and the plan does not name it under `## Closes at merge`; or `tasks.done` refused a task the plan names there | Leaves it and closes nothing more; `detail` names the tasks, or the task and the refusal | `changes::sync::owed` |
   | `closed` | It closed without merging | `to` is `dropped`, and `dropped_reason` says so with the day it closed | none |
   | `open` | It is open | Leaves it | none |
   | `not_found` | GitHub answers 404, which it also answers when gh's account cannot see the repository | Leaves it; `detail` says to check `gh auth status`, and `command` drops it | `changes::sync::pull_not_found` |
@@ -489,10 +505,11 @@ of `changes` still fails `review`.
   Every move is written in one commit, and today's day goes to the cache. With `--dry_run true` nothing is written. When gh fails in any
   other way, cannot run, runs past 20 seconds, or the gh calls together run
   past 540 seconds, sync refuses with
-  `changes::sync::gh_failed` and writes nothing. A merged change moves to `done`
+  `changes::sync::gh_failed` and writes no change; a task an earlier entry
+  closed stays closed, and the next sync skips it. A merged change moves to `done`
   from any of those phases; `from` is in git history, so a change that
-  skipped review shows it. Sync never closes a change's own `task`; each
-  entry names it. The
+  skipped review shows it. Sync closes a change's own `task` only when the
+  plan names it under `## Closes at merge`; each entry names it. The
   call receives `GH_TOKEN`, `GITHUB_TOKEN` and `GH_CONFIG_DIR` for gh, and
   may run for 600 seconds.
 - `open [--kind build|prototype] [--limit <n>]`: read-only. Changes not
@@ -559,12 +576,22 @@ of `changes` still fails `review`.
   the change named before. A plan whose text, `uses`, `paths` and `answers` equal
   those of the plan record the change names writes nothing and returns
   that record with `unchanged: true`; otherwise `unchanged` is false. It keeps each reference in `uses` once. It
-  refuses a reference that reaches nothing, or a record Board marks degraded
-  for anything but a broken reference of its own (`changes::ref::dangling`,
-  whose `refs` lists them); a directory (`changes::plan::directory`); a text
-  over 3,000 words (`changes::plan::too_long`); and Markdown documents in
-  `uses` over 3,000 words in all (`changes::plan::uses_too_long`). Words are
-  separated by whitespace. The last limit comes from
+  refuses a directory in `uses` (`changes::plan::directory`) and a text over
+  6,000 words (`changes::plan::too_long`), so a pasted log cannot become a
+  plan. It writes the plan and adds a `warnings` entry for each fault that
+  the gates catch at `advance`: a text over 3,000 words
+  (`changes::plan::too_long`), Markdown documents in `uses` over 3,000 words
+  in all (`changes::plan::uses_too_long`), each with the word count, and a
+  reference in `uses`, `considered` or `owed` that reaches nothing, or a
+  record Board marks degraded for anything but a broken reference of its
+  own (`changes::ref::dangling`). It leaves each such reference out of the
+  plan and lists it; a `considered` group left with no record is left out,
+  so the `considered` check then names any surfaced record the plan no
+  longer considers. It also warns with `changes::plan::sections_missing`
+  of each heading that a `sections` check of the change's flow, in any
+  phase, requires and the text lacks, such as the development flow's two
+  test sections, which land reads; it reads no check's `when`. Words are
+  separated by whitespace. The `uses` limit comes from
   `/evals/board-standards-selection` in the owner's board: agents that chose
   standards from each directory's `index.md` stayed within it.
 - `plan-amend --path /changes/<name> [--proves <text>] [--does-not-prove <text>]`
@@ -906,7 +933,7 @@ evaluated by kind:
 | `records` | at least `min` attached records of `type` meet `where` (`at_head`, with `unchanged_by` as below, `values`, `no_findings`, `owner_signed`, which counts only a decision the owner signed, or for some checks the owner's answer as below, and `refs`, each of which a record's refs must name: `plan` is the plan, its text or the change), from different actors when `distinct` names a part of `by` |
 | `run` | an attached run of the change's suite with `scope` is clean, passing and on `head` |
 | `paths` | the diff edits only the plan's paths |
-| `tasks` | every attached task but the change's own is done or dropped |
+| `tasks` | every attached task but the change's own is done or dropped, or is named under the plan's `## Closes at merge` heading, which Board closes when the pull request merges; each path that section names is the change's own task or an attached task. Only a level-two `## Closes at merge` heading counts, running to the next heading of level one or two; lines in a fenced code block are not read; a path counts as a whole word, bare, in backticks or as a Markdown link's target. The detail of a passing check names the named tasks still open, which close at merge |
 | `understood` | a decision the owner signed references an attached understanding check of this change's `subject`, or the option the owner's attached answer chose names both the change and that record; with `rechecks`, each such check also holds rechecks of that many points, and the latest recheck of every point matches |
 | `mockups` | the `agreed` part: each mockup under UX is named by a decision the owner signed, or by the chosen option of the owner's attached answer in its attached question; the `neighbours` part: UX lists its neighbours; the `versioned` part: each mockup item names a version, as `version <id>` or a `/artifacts/<id>/versions/<id>` path; the `built` part: for each mockup version the plan names, a `changes/conformance/v1` at `head` says `match` with no difference listed, and the detail lists each element that is missing or different; both `agreed` and `neighbours` when `part` is left out |
 | `considered` | each path in the change's `surfaced` that still reaches something is in the plan's `uses` or its `considered` field |
@@ -940,13 +967,18 @@ option approves no plan and `.../m1.png` does not name `.../m1`. A `board-ref`
 with a `#` fragment resolves to the path before it, and a fragment after
 `/` alone is malformed.
 
-The `mockups` check, a waiver and `owner-approval` read only which paths
-the chosen option names, never its wording. So only the option that agrees
-a mockup or waives a check may name the mockup's URL or board path or
-`<change>#<id>`, and that option must not name the bare change path. An
-option that names both the mockup and `/changes/<name>` also approves the
-plan, and an option such as "Revise <mockup URL>" agrees the mockup.
-Tests in `gates/tests/design.rs` pin both cases, so this rule is the guard.
+The `mockups` check and a waiver read only which paths the chosen option
+names, never its wording. So only the option that agrees a mockup or
+waives a check may name the mockup's URL or board path or `<change>#<id>`,
+and an option such as "Revise <mockup URL>" agrees the mockup.
+`owner-approval` reads the option id instead, so an option that names the
+mockup, `/changes/<name>` and a plan revision approves no plan unless it is
+the `approve` option of the approval question. Tests in
+`gates/tests/design.rs` pin both cases. Leave the bare change path out of
+an agreeing or waiving option all the same, for two reasons: `data-signed`
+counts a chosen option that names the change and an understanding record,
+and `changes.approve` offers Touch ID after any answer whose chosen option
+names the change.
 
 Every owner check (`owner_signed`, `understood`, `mockups` and a waiver)
 reads one rule. A decision counts as the owner's signature only when its
@@ -974,7 +1006,7 @@ change's path in the text of the option that approves it, and to attach
 the question and the answer with
 `board changes attach --path <change> --ref <path>`.
 
-Such a check also counts the owner's Touch ID approval of the current plan.
+Such a check also counts the owner's Touch ID approval of a plan revision.
 `changes.approve --path <change>` refuses with `changes::approve::not_chosen`
 unless an attached answer chose an option that names the change. Otherwise it
 asks Board's `decide` for the capability `changes.approve` at the change's
@@ -993,6 +1025,53 @@ check's detail says why.
 The questions pane runs `changes.approve` after an answer whose chosen option
 names the change it was attached to.
 
+Only an explicit approval of the plan counts, and each names the revision
+of the plan it approves, a record under `<change>/plans/`. A decision
+approves the plan only when its refs name the change and its `decides`
+names the revision it approves, such as the current plan's path or its
+`.md` file. A decision that decides anything else, such as a section of
+the plan, a question or an understanding check, approves nothing, though
+its refs or words name the current revision, and so does a decision with
+no `decides`. An answer approves the plan only when it chose the `approve`
+option of an attached question whose `blocks` is the change, and that
+option names the change and a revision, as the question `changes ask`
+files does ("Approve <change> as planned in <change>/plans/<id>"). A
+choice to revise, and a choice in any other question, approves nothing,
+even when its option names the change and the current revision. Record
+the owner's reply to that question with `plans answer`, never as a
+decision. A Touch ID approval approves the revision whose digest
+it signed; `next` tries each revision, newest first.
+
+The approval counts while the current plan does not differ from that
+revision in substance. The plan differs in substance when its `answers`
+differ, or when the text of its Outcome, Out of scope, UX or Data section
+differs once runs of whitespace are collapsed. A missing section counts as
+empty text. Any other change, such as `paths`, `owed`, `uses`, `considered`,
+the Tests sections, Problem or a decision log, is routine. A passing check
+whose approval is of an earlier revision names that revision and the
+routine parts changed since, and the reviewer raises a finding when such a
+change alters what the owner approved. A missing check names the approved
+revision and the parts the current plan changes. An approval of a revision
+Board no longer reads lapses too. When Board refuses to list the
+revisions, the check is missing and quotes the refusal.
+
+Two limits apply. `owner-approval` is a check of the plan phase, so the
+lapse applies only while the change is in plan; a plan rewritten in build,
+review or land is not judged against the owner's approval again. And an
+answer's approval is judged against the approved revision's record and
+text as Board holds them now, so it trusts that no one edits a revision's
+files in place; only the Touch ID approval's digest notices such an edit.
+
+The `mockups` check compares versions too. An agreement names the
+mockup when its URL or board path is in the decision's `urls`, `refs` or
+words, or in the chosen option's text. An agreement that names one mockup
+names each version its words give as `version <id>`, or as a
+`/versions/<id>` path, anywhere in them; one that names several mockups
+names only the version written right after each mockup.
+An agreement naming versions counts only when one is the version the
+plan's Mockups item names; otherwise the check is missing and names both.
+An agreement that names no version counts, and the passing detail says so.
+
 Only the signed approval proves the owner chose. An answer's `by` and
 `written_by`, and a decision's `by.person`, are claims any writer can make.
 
@@ -1007,15 +1086,15 @@ These routes still pass a gate without the owner:
    `/flows/` and move the change onto it with `changes reflow`.
 3. A direct phase edit. An agent can write the change record with a later
    phase. `github.merge` reads only the land gate, which has no owner check.
-4. An approval that names the change. A decision whose `refs` name the
-   change, in place of a plan record, keeps counting after the plan is
-   written again.
-5. An option that names the change but does not approve it. The gate
-   counts any chosen option whose text names the change's path, so an
-   answer that chose "Reject /changes/<name>" counts as approval.
-6. An edited question. The gate reads the question's options as they are
+4. A hand-written approval question. The gate identifies the approval
+   question by its `blocks` and its `approve` option id, so a question any
+   writer files in that shape counts as `changes ask`'s, and an `approve`
+   option worded "Reject /changes/<name>/plans/<id> of /changes/<name>"
+   counts as approval.
+5. An edited question. The gate reads the question's options as they are
    now, so editing an option's text after the owner answered changes what
-   the answer counts for.
+   the answer counts for. Rewriting an answered option to name the current
+   revision binds the old answer to the current plan.
 
 Instructions, remedies and the rules of a `rule-paths` or
 `planned-rule-paths` check may name
@@ -1065,7 +1144,7 @@ The development flow's gates:
 
 | Leaving | Checks |
 | --- | --- |
-| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, unless the plan answers `ux` none and `data` none, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name the plan or the change, or the owner's attached `plans/answer/v1` whose chosen option, in its attached question, names the change, or the owner's Touch ID approval of `changes.approve` for the current plan, on every route; `mockups` and `mockup-versions`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
+| plan | `plan-sections`, the eight sections; `considered`; `task`; `route`; `owner-approval`, unless the plan answers `ux` none and `data` none, a `plans/decision/v1` the owner signed, with `by.person`, whose `refs` name the change and whose `decides` names a revision of the plan, or the owner's attached `plans/answer/v1` that chose the `approve` option of an attached question blocking the change, whose text names the change and a revision of the plan, or the owner's Touch ID approval of `changes.approve` for the current plan, on every route; `mockups` and `mockup-versions`, when the plan answers `ux` mockups; `data-signed`, an `understood` check of the data, when it answers `data` stored; `lifecycle-declared`, a `planned-rule-paths` check of `/rules/{repo}/lifecycle-paths`, when it answers `lifecycle` none; `lifecycle-record`, an `exists` check of `/changes/{name}/lifecycle`, when it answers `lifecycle` record; `obligations`, which does not block |
 | build | `head`; `suite-run`, waivable; `tasks` |
 | review | `review`, a report on `head`, or on an earlier commit when each commit after it edits only paths `/rules/{repo}/record-paths` lists or the lifecycle record's `doc`, cleanly merges the branch the mount follows, or is a fix commit a `changes/fix/v1` names, with no critical or high finding; `design-conformance`, the `built` part of `mockups`, when the plan answers `ux` mockups; `paths`; `ui-paths` and `data-paths`, `rule-paths` checks of `/rules/{repo}/ui-paths` when the plan answers `ux` none and `/rules/{repo}/data-paths` when it answers `data` none; `lifecycle-paths`, the same check of `/rules/{repo}/lifecycle-paths` unless Board reads a `changes/lifecycle/v1` at `/changes/{name}/lifecycle`; `lifecycle-none-paths`, the same check when the plan answers `lifecycle` none, whether or not a record exists; `obligations-settled`, with the escape heading `Obligations left owed` |
 | land | `test-sections`, What the tests prove and What the tests do not prove; `pull-request`; `rechecks`, which does not block, rechecks of two points, the latest recheck of each matching, when the plan answers `data` stored; `lifecycle-paths-at-land` and `lifecycle-none-paths-at-land`, the two review checks of `/rules/{repo}/lifecycle-paths` again, so each re-reads the diff at the recorded head and a record removed after review is gated |
@@ -1141,12 +1220,17 @@ A change moves into `done` through these states:
 | last phase, pull request merged | `advance`, gate passes | `done`, with `merge_commit_url` | Board |
 | last phase, pull request open | `github.merge --change`; GitHub reports the merge | `done`, through `advance` | Board |
 | last phase, pull request open | `github.merge --change`; a merge queue holds it | unchanged; `queued` is true | the agent runs `advance` once it merges |
-| any open phase but plan, pull request merged | `sync` | `done`, or left while a task is open | Board |
-| last phase, no pull request | `advance`, gate passes | `done` | Board |
+| any open phase but plan, pull request merged | `sync` | `done`, after it closes the tasks the plan closes at merge, or left while another task is open | Board |
+| last phase, no pull request | `advance`, gate passes | `done`; while a task the plan closes at merge is open, unchanged and refused `changes::land::no_merge` | Board; the owner closes the task |
+| last phase, an attached task open that the plan does not close at merge | `advance` | unchanged; refused `changes::land::tasks_open` | the agent closes or names the task |
 | last phase | gh fails | unchanged; refused `changes::land::gh_failed` | the agent checks `gh auth status` |
 
 `advance` reads GitHub before it writes, so a crash or a refusal leaves the
-change in its phase, and running it again reads GitHub again. `github.merge`
+change in its phase, and running it again reads GitHub again. It closes
+the tasks the plan closes at merge after GitHub reports the merge and
+before it writes the change, so a crash between them leaves those tasks
+closed and the change in land; running `advance` or `sync` again skips
+them and moves the change. `github.merge`
 sends the merge before it runs `advance`; a crash between them leaves the
 pull request merged and the change in land, and `advance` then moves it.
 The write names the change's blob, so a concurrent writer makes it fail
@@ -1304,7 +1388,15 @@ plan's text, `changes/<name>/plans/<stamp>.md`, stays writable.
 Only `board_record` refuses, and `unknown` in a board's checkout. Every other
 code is advice: the edit runs and
 the guard adds one line to the tool result that starts with the code, says
-the edit ran, and names what to do:
+the edit ran, and names what to do. The guard remembers the last verdict on
+each agent's edits of each mount, counting an edit that needed no advice. A
+later edit by the same agent whose line would say what that verdict said,
+apart from the file, runs with no line. A line that says something new, such
+as another phase, branch or change, is given in full, and so is advice that
+returns after an edit that needed none, such as a change paused again after
+an edit in build. `unknown` advice and every refusal are given on every
+edit. The guard keeps these verdicts until the mod reloads, and `/clear` or
+`/resume` starts over:
 
 - `changes::guard::board_record`: the file is the board config, a change
   record or a mount record. The refusal names the board command to use.
@@ -1343,7 +1435,10 @@ line. It cannot see:
   reloads, and `/clear` or `/resume` starts over. With no brief kept and a
   full window of 4,096 entries, the guard advises with
   `changes::guard::unknown`, since the oldest row left may be one another
-  agent wrote.
+  agent wrote;
+- an agent that lost a line of advice in a compaction. The guard has
+  already given that line to the agent, so it is not given again for that
+  mount until the verdict changes.
 
 The guard advises on an edit of every mounted repository that is not itself a
 known board, including the notes repositories a personal board mounts, such

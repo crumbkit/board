@@ -216,17 +216,21 @@ impl Answering<'_> {
     /// Where `path` leads or, when `absent` says to locate it, where a file
     /// there would be.
     fn found(&mut self, path: &LogicalPath) -> Result<Found, RefsError> {
-        let found = match self.board.locate_in(&mut self.view, path) {
+        let (found, beside) = match self.board.locate_in(&mut self.view, path) {
             Ok(location) => return Ok(Found::At(location)),
             Err(ReadError::Resolve {
-                source: ResolveError::NotFound { ancestor, .. },
-            }) if self.absent == Absent::Locate => ancestor,
+                source:
+                    ResolveError::NotFound {
+                        ancestor, beside, ..
+                    },
+            }) if self.absent == Absent::Locate => (ancestor, beside),
             Err(source) => return Err(RefsError::Read { source }),
         };
         let not_found = || {
             refused(ResolveError::NotFound {
                 path: path.clone(),
                 ancestor: found.clone(),
+                beside: beside.clone(),
             })
         };
         let ancestor = self.view.ancestor(path).map_err(refused)?;

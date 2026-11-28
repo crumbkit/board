@@ -19,6 +19,21 @@ impl Code {
     }
 }
 
+/// The hint for a path that names nothing: the entries nearest it in its
+/// deepest ancestor that resolves, when any is near, else that ancestor's
+/// listing.
+fn not_found(fields: &Fields) -> Option<String> {
+    let ancestor = fields.ancestor.as_ref()?;
+    Some(if fields.nearest.is_empty() {
+        format!("run `board ls {ancestor}` to see what is there; paths leave out `.json`")
+    } else {
+        format!(
+            "nearest entries in {ancestor}: {}; run `board ls {ancestor}` for all",
+            fields.nearest.join(", ")
+        )
+    })
+}
+
 /// The hint for a mount at `path` that `board mount update` can mend.
 fn updating(code: Code, path: &LogicalPath) -> String {
     let update = format!("`board mount update {path}`");
@@ -159,10 +174,7 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             fields.directory.as_ref()?,
             crate::MAX_PATH_BYTES
         ),
-        Code::PathNotFound => format!(
-            "run `board ls {}` to see what is there; paths leave out `.json`",
-            fields.ancestor.as_ref()?
-        ),
+        Code::PathNotFound => not_found(fields)?,
         Code::RefDangling => dangling(fields)?,
         Code::SymlinkOutside | Code::SymlinkLoop | Code::SymlinkDangling => symlink(code, fields)?,
         Code::MountCommitMissing
@@ -183,6 +195,7 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
         | Code::PluginSchemaDiffers
         | Code::PluginAmbiguous
         | Code::PluginDuplicate
+        | Code::PluginNoCapability
         | Code::PluginBadInput => plugin(code, fields)?,
         Code::QueryInvalid => query(fields.known.as_ref()?),
         Code::SettingsAsked | Code::SettingsRefused => {
@@ -211,6 +224,14 @@ fn plugin(code: Code, fields: &Fields) -> Option<String> {
         Code::PluginDuplicate => format!(
             "remove the installed copy, the directory `$XDG_DATA_HOME/board/plugins/{plugin}`; this Board has the plugin built in"
         ),
+        // `runs run` and `runs record` are guesses at writing a suite run,
+        // which is a record put like any other.
+        Code::PluginNoCapability
+            if plugin.as_str() == "runs"
+                && matches!(capability()?.as_str(), "run" | "record") =>
+        {
+            "the runs plugin reads suite runs and does not write them. Write the run as a `runs/run/v1` on stdin to `board put --new --var suite=<name>`, which prints its path, then attach it to its change with `board changes attach --path /changes/<name> --ref <path>`".to_owned()
+        }
         Code::PluginBadInput => format!(
             "give the input as the flags that `board call {plugin}.{0} -h` lists, or as JSON on stdin that matches the capability's `inputSchema`; `board plugin find --capability {0} --json` shows the schema",
             capability()?

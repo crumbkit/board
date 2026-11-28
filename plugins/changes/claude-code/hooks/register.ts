@@ -35,7 +35,10 @@ import { briefLineIn, noLine, notRendered, planText } from './brief'
 // change in build to that repository, and, for a prototype, the file's
 // checkout is on branch `proto/<name>`. The line starts with its code
 // (`changes::guard::no_brief`, `not_building`, `wrong_mount` or `wrong_branch`)
-// and names the command that starts a change.
+// and names the command that starts a change. The guard remembers the last
+// verdict on each agent's edits of each mount, so an edit whose line would say
+// what that verdict said, apart from the file, gets none. An edit that needed
+// no advice counts as a verdict too, so advice that returns is given again.
 // A repository whose directory is listed in `boards` of the board config is
 // not guarded as a mounted repository, even when another known board mounts it,
 // since a board holds records and no code. The guard learns this from the
@@ -80,6 +83,11 @@ const WINDOW = 4096
 // its first message left that window gets the unknown advice; the cache starts
 // over when the module reloads.
 const briefs = new Map<string, string>()
+
+// The last verdict on each agent's edits of each mount, by session id, agent id,
+// board and mount: the advice's words with the file left out, or '' for an edit
+// that needed none. It starts over as `briefs` does, and is never written to disk.
+const last = new Map<string, string>()
 
 type Ran = { exitCode: number; stdout: string; stderr: string }
 const sh = ($: EngineInterface, script: string, args: string[]): Promise<Ran> =>
@@ -304,8 +312,26 @@ async function briefNamed($: EngineInterface, agentId: string | undefined): Prom
   return named
 }
 
-/** What the guard does with an edit: refuses a board record, or admits it with a line of advice, or null to admit it untouched. */
-type Verdict = { deny: string } | { advise: string } | null
+/**
+ * A verdict the guard remembers: the board and mount of the edit, and what it said, the advice's words with the file
+ * left out, or '' when it needed none. The words name the code, board, mount, change, phase and branch.
+ */
+type Memo = { slot: string; said: string }
+
+/**
+ * What the guard does with an edit: refuses a board record, or admits it with a line of advice, or admits it
+ * untouched. A verdict with `memo` is remembered, and its advice is given only when the agent's last verdict on that
+ * mount said something else. `unknown` advice has no memo, since the next lookup may fail differently or pass.
+ */
+type Verdict = { deny: string } | { advise: string; memo?: Memo } | { memo: Memo } | null
+
+/** The verdict on an edit of `file` in `at`: `advice`, or none when it is null, remembered for the mount. */
+const remembered = (advice: string | null, file: string, at: Mount): Verdict => {
+  const slot = `${at.board}\n${at.mount}`
+  return advice === null
+    ? { memo: { slot, said: '' } }
+    : { advise: advice, memo: { slot, said: advice.split(file).join('<file>') } }
+}
 
 /**
  * The verdict on an edit of `file` by `agentId`. The guard chooses no mount:
@@ -330,7 +356,7 @@ async function verdict($: EngineInterface, file: string, agentId: string | undef
     if (mounts.length === 0) await widen()
     if (mounts.length === 0) return null
     const named = await briefNamed($, agentId)
-    if (named === null) return { advise: noBrief(file, mounts[0]!, null) }
+    if (named === null) return remembered(noBrief(file, mounts[0]!, null), file, mounts[0]!)
     // The change as each board that mounts the file's repository holds it; null where it holds none.
     const changes = new Map<string, { mount: string; phase: string } | null>()
     const mountNamed = (board: string) => {
@@ -382,20 +408,42 @@ async function verdict($: EngineInterface, file: string, agentId: string | undef
       }
       const prototype = kind.kind === 'prototype'
       const advice = judge(file, at, named, change, prototype, prototype ? await branchOf($, file) : '')
-      return advice === null ? null : { advise: advice }
+      return remembered(advice, file, at)
     }
-    return { advise: noBrief(file, mounts[0]!, named) }
+    return remembered(noBrief(file, mounts[0]!, named), file, mounts[0]!)
   } catch (error) {
     const why = error instanceof Unknown ? error.message : `the lookup threw ${String(error)}`
     return state.inBoard ? { deny: unknownRecord(file, why) } : { advise: unknown(file, why) }
   }
 }
 
-/** Runs the edit unless `v` refuses it; adds the advice of `v` to the result of an edit that ran. */
-async function guarded<R extends { deny?: string; context?: string[] }>(v: Verdict, next: () => Promise<R>) {
+/**
+ * Runs the edit unless `v` refuses it; adds the advice of `v` to the result of an edit that ran, unless the last
+ * verdict on `agentId`'s edits of the mount said the same, and remembers `v` as that verdict. An edit a later hook
+ * refuses changes nothing. A session id that cannot be read leaves the verdict unremembered.
+ */
+async function guarded<R extends { deny?: string; context?: string[] }>(
+  $: EngineInterface,
+  agentId: string | undefined,
+  v: Verdict,
+  next: () => Promise<R>,
+) {
   if (v !== null && 'deny' in v) return { deny: v.deny }
+  const memo = v !== null && 'memo' in v ? v.memo : undefined
+  let key: string | undefined
+  if (memo !== undefined) {
+    try {
+      key = `${await $.session.id()}\n${agentId ?? ''}\n${memo.slot}`
+    } catch {
+      key = undefined
+    }
+  }
   const ran = await next()
-  return v === null || ran.deny !== undefined ? ran : { ...ran, context: [...(ran.context ?? []), v.advise] }
+  if (v === null || ran.deny !== undefined) return ran
+  const repeated = key !== undefined && last.get(key) === memo!.said
+  if (key !== undefined) last.set(key, memo!.said)
+  if (!('advise' in v) || repeated) return ran
+  return { ...ran, context: [...(ran.context ?? []), v.advise] }
 }
 
 /**
@@ -426,15 +474,20 @@ async function briefAdvice($: EngineInterface, prompt: string): Promise<string |
 }
 
 // verdict never throws, and it never calls next, so next runs once, outside it.
+// guarded reads the session id before next and never throws after it.
 // A hook that throws is skipped and the call runs, so the registrations have
 // no `.catch`: it would run next a second time when next itself threw.
 // The engine requires `on('<event>', hook)` spelled at each call, so the three
 // registrations cannot share one helper.
 export const register: Register = on => {
-  on('tool.call', { tool: 'Edit' }, async ($, e, next) => guarded(await verdict($, e.file_path, e.agentId), () => next(e)))
-  on('tool.call', { tool: 'Write' }, async ($, e, next) => guarded(await verdict($, e.file_path, e.agentId), () => next(e)))
+  on('tool.call', { tool: 'Edit' }, async ($, e, next) =>
+    guarded($, e.agentId, await verdict($, e.file_path, e.agentId), () => next(e)),
+  )
+  on('tool.call', { tool: 'Write' }, async ($, e, next) =>
+    guarded($, e.agentId, await verdict($, e.file_path, e.agentId), () => next(e)),
+  )
   on('tool.call', { tool: 'NotebookEdit' }, async ($, e, next) =>
-    guarded(await verdict($, e.notebook_path, e.agentId), () => next(e)),
+    guarded($, e.agentId, await verdict($, e.notebook_path, e.agentId), () => next(e)),
   )
   // The brief check advises and never refuses. The call runs with the input it
   // was given, since Claude Code's auto-mode classifier refuses a call whose

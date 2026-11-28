@@ -2,12 +2,12 @@
 //! names the change, and reports what the owner's decide answered.
 
 use board_model::{Code, Fields, Refusal};
-use board_ops::DecideReport;
+use board_ops::{DecideReport, Shown};
 use serde_json::{Map, Value, json};
 
-use super::{Output, State, followed, outcome};
+use super::{Content, Output, State, chosen, followed, outcome, signed};
 use crate::change::Referenced;
-use crate::gates::Observed;
+use crate::gates::{Approval, Observed};
 use crate::records::Kind;
 
 const PATH: &str = "/changes/t";
@@ -109,4 +109,58 @@ fn the_decide_answers_asked_refused_or_approved_and_any_other_refusal_is_passed_
     assert_eq!(of(Ok(approved)).unwrap(), output("e1", State::Approved));
     let other = of(answered(Code::SettingsNoPersonal)).unwrap_err();
     assert_eq!(other.code, "changes::board::refused");
+}
+
+/// The revision a Touch ID statement `shown` names.
+fn plan_of(shown: &Shown) -> String {
+    let Shown::Record(bytes) = shown else {
+        panic!("a statement of changes.approve is a record");
+    };
+    let record: Value = serde_json::from_slice(bytes).unwrap();
+    record["plan"].as_str().unwrap().to_owned()
+}
+
+fn content(digest: &str) -> Content {
+    Content {
+        title: "T".to_owned(),
+        digest: digest.to_owned(),
+    }
+}
+
+#[test]
+fn the_signed_approval_names_the_newest_revision_whose_statement_the_owner_signed() {
+    let named = observed(PATH);
+    let answers = chosen(&named);
+    let revisions = [
+        ("/changes/t/plans/2".to_owned(), content("sha256:2")),
+        ("/changes/t/plans/1".to_owned(), content("sha256:1")),
+        ("/changes/t/plans/0".to_owned(), content("sha256:0")),
+    ];
+    let report = || DecideReport {
+        capability: "changes.approve".to_owned(),
+        path: PATH.parse().unwrap(),
+        effect: None,
+    };
+    let older = signed(&named, &revisions, &answers, |shown| {
+        Ok((plan_of(shown) != "/changes/t/plans/2").then(report))
+    });
+    assert_eq!(older, Approval::Signed("/changes/t/plans/1".to_owned()));
+    let none = signed(&named, &revisions, &answers, |_| Ok(None));
+    assert_eq!(none, Approval::None);
+    let personal = signed(&named, &revisions, &answers, |_| {
+        Err(Box::new(Refusal::new(
+            Code::SettingsNoPersonal,
+            "no personal board",
+            &Fields::default(),
+        )))
+    });
+    assert_eq!(personal, Approval::None);
+    let unread = signed(&named, &revisions, &answers, |_| {
+        Err(Box::new(Refusal::new(
+            Code::SettingsUnsigned,
+            "the signature is bad",
+            &Fields::default(),
+        )))
+    });
+    assert!(matches!(unread, Approval::Unread(_)), "{unread:?}");
 }

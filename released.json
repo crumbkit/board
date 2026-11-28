@@ -92,7 +92,7 @@
       "shape": "1995b417c841e8596b4a07f4a98aa6a09de5ec03"
     },
     "crates/board-plugin-plans/types/plans/decision/v1.schema.json": {
-      "shape": "9eb1f61239c159427108a8387886a77a719a3c05",
+      "shape": "e1be30485e1f1d785e13cc37ea35800acf85a6c9",
       "enums": {
         "/properties/review/enum": [
           "wanted"
@@ -11139,6 +11139,11 @@
           "string"
         ]
       },
+      "input.decides": {
+        "type": [
+          "string"
+        ]
+      },
       "input.decision": {
         "type": [
           "string"
@@ -18713,7 +18718,10 @@
     "changes::flow::unreadable",
     "changes::gate::unmet",
     "changes::land::gh_failed",
+    "changes::land::no_merge",
     "changes::land::not_merged",
+    "changes::land::tasks_not_closed",
+    "changes::land::tasks_open",
     "changes::lifecycle::doc_is_a_pattern",
     "changes::lifecycle::doc_not_a_file",
     "changes::lifecycle::doc_outside_mount",
@@ -18734,6 +18742,7 @@
     "changes::plan::no_paths",
     "changes::plan::other_change",
     "changes::plan::outside_mount",
+    "changes::plan::sections_missing",
     "changes::plan::title_differs",
     "changes::plan::too_long",
     "changes::plan::uses_too_long",

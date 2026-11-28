@@ -241,10 +241,12 @@ const CAPABILITIES: [Capability; 25] = [
             edit, given as flags with uses and paths repeated once for each item, or as JSON on \
             stdin, which considered, owed and answers need, with considered the surfaced records \
             it does not build on and owed the obligations it leaves owed, refusing a build \
-            change's plan without paths, a path outside the change's mount, a reference that \
-            reaches nothing, a plan over 3,000 words and used documents over 3,000 words in all; \
-            the new plan becomes the change's plan, and a plan equal to the change's current one \
-            writes nothing and says unchanged.",
+            change's plan without paths, a path outside the change's mount, a directory in uses, \
+            a plan headed by another change's title and a plan over 6,000 words; it writes the \
+            plan and warns of a plan over 3,000 words, used documents over 3,000 words in all, \
+            a section a sections check of the flow requires and the text lacks, and a reference \
+            that reaches nothing, which it leaves out; the new plan becomes the change's plan, \
+            and a plan equal to the change's current one writes nothing and says unchanged.",
         run: plan::plan,
         input: input::<plan::Input>,
         output: output::<plan::Output>,

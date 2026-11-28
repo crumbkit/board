@@ -1,7 +1,7 @@
 {
   "name": "board-changes",
-  "version": "0.4.2",
-  "description": "Refuses an Edit, Write or NotebookEdit of Board's own records, and advises on an edit of a repository a known board mounts when the acting agent did not start from the brief of a change to it in build. Advises a lead whose builder prompt for a change in build lacks the brief line first or the brief changes.brief renders now.",
+  "version": "0.4.3",
+  "description": "Refuses an Edit, Write or NotebookEdit of Board's own records, and advises an agent on an edit of a repository a known board mounts when it did not start from the brief of a change to it in build, repeating a line only when the verdict on its edits there changes. Advises a lead whose builder prompt for a change in build lacks the brief line first or the brief changes.brief renders now.",
   "author": {
     "name": "crumbkit"
   }

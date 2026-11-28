@@ -16,6 +16,9 @@ pub struct Fields {
     pub path: Option<LogicalPath>,
     /// For a path that names nothing, its deepest ancestor that resolves.
     pub ancestor: Option<LogicalPath>,
+    /// For a path that names nothing, the segments in `ancestor` nearest
+    /// the one that missed, nearest first; empty when none is near.
+    pub nearest: Vec<String>,
     /// The blob the path holds.
     pub blob: Option<ObjectId>,
     /// A JSON pointer into the record or input.
@@ -125,6 +128,9 @@ impl Fields {
                 json.insert("columns".to_owned(), Value::Object(columns.collect()));
             }
             None => {}
+        }
+        if !self.nearest.is_empty() {
+            json.insert("nearest".to_owned(), self.nearest.clone().into());
         }
         if let Some(offset) = self.offset {
             json.insert("offset".to_owned(), offset.into());
@@ -266,6 +272,7 @@ mod tests {
         let tables = Fields {
             path: Some("/tasks/a".parse().unwrap()),
             ancestor: Some("/tasks".parse().unwrap()),
+            nearest: vec!["a".to_owned()],
             blob: Some(ObjectId::Sha1([1; 20])),
             pointer: Some("/title".to_owned()),
             record_type: Some("lr/note/v1".parse().unwrap()),
@@ -285,7 +292,7 @@ mod tests {
             known: Some(Known::Columns(BTreeMap::new())),
             ..tables.clone()
         };
-        let call = ["offered", "nearest", "plugins", "stderr"].map(str::to_owned);
+        let call = ["offered", "plugins", "stderr"].map(str::to_owned);
         let keys = |fields: &Fields| fields.json().into_iter().map(|(key, _)| key);
         keys(&tables).chain(keys(&columns)).chain(call).collect()
     }

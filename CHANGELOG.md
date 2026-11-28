@@ -18,6 +18,108 @@
   `board::plugin::schema_differs` until `board plugin enable rules` writes
   the new schemas.
 
+## 0.1.6 (2026-11-28)
+
+- The plans and effects Claude Code mods run `board` on their minute's tick
+  only when the board's HEAD commit or Git index changed since their last
+  read that worked. They read both as files, with no process. On a board
+  with no new commit, a session's two mods run no `board` between the
+  owner's own reads, where they ran about 1 s of `board` each minute. The
+  pane and an answer still read at once, and a new commit shows within one
+  tick.
+- A change's plan can list tasks under a `## Closes at merge` heading,
+  one board path each. The build gate's `tasks` check passes an open
+  attached task listed there, says which tasks close at merge, and misses
+  a listed path that is not a task of the change's, saying to attach it or
+  remove it. When the pull request merges, `changes advance` (which
+  `board github merge --change` runs) and `changes sync` close each listed
+  task through `tasks.done` before they write the change as done. A
+  refused close leaves the change in its phase: `advance` refuses with
+  `changes::land::tasks_not_closed` and `sync` reports `owed`, and a rerun
+  skips the tasks already closed. `sync --dry_run true` names the tasks it
+  would close and closes none. `advance` into done refuses with
+  `changes::land::tasks_open` while an attached task the plan does not
+  name is open, and with `changes::land::no_merge` while a named task is
+  open on a change that records no pull request, which never closes a
+  task. Only a level-two heading counts, a fenced code block is not read,
+  and a Markdown link's target counts as a path.
+- A `plans/decision/v1` can name the one board entry it decides in
+  `decides`, which `board plans decide --decides <path>` sets. The
+  `owner-approval` check counts only an explicit approval of the plan that
+  names the revision it approves: the owner's answer choosing the
+  `approve` option of an attached question that blocks the change and whose
+  `approve` option names a plan revision, as the question `changes ask`
+  files does; a Touch ID approval; or an owner decision whose refs name the
+  change and whose `decides` is a plan revision. Any other decision or
+  answer, such as a choice to revise or a Data sign-off that names the
+  current revision in its refs, no longer approves the plan, and an
+  existing approval decision without `decides` must be asked again. A
+  board whose `.board/types/` holds the earlier `plans/decision/v1` copy
+  refuses `decides` until `board plugin enable` replaces it. The check binds each approval to the plan revision it
+  approved, and stops counting it once a later revision changes the plan's
+  typed answers or its Outcome, Out of scope, UX or Data section, or once
+  Board no longer reads that revision. A rewrite of the plan's paths, Tests
+  sections or other routine parts keeps the approval, including a Touch ID
+  approval, and the check's detail names the approved revision and what
+  changed since. The `mockups` check counts an agreement that names a
+  mockup version only for that version. It reads the version anywhere in
+  the agreement's words when the agreement names one mockup, and only right
+  after each mockup's name when it names several.
+- A notes repository that the board reaches through two mounts, such as
+  `/repos/notes-personal` and the same repository mounted again by a board
+  mounted at `/repos/team`, counts as one repository. `board tasks add`,
+  `board changes start` and `board notes daily` used to refuse with
+  `tasks::repo::ambiguous` or `notes::repo::ambiguous`, naming both mounts.
+  They now write to the mount whose pointer is in the board's own tree,
+  and the output's `about` names it. Among nested mounts, the one with the
+  shortest path stands for the repository. Mounts count as one repository
+  when Board read them from the same clone. `board tasks available` and
+  `board tasks tree` show the repository's tasks once, including after a
+  sync moves a pin onto the other mount's commit. Two different
+  repositories that both cover the remote still refuse as before.
+- The `board-changes` mod's edit guard remembers the last verdict on each
+  agent's edits of each repository, counting an edit that needed no advice.
+  A later edit by the same agent whose line would say what that verdict
+  said, apart from the file, runs with no line. A line that says something
+  new, such as another phase, branch or change, is given in full, and so is
+  advice that returns after an edit that needed none. Advice
+  that a lookup failed is still given on every edit, and an edit of a
+  board record is still refused every time. The memory lasts until the mod
+  reloads, as on `/clear` and `/resume`.
+- A refusal with `board::path::not_found` names, in a `nearest` field and
+  in its hint, at most 5 entries in the deepest ancestor that resolves
+  that are close to the segment that missed: first each that starts with
+  it, such as `notes.md` for `notes`, then each within an edit distance of
+  a third of its length, such as a stamp one minute off, then each that
+  shares a long prefix with it, such as a slug cut at another length. The
+  hint reads `nearest entries in /projects/p/decisions: <names>; run
+  board ls /projects/p/decisions for all`. A directory of over 10,000
+  entries, or one with no close name, offers none, and the hint says to
+  run `board ls` as before. Board never reads a nearest path in place of
+  the one asked for.
+- A word an agent guesses after a plugin's name runs the capability it
+  means: `changes show` and `changes status` run `changes next`,
+  `changes list` runs `changes open`, and `tasks list`, `plans list` and
+  `evals list` run `tasks available`, `plans open` and `evals open`, with
+  the same flags. `board call <plugin>.<word>` does the same. Each prints
+  `note: board changes show is board changes next` or the like on stderr.
+  A plugin that offers the word itself still runs its own. `runs run` and
+  `runs record` are still refused, and their hint says to write the run
+  with `board put --new --var suite=<name>` and attach it with
+  `board changes attach --ref`.
+- `board changes plan` writes a plan it used to refuse for a fault the
+  gates catch at `advance`, and lists the fault in `warnings`. A plan over
+  3,000 words warns `changes::plan::too_long` and used documents over
+  3,000 words in all warn `changes::plan::uses_too_long`, each with the
+  word count; a plan over 6,000 words is still refused. A reference in
+  `uses`, `considered` or `owed` that reaches nothing is left out of the
+  plan and listed under `changes::ref::dangling`. The new warning
+  `changes::plan::sections_missing` names each heading a `sections` check
+  of the change's flow requires and the text lacks, in any phase, so a
+  development plan learns of its two test sections at plan time. A
+  directory in `uses`, a path outside the mount, a build plan with no
+  paths and a plan headed by another change's title are still refused.
+  `changes plan-amend` keeps its 3,000-word refusal.
 - `board tasks available` does not fetch a notes clone that was fetched
   less than a minute ago and already holds what that fetch brought, so a
   sweep of calls in a row fetches once. A task pushed from elsewhere in that
@@ -69,13 +171,6 @@
   next` lists as `amended` and the pull request body lists under "Plan
   amendments". At land, `changes next` and the `test-sections` check's
   remedy name `changes plan-amend` in place of a whole-plan resend.
-- The plans and effects Claude Code mods run `board` on their minute's tick
-  only when the board's HEAD commit or Git index changed since their last
-  read that worked. They read both as files, with no process. On a board
-  with no new commit, a session's two mods run no `board` between the
-  owner's own reads, where they ran about 1 s of `board` each minute. The
-  pane and an answer still read at once, and a new commit shows within one
-  tick.
 - A query that looks entries or records up by logical path, blob or record
   type reads an index in place of every entry, so plugin calls that look
   records up, such as `plans open` and `changes next`, answer faster. The
