@@ -2,8 +2,7 @@
 //! about each of its blobs, so a warm walk hashes and reads only what
 //! changed (docs/architecture/performance/warm/index.md).
 
-use std::collections::HashMap;
-use std::collections::hash_map::Entry as MapEntry;
+use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use board_model::{Code, LogicalPath, ObjectId, Role, Stat};
@@ -16,7 +15,9 @@ use crate::store::{BlobFact, Writer, fact};
 /// One working-tree entry as the last refresh saw it.
 #[derive(Debug, PartialEq, Eq)]
 struct WorktreeRow {
-    logical: Option<LogicalPath>,
+    /// The logical path as stored, compared as text, so the load parses
+    /// none.
+    logical: Option<String>,
     /// The first problem on the entry's path, or the code it cannot be read
     /// with.
     code: Option<Code>,
@@ -35,6 +36,20 @@ pub struct Worktree {
     refreshed_ns: Option<i64>,
     started_ns: i64,
     hashed: usize,
+}
+
+impl WorktreeRow {
+    /// Whether this row holds what a walk found as `entry`.
+    fn holds(&self, entry: &Entry) -> bool {
+        let code = match entry.status {
+            Status::Ok => None,
+            Status::Degraded(code) => Some(code),
+        };
+        self.logical.as_deref() == entry.logical.as_ref().map(LogicalPath::as_str)
+            && self.code == code
+            && self.blob == entry.blob
+            && self.stat == entry.stat
+    }
 }
 
 impl Worktree {
@@ -68,46 +83,33 @@ pub(crate) fn trusted(stored: Option<&Stat>, seen: &Stat, refreshed_ns: Option<i
 
 impl Writer {
     /// The working tree as the last refresh saw it, with the fact of each
-    /// row's blob in the role its path gives it. One statement reads the
-    /// rows with their blobs' facts, and one the links, so the load looks
-    /// up no blob on its own. The refresh that walks it
-    /// begins now.
+    /// row's blob in the role its path gives it. One scan reads the rows,
+    /// one the blobs table, matched by blob and role here, and one the
+    /// links, so the load seeks no blob. The refresh that walks it begins
+    /// now.
     pub fn worktree(&self) -> Result<Worktree, IndexError> {
         let refreshed_ns: Option<String> = self
             .connection()
             .prepare_cached("SELECT value FROM main.state WHERE key = 'refreshed_ns'")?
             .query_row([], |row| row.get(0))
             .optional()?;
-        // A blob holds a fact for each role it was read in, so a row comes
-        // once for each; only the role its path gives it is kept.
         let mut statement = self.connection().prepare_cached(
-            "SELECT w.path, w.logical, w.code, w.blob, w.size, w.modified_ns, w.changed_ns,
-                    w.inode, w.mode, b.role, b.kind, b.type, b.code, b.reason
-             FROM main.worktree AS w LEFT JOIN main.blobs AS b ON b.blob = w.blob",
+            "SELECT path, logical, code, blob, size, modified_ns, changed_ns, inode, mode
+             FROM main.worktree",
         )?;
         let mut rows: HashMap<String, WorktreeRow> = HashMap::new();
-        let mut facts = HashMap::new();
+        let mut wanted: HashSet<(ObjectId, Role)> = HashSet::new();
         let mut query = statement.query([])?;
         while let Some(row) = query.next()? {
             let path: String = row.get(0)?;
-            let role = Role::of(&path);
-            let stored = (row.get_ref(9)?.as_str_or_null()).map_err(rusqlite::Error::from)?;
-            let role = role.filter(|role| stored == Some(role.as_str()));
-            let blob = match rows.entry(path) {
-                MapEntry::Occupied(occupied) => occupied.get().blob,
-                MapEntry::Vacant(vacant) => vacant.insert(worktree_row(row)?).blob,
-            };
-            if let (Some(role), Some(blob)) = (role, blob)
-                && let MapEntry::Vacant(vacant) = facts.entry((blob, role))
-                && let Some(fact) = fact(
-                    (row.get(10)?, row.get(11)?, row.get(12)?, row.get(13)?),
-                    Vec::new(),
-                )
-            {
-                vacant.insert(fact);
+            let stored = worktree_row(row)?;
+            if let (Some(blob), Some(role)) = (stored.blob, Role::of(&path)) {
+                wanted.insert((blob, role));
             }
+            rows.insert(path, stored);
         }
         drop(query);
+        let mut facts = self.facts_of(&wanted)?;
         self.links_into(&mut facts)?;
         Ok(Worktree {
             rows,
@@ -120,6 +122,34 @@ impl Writer {
                 }),
             hashed: 0,
         })
+    }
+
+    /// The fact of each blob and role in `wanted` that the index holds,
+    /// read in one scan of the blobs table. A scan reads each page once in
+    /// order, where seeking each blob descends the table again.
+    fn facts_of(
+        &self,
+        wanted: &HashSet<(ObjectId, Role)>,
+    ) -> Result<HashMap<(ObjectId, Role), BlobFact>, IndexError> {
+        let mut statement = self
+            .connection()
+            .prepare_cached("SELECT blob, role, kind, type, code, reason FROM main.blobs")?;
+        let mut facts = HashMap::new();
+        let mut query = statement.query([])?;
+        while let Some(row) = query.next()? {
+            let text = |at| row.get_ref(at)?.as_str().map_err(rusqlite::Error::from);
+            let (Some(blob), Some(role)) = (ObjectId::from_hex(text(0)?), role(text(1)?)) else {
+                continue;
+            };
+            if !wanted.contains(&(blob, role)) {
+                continue;
+            }
+            let stored = (row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?);
+            if let Some(fact) = fact(stored, Vec::new()) {
+                facts.insert((blob, role), fact);
+            }
+        }
+        Ok(facts)
     }
 
     /// Gives each Markdown fact in `facts` the links its blob holds, in
@@ -163,20 +193,15 @@ impl Writer {
         let mut rows = worktree.rows;
         let mut changed = worktree.hashed > 0;
         for entry in entries {
-            let row = WorktreeRow {
-                logical: entry.logical.clone(),
-                code: match entry.status {
-                    Status::Ok => None,
-                    Status::Degraded(code) => Some(code),
-                },
-                blob: entry.blob,
-                stat: entry.stat,
-            };
-            if rows.remove(&entry.path).as_ref() == Some(&row) {
+            if (rows.remove(&entry.path)).is_some_and(|row| row.holds(entry)) {
                 continue;
             }
             changed = true;
-            let stat = row.stat.as_ref();
+            let stat = entry.stat.as_ref();
+            let code = match entry.status {
+                Status::Ok => None,
+                Status::Degraded(code) => Some(code),
+            };
             self.connection()
                 .prepare_cached(
                     "INSERT OR REPLACE INTO main.worktree
@@ -185,9 +210,9 @@ impl Writer {
                 )?
                 .execute(params![
                     entry.path,
-                    row.logical.as_ref().map(ToString::to_string),
-                    row.code.map(Code::as_str),
-                    row.blob.map(|blob| blob.to_string()),
+                    entry.logical.as_ref().map(LogicalPath::as_str),
+                    code.map(Code::as_str),
+                    entry.blob.map(|blob| blob.to_string()),
                     stat.map(|stat| stat.size.cast_signed()),
                     stat.map(|stat| stat.modified_ns),
                     stat.map(|stat| stat.changed_ns),
@@ -230,11 +255,27 @@ fn worktree_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorktreeRow> {
         }),
         _ => None,
     };
-    let text = |at| row.get::<_, Option<String>>(at);
+    let text = |at| {
+        row.get_ref(at)?
+            .as_str_or_null()
+            .map_err(rusqlite::Error::from)
+    };
     Ok(WorktreeRow {
-        logical: text(1)?.and_then(|text| text.parse().ok()),
-        code: text(2)?.and_then(|text| Code::parse(&text)),
-        blob: text(3)?.and_then(|text| ObjectId::from_hex(&text)),
+        logical: text(1)?.map(str::to_owned),
+        code: text(2)?.and_then(Code::parse),
+        blob: text(3)?.and_then(ObjectId::from_hex),
         stat,
     })
+}
+
+/// The role the index spells `text`.
+fn role(text: &str) -> Option<Role> {
+    [
+        Role::Json,
+        Role::Schema,
+        Role::ReservedSchema,
+        Role::Markdown,
+    ]
+    .into_iter()
+    .find(|role| role.as_str() == text)
 }

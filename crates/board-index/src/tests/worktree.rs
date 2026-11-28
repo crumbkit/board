@@ -335,3 +335,48 @@ fn a_sync_records_a_refresh_time_no_later_than_the_walk_that_preceded_it() {
     let recorded: u128 = refreshed(writer.connection()).parse().unwrap();
     assert!(recorded > 0 && recorded <= walked);
 }
+
+/// The load scans the blobs table whole, so a fact the index holds for a
+/// blob no stored row has, such as a mounted source's, is not loaded.
+#[test]
+fn the_working_tree_load_gives_no_fact_for_a_blob_no_stored_row_has() {
+    let writer = Index::open(None, Path::new(ROOT)).unwrap().write().unwrap();
+    writer.put_blob(blob(1), Role::Json, &record()).unwrap();
+    writer.put_blob(blob(6), Role::Json, &record()).unwrap();
+    writer
+        .put_blob(blob(7), Role::Markdown, &markdown())
+        .unwrap();
+    let worktree = writer.worktree().unwrap();
+    writer
+        .sync_worktree(worktree, &[file("tasks/a.json", 1, 0)])
+        .unwrap();
+    let loaded = writer.worktree().unwrap().take_facts();
+    assert_eq!(
+        loaded.into_keys().collect::<Vec<_>>(),
+        [(blob(1), Role::Json)]
+    );
+}
+
+/// A stored row with a logical path that a walk sees again unchanged is
+/// not written again; its twin whose logical path changed is.
+#[test]
+fn a_sync_of_an_unchanged_row_with_a_logical_path_writes_nothing_and_a_moved_one_writes() {
+    for (seen, writes) in [("/tasks/a", false), ("/tasks/b", true)] {
+        let cache = tempfile::tempdir().unwrap();
+        let open = || Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+        let addressed = |logical: &str| Entry {
+            logical: Some(logical.parse().unwrap()),
+            ..file("tasks/a.json", 1, 0)
+        };
+        let writer = open().write().unwrap();
+        let worktree = writer.worktree().unwrap();
+        writer
+            .sync_worktree(worktree, &[addressed("/tasks/a")])
+            .unwrap();
+        writer.decide(Vec::new()).unwrap();
+        let writer = open().deferred().unwrap();
+        let worktree = writer.worktree().unwrap();
+        writer.sync_worktree(worktree, &[addressed(seen)]).unwrap();
+        assert_eq!(writer.wrote().unwrap(), writes, "{seen}");
+    }
+}
