@@ -412,3 +412,100 @@ fn a_check_of_a_path_outside_the_mount_carries_no_checkout_and_of_the_mount_it_d
     let mounted = output("/repos/lib");
     assert_eq!(mounted["checkout"]["head"], checkout.head.to_string());
 }
+
+impl Checkout {
+    /// A second board, which mounts the same repository at the same pin
+    /// with a budget of `max` words on `docs/usage.md`, listed beside the
+    /// first in the known boards file.
+    fn second(&self, max: usize) -> Fixture {
+        let other = board();
+        other.write(
+            "controls/usage.json",
+            &control(
+                "Short usage.",
+                &json!({
+                    "paths": ["repos/lib/docs/usage.md"],
+                    "rule": {"check": "budget", "unit": "words", "max": max},
+                }),
+            ),
+        );
+        mount(&other, "repos/lib.json", &self.library, self.pinned);
+        let both = [self.board.board.path(), other.board.path()];
+        let known = json!({ "boards": both }).to_string();
+        self.xdg.write("board/config.json", Item::File(&known));
+        other
+    }
+}
+
+#[test]
+fn checkout_from_a_boards_own_tree_that_a_known_board_mounts_reads_the_mount_at_its_head() {
+    let checkout = Checkout::new();
+    // The linked worktree is itself a board's tree, as a clone of a board is.
+    checkout.library.write(
+        "linked/.board/board.json",
+        Item::File(r#"{"$type": "board/config/v1"}"#),
+    );
+    let branch = checkout.check(&["--checkout"], false);
+    assert_eq!(branch["passed"], false, "{branch}");
+    assert_eq!(branch["measured"][0]["used"], 326);
+    assert_eq!(
+        branch["read"],
+        json!([{"mount": "/repos/lib", "commit": checkout.head.to_string()}])
+    );
+    // Without --checkout the run opens that board's own tree.
+    let arguments = ["ls", "/"];
+    let own = checkout.run_in(&checkout.linked, &arguments, false);
+    assert_eq!(own.code, 0, "{}", text(&own.stdout));
+    let opened = json(&own)["summary"]["location"]["repository"].clone();
+    let linked = checkout.linked.canonicalize().unwrap();
+    assert_eq!(opened, json!(linked.display().to_string()));
+}
+
+#[test]
+fn checkout_from_a_clone_two_known_boards_mount_is_ambiguous_and_board_chooses_one() {
+    let checkout = Checkout::new();
+    let other = checkout.second(400);
+    let arguments = ["--checkout", "call", "rules.check", "--path", "."];
+    let both = checkout.run_in(&checkout.linked, &arguments, false);
+    assert_eq!(refused_code(&both), "board::config::ambiguous");
+    let hint = json(&both)["recovery"]["text"].to_string();
+    assert!(hint.contains("board --board <dir>"), "{hint}");
+    let first = checkout.board.board.path();
+    let one = checkout.check(&["--checkout", "--board", &first], false);
+    assert_eq!(one["passed"], false, "{one}");
+    assert_eq!(one["measured"][0]["used"], 326);
+    let second = other.board.path();
+    let two = checkout.check(&["--checkout", "--board", &second], false);
+    assert_eq!(two["passed"], true, "{two}");
+    assert_eq!(two["measured"][0]["used"], 326);
+    let pinned = checkout.check(&["--board", &second], false);
+    assert_eq!(pinned["measured"][0]["used"], 294);
+}
+
+#[test]
+fn board_naming_a_directory_that_is_no_board_is_refused_and_a_boards_root_is_admitted() {
+    let checkout = Checkout::new();
+    let nowhere = checkout.library.path();
+    let refused = checkout.run_in(&checkout.linked, &["--board", &nowhere, "ls", "."], false);
+    assert_eq!(refused_code(&refused), "board::config::not_found");
+    let message = json(&refused)["message"].to_string();
+    assert!(message.contains(&nowhere), "{message}");
+    let root = checkout.board.board.path();
+    let admitted = checkout.run_in(&checkout.linked, &["--board", &root, "ls", "."], false);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stdout));
+}
+
+#[test]
+fn board_with_personal_is_refused_and_board_alone_is_admitted() {
+    let checkout = Checkout::new();
+    let root = checkout.board.board.path();
+    let both = checkout.run_in(
+        &checkout.linked,
+        &["--board", &root, "--personal", "ls", "."],
+        false,
+    );
+    assert_eq!(both.code, 2, "{}", text(&both.stdout));
+    assert_eq!(refused_code(&both), "board::cli::usage");
+    let alone = checkout.run_in(&checkout.linked, &["--board", &root, "ls", "."], false);
+    assert_eq!(alone.code, 0, "{}", text(&alone.stdout));
+}

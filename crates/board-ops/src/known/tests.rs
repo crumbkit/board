@@ -824,3 +824,124 @@ fn a_known_board_that_cannot_be_opened_is_named_when_a_uri_is_not_found_or_ambig
     );
     assert!(by_uri("board://acme/team-board/tasks/a", &xdg).is_ok());
 }
+
+/// Opens the board for `start` with `xdg`'s known boards, reading mounts
+/// `at`, through the board `through` names if any, and gives the opened
+/// board's root and the logical path the run starts at, or the refusal.
+fn through(
+    start: &Path,
+    xdg: &Scenario,
+    at: MountsAt,
+    board: Option<&Path>,
+) -> Result<(PathBuf, String), Box<Refusal>> {
+    let (opened, prefix) = open_at(start, None, None, || known(xdg), at, board)?;
+    let prefix = match prefix {
+        Some(Ok(path)) => path.to_string(),
+        other => format!("{other:?}"),
+    };
+    Ok((opened.repository().path().to_path_buf(), prefix))
+}
+
+/// `scenario`'s root as an opened board names it.
+fn root(scenario: &Scenario) -> PathBuf {
+    scenario.workdir().canonicalize().unwrap()
+}
+
+#[test]
+fn a_chosen_board_reads_its_mount_though_another_known_board_mounts_the_repository_and_without_one_it_is_ambiguous()
+ {
+    let library = library();
+    let (one, two) = (mounting(&library), mounting(&library));
+    let both = listing(&[&one, &two]);
+    for at in [MountsAt::Pins, MountsAt::Checkout] {
+        let refusal = *through(library.workdir(), &both, at, None).unwrap_err();
+        assert_eq!(refusal.code.as_str(), "board::config::ambiguous");
+        let hint = refusal.hint.unwrap();
+        assert!(hint.contains("`board --board <dir> "), "{hint}");
+        assert!(
+            hint.contains(&format!("`{}`", file(&both).display())),
+            "{hint}"
+        );
+        for chosen in [&one, &two] {
+            let opened = through(library.workdir(), &both, at, Some(chosen.workdir()));
+            assert_eq!(opened.unwrap(), (root(chosen), "/repos/lib".to_owned()));
+        }
+    }
+}
+
+#[test]
+fn a_chosen_directory_that_is_not_a_boards_root_is_refused_naming_it_and_a_boards_root_is_admitted()
+{
+    let library = library();
+    let board = mounting(&library);
+    let xdg = listing(&[&board]);
+    let inside = board.workdir().join(".board");
+    let missing = board.workdir().join("missing");
+    for chosen in [library.workdir(), inside.as_path(), missing.as_path()] {
+        let refusal = *through(library.workdir(), &xdg, MountsAt::Pins, Some(chosen)).unwrap_err();
+        assert_eq!(
+            refusal.code.as_str(),
+            "board::config::not_found",
+            "{chosen:?}"
+        );
+        let named = chosen.display().to_string();
+        assert!(refusal.message.contains(&named), "{}", refusal.message);
+        assert!(refusal.message.contains("--board"), "{}", refusal.message);
+    }
+    let opened = through(
+        library.workdir(),
+        &xdg,
+        MountsAt::Pins,
+        Some(board.workdir()),
+    );
+    assert_eq!(opened.unwrap(), (root(&board), "/repos/lib".to_owned()));
+}
+
+#[test]
+fn a_chosen_board_that_does_not_mount_the_repository_is_refused_naming_it_and_one_that_does_is_admitted()
+ {
+    let library = library();
+    let (mounts, other) = (mounting(&library), board());
+    let xdg = listing(&[&mounts, &other]);
+    for at in [MountsAt::Pins, MountsAt::Checkout] {
+        let refusal = *through(library.workdir(), &xdg, at, Some(other.workdir())).unwrap_err();
+        assert_eq!(refusal.code.as_str(), "board::config::not_found");
+        let named = other.workdir().display().to_string();
+        assert!(refusal.message.contains(&named), "{}", refusal.message);
+        let opened = through(library.workdir(), &xdg, at, Some(mounts.workdir()));
+        assert_eq!(opened.unwrap(), (root(&mounts), "/repos/lib".to_owned()));
+    }
+}
+
+#[test]
+fn with_checkout_a_boards_own_tree_reads_the_known_board_that_mounts_it_and_without_it_opens_as_itself()
+ {
+    let inner = board();
+    let outer = mounting(&inner);
+    let xdg = listing(&[&outer]);
+    let start = inner.workdir();
+    let own = through(start, &xdg, MountsAt::Pins, None).unwrap();
+    assert_eq!(own, (root(&inner), "/".to_owned()));
+    let mounted = through(start, &xdg, MountsAt::Checkout, None).unwrap();
+    assert_eq!(mounted, (root(&outer), "/repos/lib".to_owned()));
+    let unmounted = *through(start, &listing(&[]), MountsAt::Checkout, None).unwrap_err();
+    assert_eq!(unmounted.code.as_str(), "board::cli::usage");
+    assert!(
+        unmounted.message.contains("is in the board's own tree"),
+        "{}",
+        unmounted.message
+    );
+}
+
+#[test]
+fn without_checkout_a_boards_own_tree_chosen_as_itself_opens_as_itself_and_through_a_board_that_mounts_it_reads_that_mount()
+ {
+    let inner = board();
+    let outer = mounting(&inner);
+    let xdg = listing(&[&outer]);
+    let start = inner.workdir();
+    let itself = through(start, &xdg, MountsAt::Pins, Some(start)).unwrap();
+    assert_eq!(itself, (root(&inner), "/".to_owned()));
+    let mounted = through(start, &xdg, MountsAt::Pins, Some(outer.workdir())).unwrap();
+    assert_eq!(mounted, (root(&outer), "/repos/lib".to_owned()));
+}
