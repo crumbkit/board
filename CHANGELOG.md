@@ -25,6 +25,75 @@
   none with `changes::attach::head_unknown`. `github ci` reads a short
   head as the one commit it names in the checkout, and records that full
   commit on the change only with the run it writes.
+
+- Three commands that refused a repeat of something already done now
+  succeed and write nothing, so an agent that retries after a timeout, or
+  two sessions acting on one message, no longer need a second call to learn
+  whether the first one took. Each success has an `outcome` field and a
+  `line` field holding one sentence such as
+  `already done: /changes/x is done (merged as 5d8fcd9c)`.
+  - `board plans answer` on a question already answered with exactly the
+    same option and words returns the stored answer with
+    `outcome: already_answered`. A different option or different words are
+    still refused with `plans::answer::already_answered`.
+  - `board tasks done` on a task already done returns the task as stored
+    with `outcome: already_done`. `done` on a dropped task, and `drop` on a
+    done task, are still refused with `tasks::task::finished`.
+  - `board changes advance` on a change already done returns
+    `outcome: already_done`, `from` and `to` both `done`, and the
+    `merge_commit_url` the change records. `advance` on a dropped change,
+    and `reopen`, `plan`, `lifecycle`, `reflow` and `run` on any done or
+    dropped change, are still refused with `changes::phase::final`.
+
+- A reference that Board cannot follow because a mounted repository or its
+  pinned commit could not be read is now `board::ref::unreadable`, a new
+  code, where it was `board::ref::dangling`. Board does not know whether
+  such a target exists. `board::ref::dangling` now means Board read where
+  the target would be and found nothing there. `put` and `check` give the
+  same code. The detail's `at` names the path Board could not read, and
+  the hint says the record is not known to be broken, names
+  `board check` on that path, and says not to delete the record. A record
+  with an unreadable reference and a dangling one is coded dangling, with
+  both counted. A script that looks for `board::ref::dangling` to find
+  broken records no longer sees failed reads.
+
+- `rules.check` no longer fails with `rules::rule::degraded` for a rule
+  whose only fault is an unreadable reference. It checks the rule as a
+  live rule, names it in `warnings` with code `board::ref::unreadable` and
+  each reference it could not read, and sets `passed` to false. A rule
+  degraded for any other reason still fails the call. Plugins that read a
+  record degraded only by a reference, such as `tasks` and `boundary`,
+  read one degraded by `board::ref::unreadable` the same way.
+
+- `board changes next` takes `--through <phase>`, a phase of the change's
+  flow such as `land`. Its output then adds `ahead`, which lists each phase
+  after the current one up to that phase, with each check's id, whether it
+  blocks, and whether it applies under the plan's answers. A check that
+  reads only the plan or the change record, such as `test-sections`, is
+  judged now as `pass` or `missing` with its remedy. A check that needs
+  later work, such as a suite run, a review, the head or the pull request,
+  is `later`, with its remedy, and a value not known yet, such as the head,
+  appears there as `<head>`. A check whose `when` reads an answer the plan
+  leaves out is `missing`, as the gate in its phase would report it.
+  A `--through` that names no phase of the flow is refused with
+  `changes::next::bad_through`, which names the flow's phases. Without
+  `--through`, `next` prints what it printed before. The changes skill says
+  to run `changes next --through land` once when the plan is written.
+
+- A query that a Board command runs for itself may take 5 seconds before
+  it is stopped. That covers every query a plugin runs through the host,
+  so a slow query inside a command such as `board changes next` or
+  `board tasks available` finishes where it used to fail the whole
+  command, and the query `board enable` runs to find the records that use
+  a removed type. A statement an agent types with `board query`, and a
+  `board search`, keep their 1-second limit. The `board::query::timeout`
+  refusal names the limit that applied, as in "the query ran longer than
+  5s". Its hint no longer names a fixed time. When the query was one a
+  Board command ran for itself, the hint says there is no SQL to change
+  and to run the command again or report it. The timing log records a
+  plugin's query through the host that finished after more than 1 second
+  as the phase `query.slow`.
+
 - `board get` of an open `plans/question/v1` prints one line on stderr, in
   text and in `--json`, that names the answer at the question's id under
   `answers/` with its time, choice and first 80 characters of words. When

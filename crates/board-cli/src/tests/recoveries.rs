@@ -260,9 +260,10 @@ fn degraded(starts: &mut Starts, fixture: &RuntimePlace, dir: &Path, cache: &Pat
             continue;
         };
         // Following the hints for these runs `mount update`, so each start
-        // has a board of its own.
+        // has a board of its own. A reference into `/mount/commit` cannot be
+        // read, and its hint leads there.
         let place = |starts: &mut Starts| {
-            if path == "/mount/commit" && !starts.twins {
+            if ["/mount/commit", "/ref/unreadable"].contains(&path) && !starts.twins {
                 starts.seed()
             } else {
                 fixture.clone()

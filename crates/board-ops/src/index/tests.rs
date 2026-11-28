@@ -203,7 +203,10 @@ fn read(scenario: &Scenario, cache: &std::path::Path, sql: &str) -> Vec<Value> {
     let view = board
         .view(board.snapshot(index, None, Need::View).unwrap().decided)
         .unwrap();
-    let rows = view.query(sql, 10_000, None).unwrap().rows;
+    let rows = view
+        .query(sql, 10_000, None, crate::query::TYPED_QUERY_TIME)
+        .unwrap()
+        .rows;
     rows.into_iter().map(Value::from).collect()
 }
 

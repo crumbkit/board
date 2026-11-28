@@ -437,7 +437,7 @@ impl Decide<'_> {
                 link: true,
                 target,
                 location,
-                code: failure.map(|(code, _)| code),
+                code: failure.map(|failed| failed.code),
             });
         }
         tally.first().map(|(code, detail)| (code, Some(detail)))
@@ -504,7 +504,7 @@ impl Decide<'_> {
                 link: false,
                 target: reference.target,
                 location,
-                code: failure.map(|(code, _)| code),
+                code: failure.map(|failed| failed.code),
             });
         }
         Ok(Ok(tally.first().map(|(code, detail)| (code, Some(detail)))))

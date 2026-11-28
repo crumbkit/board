@@ -138,10 +138,12 @@ const CAPABILITIES: [Capability; 25] = [
             who can pass it and the remedy, whom it waits on, and what to do now. It first \
             records a route the change lacks from CODEOWNERS, and a head it lacks from the \
             caller's checkout of the mount on a branch of its own, and lists them in filled; it \
-            writes nothing else.",
+            writes nothing else. With `through`, a phase of the flow, `ahead` lists the checks of \
+            each later phase up to it, each judged pass or missing where the plan or the change \
+            record already settles it and later otherwise.",
         run: phases::next,
-        input: input::<phases::PathInput>,
-        output: output::<phases::NextOutput>,
+        input: input::<phases::NextInput>,
+        output: output::<phases::Next>,
         hints: [true, false, true, false],
         env: &[],
         timeout: None,
@@ -165,10 +167,11 @@ const CAPABILITIES: [Capability; 25] = [
             are in build for its mount, unless over_limit gives a reason, which the change \
             records and the output warns about. Into done, a change that records a pull request \
             moves only once GitHub reports it merged, read with gh, and records its merge \
-            commit.",
+            commit. A change already done is left as it is and the call succeeds with outcome \
+            already_done.",
         run: phases::advance,
         input: input::<phases::AdvanceInput>,
-        output: output::<phases::Moved>,
+        output: output::<phases::Advanced>,
         hints: [false, true, false, true],
         env: &ADVANCE_ENV,
         timeout: None,

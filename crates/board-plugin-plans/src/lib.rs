@@ -151,7 +151,8 @@ fn manifest() -> Value {
             capability::<answer::Input, answer::Output>(
                 "answer",
                 "Record the owner's answer to an open question. The answer is what marks the \
-                 question answered; the question's content is left unchanged.",
+                 question answered; the question's content is left unchanged. The same option \
+                 and words again succeed with outcome already_answered and write nothing.",
                 Effect::AddsOnce,
             ),
             capability::<withdraw::Input, withdraw::Output>(

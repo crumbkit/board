@@ -13,7 +13,7 @@ The codes, which change as STANDARDS.md 3 and 4 say:
 | `record` | `bad_type`, `unknown_type`, `invalid`, `not_a_record` |
 | `config` | `not_found`, `invalid`, `ambiguous`, `personal_elsewhere` |
 | `schema` | `invalid`, `differs` |
-| `ref` | `malformed`, `dangling`, `wrong_type` |
+| `ref` | `malformed`, `dangling`, `unreadable`, `wrong_type` |
 | `path` | `malformed`, `shadowed`, `case_collision`, `not_found` |
 | `repo` | `unreadable`, `submodule`, `duplicate_remote`, `local_remote`, `invalid`, `path_mismatch`, `too_long` |
 | `symlink` | `outside`, `loop`, `dangling`; see docs/architecture/paths/symlinks.md |
@@ -21,7 +21,7 @@ The codes, which change as STANDARDS.md 3 and 4 say:
 | `resolve` | `cycle`, `too_many_hops` |
 | `index` | `failed`: the disposable index could not be used, even in memory |
 | `query` | `invalid`: the SQL does not parse, would write, or is more than one statement |
-| `query` | `timeout`: the statement ran longer than 1 s |
+| `query` | `timeout`: the statement ran past 1 s (`board query`, `board search`) or 5 s (a Board command's own query) |
 | `refs` | `target_changed`: with `--field`, a target's file changed after the check, so its values were not read |
 | `put` | `stale`, `locked`, `through_mount`, `symlink`, `invalid`, `not_a_file` (a `--file` path names a directory or ends `.json`), `nul` (a file's text holds NUL), `no_identity`, `head_moved`, `failed` (the file could not be written), and the `--new` and `--bulk` codes in architecture/paths/writes.md |
 | `sync` | `no_remote`, `failed` (git refused the fetch or push), `edited`, `gave_up`, `timeout` (past 60 s), `rewound`, `shallow`, `merging`; see docs/architecture/writes.md |

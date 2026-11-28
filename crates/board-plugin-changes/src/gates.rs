@@ -460,7 +460,7 @@ pub(crate) fn interpret(observed: &Observed, checks: &[flow::Check]) -> Vec<Chec
 
 /// The answers the check's `when` reads that the plan leaves out, each
 /// once.
-fn left_out(observed: &Observed, each: &flow::Check) -> Vec<String> {
+pub(crate) fn left_out(observed: &Observed, each: &flow::Check) -> Vec<String> {
     let Some(when) = &each.when else {
         return Vec::new();
     };
@@ -501,7 +501,7 @@ fn waived_by<'a>(observed: &'a Observed, each: &flow::Check) -> Option<&'a str> 
 
 /// Whether every condition of the check's `when` holds, or why a pattern
 /// in it cannot be read. An answer the plan leaves out counts as holding.
-fn applies(
+pub(crate) fn applies(
     observed: &Observed,
     plan: &BTreeMap<String, String>,
     each: &flow::Check,

@@ -836,7 +836,7 @@ fn a_mounted_repository_whose_nearest_board_is_an_enclosing_one_is_refused_and_o
 }
 
 #[test]
-fn a_home_mount_in_the_mounted_board_resolves_against_the_roots_home_and_without_one_the_reference_dangles()
+fn a_home_mount_in_the_mounted_board_resolves_against_the_roots_home_and_without_one_the_reference_is_unreadable()
  {
     let (library, _) = library();
     let (other, other_commit) = self::library();
@@ -858,7 +858,7 @@ fn a_home_mount_in_the_mounted_board_resolves_against_the_roots_home_and_without
             .degraded
             .clone()
     };
-    assert_eq!(degraded(None).unwrap().0, Code::RefDangling);
+    assert_eq!(degraded(None).unwrap().0, Code::RefUnreadable);
     assert_eq!(degraded(Some(home)), None);
 }
 

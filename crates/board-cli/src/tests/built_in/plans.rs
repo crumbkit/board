@@ -364,8 +364,9 @@ fn a_mounted_answer_naming_its_question_in_its_own_board_answers_it() {
             "/lib/projects/m/questions/done",
             flag,
             value,
+            // The stored answer's words are Neither., so these differ.
             "--words",
-            "Neither.",
+            "Both.",
         ];
         let flags = if capability == "plans.answer" {
             &flags[..]
@@ -1156,4 +1157,57 @@ fn get_of_a_question_that_plans_answer_answered_names_the_answer() {
             answered["answered"].as_str().unwrap()
         )
     );
+}
+
+/// Answering again with the option and words already recorded, as an agent
+/// does when it retries after a timeout, succeeds, shows the stored answer
+/// and writes nothing. The twins give another option, or the same option
+/// with other words, and are refused, naming the stored answer.
+#[test]
+fn answering_again_with_the_same_option_and_words_succeeds_and_another_answer_is_refused() {
+    let board = board();
+    let options = json!([{"id": "a", "text": "Go."}, {"id": "b", "text": "Stay."}]);
+    board.write(
+        "projects/a/questions/q.json",
+        &open(&json!({"options": options})),
+    );
+    board.committing();
+    let question = "/projects/a/questions/q";
+    let first = board.call("plans.answer", &["--path", question, "--option", "b"]);
+    assert_eq!(first.get("outcome"), None, "{first}");
+    let head = board.head();
+    // The words left out are the option's text, which is what was stored.
+    for flags in [
+        &["--path", question, "--option", "b"][..],
+        &["--path", question, "--option", "b", "--words", "Stay."],
+    ] {
+        let again = board.call("plans.answer", flags);
+        assert_eq!(
+            again,
+            json!({
+                "outcome": "already_answered",
+                "answer": "/projects/a/answers/q",
+                "question": question,
+                "choice": "b",
+                "words": "Stay.",
+                "answered": first["answered"],
+                "line": "already answered: /projects/a/questions/q has this answer at \
+                         /projects/a/answers/q",
+            })
+        );
+        assert_eq!(board.head(), head, "a repeat writes no commit");
+    }
+    for flags in [
+        &["--path", question, "--option", "a"][..],
+        &["--path", question, "--option", "b", "--words", "Stay put."],
+    ] {
+        let refused = board.refusal("plans.answer", flags);
+        assert_eq!(
+            refused["code"], "plans::answer::already_answered",
+            "{refused}"
+        );
+        let message = refused["message"].as_str().unwrap();
+        assert!(message.contains("/projects/a/answers/q"), "{message}");
+    }
+    assert_eq!(board.head(), head);
 }

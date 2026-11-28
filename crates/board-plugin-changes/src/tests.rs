@@ -124,6 +124,8 @@ const OWED_AND_ASK: [&str; 7] = [
     "ask.project",
     "ask.by",
 ];
+/// The input properties of `next`.
+const NEXT: [&str; 2] = ["next.path", "next.through"];
 /// The input properties of `plan-amend`.
 const PLAN_AMEND: [&str; 3] = [
     "plan-amend.path",
@@ -175,7 +177,6 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "start.flow",
         "start.suite",
         "start.over_limit",
-        "next.path",
         "attach.path",
         "attach.ref",
         "attach.ticket",
@@ -253,6 +254,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
     ];
     expected.extend(OWED_AND_ASK);
     expected.extend(PLAN_AMEND);
+    expected.extend(NEXT);
     expected.sort_unstable();
     assert_eq!(described, expected);
 }

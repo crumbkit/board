@@ -2,6 +2,7 @@
 //! (docs/architecture/index.md).
 
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use board_index::{Budget, Fallback, IndexError, View};
 use board_model::{Code, Fields, Known, Refusal};
@@ -16,6 +17,22 @@ use crate::snapshot::Need;
 pub const DEFAULT_LIMIT: usize = 100;
 /// The most rows `query` returns to a limit, and the largest `--limit`.
 pub const MAX_LIMIT: usize = 10_000;
+
+/// How long a statement an agent types, with `board query`, may run before
+/// it is stopped. It bounds how long an agent waits for an answer.
+pub(crate) const TYPED_QUERY_TIME: Duration = Duration::from_secs(1);
+/// How long a statement a Board command runs for itself, such as a plugin's
+/// query through the host, may run. It matches the time the board-changes
+/// mod waits for a lookup, so an inner query never outlasts what waits on
+/// it. A statement that finishes after more than [`TYPED_QUERY_TIME`] shows
+/// in the trace as `query.slow`.
+pub(crate) const INNER_QUERY_TIME: Duration = Duration::from_secs(5);
+
+/// The hint of a statement a Board command ran for itself that ran past
+/// [`INNER_QUERY_TIME`]. The agent wrote no SQL, so there is none to narrow.
+pub(crate) const INNER_TIMEOUT_HINT: &str = "Board ran this query for the command itself, so \
+    there is no SQL to change; run the command again, and if it fails the same way, report the \
+    command and this message to Board's developers";
 
 /// How many times a query runs while other processes prune under it.
 const TRIES: usize = 3;
@@ -37,9 +54,10 @@ pub struct QueryReport {
 impl Board {
     /// Refreshes the index kept under `cache` and decides every entry, as an
     /// unscoped check does, then runs `sql`, returning at most `limit` rows,
-    /// within `budget` when there is one. When another process prunes what
-    /// the views show before `sql` runs, it all runs again, three times in
-    /// all.
+    /// within `budget` when there is one, and stopping it past 1 second, the
+    /// limit for a statement an agent types. When another process prunes
+    /// what the views show before `sql` runs, it all runs again, three times
+    /// in all.
     pub fn query(
         &self,
         sql: &str,
@@ -66,7 +84,7 @@ impl Board {
     }
 
     /// Runs `sql` over `view`, returning at most `limit` rows, within `budget`
-    /// when there is one.
+    /// when there is one, and stopping it past [`TYPED_QUERY_TIME`].
     pub(crate) fn run(
         &self,
         view: &View,
@@ -75,10 +93,28 @@ impl Board {
         limit: usize,
         budget: Option<Budget>,
     ) -> Result<QueryReport, QueryError> {
+        self.run_within(view, memory, sql, limit, budget, TYPED_QUERY_TIME)
+    }
+
+    /// Runs `sql` as [`Board::run`] does, but stopping it past `time`. A
+    /// statement that is [`slow`] is also timed as `query.slow`.
+    pub(crate) fn run_within(
+        &self,
+        view: &View,
+        memory: Option<Fallback>,
+        sql: &str,
+        limit: usize,
+        budget: Option<Budget>,
+        time: Duration,
+    ) -> Result<QueryReport, QueryError> {
         let timed = self.timed("query.sql");
-        let rows = view
-            .query(sql, limit, budget)
-            .map_err(|error| unknown(view, sql, error))?;
+        let started = Instant::now();
+        let rows = view.query(sql, limit, budget, time);
+        let timed_out = matches!(rows, Err(IndexError::Timeout { .. }));
+        if slow(time, started.elapsed(), timed_out) {
+            self.trace.borrow_mut().add("query.slow", started);
+        }
+        let rows = rows.map_err(|error| unknown(view, sql, error, time))?;
         drop(timed);
         self.trace.borrow_mut().count("rows", rows.rows.len());
         Ok(QueryReport {
@@ -89,6 +125,13 @@ impl Board {
             memory,
         })
     }
+}
+
+/// Whether a statement allowed `time` that took `took` finished slowly: it
+/// was allowed more than [`TYPED_QUERY_TIME`], ran longer than that, and was
+/// not stopped at its limit.
+pub(crate) fn slow(time: Duration, took: Duration, timed_out: bool) -> bool {
+    time > TYPED_QUERY_TIME && took > TYPED_QUERY_TIME && !timed_out
 }
 
 /// Runs `once` again while another process prunes what its views show
@@ -139,7 +182,13 @@ impl QueryError {
             },
             ..Fields::default()
         };
-        Refusal::new(self.code(), self, &fields)
+        let refusal = Refusal::new(self.code(), self, &fields);
+        match self {
+            Self::Index {
+                source: IndexError::Timeout { limit },
+            } if *limit > TYPED_QUERY_TIME => refusal.with_hint(INNER_TIMEOUT_HINT),
+            _ => refusal,
+        }
     }
 }
 
@@ -151,11 +200,12 @@ const TABLES: &str = "\
     ORDER BY name";
 
 /// `error`, with the names there are when `SQLite` says the statement names a
-/// table or column that is not there.
-fn unknown(view: &View, sql: &str, error: IndexError) -> QueryError {
+/// table or column that is not there, each lookup stopped past `time`, the
+/// statement's own limit.
+fn unknown(view: &View, sql: &str, error: IndexError, time: Duration) -> QueryError {
     let message = error.to_string();
     let names = |sql: &str| -> Vec<String> {
-        view.query(sql, MAX_LIMIT, None).map_or_else(
+        view.query(sql, MAX_LIMIT, None, time).map_or_else(
             |_| Vec::new(),
             |rows| {
                 rows.rows

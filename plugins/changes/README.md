@@ -372,12 +372,12 @@ of `changes` still fails `review`.
   change earns the output's `warnings` entry
   `changes::stop::question_unlinked`, and the stop is still recorded. Each
   call writes a new record.
-- `next --path /changes/<name>`: reads the gate, and first writes the
-  change's missing route and head as "Filling" below says; it writes
-  nothing else. The change's `flow` (its name and phases), its phase,
-  each gate check as `pass` or `missing` with a `detail`, its `actor`,
-  whether it `blocks`, and when missing its `remedy`; the instruction,
-  with its placeholders filled; and `sync`.
+- `next --path /changes/<name> [--through <phase>]`: reads the gate, and
+  first writes the change's missing route and head as "Filling" below says;
+  it writes nothing else. The change's `flow` (its name and phases), its
+  phase, each gate check as `pass` or `missing` with a `detail`, its
+  `actor`, whether it `blocks`, and when missing its `remedy`; the
+  instruction, with its placeholders filled; and `sync`.
   An instruction that names `changes plan` or `changes.plan` ends with how
   to give its input, JSON on stdin with the fields `path`, `text`, `uses`
   and `paths`, plus `considered` and `owed` when the plan has them, and a
@@ -395,6 +395,26 @@ of `changes` still fails `review`.
   suggests, and is left out when there is neither. When the change has no
   task and exactly one open task has its title, the `task` check's remedy
   names `board changes attach --path <change> --task <that task>`.
+  `--through` names a phase of the change's flow, such as `land`. The
+  output then adds `ahead`: for each phase after the current one, up to and
+  including that phase, the phase's name and each of its checks with
+  `check`, `blocks` and `applies`, which says whether the check's `when`
+  holds under the plan. A check that applies has a `status`. A `sections`,
+  `considered`, `field`, `exists`, `rule-paths` or `planned-rule-paths`
+  check reads only the plan or the change record, so it is judged now as
+  `pass` or `missing`, with its `detail` and, when missing, its `remedy`.
+  Every other kind needs work that has not happened yet, such as a run or
+  a review, so its status is `later`, with its `remedy`. So is a `field`
+  check on `head` or `pulls` while the change has none, and a `rule-paths`
+  check, which reads the diff, while the change records no head. A `later`
+  remedy names a value that is not known yet as a placeholder, such as
+  `<head>` or `<suite>`. A check whose `when` reads an answer the plan
+  leaves out, or a section pattern that cannot be read, is `missing` with
+  the detail and remedy the gate in its phase would give. A check judged
+  `pass` ahead can still fail when its phase comes, after a later edit.
+  Without `--through` there is no `ahead`, and the output is unchanged. A
+  `--through` that names no phase of the flow is refused with
+  `changes::next::bad_through`, whose `phases` lists the flow's phases.
 - `sync` in the output of `open` and `next` is `{synced, stale, code,
   command}`: the day of the last sync, or null; `stale` when that is
   before today in UTC or null and sync has a pull request to read, with
@@ -480,8 +500,10 @@ of `changes` still fails `review`.
   the remedy is to attach the pull request, or for the owner to close each
   task. The call receives `GH_TOKEN`, `GITHUB_TOKEN` and
   `GH_CONFIG_DIR` for gh. A paused change is refused with
-  `changes::phase::paused`. Leaving `done` or `dropped` is
-  `changes::phase::final`, which points to `open` and `start`.
+  `changes::phase::paused`. Leaving `dropped` is
+  `changes::phase::final`, which points to `open` and `start`. `advance` on
+  a change already `done` succeeds and writes nothing, with
+  `outcome: already_done`, its `merge_commit_url` and a `line` that says so.
 - `reflow --path /changes/<name> --flow <name>` moves the change to the
   current version of the flow named, the board's own or a shipped one,
   writing that version when the board lacks it, and returns `path`, `flow`

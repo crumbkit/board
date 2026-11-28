@@ -289,7 +289,7 @@ fn queried_after_another_handle_writes(prunes: bool, sql: &str) -> Result<Rows, 
         writer.put_blob(blob(6), Role::Json, &record()).unwrap();
     }
     writer.decide(Vec::new()).unwrap();
-    first.query(sql, 10, None)
+    first.query(sql, 10, None, LIMIT)
 }
 
 const READS: &str = "SELECT type, status FROM entries";

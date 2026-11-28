@@ -326,8 +326,10 @@ pub enum IndexError {
         #[source]
         source: rusqlite::Error,
     },
-    #[error("the query ran longer than {:?}", crate::query::QUERY_TIME)]
-    Timeout,
+    /// The statement ran longer than its time limit, `limit`, and was
+    /// stopped.
+    #[error("the query ran longer than {limit:?}")]
+    Timeout { limit: Duration },
     /// The first row, or one value, was longer than the query's whole budget.
     #[error("the query made a row longer than one run prints")]
     TooBig,
@@ -367,7 +369,7 @@ impl IndexError {
             | Self::Pruned
             | Self::Unreadable { .. } => Code::IndexFailed,
             Self::Query { .. } => Code::QueryInvalid,
-            Self::Timeout => Code::QueryTimeout,
+            Self::Timeout { .. } => Code::QueryTimeout,
             Self::TooBig => Code::OutputOverBudget,
         }
     }

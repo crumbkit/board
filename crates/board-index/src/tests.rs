@@ -544,16 +544,18 @@ fn a_validation_stores_its_outcome_and_the_references_it_found_in_order() {
 fn a_query_cannot_write_and_leaves_the_index_writable() {
     let cache = tempfile::tempdir().unwrap();
     let view = filled(cache.path());
-    let refused = view.query("DELETE FROM main.blobs", 10, None).unwrap_err();
+    let refused = view
+        .query("DELETE FROM main.blobs", 10, None, LIMIT)
+        .unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
     let admitted = view
-        .query("SELECT count(*) AS n FROM main.blobs", 10, None)
+        .query("SELECT count(*) AS n FROM main.blobs", 10, None, LIMIT)
         .unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(1)]]);
     // A pragma function passes the readonly check, so only `query_only` stops
     // this one writing the statistics it gathers.
     let refused = view
-        .query("SELECT count(*) FROM pragma_optimize(-1)", 10, None)
+        .query("SELECT count(*) FROM pragma_optimize(-1)", 10, None, LIMIT)
         .unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
     let writer = view.index.into_inner().write().unwrap();
@@ -572,7 +574,12 @@ fn a_query_keeps_the_rows_within_its_budget() {
             value: |_| 1,
         };
         let rows = view
-            .query("SELECT * FROM (VALUES (1), (2), (3))", 10, Some(budget))
+            .query(
+                "SELECT * FROM (VALUES (1), (2), (3))",
+                10,
+                Some(budget),
+                LIMIT,
+            )
             .unwrap();
         (rows.rows.len(), rows.truncated, rows.over_budget)
     };
@@ -599,12 +606,14 @@ fn a_query_refuses_a_first_row_past_its_budget_as_soon_as_it_is_counted() {
     };
     COUNTED.set(0);
     let refused = view
-        .query("SELECT 1, 2, 3", 10, Some(budget(1)))
+        .query("SELECT 1, 2, 3", 10, Some(budget(1)), LIMIT)
         .unwrap_err();
     assert_eq!(refused.code(), Code::OutputOverBudget);
     assert_eq!(COUNTED.get(), 2, "it stops at the value past the budget");
     COUNTED.set(0);
-    let admitted = view.query("SELECT 1, 2, 3", 10, Some(budget(3))).unwrap();
+    let admitted = view
+        .query("SELECT 1, 2, 3", 10, Some(budget(3)), LIMIT)
+        .unwrap();
     assert_eq!(admitted.rows.len(), 1);
     assert_eq!(COUNTED.get(), 3);
 }
@@ -622,20 +631,20 @@ fn a_failure_of_the_database_is_the_indexs_and_any_other_is_the_querys() {
         rusqlite::ffi::SQLITE_CANTOPEN,
     ] {
         assert_eq!(
-            crate::query::blame(failure(code)).code(),
+            crate::query::blame(failure(code), LIMIT).code(),
             Code::IndexFailed,
             "{code}"
         );
     }
     for code in [rusqlite::ffi::SQLITE_ERROR, rusqlite::ffi::SQLITE_READONLY] {
         assert_eq!(
-            crate::query::blame(failure(code)).code(),
+            crate::query::blame(failure(code), LIMIT).code(),
             Code::QueryInvalid,
             "{code}"
         );
     }
     assert_eq!(
-        crate::query::blame(rusqlite::Error::MultipleStatement).code(),
+        crate::query::blame(rusqlite::Error::MultipleStatement, LIMIT).code(),
         Code::QueryInvalid
     );
 }
@@ -651,7 +660,7 @@ fn a_query_cannot_run_a_pragma_but_can_call_a_pragma_function() {
     let cache = tempfile::tempdir().unwrap();
     let index = filled(cache.path());
     let refused = index
-        .query("PRAGMA journal_mode=delete", 10, None)
+        .query("PRAGMA journal_mode=delete", 10, None, LIMIT)
         .unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
     assert_eq!(journal_mode(&index), "wal");
@@ -660,6 +669,7 @@ fn a_query_cannot_run_a_pragma_but_can_call_a_pragma_function() {
             "SELECT name FROM pragma_table_info('blobs') LIMIT 1",
             10,
             None,
+            LIMIT,
         )
         .unwrap();
     assert_eq!(admitted.rows.len(), 1);
@@ -667,7 +677,7 @@ fn a_query_cannot_run_a_pragma_but_can_call_a_pragma_function() {
     // The readonly check passes this statement, so only the authorizer stops
     // it changing the connection.
     let refused = index
-        .query("PRAGMA writable_schema=1", 10, None)
+        .query("PRAGMA writable_schema=1", 10, None, LIMIT)
         .unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
     let writable: i64 = index
@@ -686,6 +696,7 @@ fn a_pragma_function_given_a_name_that_is_not_utf8_returns_no_rows() {
             "SELECT count(*) FROM pragma_table_info(CAST(x'ff' AS TEXT))",
             10,
             None,
+            LIMIT,
         )
         .unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(0)]]);
@@ -697,12 +708,14 @@ fn a_query_cannot_attach_or_detach_a_database_and_one_that_reads_runs() {
     let index = filled(cache.path());
     let target = cache.path().join("x.sqlite");
     let sql = format!("ATTACH '{}' AS x", target.display());
-    let refused = index.query(&sql, 10, None).unwrap_err();
+    let refused = index.query(&sql, 10, None, LIMIT).unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
     assert!(!target.exists(), "no file is created");
-    let refused = index.query("DETACH DATABASE temp", 10, None).unwrap_err();
+    let refused = index
+        .query("DETACH DATABASE temp", 10, None, LIMIT)
+        .unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
-    let admitted = index.query("SELECT 7", 10, None).unwrap();
+    let admitted = index.query("SELECT 7", 10, None, LIMIT).unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(7)]]);
 }
 
@@ -730,12 +743,12 @@ fn a_query_cannot_attach_a_file_named_by_an_expression_and_one_that_reads_runs()
     ] {
         let target = cache.path().join(name);
         let sql = sql.replace("{}", &target.display().to_string());
-        let refused = index.query(&sql, 10, None).unwrap_err();
+        let refused = index.query(&sql, 10, None, LIMIT).unwrap_err();
         assert_eq!(refused.code(), Code::QueryInvalid, "{sql}");
         assert!(!target.exists(), "no file is created by {sql}");
     }
     assert_eq!(databases(&index), before);
-    let admitted = index.query("SELECT 7", 10, None).unwrap();
+    let admitted = index.query("SELECT 7", 10, None, LIMIT).unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(7)]]);
 }
 
@@ -750,7 +763,7 @@ fn a_query_cannot_detach_a_database_by_name_or_by_expression() {
         .execute_batch("ATTACH ':memory:' AS extra")
         .unwrap();
     for sql in ["DETACH DATABASE extra", "DETACH 'extra'||''"] {
-        let refused = index.query(sql, 10, None).unwrap_err();
+        let refused = index.query(sql, 10, None, LIMIT).unwrap_err();
         assert_eq!(refused.code(), Code::QueryInvalid, "{sql}");
         assert!(
             databases(&index).contains(&"extra".to_owned()),
@@ -766,11 +779,11 @@ fn a_query_cannot_explain_a_write_and_can_explain_a_read() {
     let cache = tempfile::tempdir().unwrap();
     let index = filled(cache.path());
     let refused = index
-        .query("EXPLAIN DELETE FROM main.blobs", 10, None)
+        .query("EXPLAIN DELETE FROM main.blobs", 10, None, LIMIT)
         .unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
     let admitted = index
-        .query("EXPLAIN SELECT count(*) FROM main.blobs", 1, None)
+        .query("EXPLAIN SELECT count(*) FROM main.blobs", 1, None, LIMIT)
         .unwrap();
     assert_eq!(admitted.rows.len(), 1);
 }
@@ -814,7 +827,7 @@ fn the_statements_agents_write_are_all_authorized() {
         ("SELECT count(*) FROM entries", serde_json::json!(0)),
         ("SELECT count(*) FROM main.blobs", serde_json::json!(1)),
     ] {
-        let admitted = index.query(sql, 10, None).unwrap();
+        let admitted = index.query(sql, 10, None, LIMIT).unwrap();
         assert_eq!(admitted.rows, [vec![expected]], "{sql}");
     }
 }
@@ -827,8 +840,33 @@ fn a_statement_that_cannot_compile_on_a_broken_index_is_the_index_failing() {
         .connection()
         .execute_batch("DROP TABLE main.state")
         .unwrap();
-    let refused = index.query("SELECT 1 FROM nowhere", 10, None).unwrap_err();
+    let refused = index
+        .query("SELECT 1 FROM nowhere", 10, None, LIMIT)
+        .unwrap_err();
     assert_eq!(refused.code(), Code::IndexFailed, "{refused:?}");
+}
+
+/// The time limit the tests give a query unless a test is about the limit.
+const LIMIT: Duration = Duration::from_secs(1);
+
+#[test]
+fn a_statement_past_a_short_limit_is_stopped_naming_it_and_the_same_statement_under_a_longer_limit_returns_its_rows()
+ {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    // Many thousands of times the steps between checks of the clock, so it
+    // runs well past a millisecond and well within a minute.
+    let slow = "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c WHERE n < 2000000) \
+                SELECT count(*) FROM c";
+    let refused = index
+        .query(slow, 10, None, Duration::from_millis(1))
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::QueryTimeout);
+    assert_eq!(refused.to_string(), "the query ran longer than 1ms");
+    let admitted = index
+        .query(slow, 10, None, Duration::from_secs(60))
+        .unwrap();
+    assert_eq!(admitted.rows, [vec![serde_json::json!(2_000_000)]]);
 }
 
 #[test]
@@ -837,7 +875,7 @@ fn a_query_that_runs_too_long_is_stopped_and_a_bounded_one_finishes() {
     let index = filled(cache.path());
     let unbounded = "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c) \
                      SELECT count(*) FROM c";
-    let refused = index.query(unbounded, 10, None).unwrap_err();
+    let refused = index.query(unbounded, 10, None, LIMIT).unwrap_err();
     assert_eq!(refused.code(), Code::QueryTimeout);
     // Many times the steps between checks of the clock, and still well
     // within the time limit.
@@ -850,7 +888,7 @@ fn a_query_that_runs_too_long_is_stopped_and_a_bounded_one_finishes() {
         .query_row(bounded, [], |row| row.get(0))
         .unwrap();
     assert_eq!(after, 10000);
-    let admitted = index.query(bounded, 10, None).unwrap();
+    let admitted = index.query(bounded, 10, None, LIMIT).unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(10000)]]);
     assert_eq!(journal_mode(&index), "wal");
     assert!(
@@ -865,11 +903,11 @@ fn a_query_cannot_vacuum_into_a_file() {
     let index = filled(cache.path());
     let target = cache.path().join("v.sqlite");
     let sql = format!("VACUUM INTO '{}'", target.display());
-    let refused = index.query(&sql, 10, None).unwrap_err();
+    let refused = index.query(&sql, 10, None, LIMIT).unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
     assert!(!target.exists(), "no file is created");
     let admitted = index
-        .query("SELECT count(*) AS n FROM main.blobs", 10, None)
+        .query("SELECT count(*) AS n FROM main.blobs", 10, None, LIMIT)
         .unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(1)]]);
 }
