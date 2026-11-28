@@ -15,6 +15,7 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::board::{self, body, readable, rows, text, tree_codes};
+use crate::gates::Revision;
 use crate::records::{
     AttemptRecord, ChangeRecord, ChangeV1, DONE, DROPPED, Kind, PULL_TYPES, PlanRecord,
     PrototypeRecord, RUN_V1, State, TASK_TYPES, is_final,
@@ -335,6 +336,48 @@ pub(crate) fn attached_each(
         }
     }
     Ok(found)
+}
+
+/// Each revision of the change at `path`'s plan, oldest first: every plan
+/// record under its `plans/`, with its record as Board holds it and its
+/// text. A revision whose record does not read as an object is left out.
+pub(crate) fn revisions(host: &dyn Host, path: &str) -> Result<Vec<Revision>, PluginError> {
+    let prefix = format!("{path}/plans/");
+    let sql = format!(
+        "SELECT logical FROM records WHERE type = {} AND ({}) AND substr(logical, 1, {}) = {} \
+         ORDER BY logical",
+        literal(PlanRecord::TYPE),
+        sound(),
+        prefix.chars().count(),
+        literal(&prefix)
+    );
+    let paths: Vec<String> = (rows(host, &sql)?.iter())
+        .filter_map(|row| text(row.first()).map(str::to_owned))
+        .collect();
+    let held = board::get(host, &paths)?;
+    let records: Vec<(String, Map<String, Value>)> = (paths.into_iter().zip(held))
+        .filter_map(|(path, bytes)| match parse_json(&bytes?).ok()? {
+            Value::Object(record) => Some((path, record)),
+            _ => None,
+        })
+        .collect();
+    let texts: Vec<String> = (records.iter())
+        .map(|(_, record)| {
+            record
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect();
+    let read = board::get(host, &texts)?;
+    Ok((records.into_iter().zip(read))
+        .map(|((path, record), bytes)| Revision {
+            path,
+            record,
+            text: bytes.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()),
+        })
+        .collect())
 }
 
 /// The plan record at `path` and its blob, or none when no valid plan is

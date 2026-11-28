@@ -39,7 +39,11 @@ in. `<project>` names what the record concerns, such as the repository
    `--person` is refused with `plans::decide::no_author`. Repeat
    `--alternatives` for each option not chosen, and `--refs` for each
    board path the decision concerns, such as a plan or an answer, and
-   `--urls` for each web page, such as a pull request. Add `--review` when
+   `--urls` for each web page, such as a pull request. Give `--decides`
+   with the one board path the decision decides, such as the plan revision
+   it approves or the understanding check it signs off. Record the owner's
+   reply to a question, such as the one `changes ask` files, with
+   `plans answer`, never as a decision. Add `--review` when
    the owner should look at it. JSON on stdin with the same names, such as
    `{"project": "<project>", "decision": "...", "alternatives": ["..."]}`,
    works too. When the project held nothing before, the decision is still
@@ -49,11 +53,13 @@ in. `<project>` names what the record concerns, such as the repository
 
    A change's owner checks count a decision only when its `by.person` is
    set and its `written_by` is empty. They count an answer when its
-   `by.person` or its `written_by` is set. When the owner approves in chat,
-   record his approval with his name as `--person` and his words, quoted, in
-   `--why`:
+   `by.person` or its `written_by` is set. A decision approves a change's
+   plan only when its `--decides` is the plan revision it approves and its
+   `--refs` name the change.
+   When the owner approves in chat, record his approval with his name as
+   `--person` and his words, quoted, in `--why`:
 
-       board -C <board> plans decide --project <project> --decision '<the owner> approves the plan <plan record>.' --why 'Asked whether he approves the plan, <the owner> answered "<his words>".' --refs '<plan record>' --person '<the owner>' --session <your local_ id>
+       board -C <board> plans decide --project <project> --decision '<the owner> approves the plan <plan record>.' --why 'Asked whether he approves the plan, <the owner> answered "<his words>".' --decides '<plan record>' --refs '/changes/<name>' --person '<the owner>' --session <your local_ id>
 
    Set `--person` only for a decision the owner made. A decision you make
    yourself names your `--session` or `--program`.
