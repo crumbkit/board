@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- A warm board run reads what the index knows about the working tree in
+  one pass, and no longer opens a record beside its directory whose blob
+  the index already knows holds no pointer. Every command that reads the
+  board, such as `search`, `query`, `check` and each plugin call, spends
+  less time on its snapshot. On a copy of a board of about 36,000 files,
+  a warm search's snapshot took a median of 132 ms, against 221 ms before.
+  Output is unchanged.
+
 - A plugin call refused with `board::plugin::not_enabled` in a board's own
   tree, such as a linked worktree of a repository that holds its own board,
   now names in its hint each known board that mounts that repository and

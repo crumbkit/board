@@ -11,7 +11,7 @@ pub use crate::worktree::read::{Directory, Reader, Working};
 pub use crate::worktree::uncommitted::uncommitted;
 
 use std::cell::OnceCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::fs::{self, Metadata};
 use std::io::{self, Read};
@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::UNIX_EPOCH;
 
-use board_model::{ObjectId, Source, Stat};
+use board_model::{Code, LogicalPath, ObjectId, Source, Stat};
 use gix::bstr::{BString, ByteSlice};
 use gix::index::entry::Mode;
 use gix::worktree::stack::state::ignore;
@@ -74,6 +74,9 @@ pub(crate) struct WorkingTree<'r, 'k, T = ()> {
     /// Whether a file is listed [`Kind::Unhashed`] and hashed only when
     /// [`Tree::settle`] is given it.
     on_demand: bool,
+    /// Blobs known to hold no pointer, so that addressing a directory reads
+    /// no record beside its directory that holds one of them.
+    plain: &'k HashSet<ObjectId>,
     listed: HashMap<PathBuf, Listing>,
     /// Each file settled, by path, so it keeps one blob in this snapshot.
     settled: HashMap<PathBuf, (Kind<PathBuf>, Option<Stat>)>,
@@ -208,6 +211,7 @@ impl Repository {
             known,
             kept: None,
             on_demand: false,
+            plain: &NONE_PLAIN,
             listed: HashMap::new(),
             settled: HashMap::new(),
             earlier,
@@ -220,6 +224,10 @@ impl Repository {
 
 /// No directory listed, for a walk that reads none from an earlier one.
 static NONE_LISTED: std::sync::LazyLock<Directories> = std::sync::LazyLock::new(HashMap::new);
+
+/// No blob known to hold no pointer, for a tree that reads every record
+/// beside its directory.
+static NONE_PLAIN: std::sync::LazyLock<HashSet<ObjectId>> = std::sync::LazyLock::new(HashSet::new);
 
 /// The time now, in nanoseconds since the epoch; 0 before it.
 fn now_ns() -> i64 {
@@ -249,6 +257,7 @@ impl<'r, 'k> WorkingTree<'r, 'k> {
                 stopped: false,
             }),
             on_demand: self.on_demand,
+            plain: self.plain,
             listed: self.listed,
             settled: self.settled,
             earlier: self.earlier,
@@ -259,7 +268,15 @@ impl<'r, 'k> WorkingTree<'r, 'k> {
     }
 }
 
-impl<T: Send> WorkingTree<'_, '_, T> {
+impl<'k, T: Send> WorkingTree<'_, 'k, T> {
+    /// This tree, taking each blob in `plain` to hold no pointer, so that
+    /// addressing a directory does not read a record beside its directory
+    /// that holds one.
+    pub(crate) fn knowing(mut self, plain: &'k HashSet<ObjectId>) -> Self {
+        self.plain = plain;
+        self
+    }
+
     /// This tree, hashing a file only when resolution picks or reads it.
     pub(crate) fn on_demand(mut self) -> Self {
         self.on_demand = true;
@@ -534,6 +551,22 @@ impl<T: Send> Tree for WorkingTree<'_, '_, T> {
         })
     }
 
+    /// Hashes an `Unhashed` record beside its directory first, so the blob
+    /// checked against the plain blobs is the file's current one, and reads
+    /// it only when that blob is not among them.
+    fn address(
+        &mut self,
+        directory: &PathBuf,
+        parent: &LogicalPath,
+        entries: &[RawEntry<PathBuf>],
+    ) -> Vec<(Option<LogicalPath>, Option<Code>)> {
+        let mut pointers = Pointers::default().knowing(self.plain);
+        address::directory(parent, entries, |record| {
+            let record = self.settle(directory, record);
+            pointers.shadows(&record, || self.read(directory, &record))
+        })
+    }
+
     /// Hashes an `Unhashed` file once; later calls give the same answer.
     fn settle(&mut self, directory: &PathBuf, entry: &RawEntry<PathBuf>) -> RawEntry<PathBuf> {
         let Kind::Unhashed(seen) = &entry.kind else {
@@ -721,59 +754,4 @@ fn lists(directory: &Path, name: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::git::model_id;
-
-    #[test]
-    fn a_stream_longer_or_shorter_than_its_length_has_no_id() {
-        let directory = tempfile::tempdir().unwrap();
-        gix::init(directory.path()).unwrap();
-        let repository = Repository::open(directory.path()).unwrap();
-        let expected =
-            gix::objs::compute_hash(gix::hash::Kind::Sha1, gix::objs::Kind::Blob, b"abc").unwrap();
-        assert_eq!(
-            repository.hash(&mut &b"abc"[..], 3),
-            Some(model_id(&expected))
-        );
-        assert_eq!(repository.hash(&mut &b"abcd"[..], 3), None);
-        assert_eq!(repository.hash(&mut &b"ab"[..], 3), None);
-    }
-
-    #[test]
-    fn a_stream_longer_or_shorter_than_its_length_is_not_read() {
-        assert_eq!(read_exactly(&b"abc"[..], 3), Some(b"abc".to_vec()));
-        assert_eq!(read_exactly(&b"abcd"[..], 3), None);
-        assert_eq!(read_exactly(&b"ab"[..], 3), None);
-    }
-
-    #[test]
-    fn a_name_is_listed_only_in_its_own_spelling() {
-        for (written, listed) in [(".board", true), (".Board", false)] {
-            let scenario = board_scenario::Scenario::new();
-            scenario.write(&format!("{written}/x.md"), board_scenario::Item::File(""));
-            assert_eq!(lists(scenario.workdir(), ".board"), listed, "{written}");
-        }
-    }
-
-    #[test]
-    fn a_name_is_found_in_the_entries_given_even_when_they_are_not_the_listing() {
-        let scenario = board_scenario::Scenario::new();
-        let empty = board_scenario::Item::File("{}");
-        scenario.write("a.json", empty).write("b.json", empty);
-        let repository = Repository::open(scenario.workdir()).unwrap();
-        let mut tree = repository.working_tree(None).unwrap();
-        let root = PathBuf::new();
-        let listed = tree.list(&root).unwrap();
-        let reversed: Vec<RawEntry<PathBuf>> = listed.iter().rev().cloned().collect();
-        for entries in [&listed[..], &reversed[..]] {
-            let Named::One(found) = tree
-                .named(&root, entries, "a", &mut Pointers::default())
-                .unwrap()
-            else {
-                panic!("a.json is the one entry named a");
-            };
-            assert_eq!(found.name, b"a.json");
-        }
-    }
-}
+mod tests;

@@ -1,6 +1,7 @@
 //! Handing the files a walk reads in full to the walking thread while the
 //! other threads hash, with a bounded number held between them.
 
+use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
@@ -67,7 +68,11 @@ fn a_walk_keeps_every_file_and_holds_no_more_unkept_than_its_bound_and_one_per_t
         let mut kept = Vec::new();
         on_four_threads(&scenario)
             .walk_working_tree(
-                (&mut |_, _| None, &crate::Directories::new()),
+                (
+                    &mut |_, _| None,
+                    &crate::Directories::new(),
+                    &HashSet::new(),
+                ),
                 &|path, _| {
                     let now = held.fetch_add(1, Ordering::SeqCst) + 1;
                     most.fetch_max(now, Ordering::SeqCst);
@@ -98,7 +103,11 @@ fn a_keep_that_fails_ends_the_walk_with_its_error_and_each_thread_stops_at_its_n
         let repository = on_four_threads(&scenario);
         let prepared = AtomicUsize::new(0);
         let walked = repository.walk_working_tree(
-            (&mut |_, _| None, &crate::Directories::new()),
+            (
+                &mut |_, _| None,
+                &crate::Directories::new(),
+                &HashSet::new(),
+            ),
             &|_, _| {
                 prepared.fetch_add(1, Ordering::SeqCst);
             },
@@ -121,7 +130,11 @@ fn a_keep_that_panics_ends_the_walk_with_its_panic() {
     let (scenario, _) = many_files();
     let ended = ended(move || {
         on_four_threads(&scenario).walk_working_tree(
-            (&mut |_, _| None, &crate::Directories::new()),
+            (
+                &mut |_, _| None,
+                &crate::Directories::new(),
+                &HashSet::new(),
+            ),
             &|_, _| {},
             &mut |()| -> Result<(), Failed> { panic!("keep panics") },
         )
@@ -135,7 +148,11 @@ fn a_thread_that_panics_while_preparing_ends_the_walk_with_its_panic_while_the_o
     let (scenario, _) = many_files();
     let ended = ended(move || {
         on_four_threads(&scenario).walk_working_tree(
-            (&mut |_, _| None, &crate::Directories::new()),
+            (
+                &mut |_, _| None,
+                &crate::Directories::new(),
+                &HashSet::new(),
+            ),
             &|path, _| assert_ne!(path, "r7.json", "preparing panics"),
             &mut |()| Ok::<(), Failed>(()),
         )
@@ -156,7 +173,11 @@ fn a_keep_that_fails_on_a_record_read_while_listing_is_not_called_again() {
     let ended = ended(move || {
         let mut calls = Vec::new();
         let walked = on_four_threads(&scenario).walk_working_tree(
-            (&mut |_, _| None, &crate::Directories::new()),
+            (
+                &mut |_, _| None,
+                &crate::Directories::new(),
+                &HashSet::new(),
+            ),
             &|path, _| path.to_owned(),
             &mut |path| {
                 calls.push(path);
@@ -180,7 +201,11 @@ fn a_keep_that_takes_a_record_read_while_listing_is_called_for_every_file() {
         let mut calls = Vec::new();
         on_four_threads(&scenario)
             .walk_working_tree(
-                (&mut |_, _| None, &crate::Directories::new()),
+                (
+                    &mut |_, _| None,
+                    &crate::Directories::new(),
+                    &HashSet::new(),
+                ),
                 &|path, _| path.to_owned(),
                 &mut |path| {
                     calls.push(path);
@@ -193,4 +218,64 @@ fn a_keep_that_takes_a_record_read_while_listing_is_called_for_every_file() {
     .unwrap();
     assert_eq!(calls[0], "a.json");
     assert_eq!(calls.len(), files + 2);
+}
+
+/// A walk of `repository` that knows the blob of every file in `stored` and
+/// takes each blob in `plain` to hold no pointer, with its entries and how
+/// many files it opened.
+fn walked_knowing(
+    repository: &Repository,
+    stored: &[Entry],
+    plain: &HashSet<ObjectId>,
+) -> (Vec<Entry>, usize) {
+    let before = repository.files_opened();
+    let known = &mut |path: &str, _: &_| {
+        let entry = stored.iter().find(|entry| entry.path == path);
+        entry.and_then(|entry| entry.blob)
+    };
+    let (entries, _) = repository
+        .walk_working_tree(
+            (known, &crate::Directories::new(), plain),
+            &|_, _| {},
+            &mut |()| Ok::<(), GitError>(()),
+        )
+        .unwrap();
+    (entries, repository.files_opened() - before)
+}
+
+#[test]
+fn a_walk_given_plain_blobs_reads_no_record_beside_its_directory_that_is_one_and_addresses_alike() {
+    let scenario = Scenario::new();
+    scenario
+        .write("a.json", Item::File(r#"{"$type": "lr/note/v1"}"#))
+        .write("a/b.json", Item::File("{}"))
+        .write(
+            "p.json",
+            Item::File(r#"{"$type": "board/mount/v1", "path": "/y"}"#),
+        )
+        .write("p/x.json", Item::File("{}"))
+        .write("u.json", Item::File(r#"{"u": 1}"#))
+        .write("u/y.json", Item::File("{}"));
+    let repository = scenario.open();
+    let (stored, _) = walked_knowing(&repository, &[], &HashSet::new());
+    let blob_of = |path: &str| {
+        let entry = stored.iter().find(|entry| entry.path == path);
+        entry.and_then(|entry| entry.blob).unwrap()
+    };
+    let (unknowing, read) = walked_knowing(&repository, &stored, &HashSet::new());
+    assert_eq!(
+        read, 3,
+        "a walk without the set reads each record beside its directory"
+    );
+    let plain = HashSet::from([blob_of("a.json")]);
+    let (knowing, read) = walked_knowing(&repository, &stored, &plain);
+    assert_eq!(read, 2, "the pointer and the unknown blob are still read");
+    assert_eq!(knowing, unknowing);
+    let status = |path: &str| {
+        let entry = knowing.iter().find(|entry| entry.path == path);
+        entry.unwrap().status
+    };
+    assert_eq!(status("a/b.json"), Status::Ok);
+    assert_eq!(status("p/x.json"), Status::Degraded(Code::PathShadowed));
+    assert_eq!(status("u/y.json"), Status::Ok);
 }

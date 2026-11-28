@@ -502,3 +502,56 @@ fn after_each_change_to_a_mounted_repository_alone_a_warm_query_decides_its_poin
         );
     }
 }
+
+/// A board with a task beside a directory of tasks, and a note that links
+/// to it.
+fn beside() -> Scenario {
+    let scenario = board();
+    scenario
+        .write("tasks/a.json", Item::File(&task("")))
+        .write("tasks/a/b.json", Item::File(&task(r#", "note": "b""#)))
+        .write("notes/n.md", Item::File("[a](/tasks/a)\n"));
+    scenario
+}
+
+/// How many files a run deciding `scenario` through the index in `cache`
+/// opened, and how many blob facts it looked up one by one.
+fn reads(scenario: &Scenario, cache: &Path) -> (usize, usize) {
+    let board = open(scenario);
+    let index = Index::open(Some(cache), board.repository().path()).unwrap();
+    let before = board.repository().files_opened();
+    let (looked_up, _, _) = crate::index::transact(index, |writer| {
+        let (_, entries) = board.decide(writer, None, Need::Report)?;
+        Ok((writer.blobs_read(), entries))
+    })
+    .unwrap();
+    (board.repository().files_opened() - before, looked_up)
+}
+
+#[test]
+fn a_warm_run_of_an_unchanged_board_reads_no_record_for_a_pointer_and_looks_up_no_blob() {
+    let scenario = beside();
+    let cache = tempfile::tempdir().unwrap();
+    let (opened, _) = reads(&scenario, cache.path());
+    assert!(opened > 0, "a cold run opens each file");
+    assert_eq!(reads(&scenario, cache.path()), (0, 0), "warm");
+}
+
+#[test]
+fn after_a_record_beside_its_directory_becomes_a_pointer_a_warm_run_hides_the_directory() {
+    let scenario = beside();
+    let cache = tempfile::tempdir().unwrap();
+    query_as(&scenario, cache.path(), "test");
+    let pointer = r#"{"$type": "board/mount/v1", "path": "/projects/p"}"#;
+    scenario.write("tasks/a.json", Item::File(pointer));
+    query_as(&scenario, cache.path(), "test");
+    let report = open(&scenario).check(None, Some(cache.path())).unwrap();
+    let hidden = report
+        .entries
+        .iter()
+        .find(|entry| entry.path == "tasks/a/b.json");
+    assert_eq!(
+        hidden.unwrap().status,
+        board_tree::Status::Degraded(board_model::Code::PathShadowed)
+    );
+}

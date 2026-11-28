@@ -13,24 +13,14 @@ pub enum ObjectId {
 }
 
 impl ObjectId {
-    /// The id spelled by 40 or 64 lowercase hex digits.
+    /// The id spelled by 40 or 64 lowercase hex digits. It is decoded in
+    /// place, since a warm refresh decodes one for each of tens of
+    /// thousands of index rows.
     pub fn from_hex(hex: &str) -> Option<Self> {
-        if !hex
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-        {
-            return None;
-        }
-        let bytes: Vec<u8> = (0..hex.len())
-            .step_by(2)
-            .map(|at| u8::from_str_radix(hex.get(at..at + 2)?, 16).ok())
-            .collect::<Option<_>>()?;
-        if let Ok(sha1) = <[u8; 20]>::try_from(bytes.as_slice()) {
-            Some(Self::Sha1(sha1))
-        } else {
-            <[u8; 32]>::try_from(bytes.as_slice())
-                .ok()
-                .map(Self::Sha256)
+        match hex.len() {
+            40 => decode(hex.as_bytes()).map(Self::Sha1),
+            64 => decode(hex.as_bytes()).map(Self::Sha256),
+            _ => None,
         }
     }
 
@@ -40,6 +30,28 @@ impl ObjectId {
             Self::Sha256(bytes) => bytes,
         }
     }
+}
+
+/// The `N` bytes that `2 * N` lowercase hex digits spell. Every digit is
+/// decoded before any is judged, so the loop has no early exit to slow it.
+fn decode<const N: usize>(hex: &[u8]) -> Option<[u8; N]> {
+    // A digit's value, and whether it is a lowercase hex digit.
+    let digit = |byte: u8| {
+        let (decimal, letter) = (byte.wrapping_sub(b'0'), byte.wrapping_sub(b'a'));
+        if decimal < 10 {
+            (decimal, true)
+        } else {
+            (letter.wrapping_add(10), letter < 6)
+        }
+    };
+    let mut bytes = [0u8; N];
+    let mut valid = hex.len() == 2 * N;
+    for (byte, &[high, low]) in bytes.iter_mut().zip(hex.as_chunks::<2>().0) {
+        let ((high, high_valid), (low, low_valid)) = (digit(high), digit(low));
+        valid &= high_valid & low_valid;
+        *byte = (high << 4) | (low & 0xf);
+    }
+    valid.then_some(bytes)
 }
 
 impl fmt::Display for ObjectId {
@@ -175,6 +187,31 @@ mod tests {
             "ab0000000000000000000000000000000000000f"
         );
         assert_eq!(ObjectId::Sha256([0xff; 32]).to_string(), "f".repeat(64));
+    }
+
+    #[test]
+    fn an_object_id_parses_from_its_lowercase_hex_and_from_nothing_else() {
+        let mut bytes = [0u8; 20];
+        bytes[0] = 0xab;
+        bytes[19] = 0x0f;
+        assert_eq!(
+            ObjectId::from_hex("ab0000000000000000000000000000000000000f"),
+            Some(ObjectId::Sha1(bytes))
+        );
+        let sha256 = ObjectId::Sha256(std::array::from_fn(|at| u8::try_from(at * 7).unwrap()));
+        assert_eq!(ObjectId::from_hex(&sha256.to_string()), Some(sha256));
+        for refused in [
+            String::new(),
+            "AB0000000000000000000000000000000000000F".to_owned(),
+            "ab000000000000000000000000000000000000g0".to_owned(),
+            "ab000000000000000000000000000000000000+f".to_owned(),
+            "ab00000000000000000000000000000000000f".to_owned(),
+            "ab0000000000000000000000000000000000000f0".to_owned(),
+            "0".repeat(42),
+            "é".repeat(20),
+        ] {
+            assert_eq!(ObjectId::from_hex(&refused), None, "{refused:?}");
+        }
     }
 
     fn at(path: &str, object: Object) -> Location {

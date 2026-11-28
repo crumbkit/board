@@ -48,6 +48,23 @@ alter, and the states of each.
   directory is listed.
 - A warm walk of an unchanged board lists no directory.
 
+## The working tree's facts
+
+- Before the walk, the load scans the stored working-tree rows, the blobs
+  table and the links table once each, in key order. It sorts the rows'
+  blobs and matches them against the blobs table in that order, so it
+  hashes no key and seeks no blob. It keeps the fact of each row's blob in
+  the role its path gives it, and that blob's links.
+- The load copies only what it must out of each row. A row's paths share
+  one string, and a logical path that the file's own path gives is not
+  copied. The walk and the sync find a row by its path in path order.
+- The walk reads a record beside its directory, to learn whether it hides
+  the directory, only when its blob has no fact or its fact says it may
+  hold a pointer. A file whose stat changed is hashed first, so the blob
+  checked is the file's current one.
+- A blob the load did not find is looked up on its own. A warm run of an
+  unchanged board looks up no blob and reads no record.
+
 ## Mount probes
 
 - A mounted repository's stamp holds:
