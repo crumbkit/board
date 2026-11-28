@@ -164,10 +164,11 @@ const CAPABILITIES: [Capability; 25] = [
             are in build for its mount, unless over_limit gives a reason, which the change \
             records and the output warns about. Into done, a change that records a pull request \
             moves only once GitHub reports it merged, read with gh, and records its merge \
-            commit.",
+            commit. A change already done is left as it is and the call succeeds with outcome \
+            already_done.",
         run: phases::advance,
         input: input::<phases::AdvanceInput>,
-        output: output::<phases::Moved>,
+        output: output::<phases::Advanced>,
         hints: [false, true, false, true],
         env: &ADVANCE_ENV,
         timeout: None,

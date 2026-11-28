@@ -51,6 +51,11 @@ pub(crate) struct Input {
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "AnswerOutput")]
 pub(crate) struct Output {
+    /// `already_answered` when the question already had this answer, with
+    /// the same option and words, so nothing was written and the other
+    /// fields are the stored answer's; left out when the answer was written.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    outcome: Option<Outcome>,
     /// The answer's path, the question's id under answers/.
     answer: String,
     /// The question's path, which the answer now names.
@@ -66,6 +71,18 @@ pub(crate) struct Output {
     /// keep the answer; left out when the question blocks no change.
     #[serde(skip_serializing_if = "Option::is_none")]
     attached: Option<Attached>,
+    /// One line that says the question already had this answer; left out
+    /// when the answer was written.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    line: Option<String>,
+}
+
+/// What a call that wrote nothing found.
+#[derive(Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum Outcome {
+    /// The question already had the same answer.
+    AlreadyAnswered,
 }
 
 /// The change the answer was attached to. A refused attach leaves the
@@ -95,9 +112,17 @@ pub(crate) fn answer(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     let by = Actor::of(session, program, person, agent);
     let answer_path = answer_path_of("answer", &path)?;
     let asked = question::read(host, "answer", &path)?;
-    asked.still_open("answer", &path)?;
     let options = options(&asked.fields);
     let chosen = options.iter().find(|(id, _)| *id == option);
+    // A repeat of the stored answer, as after a retry, succeeds and writes
+    // nothing; any other answer to an answered question is refused.
+    let given = (words.clone()).or_else(|| chosen.map(|(_, text)| (*text).to_owned()));
+    if let Some((answer, stored)) =
+        (given.as_deref()).and_then(|given| asked.same_answer(&option, given))
+    {
+        return Ok(already_answered(path, answer, stored));
+    }
+    asked.still_open("answer", &path)?;
     if option == "none" && chosen.is_none() && words.is_none() {
         return Err(refused(
             "answer",
@@ -158,14 +183,35 @@ pub(crate) fn answer(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
     let work = asked.work.filter(|_| asked.own == path);
     let attached = attach(host, work, &answer_path);
     let output = Output {
+        outcome: None,
         answer: answer_path,
         question: path,
         choice: option,
         words,
         answered,
         attached,
+        line: None,
     };
     Ok(serde_json::to_value(output).expect("Output holds only strings"))
+}
+
+/// The stored answer at `answer` to the question at `path`, which a repeat
+/// of it found, with the line that says so.
+fn already_answered(path: String, answer: &str, stored: &Map<String, Value>) -> Value {
+    let text = |key: &str| (stored.get(key).and_then(Value::as_str)).map(str::to_owned);
+    let output = Output {
+        outcome: Some(Outcome::AlreadyAnswered),
+        line: Some(format!(
+            "already answered: {path} has this answer at {answer}"
+        )),
+        answer: answer.to_owned(),
+        question: path,
+        choice: text("choice").unwrap_or_else(|| "none".to_owned()),
+        words: text("words").unwrap_or_default(),
+        answered: text("answered").unwrap_or_default(),
+        attached: None,
+    };
+    serde_json::to_value(output).expect("Output holds only strings")
 }
 
 /// Asks `changes.attach` to keep `answer` on the plan of the change the

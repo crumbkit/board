@@ -464,8 +464,10 @@ of `changes` still fails `review`.
   the remedy is to attach the pull request, or for the owner to close each
   task. The call receives `GH_TOKEN`, `GITHUB_TOKEN` and
   `GH_CONFIG_DIR` for gh. A paused change is refused with
-  `changes::phase::paused`. Leaving `done` or `dropped` is
-  `changes::phase::final`, which points to `open` and `start`.
+  `changes::phase::paused`. Leaving `dropped` is
+  `changes::phase::final`, which points to `open` and `start`. `advance` on
+  a change already `done` succeeds and writes nothing, with
+  `outcome: already_done`, its `merge_commit_url` and a `line` that says so.
 - `reflow --path /changes/<name> --flow <name>` moves the change to the
   current version of the flow named, the board's own or a shipped one,
   writing that version when the board lacks it, and returns `path`, `flow`

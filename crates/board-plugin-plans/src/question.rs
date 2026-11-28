@@ -44,8 +44,8 @@ pub(crate) const NAMED: &str = concat!(
 
 /// The question at `path`, with its path in its own board and the logical
 /// path and type of the record its `blocks` names, and every answer that
-/// names it, at any id. `blocks` is read from the root of the question's own
-/// board, as `plans.open` reads it.
+/// names it, at any id, with its body. `blocks` is read from the root of the
+/// question's own board, as `plans.open` reads it.
 pub(crate) fn question_sql(path: &str) -> String {
     let path = literal(path);
     format!(
@@ -54,15 +54,15 @@ pub(crate) fn question_sql(path: &str) -> String {
          ON w.logical = substr(q.logical, 1, length(q.logical) - length({OWN_PATH})) \
          || json_extract(q.body, '$.blocks') \
          WHERE q.logical = {path} \
-         UNION ALL SELECT 'answer', a.logical, a.type, a.blob, NULL, NULL, NULL, NULL \
+         UNION ALL SELECT 'answer', a.logical, a.type, a.blob, a.body, NULL, NULL, NULL \
          FROM records a, records q \
          WHERE q.logical = {path} AND a.type = '{}' AND {NAMES}",
         AnswerRecord::TYPE
     )
 }
 
-/// A question as `call` read it: its blob, its fields and the paths of the
-/// answers that name it.
+/// A question as `call` read it: its blob, its fields and the answers that
+/// name it.
 pub(crate) struct Asked {
     pub(crate) blob: String,
     /// The question's path in its own board, which an answer written there
@@ -70,6 +70,9 @@ pub(crate) struct Asked {
     pub(crate) own: String,
     pub(crate) fields: Map<String, Value>,
     pub(crate) answers: Vec<String>,
+    /// The fields of each answer in `answers`, in the same order; none for
+    /// an answer whose body does not read as an object.
+    pub(crate) stored: Vec<Option<Map<String, Value>>>,
     /// The logical path and type of the record the question's `blocks`
     /// names, when the board holds one there.
     pub(crate) work: Option<(String, String)>,
@@ -122,11 +125,18 @@ pub(crate) fn read(host: &dyn Host, call: &str, path: &str) -> Result<Asked, Plu
             "run `board check` on the path and fix the question",
         ));
     };
-    let answers = (rows.iter())
+    let (answers, stored) = (rows.iter())
         .filter(|row| row.first().and_then(Value::as_str) == Some("answer"))
-        .filter_map(|row| row.get(1).and_then(Value::as_str))
-        .map(str::to_owned)
-        .collect();
+        .filter_map(|row| {
+            let path = row.get(1).and_then(Value::as_str)?.to_owned();
+            let body = row.get(4).and_then(Value::as_str);
+            let fields = match body.and_then(|body| parse_json(body.as_bytes()).ok()) {
+                Some(Value::Object(fields)) => Some(fields),
+                _ => None,
+            };
+            Some((path, fields))
+        })
+        .unzip();
     let text = |at: usize| own.get(at).and_then(Value::as_str);
     let work = text(1).zip(text(2));
     Ok(Asked {
@@ -134,11 +144,32 @@ pub(crate) fn read(host: &dyn Host, call: &str, path: &str) -> Result<Asked, Plu
         own: text(0).unwrap_or(path).to_owned(),
         fields,
         answers,
+        stored,
         work: work.map(|(path, kind)| (path.to_owned(), kind.to_owned())),
     })
 }
 
 impl Asked {
+    /// The one answer that names the question, by its path, when its choice
+    /// and words are exactly `choice` and `words`: `none` matches an answer
+    /// that chose no option. `None` when there is no answer, more than one,
+    /// or one that differs.
+    pub(crate) fn same_answer(
+        &self,
+        choice: &str,
+        words: &str,
+    ) -> Option<(&str, &Map<String, Value>)> {
+        let ([path], [Some(fields)]) = (self.answers.as_slice(), self.stored.as_slice()) else {
+            return None;
+        };
+        let stored_choice = fields
+            .get("choice")
+            .and_then(Value::as_str)
+            .unwrap_or("none");
+        let stored_words = fields.get("words").and_then(Value::as_str);
+        (stored_choice == choice && stored_words == Some(words)).then_some((path.as_str(), fields))
+    }
+
     /// Refuses with `plans::<call>::already_answered` when an answer names
     /// the question, and with `plans::<call>::not_open` when its status is
     /// not `open`.

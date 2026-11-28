@@ -68,7 +68,8 @@ const CAPABILITIES: [(&str, &str); 11] = [
     ),
     (
         "done",
-        "Mark a task done, or defer a repeating one to its next occurrence. It syncs the task's \
+        "Mark a task done, or defer a repeating one to its next occurrence; a task done already \
+         is left as it is, with outcome already_done. It syncs the task's \
          repo first and pushes after, unless --push false makes it commit in the clone alone, and \
          sets reviewed.",
     ),

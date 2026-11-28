@@ -131,7 +131,7 @@ fn a_question_quoted_in_sql_is_read_by_its_own_path() {
              ON w.logical = substr(q.logical, 1, length(q.logical) - length({own})) \
              || json_extract(q.body, '$.blocks') \
              WHERE q.logical = '/projects/o''brien/questions/q' \
-             UNION ALL SELECT 'answer', a.logical, a.type, a.blob, NULL, NULL, NULL, NULL \
+             UNION ALL SELECT 'answer', a.logical, a.type, a.blob, a.body, NULL, NULL, NULL \
              FROM records a, records q \
              WHERE q.logical = '/projects/o''brien/questions/q' AND a.type = 'plans/answer/v1' \
              AND {}",
@@ -426,7 +426,7 @@ fn a_question_changed_after_the_read_is_refused_by_board_and_nothing_is_written(
 }
 
 #[test]
-fn board_calls_plans_answer_in_its_own_process_and_a_second_answer_is_refused() {
+fn board_calls_plans_answer_in_its_own_process_and_a_second_answer_with_other_words_is_refused() {
     let (scenario, board) = plans_board(&[("projects/a/questions/q", question(&json!({})))]);
     let target: Target = "plans.answer".parse().unwrap();
     let input = format!(r#"{{"path": "{QUESTION}", "option": "none", "words": "Neither."}}"#);
@@ -446,9 +446,14 @@ fn board_calls_plans_answer_in_its_own_process_and_a_second_answer_is_refused() 
         board.build_in(&[&Plans]);
         board
     });
-    let refused = board
-        .unwrap()
+    let board = board.unwrap();
+    let again = board
         .call(&target, input.as_bytes(), &Plugins::default())
+        .unwrap();
+    assert_eq!(again.output["outcome"], "already_answered");
+    let other = format!(r#"{{"path": "{QUESTION}", "option": "none", "words": "Both."}}"#);
+    let refused = board
+        .call(&target, other.as_bytes(), &Plugins::default())
         .unwrap_err()
         .refusal();
     assert_eq!(refused.code.as_str(), "plans::answer::already_answered");
