@@ -53,7 +53,7 @@ pub(crate) fn git(
 
 /// The exit code and output of `git <arguments>` in `repository`, run as
 /// [`git`] runs it, when the code is one of `codes`, or why it failed.
-fn exited(
+pub(crate) fn exited(
     host: &dyn Host,
     repository: &Path,
     arguments: &[&str],
@@ -162,7 +162,7 @@ pub(crate) struct Mounted {
 impl Mounted {
     /// The logical path of each file `names` lists, NUL-separated, under
     /// the mount; a file outside the directory the mount shows is left out.
-    fn logical(&self, names: &str) -> Vec<String> {
+    pub(crate) fn logical(&self, names: &str) -> Vec<String> {
         self.split(names).0
     }
 

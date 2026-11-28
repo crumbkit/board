@@ -90,6 +90,7 @@ pub(crate) fn pause(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         from: BUILD.to_owned(),
         to: PAUSED.to_owned(),
         warning: None,
+        filled: Vec::new(),
     }))
 }
 
@@ -121,6 +122,7 @@ pub(crate) fn resume(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         from: PAUSED.to_owned(),
         to: BUILD.to_owned(),
         warning: limit,
+        filled: Vec::new(),
     }))
 }
 
@@ -223,6 +225,7 @@ pub(crate) fn reopen(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
         from: phase,
         to: BUILD.to_owned(),
         warning: limit,
+        filled: Vec::new(),
     }))
 }
 

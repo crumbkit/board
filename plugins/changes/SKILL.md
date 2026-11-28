@@ -92,7 +92,20 @@ blocks is missing.
    repository file where the table lands) and `external` to
    `board -C <board> changes lifecycle`. The builder's brief names its text.
    Set the commit under test with `--head <sha>` after each push, and the
-   check suite with `--suite <path>` when the change names none.
+   check suite with `--suite <path>` when the change names none. A short
+   head of 7 or more hex digits is stored as the full commit it names in
+   the mount's clone; `changes::attach::head_ambiguous` lists the commits
+   it could name, so give more digits. `next` and `advance` record the
+   route CODEOWNERS gives a change with none, and, run from a checkout of
+   the mount on a branch other than the one the mount follows that holds a
+   commit of its own, record that checkout's HEAD for a change with no
+   head, once its plan has paths those commits touch. `filled` names each
+   value recorded; attach another to replace it. A `filled` line that
+   starts `head not filled:` only suggests the HEAD, because the plan has
+   no paths, its commits touch none of them, the branch has another open
+   change's name, or another open change records that line of work or is
+   in build, review or land and plans paths they touch; attach it yourself
+   when it is this change's work. Name the branch after the change.
    `board github pr-create --change /changes/<name>`, run from the checkout
    as the github skill says, opens the pull request and attaches it. When
    its output has `change_note`, run the command the note gives. Record

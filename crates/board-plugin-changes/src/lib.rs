@@ -12,6 +12,7 @@ mod board;
 mod brief;
 mod change;
 mod diff;
+mod fill;
 mod flow;
 mod gates;
 mod lifecycle;
@@ -134,10 +135,12 @@ const CAPABILITIES: [Capability; 25] = [
     Capability {
         name: "next",
         description: "The change's flow and phase, each check of its gate as pass or missing with \
-            who can pass it and the remedy, whom it waits on, and what to do now. With `through`, \
-            a phase of the flow, `ahead` lists the checks of each later phase up to it, each \
-            judged pass or missing where the plan or the change record already settles it and \
-            later otherwise.",
+            who can pass it and the remedy, whom it waits on, and what to do now. It first \
+            records a route the change lacks from CODEOWNERS, and a head it lacks from the \
+            caller's checkout of the mount on a branch of its own, and lists them in filled; it \
+            writes nothing else. With `through`, a phase of the flow, `ahead` lists the checks of \
+            each later phase up to it, each judged pass or missing where the plan or the change \
+            record already settles it and later otherwise.",
         run: phases::next,
         input: input::<phases::NextInput>,
         output: output::<phases::Next>,

@@ -366,7 +366,7 @@ fn resume_past_the_limit_with_a_reason_goes_ahead_and_warns() {
 fn attach_touches_a_change_so_it_counts_as_active_again() {
     let board = Changes::new();
     board.change_at("changes/t.json", "build", &json!({"touched": days_ago(10)}));
-    board.call("attach", &at(&json!({"head": "a3f9c0d"})));
+    board.call("attach", &at(&json!({"route": "owner"})));
     assert_eq!(board.read("changes/t.json")["touched"], today());
 }
 

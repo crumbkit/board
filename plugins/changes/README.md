@@ -372,10 +372,12 @@ of `changes` still fails `review`.
   change earns the output's `warnings` entry
   `changes::stop::question_unlinked`, and the stop is still recorded. Each
   call writes a new record.
-- `next --path /changes/<name> [--through <phase>]`: read-only. The change's `flow` (its name
-  and phases), its phase, each gate check as `pass` or `missing` with a
-  `detail`, its `actor`, whether it `blocks`, and when missing its
-  `remedy`; the instruction, with its placeholders filled; and `sync`.
+- `next --path /changes/<name> [--through <phase>]`: reads the gate, and
+  first writes the change's missing route and head as "Filling" below says;
+  it writes nothing else. The change's `flow` (its name and phases), its
+  phase, each gate check as `pass` or `missing` with a `detail`, its
+  `actor`, whether it `blocks`, and when missing its `remedy`; the
+  instruction, with its placeholders filled; and `sync`.
   An instruction that names `changes plan` or `changes.plan` ends with how
   to give its input, JSON on stdin with the fields `path`, `text`, `uses`
   and `paths`, plus `considered` and `owed` when the plan has them, and a
@@ -389,7 +391,10 @@ of `changes` still fails `review`.
   `waiting_on` names them and `ask` holds the question to put to them,
   built from those checks' details and remedies. `amended` lists the headings each
   `plan-amend` since the last full plan filled, and is left out when there
-  is none.
+  is none. `filled` lists, one line each, what "Filling" recorded or only
+  suggests, and is left out when there is neither. When the change has no
+  task and exactly one open task has its title, the `task` check's remedy
+  names `board changes attach --path <change> --task <that task>`.
   `--through` names a phase of the change's flow, such as `land`. The
   output then adds `ahead`: for each phase after the current one, up to and
   including that phase, the phase's name and each of its checks with
@@ -416,10 +421,39 @@ of `changes` still fails `review`.
   `code` `changes::sync::stale`; and `command`, `board changes sync`.
   Sync reads the pull request of a change in the board's own tree that is
   past its plan, not ended and records one. `next` is stale only for such a
-  change, and `open` only when some open change is one. Neither runs gh, so both stay
-  read-only and work offline.
+  change, and `open` only when some open change is one. Neither runs gh, so both work
+  offline.
+- Filling: `next` and `advance` record, before they read the gate, what a
+  change in a phase that is not final or paused lacks and Board can find.
+  A change with no route takes the route its mount's CODEOWNERS gives, as
+  `start` derives it with no handle, and `unowned` when CODEOWNERS names
+  no owners. A change with no head takes the HEAD of the caller's checkout
+  when the checkout is of the repository the mount reads, has a branch
+  checked out other than the one the mount follows, and holds a commit
+  that branch lacks. When the mount's clone lacks that commit, the
+  checkout's own ref of the followed branch decides. The head is filled
+  only when the change's plan has paths and the checkout's commits since
+  the followed branch touch one of them. Otherwise it is only suggested,
+  in a `filled` line that starts `head not filled:`. The head is also
+  only suggested in four other cases. Another open change on the mount
+  records that commit. Another open change records a commit beyond the
+  followed branch that the commit builds on, or that builds on the commit.
+  The checkout's branch has the name of another open change on the mount,
+  such as a branch `a` while `/changes/a` is open. Another open change in
+  build, review or land that records no head plans paths those commits
+  touch; a change in plan or paused does not count, because its work is
+  not on a branch yet. Board can still fill the wrong head in two cases,
+  and the `review` check, which judges the head, is where they are caught.
+  The first is commits of another change that records no head and whose
+  plan has no paths yet. The second is commits of work that has no change.
+  Board never fills a task.
 - `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--task <path>] [--route <route>] [--head <sha>] [--suite <path>]`
-  adds a reference once or sets the fields. `--task` sets `task`, and must
+  adds a reference once or sets the fields. `--head` takes a full commit as
+  given, and stores the full commit that 7 or more hex digits name in the
+  mount's clone. A prefix that names several commits is refused with
+  `changes::attach::head_ambiguous`, whose `matches` lists them, and one
+  that names no commit, or a clone Board cannot read, with
+  `changes::attach::head_unknown`. `--task` sets `task`, and must
   be a `tasks/task/v2` or `tasks/task/v3`. `--suite` sets `suite`, and must be a
   `runs/suite/v1`. `--ref` adds to the `records` of the plan the change names, and
   refuses a change whose `plan` names no plan record
@@ -436,7 +470,9 @@ of `changes` still fails `review`.
   check, `changes::data::not_signed` for an `understood` check
   of the data without rechecks, `changes::paths::outside_plan` for a
   `paths` check, `changes::prototype::never_lands` for a prototype's
-  `verdict` check, else `changes::gate::unmet`. Moving into `build` is also subject to the WIP
+  `verdict` check, else `changes::gate::unmet`. It fills first, as `next`
+  does: the output's `filled` says what it recorded, and so does `filled`
+  in the fields of each refusal that follows a fill. Moving into `build` is also subject to the WIP
   limit, below; `--over_limit '<why>'` goes past it. Moving into `done`,
   once the gate passes, reads the change's newest pull request with
   `gh api repos/<owner>/<repo>/pulls/<n>`, as `sync` does. The change
