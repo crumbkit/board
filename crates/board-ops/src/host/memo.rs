@@ -17,7 +17,7 @@ use board_index::{Fallback, IndexError, View};
 use board_model::{LogicalPath, ObjectId};
 
 use crate::Board;
-use crate::query::{QueryError, QueryReport, retried};
+use crate::query::{INNER_QUERY_TIME, QueryError, QueryReport, retried};
 use crate::refs::{Absent, RefsError, RefsReport};
 use crate::snapshot::Snapshot;
 
@@ -66,10 +66,10 @@ impl Memo {
         }
     }
 
-    /// Runs `sql` as [`Board::query`] does, through the kept View snapshot,
-    /// taken on the first query. When another process pruned what it shows,
-    /// it is dropped and the query runs again on a fresh one, three times
-    /// in all.
+    /// Runs `sql` as [`Board::query`] does, but within [`INNER_QUERY_TIME`],
+    /// through the kept View snapshot, taken on the first query. When
+    /// another process pruned what it shows, it is dropped and the query
+    /// runs again on a fresh one, three times in all.
     pub(crate) fn query(
         &self,
         board: &Board,
@@ -79,7 +79,7 @@ impl Memo {
     ) -> Result<QueryReport, QueryError> {
         retried(|| {
             let view = self.view(board, || board.decided(cache))?;
-            let ran = board.run(&view.0, view.1, sql, limit, None);
+            let ran = board.run_within(&view.0, view.1, sql, limit, None, INNER_QUERY_TIME);
             if let Err(QueryError::Index {
                 source: IndexError::Pruned,
             }) = ran

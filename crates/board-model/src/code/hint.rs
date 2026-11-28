@@ -509,7 +509,7 @@ fn generic(code: Code) -> &'static str {
             "fix the statement as the message describes; Board runs one read-only SQL statement, and `board query --help` lists the tables"
         }
         Code::QueryTimeout => {
-            "narrow the query with a WHERE clause or a join on a key; a query may run for 1 second"
+            "narrow the query with a WHERE clause or a join on a key; the message names the time limit that applied"
         }
         // Only board-index raises it as a refusal, for a query's first row
         // or value; crumbkit gives get, refs and other output its own hint.
