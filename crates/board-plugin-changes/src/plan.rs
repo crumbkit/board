@@ -8,7 +8,7 @@ mod sections;
 use std::time::SystemTime;
 
 use board_ops::{Host, PluginError};
-use board_plugin::shape::{LogicalGlob, Record, Tag};
+use board_plugin::shape::{BoardPath, LogicalGlob, Record, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -136,24 +136,6 @@ pub(crate) struct Input {
 
 /// The headings the gates no longer read from a plan's text, in lower case.
 pub(crate) const MOVED_HEADINGS: [&str; 2] = ["considered", "obligations left owed"];
-
-/// A logical path `board call` takes as a flag.
-#[derive(Debug)]
-pub(crate) enum BoardPath {}
-
-impl JsonSchema for BoardPath {
-    fn inline_schema() -> bool {
-        true
-    }
-
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "BoardPath".into()
-    }
-
-    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({"type": "string", "pattern": "^/", "format": "board-path"})
-    }
-}
 
 /// The plan record written, its text, and how many references it uses.
 /// `unchanged` is true when the plan equals the plan record the change

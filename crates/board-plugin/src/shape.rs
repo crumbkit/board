@@ -348,6 +348,26 @@ impl JsonSchema for LogicalGlob {
     }
 }
 
+/// A logical path a plugin's input takes, such as `/changes/x`. Its `board-path`
+/// format makes `board call` read a flag without a leading `/` from the current
+/// directory. It is an input shape, so the registry of record shapes omits it.
+#[derive(Debug)]
+pub enum BoardPath {}
+
+impl JsonSchema for BoardPath {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "BoardPath".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "pattern": "^/", "format": "board-path"})
+    }
+}
+
 /// A one-line summary that a person or an agent reads in place of longer
 /// text: at most [`SUMMARY_WORDS`] words, separated by single spaces, with
 /// no line break. A `String` field takes it with
