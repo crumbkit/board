@@ -183,6 +183,58 @@ fn merge_of_a_change_in_land_squash_merges_its_head_and_moves_the_change_to_done
     );
 }
 
+/// A change in land whose plan closes the attached open task
+/// /tasks/left.md at merge, with the tasks plugin enabled.
+fn closing_at_merge(desk: &Desk) {
+    let plan = format!("{TESTED}\n## Closes at merge\n\n- `/tasks/left.md`\n");
+    change(desk, "land", HEAD, &plan);
+    let enabled = desk.run_in(desk.personal.workdir(), &["plugin", "enable", "tasks"], &[]);
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    desk.write(
+        "tasks/left.md",
+        "---\n$type: tasks/task/v2\ntitle: Left\nstatus: open\n---\n",
+    );
+    let mut planned = desk.record("/changes/lever/plans/1").unwrap();
+    planned["records"] = json!(["/tasks/left.md"]);
+    desk.write("changes/lever/plans/1.json", &planned.to_string());
+}
+
+#[test]
+fn merge_closes_the_task_the_plan_closes_at_merge_before_it_moves_the_change_to_done() {
+    let desk = Desk::new();
+    closing_at_merge(&desk);
+    pulls(&desk, true);
+    desk.gh_answers(&json!(""), 0, "");
+    let result = desk.output(
+        "merge",
+        &merging("Add a lever (#12)", "Levers lift.", &["--change", CHANGE]),
+    );
+    assert_eq!(result["phase"], "done", "{result}");
+    assert_eq!(desk.record(CHANGE).unwrap()["phase"], "done");
+    let left = std::fs::read_to_string(desk.personal.workdir().join("tasks/left.md")).unwrap();
+    assert!(left.contains(r#"status: "done""#), "{left}");
+}
+
+#[test]
+fn merge_leaves_the_change_in_land_when_the_plan_no_longer_closes_an_open_task_at_merge() {
+    let desk = Desk::new();
+    closing_at_merge(&desk);
+    desk.write("changes/lever/plan.md", TESTED);
+    pulls(&desk, true);
+    desk.gh_answers(&json!(""), 0, "");
+    let (ran, document) = desk.call(
+        "merge",
+        &merging("Add a lever (#12)", "Levers lift.", &["--change", CHANGE]),
+    );
+    assert_eq!(ran.code, 1, "{document}");
+    assert_eq!(document["code"], "github::merge::advance", "{document}");
+    let message = document["message"].as_str().unwrap();
+    assert!(message.contains("/tasks/left.md"), "{message}");
+    assert_eq!(desk.record(CHANGE).unwrap()["phase"], "land");
+    let left = std::fs::read_to_string(desk.personal.workdir().join("tasks/left.md")).unwrap();
+    assert!(left.contains("status: open"), "{left}");
+}
+
 #[test]
 fn a_merge_github_only_queued_records_the_crossing_and_leaves_the_change_in_land() {
     let desk = Desk::new();

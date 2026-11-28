@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- A change's plan can list tasks under a `## Closes at merge` heading,
+  one board path each. The build gate's `tasks` check passes an open
+  attached task listed there, says which tasks close at merge, and misses
+  a listed path that is not a task of the change's, saying to attach it or
+  remove it. When the pull request merges, `changes advance` (which
+  `board github merge --change` runs) and `changes sync` close each listed
+  task through `tasks.done` before they write the change as done. A
+  refused close leaves the change in its phase: `advance` refuses with
+  `changes::land::tasks_not_closed` and `sync` reports `owed`, and a rerun
+  skips the tasks already closed. `sync --dry_run true` names the tasks it
+  would close and closes none. `advance` into done refuses with
+  `changes::land::tasks_open` while an attached task the plan does not
+  name is open, and with `changes::land::no_merge` while a named task is
+  open on a change that records no pull request, which never closes a
+  task. Only a level-two heading counts, a fenced code block is not read,
+  and a Markdown link's target counts as a path.
 - A `plans/decision/v1` can name the one board entry it decides in
   `decides`, which `board plans decide --decides <path>` sets. The
   `owner-approval` check counts only an explicit approval of the plan that

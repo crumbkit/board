@@ -1601,6 +1601,7 @@ fn a_records_check_reads_an_attempt_whichever_type_it_has_and_not_a_record_of_an
 }
 
 mod answers;
+mod closes;
 mod design;
 mod owner_answers;
 mod rechecks;
