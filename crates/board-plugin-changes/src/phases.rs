@@ -202,7 +202,8 @@ pub(crate) struct Moved {
 /// What `advance` did: [`Moved`], or for a change already done, which it
 /// moves nothing, `outcome` `already_done`, `from` and `to` both done,
 /// `merge_commit_url` when the change records its merge, and `line`, which
-/// says so.
+/// says so; and what Board recorded for the change before it read the
+/// gate, as `next` says it in `filled`.
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct Advanced {
     #[serde(skip_serializing_if = "Option::is_none")]

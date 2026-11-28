@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::change::read;
-use crate::flow::{self, Field, Kind, of_change};
+use crate::flow::{self, Field, Flow, Kind, of_change};
 use crate::gates::{self, Observed, applies, interpret, left_out, not_required, remedy, sections};
 use crate::records::ChangeRecord;
 use crate::repo::check_suite;
@@ -46,7 +46,11 @@ pub(crate) struct NextInput {
 /// What `next` says of the change, and, when `through` names a phase, the
 /// checks of each phase after the current one up to it (`ahead`). Without
 /// `through` there is no `ahead`, and the output is what `next` always
-/// gave.
+/// gave. `filled` says what Board recorded for the change before it read
+/// the gate: the HEAD of the caller's checkout as the head of a change with
+/// none, when the checkout is of the change's mount and on a branch other
+/// than the one the mount follows, and `unowned` as the route of a change
+/// with none; it is left out when Board recorded nothing.
 #[derive(Debug, Serialize, JsonSchema)]
 pub(crate) struct Next {
     #[serde(flatten)]
@@ -91,33 +95,46 @@ pub(crate) enum Status {
 
 /// `next` for the change at `path`, with `ahead` when `through` names a
 /// phase. A `through` that names no phase of the change's flow is refused
-/// before the gate is read.
+/// before the fill writes anything or the gate is read. The later phases
+/// are judged after the fill, so they see the head or route it recorded.
 pub(crate) fn next(
     host: &dyn Host,
     path: &str,
     through: Option<&str>,
 ) -> Result<Value, PluginError> {
+    if let Some(through) = through {
+        flow_through(host, path, through)?;
+    }
+    let next = next_of(host, path)?;
     let ahead = match through {
         Some(through) => Some(ahead(host, path, through)?),
         None => None,
     };
-    Ok(to_value(Next {
-        next: next_of(host, path)?,
-        ahead,
-    }))
+    Ok(to_value(Next { next, ahead }))
 }
 
-/// The checks of each phase after the change's current one, up to and
-/// including `through`.
-fn ahead(host: &dyn Host, path: &str, through: &str) -> Result<Vec<Ahead>, PluginError> {
+/// The change at `path` and the flow it follows, when `through` names a
+/// phase of that flow, and `changes::next::bad_through` otherwise.
+fn flow_through(
+    host: &dyn Host,
+    path: &str,
+    through: &str,
+) -> Result<(ChangeRecord, Flow), PluginError> {
     let (change, _) = read(host, path)?;
     let Some(flow) = of_change(host, path, &change)? else {
         return Err(bad_through(path, through, &[]));
     };
-    let names = flow.names();
     if flow.phase(through).is_none() {
-        return Err(bad_through(path, through, &names));
+        return Err(bad_through(path, through, &flow.names()));
     }
+    Ok((change, flow))
+}
+
+/// The checks of each phase after the change's current one, up to and
+/// including `through`, judged against the change as it is stored now.
+fn ahead(host: &dyn Host, path: &str, through: &str) -> Result<Vec<Ahead>, PluginError> {
+    let (change, flow) = flow_through(host, path, through)?;
+    let names = flow.names();
     let (Some(from), Some(to)) = (
         names.iter().position(|name| *name == change.phase),
         names.iter().position(|name| name == through),

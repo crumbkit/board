@@ -2497,6 +2497,43 @@ fn next_suggests_the_head_from_a_branch_named_for_another_open_change_and_fills_
     assert_eq!(board.read("changes/t.json")["head"], json!(head));
 }
 
+#[test]
+fn next_through_land_judges_the_later_phases_after_the_fill_and_a_bad_through_fills_nothing() {
+    let board = Changes::new();
+    let (_, head) = board.edited(&[("src/a.rs", "a\n")]);
+    board.change_at("changes/t.json", "plan", &json!({"route": "owner"}));
+    board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
+    let checkout = checkout_of_x(&board);
+    let (output, _) = board.run_called(
+        &checkout,
+        &[
+            "--json",
+            "call",
+            "changes.next",
+            "--path",
+            CHANGE,
+            "--through",
+            "nowhere",
+        ],
+        "",
+        &[],
+    );
+    let refused = json(&output);
+    assert_eq!(refused["code"], "changes::next::bad_through", "{refused}");
+    assert_eq!(board.read("changes/t.json").get("head"), None);
+
+    let next = board.call_from(&checkout, "next", &at(&json!({"through": "land"})));
+    assert_eq!(board.read("changes/t.json")["head"], json!(head));
+    assert_eq!(filled(&next).len(), 1, "{next}");
+    let build = (next["ahead"].as_array().unwrap().iter())
+        .find(|phase| phase["phase"] == "build")
+        .unwrap_or_else(|| panic!("no build ahead: {next}"));
+    let check = (build["checks"].as_array().unwrap().iter())
+        .find(|each| each["check"] == "head")
+        .unwrap_or_else(|| panic!("no head check in build: {next}"));
+    assert_eq!(check["status"], "pass", "{check}");
+}
+
 // `next --through <phase>`: the checks of each later phase, judged ahead
 // where the plan or the change record already settles them.
 
