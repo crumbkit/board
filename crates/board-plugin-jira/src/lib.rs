@@ -61,11 +61,8 @@ fn manifest() -> Value {
         "name": "jira",
         "version": "0.1.0",
         // SKILL.md's description, the callout an agent sees first.
-        "description": "Record a Jira issue as a typed jira/issue/v1 record that other records can \
-            reference by path. Use it when work names a Jira ticket. Start with \
-            `board -C <board> jira ref --key ACME-123 --site acme`, which writes \
-            /jira/acme/ACME-123 once with its title. SKILL.md and README.md in the plugin's \
-            directory say more.",
+        "description": "Records a Jira issue as a typed record that other records can reference \
+            by path. Use it when work names a Jira ticket.",
         "metadata": {"area": "planning"},
         "types": [IssueRecord::TYPE],
         "capabilities": [{

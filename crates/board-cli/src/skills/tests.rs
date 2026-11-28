@@ -106,6 +106,89 @@ fn no_claude_code_mod_ships_a_skill() {
     );
 }
 
+/// The most characters a skill's description may hold. Claude Code and
+/// Codex list every installed skill's description in every session's
+/// context, so a long one costs every session; the commands belong in the
+/// skill's body, which loads only when the skill is called.
+const MAX_DESCRIPTION_CHARS: usize = 200;
+
+/// The description in the frontmatter of `skill`, the text of a SKILL.md,
+/// with YAML's single quotes undone.
+fn frontmatter_description(skill: &str) -> Option<String> {
+    let body = skill.strip_prefix("---\n")?;
+    let (frontmatter, _) = body.split_once("\n---")?;
+    let line = frontmatter
+        .lines()
+        .find_map(|line| line.strip_prefix("description:"))?;
+    let line = line.trim();
+    Some(
+        match line
+            .strip_prefix('\'')
+            .and_then(|line| line.strip_suffix('\''))
+        {
+            Some(quoted) => quoted.replace("''", "'"),
+            None => line.trim_matches('"').to_owned(),
+        },
+    )
+}
+
+/// What is wrong with the description of skill `name`, or `None` when it
+/// fits the listing and says when to use the skill.
+fn description_fault(name: &str, description: &str) -> Option<String> {
+    let length = description.chars().count();
+    if length > MAX_DESCRIPTION_CHARS {
+        return Some(format!(
+            "{name}'s description holds {length} characters, more than {MAX_DESCRIPTION_CHARS}"
+        ));
+    }
+    if description.ends_with("say more.") {
+        return Some(format!(
+            "{name}'s description ends by pointing at other files"
+        ));
+    }
+    if !description.contains("Use it") {
+        return Some(format!("{name}'s description does not say when to use it"));
+    }
+    None
+}
+
+#[test]
+fn every_embedded_skills_description_fits_in_200_characters_and_says_when_to_use_it() {
+    let faults: Vec<String> = SKILLS
+        .iter()
+        .filter_map(|skill| {
+            let (_, text) = skill.files.iter().find(|(path, _)| *path == "SKILL.md")?;
+            let text = std::str::from_utf8(text).unwrap();
+            let description = frontmatter_description(text)
+                .unwrap_or_else(|| panic!("{} has no description", skill.name));
+            description_fault(skill.name, &description)
+        })
+        .collect();
+    assert!(faults.is_empty(), "{faults:#?}");
+}
+
+#[test]
+fn a_description_of_200_characters_fits_and_one_of_201_does_not() {
+    let fits = format!(
+        "Use it {}",
+        "a".repeat(MAX_DESCRIPTION_CHARS - "Use it ".len())
+    );
+    assert_eq!(fits.chars().count(), 200);
+    assert_eq!(description_fault("one", &fits), None);
+    let over = format!("{fits}a");
+    assert_eq!(
+        description_fault("one", &over).as_deref(),
+        Some("one's description holds 201 characters, more than 200")
+    );
+    let quoted = "---\nname: one\ndescription: 'It''s short. Use it now.'\n---\nbody";
+    assert_eq!(
+        frontmatter_description(quoted).as_deref(),
+        Some("It's short. Use it now.")
+    );
+    let pointing = "Use it. SKILL.md and README.md in the plugin's directory say more.";
+    assert!(description_fault("one", pointing).is_some());
+}
+
 const ONE: Skill = Skill {
     name: "one",
     plugin: "a",

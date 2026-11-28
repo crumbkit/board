@@ -1,6 +1,6 @@
 ---
 name: plans
-description: 'The plans plugin records the decisions a session makes, the questions only the owner can answer, and the owner''s answers, as records in the board. Use it when you choose between options that a later session or reviewer needs to know about, and when work waits on the owner. Record a decision with `board -C <board> plans decide --project <project> --decision ''<what was chosen>'' --why ''<the reason>'' --session <local_ id>`; `board -C <board> plans open` lists the questions still waiting for an answer. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Records a session''s decisions, each question for the owner, and the owner''s answers. Use it when you choose between options a later session needs to know about, or when work waits on the owner.'
 ---
 
 # plans

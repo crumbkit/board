@@ -95,12 +95,9 @@ fn manifest() -> Value {
         "$type": "board/plugin-manifest/v1",
         "name": "params",
         "version": "0.1.0",
-        "description": "Calibrated values, such as overflow's graces, each with the heuristic that \
-            derives it and the run that set it. Use it to read a value a plugin uses, and when a \
-            scheduled run asks you to recalibrate. Read one with `board call params.get --name \
-            <name>`, which gives the heuristic's default and why when no value applies. `board call \
-            params.due` lists the values to derive again. SKILL.md and README.md in the plugin's \
-            directory say more.",
+        "description": "Calibrated values, such as overflow's graces, each with the heuristic \
+            that derives it and the run that set it. Use it to read a value a plugin uses, or \
+            when a scheduled run asks you to recalibrate.",
         "metadata": {"area": "governance"},
         "types": [HeuristicRecord::TYPE, ValueRecord::TYPE],
         "capabilities": [{

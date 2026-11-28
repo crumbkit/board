@@ -118,13 +118,9 @@ fn manifest() -> Value {
         "name": "artifacts",
         "version": "0.1.0",
         // SKILL.md's description, the callout an agent sees first.
-        "description": "The claude.ai artifacts the owner reviews, each with the task or change it \
-            belongs to, what it shows, whether the owner agreed it, and a copy of every version's \
-            page, recorded by the board-artifacts Claude Code mod. Use it to find an artifact, to \
-            file one, or to sync the artifacts published outside Claude Code. Start with `board \
-            --personal artifacts list --subject /changes/<name>`, which lists that work's \
-            artifacts with every version, newest first. SKILL.md and README.md in the plugin's \
-            directory say more.",
+        "description": "The claude.ai artifacts the owner reviews, each with the work it belongs \
+            to and every version. Use it to find an artifact, to file one, or to sync artifacts \
+            published outside Claude Code.",
         "metadata": {"area": "publishing"},
         "types": record_schemas().map(|(name, _)| name),
         "capabilities": [
