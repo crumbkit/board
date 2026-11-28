@@ -297,10 +297,12 @@ pub fn open_at(
 
 /// The root of each known board, as `known` lists it, other than the board
 /// whose root is `opened`, that has a mount or repo record for the
-/// repository holding `start` and enables `plugin`. It only reads: a board
-/// that cannot be opened, refreshed or read, or that has two places for
-/// `start` of its best rank, is passed over, and outside a git repository
-/// no board is read.
+/// repository holding `start` and enables `plugin`. It writes nothing in
+/// any board's tree and makes no commit, but, as [`find`] does, it refreshes
+/// the index of each listed board that enables `plugin`, kept in `cache`
+/// when one is given. A board that cannot be opened, refreshed or read, or
+/// that has two places for `start` of its best rank, is passed over, and
+/// outside a git repository no board is read.
 pub fn enabling(
     known: &KnownBoards,
     opened: &Path,

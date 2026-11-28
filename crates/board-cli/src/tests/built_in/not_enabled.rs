@@ -48,17 +48,19 @@ impl Worktree {
         }
     }
 
-    /// A board that mounts A at `/repos/a` and enables each of `plugins`. It
-    /// does not commit, so enabling needs no git identity.
+    /// A board that mounts A at `/repos/a` and enables each of `plugins`.
     fn mounting(&self, plugins: &[&str]) -> Scenario {
+        let commit = self.own.commit(&[("x.json", "1")]);
+        self.holding(&mount_of(&self.own.path(), commit), plugins)
+    }
+
+    /// A board holding `record` at `/repos/a` and enabling each of
+    /// `plugins`. It does not commit, so enabling needs no git identity.
+    fn holding(&self, record: &str, plugins: &[&str]) -> Scenario {
         let board = Scenario::new();
         let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
         board.write(".board/board.json", Item::File(config));
-        let commit = self.own.commit(&[("x.json", "1")]);
-        board.write(
-            "repos/a.json",
-            Item::File(&mount_of(&self.own.path(), commit)),
-        );
+        board.write("repos/a.json", Item::File(record));
         for plugin in plugins {
             let enabled = self.run_in(board.workdir(), &["plugin", "enable", plugin]);
             assert_eq!(enabled.code, 0, "{}", text(&enabled.stdout));
@@ -236,4 +238,54 @@ fn a_board_chosen_with_a_flag_keeps_todays_hint() {
         "plans",
     );
     assert_eq!(hint, enable_hint("plans"));
+}
+
+#[test]
+fn a_call_refused_in_a_mounted_clone_with_no_board_of_its_own_keeps_todays_hint() {
+    let worktree = Worktree::new();
+    // A clone with no `.board`: one known board mounts it without enabling
+    // plans, and opens; another has a repo record for its origin and enables
+    // plans.
+    let clone = Scenario::new();
+    let commit = clone.commit(&[("x.json", "1")]);
+    let remote = "[remote \"origin\"]\n\turl = git@github.com:example-org/lib.git\n";
+    clone.write(".git/config", Item::Appended(remote));
+    let mounts = worktree.holding(&mount_of(&clone.path(), commit), &[]);
+    let record = json!({"$type": "board/repo/v1", "remote": "example-org/lib"});
+    let recorded = worktree.holding(&record.to_string(), &["plans"]);
+    worktree.list(&[&mounts, &recorded]);
+    let refused = worktree.run_in(clone.workdir(), &["call", "plans.open"]);
+    assert_eq!(hint(&refused, "plans"), enable_hint("plans"));
+}
+
+#[test]
+fn a_known_board_whose_path_a_shell_would_split_is_quoted_in_the_hint() {
+    let worktree = Worktree::new();
+    let mounts = worktree.mounting(&["plans"]);
+    let links = Scenario::new();
+    links.write("my boards/b", Item::Symlink(&mounts.path()));
+    let listed = links.workdir().join("my boards/b");
+    let known = json!({"boards": [listed]}).to_string();
+    worktree.xdg.write("board/config.json", Item::File(&known));
+    let hint = hint(&worktree.run(&["call", "plans.open"]), "plans");
+    let through = format!("`board --board '{}' call plans.open`", listed.display());
+    assert!(hint.contains(&through), "{hint}");
+    assert!(
+        hint.contains(&format!("known board '{}'", listed.display())),
+        "{hint}"
+    );
+}
+
+#[test]
+fn a_plugin_word_given_flags_says_its_input_goes_as_json_on_stdin() {
+    let worktree = Worktree::new();
+    let mounts = worktree.mounting(&["plans"]);
+    worktree.list(&[&mounts]);
+    let flagged = hint(&worktree.run(&["plans", "open", "--limit", "5"]), "plans");
+    assert!(
+        flagged.contains(r#"with `{"limit":5}` as JSON on stdin"#),
+        "{flagged}"
+    );
+    let bare = hint(&worktree.run(&["plans", "open"]), "plans");
+    assert!(bare.contains("with the same input"), "{bare}");
 }

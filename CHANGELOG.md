@@ -7,6 +7,9 @@
   now names in its hint each known board that mounts that repository and
   enables the plugin, as `board --board <dir> call <plugin>.<capability>`
   to run with the same input, in place of suggesting `board plugin enable`.
+  When a plugin word such as `board plans open --limit 5` was given flags,
+  the hint gives that input as the JSON object to send on stdin. A board
+  path that a shell would split is quoted.
   This happens only when no `-C`, `--personal` or `--board` chose the
   board. The refusal's code, message, fields and exit code are unchanged,
   and the call does not run through the other board.

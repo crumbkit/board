@@ -6,8 +6,8 @@ use std::path::Path;
 
 use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, PluginName, RecordType, Refusal, Role};
 use board_ops::agent::AGENT_VARIABLE;
-use board_ops::{Board, Expect, KnownBoards};
-use board_plugin::Target;
+use board_ops::{Board, CallFailed, Expect, KnownBoards, quoted};
+use board_plugin::{CallError, Target};
 use clap::Subcommand;
 use serde_json::{Map, Value};
 
@@ -157,8 +157,10 @@ pub(crate) fn call(
     mut stdin: Input<'_>,
 ) -> Output {
     let (target, unchosen) = calling;
-    let read = match (flags.filter(|flags| !flags.is_empty()), &mut stdin) {
-        (Some(flags), _) => Ok(Value::Object(flags).to_string().into_bytes()),
+    let given =
+        (flags.filter(|flags| !flags.is_empty())).map(|flags| Value::Object(flags).to_string());
+    let read = match (&given, &mut stdin) {
+        (Some(json), _) => Ok(json.clone().into_bytes()),
         (None, Input::Stdin(stdin)) if !context.terminal => bounded(&mut **stdin),
         (None, _) => Ok(Vec::new()),
     };
@@ -191,8 +193,15 @@ pub(crate) fn call(
                     None => why,
                 });
             }
-            if let Some(start) = unchosen
-                && let Some(hint) = elsewhere(board, context, &known, start, target, &refusal)
+            if let (Some(start), Some(plugin)) = (unchosen, not_enabled(&error))
+                && let Some(hint) = elsewhere(
+                    board,
+                    context,
+                    &known,
+                    start,
+                    (target, plugin),
+                    given.as_deref(),
+                )
             {
                 refusal.hint = Some(hint);
             }
@@ -201,57 +210,60 @@ pub(crate) fn call(
     }
 }
 
-/// The hint for `refusal` when it refuses `target` as not enabled in the
-/// board whose own tree holds `start`, naming each other known board that
-/// mounts the repository holding `start` and enables the plugin, or `None`
-/// when the refusal is another or no such board is known.
+/// The plugin `error` refuses as not enabled, if it does.
+fn not_enabled(error: &CallFailed) -> Option<&PluginName> {
+    match error {
+        CallFailed::Call {
+            source: CallError::NotEnabled { plugin },
+        } => Some(plugin),
+        _ => None,
+    }
+}
+
+/// The hint for a call of `target` refused because the board whose own
+/// tree holds `start` does not enable `plugin`, naming each other known
+/// board that mounts the repository holding `start` and enables it, or
+/// `None` when the opened board's own tree does not hold `start` or no
+/// such board is known. `given` is the input a plugin word's flags gave,
+/// which `board call` reads as JSON on stdin.
 fn elsewhere(
     board: &Board,
     context: &Context,
     known: &KnownBoards,
     start: &Path,
-    target: &Target,
-    refusal: &Refusal,
+    (target, plugin): (&Target, &PluginName),
+    given: Option<&str>,
 ) -> Option<String> {
-    if refusal.code.as_str() != Code::PluginNotEnabled.as_str() {
-        return None;
-    }
     let opened = board.repository().path();
     if board_tree::discover(start).as_deref() != Some(opened) {
         return None;
     }
-    let plugin: PluginName = refusal.fields.get("plugin")?.as_str()?.parse().ok()?;
     let capability = match target {
         Target::Named { capability, .. } | Target::Capability(capability) => capability,
     };
     let (home, cache) = (context.home.as_deref(), context.cache.as_deref());
-    let roots = board_ops::enabling(known, opened, start, &plugin, home, cache);
-    let commands: Vec<String> = (roots.iter())
-        .map(|root| {
-            format!(
-                "`board --board {} call {plugin}.{capability}`",
-                root.display()
-            )
-        })
+    let roots = board_ops::enabling(known, opened, start, plugin, home, cache);
+    let named: Vec<String> = (roots.iter())
+        .map(|root| quoted(&root.display().to_string()))
         .collect();
-    let (boards, run) = match commands.as_slice() {
+    let commands: Vec<String> = (named.iter())
+        .map(|root| format!("`board --board {root} call {plugin}.{capability}`"))
+        .collect();
+    let (boards, run) = match named.as_slice() {
         [] => return None,
-        [one] => (
-            format!("the known board {}", roots[0].display()),
-            one.clone(),
+        [one] => (format!("the known board {one}"), commands.join("")),
+        _ => (
+            format!("the known boards {}", named.join(", ")),
+            commands.join(" or "),
         ),
-        _ => {
-            let named: Vec<String> = roots
-                .iter()
-                .map(|root| root.display().to_string())
-                .collect();
-            let boards = format!("the known boards {}", named.join(", "));
-            (boards, commands.join(" or "))
-        }
     };
+    let input = given.map_or_else(
+        || "the same input".to_owned(),
+        |json| format!("`{json}` as JSON on stdin"),
+    );
     Some(format!(
-        "the board at {}, whose own tree holds this directory, does not enable {plugin}, but {boards} mount{s} this repository and enable{s} it; run {run} with the same input",
-        opened.display(),
+        "the board at {}, whose own tree holds this directory, does not enable {plugin}, but {boards} mount{s} this repository and enable{s} it; run {run} with {input}",
+        quoted(&opened.display().to_string()),
         s = if roots.len() == 1 { "s" } else { "" },
     ))
 }
