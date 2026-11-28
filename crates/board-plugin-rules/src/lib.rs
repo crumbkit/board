@@ -248,9 +248,11 @@ fn manifest() -> Value {
 const FOR_STAGE: &str = "The skills and context that the rules under /rules/imposed/ register \
     against one workflow stage give one kind of agent, in at most 150 words: each skill as its \
     name, file and summary, each context file's text, the rules the word limit left out, and \
-    one refused row for each rule whose file is missing. A registration is a rule whose `show` \
+    one refused row for each rule whose file is missing or that Board marks degraded. A registration is a rule whose `show` \
     is {\"stage\": ..., \"agent\": ...} and whose `provides` names a skill's SKILL.md or a \
-    context file; check, for-path and the mod never list one. Stages: orient, plan, mockup, \
+    context file; check, for-path and the mod never list one. --path must \
+    resolve, but it does not yet narrow the registrations: every registration of the stage and \
+    kind of agent is given, whatever repository it names. Stages: orient, plan, mockup, \
     build, review, land, handoff. Agent kinds: lead, ux, builder, reviewer. Examples:\n\
     board rules for-stage --path /repos/app --stage orient --agent builder\n\
     board rules for-stage --path / --stage review --agent reviewer";

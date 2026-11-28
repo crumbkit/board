@@ -57,17 +57,48 @@ const CONTROLS: &str = concat!(
     readable!()
 );
 
+/// Where the imposed set's registrations live in the board asked, as a
+/// literal. A macro, so `concat!` builds queries with it.
+macro_rules! imposed {
+    () => {
+        "/rules/imposed"
+    };
+}
+
 /// Each control in the board's own tree that Board marks degraded, by its
 /// logical path, or by its path when it has none. A rule registered against
-/// a workflow stage that is [`readable`] is left out: `for-stage` reports
-/// its missing file as one row, and no other capability lists it.
+/// a workflow stage under the imposed set's root is left out when it is
+/// [`readable`] and its `provides.file` names no entry, because `for-stage`
+/// reports that missing file as one row. Any other degraded stage rule,
+/// such as one outside the imposed set or one whose `sources` dangles, is
+/// listed.
 const DEGRADED: &str = concat!(
-    "SELECT COALESCE(logical, path), code FROM records WHERE type IN ",
+    "SELECT COALESCE(logical, path), code FROM records r WHERE type IN ",
     rule_types!(),
     " AND status != 'ok' AND source = 'worktree' AND NOT (",
     readable!(),
-    " AND CASE WHEN json_valid(body) THEN json_type(body, '$.show') END IS 'object')",
+    " AND substr(logical, 1, length('",
+    imposed!(),
+    "/')) = '",
+    imposed!(),
+    "/' AND CASE WHEN json_valid(body) THEN json_type(body, '$.show') END IS 'object'",
+    " AND NOT EXISTS (SELECT 1 FROM entries e WHERE e.logical = ",
+    "json_extract(r.body, '$.provides.file')))",
     " ORDER BY logical"
+);
+
+/// Every readable rule under the imposed set's root, with its body and,
+/// when Board marks it degraded, its code.
+const REGISTRATIONS: &str = concat!(
+    "SELECT logical, body, CASE WHEN status != 'ok' THEN code END FROM records WHERE type IN ",
+    rule_types!(),
+    " AND source = 'worktree' AND ",
+    readable!(),
+    " AND substr(logical, 1, length('",
+    imposed!(),
+    "/')) = '",
+    imposed!(),
+    "/'"
 );
 
 /// A rule as the board's own copy of the schema admits it, which equals
@@ -207,27 +238,40 @@ fn staged(record: &Value) -> bool {
     record.get("show").is_some_and(Value::is_object)
 }
 
-/// A rule registered against a workflow stage, as `for-stage` reads it.
+/// A rule registered against a workflow stage, as `for-stage` reads it,
+/// with Board's code when it marks the rule degraded.
 #[derive(Deserialize)]
 pub(crate) struct Registration {
     pub(crate) requirement: String,
     pub(crate) summary: Option<String>,
     pub(crate) show: Slot,
-    pub(crate) provides: Option<Provides>,
+    pub(crate) provides: Provides,
+    #[serde(skip)]
+    pub(crate) degraded: Option<String>,
 }
 
-/// Each valid rule under `root` registered against a workflow stage, by
-/// its logical path. One whose slot names a stage or agent kind this Board
-/// does not know, such as one an edited copy of the schema admits, is
-/// left out.
+/// Each readable rule under the imposed set's root registered against a
+/// workflow stage, by its logical path. One that a schema this Board does
+/// not ship admits, such as one with an unknown stage or no `provides`, is
+/// left out; Board's own schema refuses it, so `check` reports it.
 pub(crate) fn registrations(
     host: &dyn Host,
-    root: &LogicalPath,
 ) -> Result<BTreeMap<String, Registration>, PluginError> {
-    let beneath = format!("{}/", root.as_str());
-    Ok((records(host)?.into_iter())
-        .filter(|(logical, record)| logical.starts_with(&beneath) && staged(record))
-        .filter_map(|(logical, record)| Some((logical, Registration::deserialize(&record).ok()?)))
+    Ok((rows(host, REGISTRATIONS)?.rows.into_iter())
+        .filter_map(|row| {
+            let [Value::String(logical), Value::String(body), code] =
+                <[Value; 3]>::try_from(row).ok()?
+            else {
+                return None;
+            };
+            let record = parse_json(body.as_bytes()).ok()?;
+            if !staged(&record) {
+                return None;
+            }
+            let mut registration = Registration::deserialize(&record).ok()?;
+            registration.degraded = code.as_str().map(str::to_owned);
+            Some((logical, registration))
+        })
         .collect())
 }
 

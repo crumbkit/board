@@ -296,6 +296,7 @@ fn the_rule_schema_admits_both_forms_of_show_and_refuses_an_unknown_stage_agent_
                 )),
                 rule(json!({})),
             ),
+            (without(rule(json!({})), "provides"), rule(json!({}))),
             (
                 rule(fields(
                     "provides",

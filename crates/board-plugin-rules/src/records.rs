@@ -19,9 +19,14 @@ use serde_json::{Map, Value, json};
 /// a checker a program runs.
 ///
 /// It applies to the entries `applies_to` references and to every entry of
-/// the board whose path matches one of `paths`.
+/// the board whose path matches one of `paths`. A rule whose `show` is an
+/// object must set `provides`.
 #[derive(Debug, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(extend(
+    "if" = {"properties": {"show": {"type": "object"}}, "required": ["show"]},
+    "then" = {"required": ["provides"]},
+))]
 pub struct RuleRecord {
     /// The record's type.
     #[serde(rename = "$type")]
@@ -61,7 +66,7 @@ pub struct RuleRecord {
     /// mod never show it.
     pub show: Option<Show>,
     /// What a rule registered against a stage gives the agent: a skill, by
-    /// its `SKILL.md`, or a context file of at most 120 words.
+    /// its `SKILL.md`, or a context file. Required when `show` is an object.
     pub provides: Option<Provides>,
     /// What justifies the rule, such as a source note (`rules/source/v1`)
     /// or an eval.
@@ -248,7 +253,9 @@ pub struct Provides {
     /// `skill` for a skill, named by the directory that holds its
     /// `SKILL.md`, or `context` for a file whose text the agent receives.
     pub provide: Provide,
-    /// The skill's `SKILL.md`, or the context file of at most 120 words.
+    /// The skill's `SKILL.md`, or the context file. Keep a context file
+    /// under 120 words, or it may not fit in the 150 words `for-stage`
+    /// gives a stage.
     #[schemars(with = "Ref")]
     pub file: String,
 }

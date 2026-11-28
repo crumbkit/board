@@ -3,22 +3,18 @@
 
 use board_model::{AgentKind, LogicalPath, Stage, UnknownName};
 use board_ops::{Host, PluginError};
-use board_plugin::shape::{Prose, Summary};
+use board_plugin::shape::{BoardPath, Prose, Summary};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::check::{self, scope};
 use crate::index::{self, Registration};
-use crate::logical;
 use crate::records::Provide;
 use crate::summary::summary;
 
 /// The most words of skills and context a stage object holds.
 pub(crate) const STAGE_WORDS: usize = 150;
-
-/// Where the imposed set's registrations live in the board asked.
-const IMPOSED: &str = "/rules/imposed";
 
 /// One stage and one kind of agent, for a repository.
 #[derive(Deserialize, JsonSchema)]
@@ -39,14 +35,14 @@ pub(crate) struct Input {
 /// What the rules registered under /rules/imposed/ against the stage give
 /// the kind of agent, by rule path, fitted into 150 words.
 ///
-/// `skills` holds each skill as a pointer: its name, the directory that
-/// holds its `SKILL.md`, its file, and the rule's summary, or else the
-/// first sentence of its requirement. `context` holds each context file's
+/// `skills` holds each skill as a pointer: the rule that registered it,
+/// its name, the directory that holds its `SKILL.md`, its file, and the
+/// rule's summary, or else the first sentence of its requirement. `context` holds each context file's
 /// text whole, with the rule that registered it. Each registration is
 /// fitted in path order, skipping any that do not fit, and `left_out`
 /// names those skipped. `refused` holds one row for each registration that
-/// cannot be given, such as one whose file is missing; the others are
-/// still given. `left_out` and `refused` count outside the 150 words.
+/// cannot be given, such as one whose file is missing or that Board marks
+/// degraded; the others are still given. `left_out` and `refused` count outside the 150 words.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "ForStageOutput")]
@@ -55,15 +51,20 @@ pub(crate) struct Output {
     agent: AgentKind,
     skills: Vec<Skill>,
     context: Vec<Context>,
+    #[schemars(with = "Vec<BoardPath>")]
     left_out: Vec<String>,
     refused: Vec<Refused>,
 }
 
-/// A skill, by its name and file, and what it is for.
+/// A skill, by the rule that registered it, its name and file, and what
+/// it is for.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Skill {
+    #[schemars(with = "BoardPath")]
+    rule: String,
     name: String,
+    #[schemars(with = "BoardPath")]
     file: String,
     #[schemars(with = "Summary")]
     summary: String,
@@ -73,7 +74,9 @@ struct Skill {
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Context {
+    #[schemars(with = "BoardPath")]
     rule: String,
+    #[schemars(with = "Prose")]
     text: String,
 }
 
@@ -101,13 +104,12 @@ pub(crate) fn for_stage(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     let stage: Stage = stage.parse().map_err(unknown)?;
     let agent: AgentKind = agent.parse().map_err(unknown)?;
     scope(host, &path)?;
-    let imposed: LogicalPath = logical(IMPOSED)?;
-    let slot: Vec<(String, Registration)> = (index::registrations(host, &imposed)?.into_iter())
+    let slot: Vec<(String, Registration)> = (index::registrations(host)?.into_iter())
         .filter(|(_, registration)| {
             registration.show.stage == stage && registration.show.agent == agent
         })
         .collect();
-    let given = resolve(host, stage, agent, slot)?;
+    let given = resolve(host, slot)?;
     let mut output = Output {
         stage,
         agent,
@@ -128,7 +130,12 @@ pub(crate) fn for_stage(host: &dyn Host, input: &Value) -> Result<Value, PluginE
         match given {
             Given::Refused(refused) => output.refused.push(refused),
             Given::Skill(skill) => {
-                if fits(words(&[&skill.name, &skill.file, &skill.summary])) {
+                if fits(words(&[
+                    &skill.rule,
+                    &skill.name,
+                    &skill.file,
+                    &skill.summary,
+                ])) {
                     output.skills.push(skill);
                 } else {
                     output.left_out.push(rule);
@@ -150,39 +157,39 @@ pub(crate) fn for_stage(host: &dyn Host, input: &Value) -> Result<Value, PluginE
 /// file is read through one `get_each`.
 fn resolve(
     host: &dyn Host,
-    stage: Stage,
-    agent: AgentKind,
     slot: Vec<(String, Registration)>,
 ) -> Result<Vec<(String, Given)>, PluginError> {
     let files: Vec<Option<LogicalPath>> = (slot.iter())
-        .map(|(_, registration)| registration.provides.as_ref()?.file.parse().ok())
+        .map(|(_, registration)| registration.provides.file.parse().ok())
         .collect();
     let read = check::read(host, files.iter().flatten().collect())?;
     let mut given = Vec::new();
     for ((rule, registration), file) in slot.into_iter().zip(files) {
+        let provides = &registration.provides;
         let missing = |reason: String| {
             let message = format!("the rule {rule} provides a file that {reason}");
             refused(&rule, "rules::stage::file_missing", message)
         };
-        let entry = match (&registration.provides, file) {
-            (None, _) => refused(
-                &rule,
-                "rules::stage::provides_nothing",
-                format!(
-                    "the rule {rule} registers against {stage} for {agent} but sets no \
-                     `provides`, so it gives the agent nothing"
+        let entry = match (file, &registration.degraded) {
+            (None, _) => missing(format!("{} names no board path", provides.file)),
+            (Some(file), degraded) => match (&read[&file], degraded, provides.provide) {
+                (Err(code), _, _) => missing(format!("Board cannot read, {file}: {code}")),
+                (Ok(_), Some(code), _) => refused(
+                    &rule,
+                    "rules::stage::degraded",
+                    format!(
+                        "Board marks the rule {rule} degraded with {code}; run `board check \
+                         {rule}` for why"
+                    ),
                 ),
-            ),
-            (Some(provides), None) => missing(format!("{} names no board path", provides.file)),
-            (Some(provides), Some(file)) => match (&read[&file], provides.provide) {
-                (Err(code), _) => missing(format!("Board cannot read, {file}: {code}")),
-                (Ok(_), Provide::Skill) => Given::Skill(Skill {
+                (Ok(_), None, Provide::Skill) => Given::Skill(Skill {
+                    rule: rule.clone(),
                     name: skill_name(&file),
                     file: file.to_string(),
                     summary: (registration.summary.clone())
                         .unwrap_or_else(|| summary(&registration.requirement)),
                 }),
-                (Ok(bytes), Provide::Context) => Given::Context(Context {
+                (Ok(bytes), None, Provide::Context) => Given::Context(Context {
                     rule: rule.clone(),
                     text: String::from_utf8_lossy(bytes).trim().to_owned(),
                 }),

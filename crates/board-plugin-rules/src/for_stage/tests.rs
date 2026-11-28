@@ -98,7 +98,7 @@ fn a_slot_receives_only_its_own_registrations_in_path_order() {
         json!({
             "stage": "orient",
             "agent": "builder",
-            "skills": [{"name": "tdd", "file": "/skills/tdd/SKILL.md", "summary": "Write each test first."}],
+            "skills": [{"rule": "/rules/imposed/b-tdd", "name": "tdd", "file": "/skills/tdd/SKILL.md", "summary": "Write each test first."}],
             "context": [{"rule": "/rules/imposed/a-orient", "text": "Read the plan first."}],
             "left_out": [],
             "refused": [],
@@ -108,6 +108,7 @@ fn a_slot_receives_only_its_own_registrations_in_path_order() {
     assert_eq!(
         output["skills"],
         json!([{
+            "rule": "/rules/imposed/c-other-agent",
             "name": "review",
             "file": "/skills/review/SKILL.md",
             "summary": "An agent at this stage uses what the rule provides.",
@@ -198,7 +199,7 @@ fn a_registration_whose_file_is_missing_is_one_refused_row_and_the_others_resolv
 }
 
 #[test]
-fn a_registration_that_provides_nothing_is_one_refused_row() {
+fn a_stage_rule_without_provides_is_invalid_so_check_fails_and_its_twin_passes() {
     let mut record: Value = serde_json::from_str(&registration(
         "land",
         "lead",
@@ -207,25 +208,105 @@ fn a_registration_that_provides_nothing_is_one_refused_row() {
         &json!({}),
     ))
     .unwrap();
+    let twin = record.to_string();
     record.as_object_mut().unwrap().remove("provides");
     let (_scenario, host) = board(&[
         ("skills/tdd/SKILL.md", "# TDD\n"),
         ("rules/imposed/empty.json", &record.to_string()),
+    ]);
+    let refused = check(&host, &json!({})).unwrap_err();
+    assert_eq!(refused.code, "rules::rule::degraded");
+    assert_eq!(
+        refused.fields["rules"],
+        json!([{"rule": "/rules/imposed/empty", "code": "board::record::invalid"}])
+    );
+    let (_scenario, host) = board(&[
+        ("skills/tdd/SKILL.md", "# TDD\n"),
+        ("rules/imposed/empty.json", &twin),
+    ]);
+    assert_eq!(check(&host, &json!({})).unwrap()["passed"], json!(true));
+}
+
+#[test]
+fn a_stage_rule_outside_the_imposed_set_whose_file_is_missing_fails_check() {
+    let (_scenario, host) = board(&[(
+        "rules/elsewhere/gone.json",
+        &registration(
+            "build",
+            "builder",
+            "skill",
+            "/skills/gone/SKILL.md",
+            &json!({}),
+        ),
+    )]);
+    let refused = check(&host, &json!({})).unwrap_err();
+    assert_eq!(refused.code, "rules::rule::degraded");
+    assert_eq!(
+        refused.fields["rules"],
+        json!([{"rule": "/rules/elsewhere/gone", "code": "board::ref::dangling"}])
+    );
+}
+
+#[test]
+fn an_imposed_stage_rule_whose_source_dangles_fails_check_and_is_refused_by_for_stage() {
+    let source = json!({"sources": ["/evals/nothing-here"]});
+    let (_scenario, host) = board(&[
+        ("skills/tdd/SKILL.md", "# TDD\n"),
         (
-            "rules/imposed/tdd.json",
-            &registration("land", "lead", "skill", "/skills/tdd/SKILL.md", &json!({})),
+            "rules/imposed/bad-source.json",
+            &registration("build", "builder", "skill", "/skills/tdd/SKILL.md", &source),
         ),
     ]);
-    let output = for_stage(&host, &asked("land", "lead")).unwrap();
-    assert_eq!(output["skills"].as_array().unwrap().len(), 1);
+    let refused = check(&host, &json!({})).unwrap_err();
+    assert_eq!(
+        refused.fields["rules"],
+        json!([{"rule": "/rules/imposed/bad-source", "code": "board::ref::dangling"}])
+    );
+    let output = for_stage(&host, &asked("build", "builder")).unwrap();
+    assert_eq!(output["skills"], json!([]));
     assert_eq!(
         output["refused"],
         json!([{
-            "rule": "/rules/imposed/empty",
-            "code": "rules::stage::provides_nothing",
-            "message": "the rule /rules/imposed/empty registers against land for lead but sets no `provides`, so it gives the agent nothing",
+            "rule": "/rules/imposed/bad-source",
+            "code": "rules::stage::degraded",
+            "message": "Board marks the rule /rules/imposed/bad-source degraded with board::ref::dangling; run `board check /rules/imposed/bad-source` for why",
         }])
     );
+    let (_scenario, host) = board(&[
+        ("skills/tdd/SKILL.md", "# TDD\n"),
+        (
+            "rules/imposed/bad-source.json",
+            &registration(
+                "build",
+                "builder",
+                "skill",
+                "/skills/tdd/SKILL.md",
+                &json!({}),
+            ),
+        ),
+    ]);
+    assert_eq!(check(&host, &json!({})).unwrap()["passed"], json!(true));
+    let output = for_stage(&host, &asked("build", "builder")).unwrap();
+    assert_eq!(output["skills"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn the_output_schema_types_paths_as_board_paths_and_context_text_as_prose() {
+    let manifest = crate::manifest();
+    let capability = (manifest["capabilities"].as_array().unwrap().iter())
+        .find(|capability| capability["name"] == "for-stage")
+        .unwrap();
+    let output = &capability["outputSchema"];
+    let defs = &output["$defs"];
+    assert_eq!(defs["Skill"]["properties"]["file"]["format"], "board-path");
+    assert_eq!(defs["Skill"]["properties"]["rule"]["format"], "board-path");
+    assert_eq!(
+        output["properties"]["left_out"]["items"]["format"],
+        "board-path"
+    );
+    assert_eq!(defs["Context"]["properties"]["text"]["x-board-prose"], true);
+    let description = capability["description"].as_str().unwrap();
+    assert!(description.contains("does not yet narrow"), "{description}");
 }
 
 #[test]

@@ -65,10 +65,16 @@ reads the board runs a Board with this change.
 After 0.1.6, `rules/rule/v1` gained a second form of `show`, an object
 `{"stage": ..., "agent": ...}` that registers the rule against a workflow
 stage, and an optional `provides`, in place, for the same reason, and
-released.json's entry for it is rewritten again. Both are optional, and
-`show` keeps every value it had. A Board older than this change refuses a
-rule that uses either, so registrations should be written only once every
-machine that reads the board runs a Board with this change.
+released.json's entry for it is rewritten again. `provides` is required
+only when `show` is an object, and `show` keeps every value it had, so every
+existing rule stays valid. A program that reads the schema finds those
+values at `/properties/show/anyOf/0/enum`, no longer at
+`/properties/show/enum`. Board refuses a rules call with
+`board::plugin::schema_differs` when its shipped schema differs from the
+board's copy, so once one machine runs `board plugin enable rules` with this
+change, an older Board on every other machine that reads the board refuses
+every rules call, whether or not any rule registers against a stage. Every
+machine should upgrade before any machine re-enables the rules plugin.
 
 The `--json` report of `board timing check`, `board/timing-check-report/v2`,
 changes in place while the command timing budgets run silently in their first

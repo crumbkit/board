@@ -116,12 +116,13 @@ such as a pull request body, instead of files.
   `failing` is never shown. An object `{"stage": ..., "agent": ...}`
   registers the rule against a workflow stage instead, as the next section
   says.
-- `provides`, on a rule registered against a stage, says what it gives the
-  agent: `{"provide": "skill", "file": "/skills/<name>/SKILL.md"}`, a
-  skill named by the directory that holds its `SKILL.md`, or
-  `{"provide": "context", "file": "/<file>.md"}`, a file of at most 120
-  words whose text the agent receives. A budget rule with `per: file` holds
-  a context file to 120 words.
+- `provides`, which a rule registered against a stage must set, says what
+  it gives the agent: `{"provide": "skill", "file": "/skills/<name>/SKILL.md"}`,
+  a skill named by the directory that holds its `SKILL.md`, or
+  `{"provide": "context", "file": "/<file>.md"}`, a file whose text the
+  agent receives. Keep a context file under 120 words, or it may not fit
+  in the 150 words `for-stage` gives a stage; nothing refuses a longer one,
+  and a budget rule with `per: file` can hold such files to a limit.
 - `sources` holds references to what justifies the rule, such as a
   source note or an eval. Board checks them as it checks `applies_to`, so a
   dangling source makes `check` fail with `rules::rule::degraded`.
@@ -396,15 +397,19 @@ field.
 
 - `board rules for-stage --path /repos/app --stage orient --agent builder`
   prints what the registrations under `/rules/imposed/` give a builder at
-  the orient stage: `skills`, each as its `name`, `file` and `summary` (the
-  rule's, or else its requirement's first sentence); `context`, each
-  context file's text whole with its `rule`; `left_out`, the rules that did
-  not fit; and `refused`. Registrations are fitted by rule path into 150
-  words, skipping any that do not fit, and `left_out` and `refused` count
-  outside the 150. A registration whose file is missing is one `refused`
-  row with `rules::stage::file_missing`, and one with no `provides` is one
-  with `rules::stage::provides_nothing`; the others are still given, and
-  the call exits 0. An unknown stage or kind of agent exits 1 with
+  the orient stage: `skills`, each as its `rule`, `name`, `file` and
+  `summary` (the rule's, or else its requirement's first sentence);
+  `context`, each context file's text whole with its `rule`; `left_out`,
+  the rules that did not fit; and `refused`. Registrations are fitted by
+  rule path into 150 words, skipping any that do not fit, and `left_out`
+  and `refused` count outside the 150. A registration whose file is missing
+  is one `refused` row with `rules::stage::file_missing`, and one that Board
+  marks degraded for another reason, such as a dangling source, is one with
+  `rules::stage::degraded`; the others are still given, and the call exits
+  0. `rules check` still fails on the second kind, and on any degraded
+  stage rule outside `/rules/imposed/`; it skips only an imposed stage rule
+  whose file is missing. `--path` must resolve, but it does not yet narrow
+  the registrations. An unknown stage or kind of agent exits 1 with
   `rules::stage::unknown`, and a `--path` Board cannot resolve exits 1 with
   `rules::board::refused`. It writes nothing.
 

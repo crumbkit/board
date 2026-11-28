@@ -84,7 +84,7 @@ fn for_stage_gives_the_builders_orient_skills_and_context_and_refuses_the_missin
         json!({
             "stage": "orient",
             "agent": "builder",
-            "skills": [{"name": "tdd", "file": "/skills/tdd/SKILL.md", "summary": "Write each test first."}],
+            "skills": [{"rule": "/rules/imposed/orient/tdd", "name": "tdd", "file": "/skills/tdd/SKILL.md", "summary": "Write each test first."}],
             "context": [{"rule": "/rules/imposed/orient/context", "text": "Read the plan first."}],
             "left_out": [],
             "refused": [{
@@ -192,6 +192,7 @@ fn help_for_for_stage_shows_its_example_commands() {
     for example in [
         "board rules for-stage --path /repos/app --stage orient --agent builder",
         "board rules for-stage --path / --stage review --agent reviewer",
+        "it does not yet narrow the registrations",
     ] {
         assert!(help.contains(example), "{example}: {help}");
     }

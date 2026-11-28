@@ -323,7 +323,7 @@
       }
     },
     "crates/board-plugin-rules/types/rules/rule/v1.schema.json": {
-      "shape": "3d39d1cb270887fb549acda70e1df05282ed49bd",
+      "shape": "653285379b108ba7686fc666daf54e8fc60e131e",
       "enums": {
         "/$defs/BudgetChecker/properties/per/enum": [
           "total",
@@ -14324,6 +14324,7 @@
           [
             "file",
             "name",
+            "rule",
             "summary"
           ]
         ]
@@ -14334,6 +14335,11 @@
         ]
       },
       "output.skills[].name": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.skills[].rule": {
         "type": [
           "string"
         ]
@@ -19191,8 +19197,8 @@
     "rules::rule::degraded",
     "rules::rule::not_found",
     "rules::rule::owed_by_standing",
+    "rules::stage::degraded",
     "rules::stage::file_missing",
-    "rules::stage::provides_nothing",
     "rules::stage::unknown",
     "rules::standards::bad_id",
     "rules::standards::duplicate_rule",

@@ -193,7 +193,7 @@
       "description": "What a rule registered against a stage gives the agent.",
       "properties": {
         "file": {
-          "description": "The skill's `SKILL.md`, or the context file of at most 120 words.",
+          "description": "The skill's `SKILL.md`, or the context file. Keep a context file\nunder 120 words, or it may not fit in the 150 words `for-stage`\ngives a stage.",
           "format": "board-ref",
           "type": "string"
         },
@@ -360,7 +360,17 @@
     }
   },
   "additionalProperties": false,
-  "description": "`rules/rule/v1`: a requirement on files, why it exists, and optionally\na checker a program runs.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`.",
+  "description": "`rules/rule/v1`: a requirement on files, why it exists, and optionally\na checker a program runs.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`. A rule whose `show` is an\nobject must set `provides`.",
+  "if": {
+    "properties": {
+      "show": {
+        "type": "object"
+      }
+    },
+    "required": [
+      "show"
+    ]
+  },
   "properties": {
     "$type": {
       "const": "rules/rule/v1",
@@ -414,7 +424,7 @@
     },
     "provides": {
       "$ref": "#/$defs/Provides",
-      "description": "What a rule registered against a stage gives the agent: a skill, by\nits `SKILL.md`, or a context file of at most 120 words."
+      "description": "What a rule registered against a stage gives the agent: a skill, by\nits `SKILL.md`, or a context file. Required when `show` is an object."
     },
     "purpose": {
       "description": "Why the requirement exists.",
@@ -461,6 +471,11 @@
     "requirement",
     "purpose"
   ],
+  "then": {
+    "required": [
+      "provides"
+    ]
+  },
   "title": "RuleRecord",
   "type": "object"
 }
