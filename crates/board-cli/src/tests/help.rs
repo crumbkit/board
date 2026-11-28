@@ -258,8 +258,8 @@ pub(super) const BUDGETS: Budgets = Budgets::new()
     .nodes(&[
         Budget::new(
             "get",
-            1_500,
-            "get has two output formats, --fetch and --at, and a reader needs to know on one page that without --fetch get prints an attachment record and never reaches the store, and that --at reads every path in one commit.",
+            1_700,
+            "get has two output formats, --fetch and --at, and a reader needs to know on one page that without --fetch get prints an attachment record and never reaches the store, that --at reads every path in one commit, and that beside an open question a line on stderr names its answer while the stored status stays open.",
         ),
         Budget::new(
             "put",

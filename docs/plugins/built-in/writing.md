@@ -77,6 +77,11 @@ each type's `RecordType`, parsed from `T::TYPE`, with
 - `call()` matches the capability's name and calls its module. Any other
   name is refused with `<name>::call::unknown_capability`, naming what the
   plugin offers.
+- `get_notes()`, empty unless the plugin overrides it, returns a `GetNote`
+  for each record type beside which `board get` prints a line on stderr,
+  read from one path beside the record (docs/architecture/records/get.md,
+  Notes beside a record). The plans plugin names the answer beside an open
+  question.
 
 Each capability module defines `Input` (`Deserialize`, `JsonSchema`,
 `deny_unknown_fields`) and `Output` (`Serialize`, `JsonSchema`), renamed

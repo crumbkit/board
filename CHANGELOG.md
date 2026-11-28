@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `board get` of an open `plans/question/v1` prints one line on stderr, in
+  text and in `--json`, that names the answer at the question's id under
+  `answers/` with its time, choice and first 80 characters of words. When
+  no answer to the question is there, the line says so and names
+  `board refs <question>` to find one at another path. stdout keeps the
+  file's bytes, `board/get-report/v2` gains no field, and the question's
+  stored status stays `open`. A built-in plugin declares such a line with
+  the new `Plugin::get_notes`.
+
 - The development flow's suite-run remedy names only commands that exist.
   When the change names no suite, it says to name one with `board changes
   attach --suite`, or to write a `runs/suite/v1` with `board put
