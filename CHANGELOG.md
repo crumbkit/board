@@ -20,7 +20,7 @@
 - Each skill that ships with Board has a description of at most 200
   characters that says what the skill is for and when to use it. Claude
   Code and Codex list every installed skill's description in each
-  session's context, and 22 of Board's were longer, the longest 649
+  session's context, and 22 of Board's were longer, the longest 644
   characters. The example commands and the closing "SKILL.md and README.md
   ... say more" sentence left the descriptions; each command is in its
   skill's steps, which load when the skill is called. Each plugin's

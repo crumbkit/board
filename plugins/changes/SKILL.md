@@ -22,9 +22,9 @@ blocks is missing.
    discharge that obligation once its work is committed. Treat each `ask_first` pattern as a file to ask
    about before changing.
 2. Run `board -C <board> changes next --path /changes/<name>`
-   whenever you start a phase or lose context; `board -C <board> changes open`
-   lists the changes in progress when you need one to resume. Do what `instruction` says
-   and fix each check whose `status` is `missing`, following its `remedy`.
+   whenever you start a phase or lose context;
+   `board -C <board> changes open` lists the changes in progress when you
+   need one to resume. Do what `instruction` says and fix each check whose `status` is `missing`, following its `remedy`.
    When `ask` is set, only the owner or a reviewer can pass the checks
    left: put `ask` to them. Stop where the change's `stop` says, or the
    flow's when it has none, unless told otherwise; once `next` returns

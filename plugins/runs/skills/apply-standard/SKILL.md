@@ -1,6 +1,6 @@
 ---
 name: apply-standard
-description: 'Audits a repository checkout against a written standard whose tables list rules by ID, and records a suite run. Use it when the person asks to check, audit or review a repository against a standard.'
+description: 'Audits a repository against a written standard whose tables list rules by ID, and records a suite run. Use it to check, audit or review a repository against a standard, or to apply a standard.'
 ---
 
 # Apply a standard

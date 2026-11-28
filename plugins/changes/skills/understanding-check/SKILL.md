@@ -1,6 +1,6 @@
 ---
 name: understanding-check
-description: 'Checks that the owner understands what a change stores, who shares it and what its users see, and records the check. Use it before he signs off a change''s data or agrees its UX, and before review.'
+description: 'Checks that the owner understands what a change stores, who shares it and what its users see, and records the check. Use it before he signs off its data or agrees a mockup, and before review.'
 ---
 
 # Understanding check

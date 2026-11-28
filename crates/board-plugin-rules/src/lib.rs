@@ -152,9 +152,9 @@ fn manifest() -> Value {
         "name": "rules",
         "former_names": ["controls"],
         "version": "0.1.0",
-        "description": "Keeps requirements on files, formerly called controls, as records in the \
-            board that holds the files. Use it when you start work in a board or a mounted \
-            repository, and before you edit a governed file.",
+        "description": "The plugin formerly called controls, which keeps requirements on files as \
+            records in the board. Use it when you start work in a board or a mounted repository, \
+            and before you edit a governed file.",
         "metadata": {"area": "governance"},
         "types": TYPES,
         "capabilities": [{

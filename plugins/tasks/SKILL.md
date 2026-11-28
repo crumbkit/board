@@ -1,6 +1,6 @@
 ---
 name: tasks
-description: 'Finds the open task that covers a bug or feature, claims it and marks it done. Use it before you fix a bug or build a feature, to add a task, or to sweep or review the person''s tasks or to-do list.'
+description: 'Checks for an open task that covers a bug or feature, then claims and closes it. Use it before that work, to add a task, or when the person asks to sweep or go through their tasks or to-do list.'
 ---
 
 # tasks
