@@ -18613,6 +18613,7 @@
     "board::ref::dangling",
     "board::ref::malformed",
     "board::ref::through_mount",
+    "board::ref::unreadable",
     "board::ref::wrong_type",
     "board::refs::target_changed",
     "board::repo::duplicate_remote",

@@ -135,16 +135,22 @@ pub(crate) struct Tally {
 impl Tally {
     /// Counts the reference at `pointer` when it fails, and keeps the first
     /// failure as a predicate that names the pointer, as a schema failure's
-    /// does.
-    pub(crate) fn add(&mut self, pointer: &str, failure: Option<&(Code, String)>) {
-        let Some((code, reason)) = failure else {
+    /// does. A failure Board is sure of replaces a kept
+    /// `board::ref::unreadable`, which only says a target could not be read.
+    pub(crate) fn add(&mut self, pointer: &str, failure: Option<&Failed>) {
+        let Some(Failed { code, reason, at }) = failure else {
             return;
         };
         self.failures += 1;
+        let surer = *code != Code::RefUnreadable;
+        if (self.first.as_ref()).is_some_and(|(kept, _)| *kept == Code::RefUnreadable && surer) {
+            self.first = None;
+        }
         self.first.get_or_insert_with(|| {
             let detail = Detail {
                 pointer: Some(pointer.to_owned()),
                 reason: format!("holds a reference at {pointer:?}: {reason}"),
+                at: at.clone(),
                 ..Detail::default()
             };
             (*code, detail)
@@ -158,8 +164,62 @@ impl Tally {
     }
 }
 
-/// Where a reference led, and its code and reason when it fails.
-pub(crate) type Followed = (Option<Location>, Option<(Code, String)>);
+/// The code of a reference that `error` stopped: `board::ref::dangling`
+/// when Board read where the target would be and found nothing there, and
+/// `board::ref::unreadable` when a mounted repository or commit could not
+/// be read, so Board does not know whether the target exists. Any other
+/// error is a fault Board read, and dangles.
+fn unfollowed(error: &ResolveError) -> Code {
+    match error {
+        ResolveError::Unreadable { .. }
+        | ResolveError::RepoMissing { .. }
+        | ResolveError::CommitMissing { .. }
+        | ResolveError::Git(_) => Code::RefUnreadable,
+        ResolveError::NotFound { .. }
+        | ResolveError::Dangling { .. }
+        | ResolveError::Shadowed { .. }
+        | ResolveError::Submodule { .. }
+        | ResolveError::InvalidPointer { .. }
+        | ResolveError::Cycle { .. }
+        | ResolveError::TooManyHops { .. }
+        | ResolveError::Symlink { .. } => Code::RefDangling,
+    }
+}
+
+/// Why a reference fails: its code, the reason, and, for a reference Board
+/// could not read, the path it could not read, such as a mount whose
+/// commit is missing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Failed {
+    pub(crate) code: Code,
+    pub(crate) reason: String,
+    pub(crate) at: Option<LogicalPath>,
+}
+
+impl Failed {
+    pub(crate) fn new(code: Code, reason: String) -> Self {
+        Self {
+            code,
+            reason,
+            at: None,
+        }
+    }
+
+    /// The failure of a reference that `error` stopped.
+    pub(crate) fn unfollowed(error: &ResolveError) -> Self {
+        let code = unfollowed(error);
+        Self {
+            code,
+            reason: error.to_string(),
+            at: (code == Code::RefUnreadable)
+                .then(|| error.fields().path)
+                .flatten(),
+        }
+    }
+}
+
+/// Where a reference led, and why it fails when it does.
+pub(crate) type Followed = (Option<Location>, Option<Failed>);
 
 /// Follows a reference to `target`, and says why it fails, if it does: it
 /// leads nowhere; it is `local` and leads through a mount; or, when it
@@ -172,7 +232,7 @@ pub(crate) fn follow<E>(
     type_of: impl FnOnce(&Location) -> Result<Option<RecordType>, E>,
 ) -> Result<Followed, E> {
     let location = match resolved {
-        Err(error) => return Ok((None, Some((Code::RefDangling, error.to_string())))),
+        Err(error) => return Ok((None, Some(Failed::unfollowed(&error)))),
         Ok(location) => location,
     };
     if local && let Some(mount) = location.mount() {
@@ -180,13 +240,16 @@ pub(crate) fn follow<E>(
             "{target} is in the board mounted at {mount}, and this field names only files in \
              the record's own board"
         );
-        return Ok((Some(location), Some((Code::RefThroughMount, reason))));
+        return Ok((
+            Some(location),
+            Some(Failed::new(Code::RefThroughMount, reason)),
+        ));
     }
     let failure = match accepts {
         Some(accepts) if !type_of(&location)?.is_some_and(|found| accepts.contains(&found)) => {
             let types: Vec<&str> = accepts.iter().map(RecordType::as_str).collect();
             let reason = format!("{target} is not a record of type {}", types.join(" or "));
-            Some((Code::RefWrongType, reason))
+            Some(Failed::new(Code::RefWrongType, reason))
         }
         _ => None,
     };

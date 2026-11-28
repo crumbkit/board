@@ -29,7 +29,12 @@ such as a pull request body, instead of files.
   sentence, cut to 25 words.
 - `applies_to` holds references to entries. Board checks them, so renaming or
   deleting a referenced file makes the rule `board::ref::dangling` in
-  `board check`.
+  `board check`. When Board cannot read a referenced file through a mount,
+  because the mounted repository or its pinned commit cannot be read, the
+  rule is `board::ref::unreadable` instead. Board does not know whether the
+  file exists, so the rule is still owed and must not be deleted; run the
+  check again, and repair the mount with `board mount update` if it still
+  fails.
 - `paths` holds SQLite `GLOB` patterns, matched against each entry's path
   from the board's root, such as `docs/*.md`. In a `GLOB` pattern `*` also
   matches `/`. Patterns reach files in mounted boards, by their path through
@@ -226,7 +231,10 @@ of the rename deletes them.
   `rules::capture::invalid` when a version checker's `capture` does not
   compile or has no group, and with
   `rules::rule::degraded` when Board marks any rule degraded, under
-  any path. Each error names
+  any path. A rule degraded only by `board::ref::unreadable` is the
+  exception: it is checked as a live rule, `warnings` names it under any
+  path with code `board::ref::unreadable` and each reference it could not
+  read, and `passed` is false. Each error names
   every rule it applies to. A file counts once, however many references,
   patterns, links or mounts reach it, and a link's own file counts nothing.
   The call reads each file once, and resolves every rule's `applies_to`

@@ -176,6 +176,10 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
         ),
         Code::PathNotFound => not_found(fields)?,
         Code::RefDangling => dangling(fields)?,
+        Code::RefUnreadable => format!(
+            "the record is not known to be broken; Board could not read {}, which it references; run `board check {0}`, whose hint says how to make it readable, then check the record again; do not delete the record",
+            path?
+        ),
         Code::SymlinkOutside | Code::SymlinkLoop | Code::SymlinkDangling => symlink(code, fields)?,
         Code::MountCommitMissing
         | Code::PutThroughMount
@@ -431,6 +435,9 @@ fn generic(code: Code) -> &'static str {
         }
         Code::RefDangling => {
             "create what the reference names, or change the reference; `board refs <path>` lists them"
+        }
+        Code::RefUnreadable => {
+            "the record is not known to be broken; run `board check <path>` again, and if it still fails, run `board check` on the mount the message names, whose hint says how to repair it, such as `board mount update <path>`; do not delete the record"
         }
         Code::RefThroughMount => {
             "this field names only files in the record's own board; a crossing between boards is an exchange message (docs/guide/exchange.md), so name your own copy of the request or reply, or remove the reference"

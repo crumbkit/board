@@ -37,6 +37,12 @@ To run a command in a board other than the one you are in, add `-C <path>`.
    rule is degraded or a version rule's capture is invalid, and the error
    names each rule.
 
+   A rule that names a file Board could not read through a mount is
+   listed in `warnings` with code `board::ref::unreadable`, and `passed`
+   is false. That rule is still owed: never delete it. Run the check
+   again, and if the warning stays, run `board check` on the mount it
+   names and repair the mount as its hint says.
+
    A mount is read at the commit its pointer pins, which follows the
    repository's main branch. On a branch, commit your edits and run the
    check from your checkout with `--checkout`, so it reads your HEAD:

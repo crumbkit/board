@@ -305,6 +305,13 @@ board check /ref/through
   fails with board::ref::through_mount
   hint
 
+board check /ref/unreadable
+  fails with board::ref::unreadable
+  run board check /mount/commit
+    fails with board::mount::commit_missing
+    run board mount update /mount/commit
+      exits 0
+
 board check /ref/wrong
   fails with board::ref::wrong_type
   hint

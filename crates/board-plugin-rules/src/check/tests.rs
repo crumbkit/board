@@ -1154,3 +1154,43 @@ fn check_at_the_root_of_a_board_with_thousands_of_files_and_patterns_answers_wit
         .collect();
     assert_eq!(used, expected);
 }
+
+#[test]
+fn a_rule_degraded_only_by_an_unreadable_reference_stays_live_and_fails_passed_not_the_call() {
+    let library = Scenario::new();
+    library.commit(&[("x.md", "one")]);
+    let unpinned = format!(
+        r#"{{"$type": "board/mount/v1", "repo": "{}", "follow": "main", "commit": "{}"}}"#,
+        library.path(),
+        "09".repeat(20)
+    );
+    let rule = |target: &str| {
+        control(&json!({"paths": ["docs/*"], "applies_to": [target]}))
+            .replace("controls/control/v1", "rules/rule/v1")
+    };
+    let (_scenario, host) = recording(&[
+        ("docs/a.md", "one"),
+        ("vendor.json", &unpinned),
+        ("rules/owed.json", &rule("/vendor/x")),
+    ]);
+    let output = check(&host, &json!({})).unwrap();
+    assert_eq!(output["passed"], false, "{output}");
+    assert_eq!(output["stated"][0]["rule"], "/rules/owed", "{output}");
+    let warnings = output["warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), 1, "{output}");
+    assert_eq!(warnings[0]["code"], "board::ref::unreadable");
+    let detail = warnings[0]["detail"].as_str().unwrap();
+    for named in ["/rules/owed", "/vendor/x", "again", "do not delete"] {
+        assert!(detail.contains(named), "{named}: {detail}");
+    }
+    let (_scenario, host) = recording(&[
+        ("docs/a.md", "one"),
+        ("vendor.json", &unpinned),
+        ("rules/owed.json", &rule("/nowhere")),
+    ]);
+    let refused = check(&host, &json!({})).unwrap_err();
+    assert_eq!(
+        refused.code, "rules::rule::degraded",
+        "a dangling rule still fails"
+    );
+}

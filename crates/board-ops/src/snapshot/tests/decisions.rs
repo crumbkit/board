@@ -515,7 +515,7 @@ fn a_link_through_a_pointer_in_a_schema_file_dangles_warm_as_cold_and_its_twin_i
 }
 
 #[test]
-fn a_source_crossing_a_mount_its_walk_does_not_list_is_never_kept_and_dangles_warm_as_cold_and_its_listed_twin_is_kept()
+fn a_source_crossing_a_mount_its_walk_does_not_list_is_never_kept_and_is_unreadable_warm_as_cold_and_its_listed_twin_is_kept()
  {
     // `M.json` beside `m.json` degrades both with a case collision, so the
     // walk lists no pointer at `m.json`, though resolution follows it.
@@ -540,10 +540,10 @@ fn a_source_crossing_a_mount_its_walk_does_not_list_is_never_kept_and_dangles_wa
             [[serde_json::Value::Null]]
         );
         target.write(".git", Item::Deleted);
-        let dangling = serde_json::json!("board::ref::dangling");
+        let unreadable = serde_json::json!("board::ref::unreadable");
         assert_eq!(
             note_code(&scenario, cache.path()),
-            [[dangling]],
+            [[unreadable]],
             "{colliding}"
         );
     }

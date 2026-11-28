@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use board_model::LogicalPath;
+use board_model::{Code, LogicalPath};
 use board_ops::{Absent, Host, PluginError, RefsError};
 use board_plugin::shape::{self, Prose};
 use schemars::JsonSchema;
@@ -284,12 +284,16 @@ fn path_or_null(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 /// older than a version rule's and a file Board cannot read are reported in
 /// the output, and `passed` is false; none fails the call. A control Board
 /// marks degraded is `rules::rule::degraded` under any path, since
-/// what it applies to is unknown. A file reached by a reference and a
+/// what it applies to is unknown, unless its only fault is
+/// `board::ref::unreadable`: that control is still owed, so it is checked,
+/// named in a warning under any path, and `passed` is false. A file
+/// reached by a reference and a
 /// pattern, or through a link, counts once, and each file is read once,
 /// however many controls reach it.
 pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input { path } = PluginError::read_input("rules", "check", input)?;
-    let broken = index::degraded(host)?;
+    let (unread, broken): (Vec<_>, Vec<_>) = (index::degraded(host)?.into_iter())
+        .partition(|(_, code)| code.as_str() == Some(Code::RefUnreadable.as_str()));
     if !broken.is_empty() {
         return Err(degraded(&broken));
     }
@@ -312,7 +316,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         applying.iter().flat_map(|logical| &files[*logical]),
         own,
     )?;
-    let warnings = (applying.iter())
+    let mut warnings: Vec<Warning> = (applying.iter())
         .filter(|logical| controls[**logical].owed_though_standing())
         .map(|logical| Warning {
             code: "rules::rule::owed_by_standing",
@@ -322,6 +326,9 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
             ),
         })
         .collect();
+    let unread = unreadable_controls(host, &unread)?;
+    let all_read = unread.is_empty();
+    warnings.extend(unread);
     let stated = (applying.into_iter())
         .filter(|logical| !controls[*logical].measured())
         .map(|logical| {
@@ -347,7 +354,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         .collect();
     let checkout = unmeasured(host, &scope, &read, path.as_deref().unwrap_or("/"));
     let output = Output {
-        passed: passed(&measured_controls, &versions, &zeros),
+        passed: all_read && passed(&measured_controls, &versions, &zeros),
         measured: measured_controls,
         versions,
         zeros,
@@ -728,6 +735,43 @@ fn pinned(
         close: control.kind().close(logical),
         owed_by: control.owed(),
     })
+}
+
+/// A warning for each control in `unread`, naming each reference Board
+/// could not read. Board codes a control `board::ref::unreadable` only when
+/// each of its failing references is one, so each that resolved nowhere is.
+fn unreadable_controls(
+    host: &dyn Host,
+    unread: &[(String, Value)],
+) -> Result<Vec<Warning>, PluginError> {
+    if unread.is_empty() {
+        return Ok(Vec::new());
+    }
+    let paths = (unread.iter())
+        .map(|(control, _)| logical(control))
+        .collect::<Result<Vec<LogicalPath>, PluginError>>()?;
+    let refused = |error: &RefsError| PluginError::board_refused("rules", "refs", &error.refusal());
+    let answers = host
+        .refs(&paths, Absent::Refuse, &[])
+        .map_err(|e| refused(&e))?;
+    let mut warnings = Vec::new();
+    for ((control, _), answer) in unread.iter().zip(answers) {
+        let report = answer.map_err(|e| refused(&e))?;
+        let targets: Vec<String> = (report.from.iter())
+            .filter(|outgoing| outgoing.location.is_none())
+            .map(|outgoing| outgoing.target.to_string())
+            .collect();
+        warnings.push(Warning {
+            code: Code::RefUnreadable.as_str(),
+            detail: format!(
+                "the control {control} names {} through a mount Board could not read, so it is \
+                 still owed; do not delete it; run the check again, and if it still fails, run \
+                 `board mount update` for that mount",
+                targets.join(", ")
+            ),
+        });
+    }
+    Ok(warnings)
 }
 
 fn degraded(broken: &[(String, Value)]) -> PluginError {

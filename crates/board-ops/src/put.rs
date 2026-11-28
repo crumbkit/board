@@ -18,7 +18,7 @@ use board_tree::{
 use board_validate::Schema;
 
 use crate::board::{Board, OpenError};
-use crate::check::{Detail, Tally, follow, unresolved};
+use crate::check::{Detail, Failed, Tally, follow, unresolved};
 use crate::effects::{Change, EffectError, Shape};
 use crate::snapshot::read_type;
 use crate::types::TypeError;
@@ -498,10 +498,10 @@ impl Board {
         if item.admitted.pointer {
             return Some(unresolved(error));
         }
-        let dangling = (Code::RefDangling, error.to_string());
+        let failed = Failed::unfollowed(error);
         let mut tally = Tally::default();
         for reference in &item.admitted.references {
-            tally.add(&reference.pointer, Some(&dangling));
+            tally.add(&reference.pointer, Some(&failed));
         }
         tally.first()
     }
