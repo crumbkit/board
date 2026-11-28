@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Three commands that refused a repeat of something already done now
+  succeed and write nothing, so an agent that retries after a timeout, or
+  two sessions acting on one message, no longer need a second call to learn
+  whether the first one took. Each success has an `outcome` field and a
+  `line` field holding one sentence such as
+  `already done: /changes/x is done (merged as 5d8fcd9c)`.
+  - `board plans answer` on a question already answered with exactly the
+    same option and words returns the stored answer with
+    `outcome: already_answered`. A different option or different words are
+    still refused with `plans::answer::already_answered`.
+  - `board tasks done` on a task already done returns the task as stored
+    with `outcome: already_done`. `done` on a dropped task, and `drop` on a
+    done task, are still refused with `tasks::task::finished`.
+  - `board changes advance` on a change already done returns
+    `outcome: already_done`, `from` and `to` both `done`, and the
+    `merge_commit_url` the change records. `advance` on a dropped change,
+    and `reopen`, `plan`, `lifecycle`, `reflow` and `run` on any done or
+    dropped change, are still refused with `changes::phase::final`.
+
 - A reference that Board cannot follow because a mounted repository or its
   pinned commit could not be read is now `board::ref::unreadable`, a new
   code, where it was `board::ref::dangling`. Board does not know whether
