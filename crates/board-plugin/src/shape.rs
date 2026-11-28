@@ -13,10 +13,10 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value, json};
 
-/// Codes that depend on the tree rather than the record. A record holding
-/// one is still a record to read.
-pub const TREE_CODES: [&str; 3] = [
+/// Codes that depend on the tree, not the record: a record holding one is still read.
+pub const TREE_CODES: [&str; 4] = [
     "board::ref::dangling",
+    "board::ref::unreadable",
     "board::ref::wrong_type",
     "board::ref::through_mount",
 ];

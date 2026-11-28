@@ -40,8 +40,8 @@ record was checked against). A pointer's `type` is `board/mount/v1` or
 `board/repo/v1`. The `records` view is its rows of kind `record`,
 with `source`, `path`, `logical`, `blob`, `type`, `status`, `code` and `body`;
 `body` is NULL when the record does not parse. A `code` of `board::ref::dangling`,
-`board::ref::wrong_type` or `board::ref::through_mount` marks a broken reference in a record its schema
-admits; only `dangling` marks a Markdown file that is not a record. Tables, views and columns are an
+`board::ref::unreadable`, `board::ref::wrong_type` or `board::ref::through_mount` marks a broken reference
+([records/references.md](records/references.md)) in a record its schema admits; only the first two mark other Markdown. Tables, views and columns are an
 interface for agents' SQL; changing one changes the index format. A
 commit mounted in several places appears once, with `logical` through the
 shortest display path, then the first lexically.

@@ -37,16 +37,25 @@ pub(crate) fn string_pairs<C: FromIterator<(String, String)>>(
         .collect())
 }
 
-/// Every valid control in the board's own tree. That includes one Board
-/// marks degraded only because a reference dangles, reaches the wrong
-/// type or reaches through a mount, which Board checks only of a valid
-/// record.
+/// Whether Board reads a record as valid, as an SQL condition: it marks
+/// it ok, or degraded only because a reference dangles, could not be read
+/// through a mount, reaches the wrong type or reaches through a mount,
+/// which Board checks only of a valid record. A macro, so `concat!` builds
+/// queries with it.
+macro_rules! readable {
+    () => {
+        "(status = 'ok' OR code IN ('board::ref::dangling', 'board::ref::unreadable', \
+         'board::ref::wrong_type', 'board::ref::through_mount'))"
+    };
+}
+pub(crate) use readable;
+
+/// Every valid control in the board's own tree, as [`readable`] reads it.
 const CONTROLS: &str = concat!(
     "SELECT logical, body FROM records WHERE type IN ",
     rule_types!(),
-    " AND source = 'worktree' \
-     AND (status = 'ok' OR code IN ('board::ref::dangling', 'board::ref::wrong_type', \
-     'board::ref::through_mount'))"
+    " AND source = 'worktree' AND ",
+    readable!()
 );
 
 /// Each control in the board's own tree that Board marks degraded, by its
@@ -72,6 +81,7 @@ pub(crate) struct Control {
     kind: Option<Open<Kind>>,
     show: Option<Open<ShowAt>>,
     owed_by: Option<String>,
+    pub(crate) judged_by: Option<String>,
 }
 
 impl Control {
@@ -96,6 +106,11 @@ impl Control {
         (self.kind() == Kind::Obligation)
             .then(|| self.owed_by.clone())
             .flatten()
+    }
+
+    /// Whether the control names what left it owed, standing or not.
+    pub(crate) fn names_owed_by(&self) -> bool {
+        self.owed_by.is_some()
     }
 
     /// Whether the control is standing and yet names what left it owed.

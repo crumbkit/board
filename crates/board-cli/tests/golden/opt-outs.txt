@@ -112,9 +112,9 @@ help-budget/root: board
   Cost: Each read of the page can cost 1700 bytes more than the default, about 425 tokens.
 
 help-budget/command: board get
-  Budget: 1500 bytes, where the default is 1200 bytes.
-  Reason: get has two output formats, --fetch and --at, and a reader needs to know on one page that without --fetch get prints an attachment record and never reaches the store, and that --at reads every path in one commit.
-  Cost: Each read of the page can cost 300 bytes more than the default, about 75 tokens.
+  Budget: 1700 bytes, where the default is 1200 bytes.
+  Reason: get has two output formats, --fetch and --at, and a reader needs to know on one page that without --fetch get prints an attachment record and never reaches the store, that --at reads every path in one commit, and that beside an open question a line on stderr names its answer while the stored status stays open.
+  Cost: Each read of the page can cost 500 bytes more than the default, about 125 tokens.
 
 help-budget/command: board put
   Budget: 1710 bytes, where the default is 1200 bytes.

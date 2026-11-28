@@ -116,7 +116,9 @@ fn decided(scenario: &Scenario, index: Index) -> CheckReport {
 fn viewed(view: &View) -> Vec<Checked> {
     let sql = "SELECT path, logical, kind, code, change, status, source FROM entries \
                ORDER BY source, path";
-    let rows = view.query(sql, 10_000, None).unwrap();
+    let rows = view
+        .query(sql, 10_000, None, crate::query::TYPED_QUERY_TIME)
+        .unwrap();
     let text = |value: &Value| value.as_str().map(str::to_owned);
     rows.rows
         .iter()
@@ -187,7 +189,12 @@ fn the_blobs_view_shows_what_the_tree_reaches_while_the_cache_keeps_the_rest() {
     let cold = Index::open(None, board.repository().path()).unwrap();
     let warm = filled(&board, warm());
     let cold = filled(&board, cold);
-    let count = |view: &View, sql: &str| view.query(sql, 1, None).unwrap().rows[0][0].clone();
+    let count = |view: &View, sql: &str| {
+        view.query(sql, 1, None, crate::query::TYPED_QUERY_TIME)
+            .unwrap()
+            .rows[0][0]
+            .clone()
+    };
     let seen = "SELECT count(*) FROM blobs";
     assert_eq!(count(&warm.view, seen), count(&cold.view, seen));
     let cached = "SELECT count(*) FROM main.blobs";
@@ -259,8 +266,12 @@ fn agrees(scenario: &Scenario, warm: &dyn Fn() -> Index) -> Result<CheckReport, 
     let warm = warm.0;
     for sql in EVERY_TABLE {
         prop_assert_eq!(
-            warm_view.query(sql, 10_000, None).unwrap(),
-            cold_view.query(sql, 10_000, None).unwrap(),
+            warm_view
+                .query(sql, 10_000, None, crate::query::TYPED_QUERY_TIME)
+                .unwrap(),
+            cold_view
+                .query(sql, 10_000, None, crate::query::TYPED_QUERY_TIME)
+                .unwrap(),
             "{}",
             sql
         );
@@ -386,7 +397,10 @@ fn built_on(scenario: &Scenario, threads: usize) -> (CheckReport, Vec<Referenced
     let view = board.view(snapshot.decided).unwrap();
     let tables = EVERY_TABLE
         .iter()
-        .map(|sql| view.query(sql, 10_000, None).unwrap())
+        .map(|sql| {
+            view.query(sql, 10_000, None, crate::query::TYPED_QUERY_TIME)
+                .unwrap()
+        })
         .collect();
     (snapshot.report, snapshot.references, tables)
 }
@@ -458,7 +472,9 @@ fn large_task(letter: char, bytes: usize) -> String {
 fn prunes(view: &View) -> i64 {
     let sql =
         "SELECT CAST(coalesce(max(value), 0) AS INTEGER) FROM main.state WHERE key = 'prunes'";
-    view.query(sql, 1, None).unwrap().rows[0][0]
+    view.query(sql, 1, None, crate::query::TYPED_QUERY_TIME)
+        .unwrap()
+        .rows[0][0]
         .as_i64()
         .unwrap()
 }
@@ -488,7 +504,12 @@ fn replaced_by(replacement: &str) -> (usize, i64, i64) {
     let cold = filled(&open(&scenario), cold);
     let blobs = |view: &View| {
         let rows = view
-            .query("SELECT count(*) FROM main.blobs", 1, None)
+            .query(
+                "SELECT count(*) FROM main.blobs",
+                1,
+                None,
+                crate::query::TYPED_QUERY_TIME,
+            )
             .unwrap();
         rows.rows[0][0].as_i64().unwrap()
     };

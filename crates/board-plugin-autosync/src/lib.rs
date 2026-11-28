@@ -200,11 +200,9 @@ fn manifest() -> Value {
         "name": PLUGIN,
         "version": "0.1.0",
         // SKILL.md's description, the callout an agent sees first.
-        "description": "Keep each board the owner listed in step with its remote on an interval, \
+        "description": "Keeps each board the owner listed in step with its remote on an interval, \
             pushing only commits a gitleaks scan passed. Use it to see why a board stopped \
-            syncing, with `board --personal autosync status`. Only the owner adds a board, with \
-            `board --personal autosync add`, which asks for Touch ID. SKILL.md and README.md in \
-            the plugin's directory say more.",
+            syncing.",
         "metadata": {"area": "delivery"},
         "types": [BoardRecord::TYPE],
         "capabilities": capabilities,

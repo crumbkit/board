@@ -12,10 +12,6 @@ use crate::open::{IndexError, hex};
 use crate::schema::PRUNES;
 use crate::store::View;
 
-/// How long one query may run before it is stopped. It bounds how long an
-/// agent waits for an answer.
-pub(crate) const QUERY_TIME: Duration = Duration::from_secs(1);
-
 /// How many virtual machine steps run between checks of the clock.
 const STEPS_PER_CHECK: i32 = 1000;
 
@@ -42,7 +38,9 @@ pub struct Budget {
 
 impl View {
     /// Runs one statement that cannot write, returning at most `limit` rows,
-    /// within `budget` when there is one. It refuses with
+    /// within `budget` when there is one. It stops the statement and refuses
+    /// with [`IndexError::Timeout`], naming `time`, once it has run longer
+    /// than `time`. It refuses with
     /// [`IndexError::TooBig`] when the first row alone, or any one value, is
     /// past the budget, and with [`IndexError::Pruned`] when another process
     /// has pruned since the views were built.
@@ -51,6 +49,7 @@ impl View {
         sql: &str,
         limit: usize,
         budget: Option<Budget>,
+        time: Duration,
     ) -> Result<Rows, IndexError> {
         // Setting a hook needs the connection alone, so hooks are set here,
         // while no statement or transaction borrows it.
@@ -58,13 +57,10 @@ impl View {
         let connection = &mut index.connection;
         connection.pragma_update(None, "query_only", true)?;
         let started = Instant::now();
-        connection.progress_handler(
-            STEPS_PER_CHECK,
-            Some(move || started.elapsed() > QUERY_TIME),
-        )?;
+        connection.progress_handler(STEPS_PER_CHECK, Some(move || started.elapsed() > time))?;
         let before = connection.limit(Limit::SQLITE_LIMIT_LENGTH)?;
-        let result = match compile(connection, sql) {
-            Ok(()) => self.snapshot(connection, sql, limit, budget),
+        let result = match compile(connection, sql, time) {
+            Ok(()) => self.snapshot(connection, sql, limit, budget, time),
             Err(error) => Err(self.pruned_or(connection, error)),
         };
         connection.set_limit(Limit::SQLITE_LIMIT_LENGTH, before)?;
@@ -93,13 +89,14 @@ impl View {
         sql: &str,
         limit: usize,
         budget: Option<Budget>,
+        time: Duration,
     ) -> Result<Rows, IndexError> {
         let _snapshot = connection.unchecked_transaction()?;
         let prunes: i64 = connection.query_row(PRUNES, [], |row| row.get(0))?;
         if prunes != self.prunes {
             return Err(IndexError::Pruned);
         }
-        Self::read(connection, sql, limit, budget).map_err(blame)
+        Self::read(connection, sql, limit, budget).map_err(|source| blame(source, time))
     }
 
     fn read(
@@ -182,10 +179,10 @@ fn too_big() -> rusqlite::Error {
 /// that runs is compiled: a pragma function such as `pragma_table_info`
 /// prepares its own PRAGMA as it runs, and rusqlite's authorizer panics on an
 /// argument that is not UTF-8, which that PRAGMA can hold.
-fn compile(connection: &mut Connection, sql: &str) -> Result<(), IndexError> {
+fn compile(connection: &mut Connection, sql: &str, time: Duration) -> Result<(), IndexError> {
     connection.authorizer(Some(authorize))?;
     // rusqlite refuses a string holding more than one statement.
-    let compiled = connection.prepare(sql).map(drop).map_err(blame);
+    let compiled = (connection.prepare(sql).map(drop)).map_err(|source| blame(source, time));
     connection.authorizer(None::<fn(AuthContext<'_>) -> Authorization>)?;
     compiled
 }
@@ -204,8 +201,9 @@ fn authorize(context: AuthContext<'_>) -> Authorization {
 }
 
 /// Whose fault a failed statement is: the index's when `SQLite` could not
-/// use its file or memory, the query's otherwise.
-pub(crate) fn blame(source: rusqlite::Error) -> IndexError {
+/// use its file or memory, the query's otherwise. A statement stopped by the
+/// clock ran longer than `time`.
+pub(crate) fn blame(source: rusqlite::Error, time: Duration) -> IndexError {
     match source.sqlite_error_code() {
         Some(
             ErrorCode::DatabaseBusy
@@ -216,7 +214,7 @@ pub(crate) fn blame(source: rusqlite::Error) -> IndexError {
             | ErrorCode::OutOfMemory
             | ErrorCode::CannotOpen,
         ) => IndexError::Sql { source },
-        Some(ErrorCode::OperationInterrupted) => IndexError::Timeout,
+        Some(ErrorCode::OperationInterrupted) => IndexError::Timeout { limit: time },
         Some(ErrorCode::TooBig) => IndexError::TooBig,
         _ => IndexError::Query { source },
     }

@@ -362,14 +362,9 @@ fn manifest() -> Value {
         "name": "github",
         "version": "0.1.0",
         // SKILL.md's description, the callout an agent sees first.
-        "description": "Record a GitHub pull request or issue as a typed record, and push, open or \
-            edit pull requests, comment, open issues, create release tags and publish releases \
-            only after the boundary passes what they send, and merge pull requests once the land \
-            gate of their change passes. Use it to name a pull request or issue in a record, and \
-            in place of git push and gh for sending. Run `board github ref --ref \
-            <owner>/<repo>#<number>`, or `board github push`, `pr-create`, `pr-edit`, `comment`, \
-            `issue-create`, `tag`, `release-create` or `merge` from the checkout. SKILL.md and \
-            README.md in the plugin's directory say more.",
+        "description": "Records GitHub pull requests and issues, and sends pushes, pull requests, \
+            comments, issues, tags, releases and merges once their gates pass. Use it in place of \
+            git push and gh for sending.",
         "metadata": {"area": "delivery"},
         "types": [PullRecord::TYPE, IssueRecord::TYPE],
         "capabilities": capabilities,

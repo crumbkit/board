@@ -124,6 +124,8 @@ const OWED_AND_ASK: [&str; 7] = [
     "ask.project",
     "ask.by",
 ];
+/// The input properties of `next`.
+const NEXT: [&str; 2] = ["next.path", "next.through"];
 /// The input properties of `plan-amend`.
 const PLAN_AMEND: [&str; 3] = [
     "plan-amend.path",
@@ -175,7 +177,6 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
         "start.flow",
         "start.suite",
         "start.over_limit",
-        "next.path",
         "attach.path",
         "attach.ref",
         "attach.ticket",
@@ -253,6 +254,7 @@ fn every_input_property_carries_a_sentence_that_says_what_it_means() {
     ];
     expected.extend(OWED_AND_ASK);
     expected.extend(PLAN_AMEND);
+    expected.extend(NEXT);
     expected.sort_unstable();
     assert_eq!(described, expected);
 }
@@ -408,15 +410,14 @@ fn no_shipped_text_names_the_private_notes_repository() {
 }
 
 #[test]
-fn the_skill_description_covers_starting_resuming_and_listing_work_within_the_skill_limit() {
+fn the_skill_description_covers_starting_resuming_and_listing_work_and_its_body_names_open() {
     let description = skill_description();
     assert!(
         description.contains("start, resume or list work on a repository the board mounts"),
         "{description}"
     );
-    assert!(description.contains("changes open"), "{description}");
-    // Agent Skills cap a skill's description at 1,024 characters.
-    assert!(description.chars().count() <= 1024, "{description}");
+    let skill = include_str!("../../../plugins/changes/SKILL.md");
+    assert!(skill.contains("`board -C <board> changes open`"));
 }
 
 /// An understanding check holding one recheck with `fields` added to a

@@ -1,6 +1,6 @@
 ---
 name: jira
-description: 'Record a Jira issue as a typed jira/issue/v1 record that other records can reference by path. Use it when work names a Jira ticket. Start with `board -C <board> jira ref --key ACME-123 --site acme`, which writes /jira/acme/ACME-123 once with its title. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Records a Jira issue as a typed record that other records can reference by path. Use it when work names a Jira ticket.'
 ---
 
 # jira

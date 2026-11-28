@@ -347,7 +347,7 @@ const TASK_SCHEMA: &str = r#"{
 
 /// Exhibits in the root board that are text: path, text and code.
 #[rustfmt::skip]
-const TEXT: [(&str, &str, Option<Code>); 40] = [
+const TEXT: [(&str, &str, Option<Code>); 41] = [
     ("json/parse.json", "{", Some(Code::JsonParse)),
     ("json/conflict.json", "{\n<<<<<<< HEAD\n}\n", Some(Code::JsonMergeConflict)),
     ("json/duplicate.json", r#"{"a": 1, "a": 2}"#, Some(Code::JsonDuplicateKey)),
@@ -366,6 +366,8 @@ const TEXT: [(&str, &str, Option<Code>); 40] = [
     ("record/broken.json", r#"{"$type": "lr/broken/v1"}"#, Some(Code::SchemaInvalid)),
     ("ref/malformed.json", r#"{"$type": "lr/task/v1", "title": "t", "project": "projects/p"}"#, Some(Code::RefMalformed)),
     ("ref/dangling.json", r#"{"$type": "lr/task/v1", "title": "t", "project": "/projects/q"}"#, Some(Code::RefDangling)),
+    // `/mount/commit` mounts a commit its repository does not hold.
+    ("ref/unreadable.json", r#"{"$type": "lr/task/v1", "title": "t", "project": "/mount/commit/p"}"#, Some(Code::RefUnreadable)),
     ("ref/wrong.json", r#"{"$type": "lr/task/v1", "title": "t", "project": "/ref/dangling"}"#, Some(Code::RefWrongType)),
     ("ref/local.json", r#"{"$type": "lr/local/v1", "see": "/projects/p"}"#, None),
     ("ref/through.json", r#"{"$type": "lr/local/v1", "see": "/mount/m"}"#, Some(Code::RefThroughMount)),

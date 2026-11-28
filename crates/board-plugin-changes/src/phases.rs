@@ -28,10 +28,12 @@ use crate::tasks::{at_merge, close_at_merge, refuse_owed, refuse_unmerged};
 use crate::wip::{Limit, Move, active_days, admit};
 use crate::{PLUGIN, refusal, to_value};
 
+mod ahead;
 mod moves;
 mod observe;
 mod reflow;
 
+pub(crate) use ahead::{Next, NextInput};
 use moves::latest_reason;
 pub(crate) use moves::{ReopenInput, pause, reopen, resume};
 pub(crate) use observe::{
@@ -185,6 +187,66 @@ pub(crate) struct Moved {
     to: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     warning: Option<Limit>,
+}
+
+/// What `advance` did: [`Moved`], or for a change already done, which it
+/// moves nothing, `outcome` `already_done`, `from` and `to` both done,
+/// `merge_commit_url` when the change records its merge, and `line`, which
+/// says so.
+#[derive(Debug, Serialize, JsonSchema)]
+pub(crate) struct Advanced {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    outcome: Option<Outcome>,
+    #[serde(flatten)]
+    moved: Moved,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    merge_commit_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    line: Option<String>,
+}
+
+impl From<Moved> for Advanced {
+    /// A move `advance` made.
+    fn from(moved: Moved) -> Self {
+        Self {
+            outcome: None,
+            moved,
+            merge_commit_url: None,
+            line: None,
+        }
+    }
+}
+
+/// What a call that moved nothing found.
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum Outcome {
+    /// `advance` found the change done already.
+    AlreadyDone,
+}
+
+/// What `advance` says of the change at `path`, which is done already: a
+/// repeat, as after a retry, writes nothing.
+fn already_done(path: String, change: &ChangeRecord) -> Advanced {
+    let merged = change.merge_commit_url.clone();
+    let commit = (merged.as_deref())
+        .and_then(|url| url.rsplit('/').next())
+        .map(|sha| sha.get(..8).unwrap_or(sha));
+    let line = match commit {
+        Some(sha) => format!("already done: {path} is done (merged as {sha})"),
+        None => format!("already done: {path} is done"),
+    };
+    Advanced {
+        outcome: Some(Outcome::AlreadyDone),
+        moved: Moved {
+            path,
+            from: DONE.to_owned(),
+            to: DONE.to_owned(),
+            warning: None,
+        },
+        merge_commit_url: merged,
+        line: Some(line),
+    }
 }
 
 /// What to do in the change's phase: its flow's instruction for it, with
@@ -417,8 +479,8 @@ pub(crate) fn step_of(host: &dyn Host, path: &str) -> Result<(NextOutput, Observ
 }
 
 pub(crate) fn next(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let PathInput { path } = PluginError::read_input(PLUGIN, "next", input)?;
-    Ok(to_value(next_of(host, &path)?))
+    let NextInput { path, through } = PluginError::read_input(PLUGIN, "next", input)?;
+    ahead::next(host, &path, through.as_deref())
 }
 
 /// Adds `reference` to `listed` once.
@@ -568,6 +630,9 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     let AdvanceInput { path, over_limit } = PluginError::read_input(PLUGIN, "advance", input)?;
     let (mut change, blob) = read(host, &path)?;
     let phase = change.phase.clone();
+    if phase == DONE {
+        return Ok(to_value(already_done(path, &change)));
+    }
     if is_final(&phase) {
         return Err(final_phase(
             &path,
@@ -658,12 +723,12 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     }
     let change = touch(host, change);
     write(host, &path, &blob, &change)?;
-    Ok(to_value(Moved {
+    Ok(to_value(Advanced::from(Moved {
         path,
         from: phase,
         to,
         warning: limit,
-    }))
+    })))
 }
 
 /// The command that moves the change at `path` on.

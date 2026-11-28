@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use board_model::LogicalPath;
+use board_model::{Code, LogicalPath};
 use board_ops::{Absent, Host, PluginError, RefsError};
 use board_plugin::shape::{self, Prose};
 use schemars::JsonSchema;
@@ -54,7 +54,7 @@ pub(crate) struct Output {
 /// Something `check` says of a control without failing it.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct Warning {
+pub(crate) struct Warning {
     code: &'static str,
     #[schemars(with = "Prose")]
     detail: String,
@@ -137,6 +137,10 @@ pub(crate) struct Pinned {
     pub(crate) at_least: String,
     pub(crate) files: Vec<String>,
     pub(crate) behind: Vec<FileBehind>,
+    /// Every version the files pin, older or not, which `report` lists and
+    /// `check` leaves out.
+    #[serde(skip)]
+    pub(crate) pins: Vec<FileBehind>,
     pub(crate) unreadable: Vec<Unreadable>,
     pub(crate) kind: Kind,
     pub(crate) show: ShowAt,
@@ -149,8 +153,9 @@ pub(crate) struct Pinned {
     pub(crate) owed_by: Option<String>,
 }
 
-/// A version a file pins that is older than the rule's, and its line.
-#[derive(Serialize, JsonSchema)]
+/// A version a file pins, and its line: in `behind`, one older than the
+/// rule's.
+#[derive(Clone, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct FileBehind {
     pub(crate) file: String,
@@ -279,12 +284,16 @@ fn path_or_null(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 /// older than a version rule's and a file Board cannot read are reported in
 /// the output, and `passed` is false; none fails the call. A control Board
 /// marks degraded is `rules::rule::degraded` under any path, since
-/// what it applies to is unknown. A file reached by a reference and a
+/// what it applies to is unknown, unless its only fault is
+/// `board::ref::unreadable`: that control is still owed, so it is checked,
+/// named in a warning under any path, and `passed` is false. A file
+/// reached by a reference and a
 /// pattern, or through a link, counts once, and each file is read once,
 /// however many controls reach it.
 pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input { path } = PluginError::read_input("rules", "check", input)?;
-    let broken = index::degraded(host)?;
+    let (unread, broken): (Vec<_>, Vec<_>) = (index::degraded(host)?.into_iter())
+        .partition(|(_, code)| code.as_str() == Some(Code::RefUnreadable.as_str()));
     if !broken.is_empty() {
         return Err(degraded(&broken));
     }
@@ -307,7 +316,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         applying.iter().flat_map(|logical| &files[*logical]),
         own,
     )?;
-    let warnings = (applying.iter())
+    let mut warnings: Vec<Warning> = (applying.iter())
         .filter(|logical| controls[**logical].owed_though_standing())
         .map(|logical| Warning {
             code: "rules::rule::owed_by_standing",
@@ -317,6 +326,9 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
             ),
         })
         .collect();
+    let unread = unreadable_controls(host, &unread)?;
+    let all_read = unread.is_empty();
+    warnings.extend(unread);
     let stated = (applying.into_iter())
         .filter(|logical| !controls[*logical].measured())
         .map(|logical| {
@@ -342,7 +354,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         .collect();
     let checkout = unmeasured(host, &scope, &read, path.as_deref().unwrap_or("/"));
     let output = Output {
-        passed: passed(&measured_controls, &versions, &zeros),
+        passed: all_read && passed(&measured_controls, &versions, &zeros),
         measured: measured_controls,
         versions,
         zeros,
@@ -695,22 +707,28 @@ fn pinned(
     unreadable: Vec<Unreadable>,
 ) -> Result<Pinned, PluginError> {
     let expression = version::compile(logical, rule)?;
-    let mut behind = Vec::new();
+    let mut pins = Vec::new();
     for (path, data) in texts {
         let text = String::from_utf8_lossy(data);
-        let found = version::behind(&expression, &rule.at_least, &text);
-        behind.extend(found.into_iter().map(|old| FileBehind {
-            file: path.to_string(),
-            line: old.line,
-            found: old.found,
-        }));
+        pins.extend(
+            (version::every(&expression, &text).into_iter()).map(|pin| FileBehind {
+                file: path.to_string(),
+                line: pin.line,
+                found: pin.found,
+            }),
+        );
     }
+    let behind = (pins.iter())
+        .filter(|pin| version::is_behind(&pin.found, &rule.at_least))
+        .cloned()
+        .collect();
     Ok(Pinned {
         rule: logical.to_owned(),
         requirement: control.requirement.clone(),
         at_least: rule.at_least.clone(),
         files: listed(texts, &unreadable),
         behind,
+        pins,
         unreadable,
         kind: control.kind(),
         show: control.show(),
@@ -738,8 +756,12 @@ fn degraded(broken: &[(String, Value)]) -> PluginError {
 }
 
 mod reach;
+mod unread;
 
 pub(crate) use reach::{Reached, reach};
+#[cfg(test)]
+pub(crate) use unread::unread_detail;
+use unread::unreadable_controls;
 
 #[cfg(test)]
 pub(crate) mod tests;

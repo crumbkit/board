@@ -134,10 +134,13 @@ const CAPABILITIES: [Capability; 25] = [
     Capability {
         name: "next",
         description: "The change's flow and phase, each check of its gate as pass or missing with \
-            who can pass it and the remedy, whom it waits on, and what to do now.",
+            who can pass it and the remedy, whom it waits on, and what to do now. With `through`, \
+            a phase of the flow, `ahead` lists the checks of each later phase up to it, each \
+            judged pass or missing where the plan or the change record already settles it and \
+            later otherwise.",
         run: phases::next,
-        input: input::<phases::PathInput>,
-        output: output::<phases::NextOutput>,
+        input: input::<phases::NextInput>,
+        output: output::<phases::Next>,
         hints: [true, false, true, false],
         env: &[],
         timeout: None,
@@ -161,10 +164,11 @@ const CAPABILITIES: [Capability; 25] = [
             are in build for its mount, unless over_limit gives a reason, which the change \
             records and the output warns about. Into done, a change that records a pull request \
             moves only once GitHub reports it merged, read with gh, and records its merge \
-            commit.",
+            commit. A change already done is left as it is and the call succeeds with outcome \
+            already_done.",
         run: phases::advance,
         input: input::<phases::AdvanceInput>,
-        output: output::<phases::Moved>,
+        output: output::<phases::Advanced>,
         hints: [false, true, false, true],
         env: &ADVANCE_ENV,
         timeout: None,
@@ -563,13 +567,9 @@ fn manifest() -> Value {
         "name": PLUGIN,
         "version": "0.1.0",
         // SKILL.md's description, the callout an agent sees first.
-        "description": "Walk one change to a repository from its plan to its pull request, and \
-            gather every record it produces. Use it to start, resume or list work on a \
-            repository the board mounts. Start a change with `board -C <board> \
-            changes start --mount /repos/<name> --title '<title>'`, then run `board changes \
-            next --path /changes/<name>` for the next step. `board changes open` lists the \
-            changes in progress. SKILL.md and README.md in the plugin's \
-            directory say more.",
+        "description": "Walks one change to a repository from its plan to its pull request and \
+            gathers every record it produces. Use it to start, resume or list work on a \
+            repository the board mounts.",
         "metadata": {"area": "delivery"},
         "types": [
             amend::AmendmentRecord::TYPE,

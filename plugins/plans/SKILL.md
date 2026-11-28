@@ -1,6 +1,6 @@
 ---
 name: plans
-description: 'The plans plugin records the decisions a session makes, the questions only the owner can answer, and the owner''s answers, as records in the board. Use it when you choose between options that a later session or reviewer needs to know about, and when work waits on the owner. Record a decision with `board -C <board> plans decide --project <project> --decision ''<what was chosen>'' --why ''<the reason>'' --session <local_ id>`; `board -C <board> plans open` lists the questions still waiting for an answer. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Records a session''s decisions, each question for the owner, and the owner''s answers. Use it when you choose between options a later session needs to know about, or when work waits on the owner.'
 ---
 
 # plans
@@ -96,7 +96,10 @@ in. `<project>` names what the record concerns, such as the repository
 
    It writes the `plans/answer/v1` at `/projects/<project>/answers/<id>`,
    with the question's id. `--option none` with `--words` records an answer
-   that chooses no option.
+   that chooses no option. The question's stored `status` stays `open`.
+   `board -C <board> get` of the question prints a line on stderr that
+   names the answer, or says no answer is at the question's id and to run
+   `board refs <question>` to find one at another path.
 4. Withdraw the questions whose work ended, whose asking sessions are all archived, or
    whose words a question answered in the same project already asked, with `board -C <board> plans sweep --archived <local_ id>
    --apply true`; leave out `--apply` to see the list first.

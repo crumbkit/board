@@ -4,6 +4,7 @@ mod answer;
 mod ask;
 mod decide;
 mod fill;
+mod get_note;
 mod migrate;
 mod open;
 mod question;
@@ -46,6 +47,10 @@ impl Plugin for Plans {
 
     fn fills(&self) -> &'static [board_ops::Fill] {
         &fill::FILLS
+    }
+
+    fn get_notes(&self) -> &'static [board_ops::GetNote] {
+        &get_note::GET_NOTES
     }
 
     fn call(
@@ -130,13 +135,9 @@ fn manifest() -> Value {
         "$type": "board/plugin-manifest/v1",
         "name": "plans",
         "version": "0.1.0",
-        "description": "The plans plugin records the decisions a session makes, the questions only \
-            the owner can answer, and the owner's answers, as records in the board. Use it when \
-            you choose between options that a later session or reviewer needs to know about, and \
-            when work waits on the owner. Record a decision with \
-            `board -C <board> plans decide --project <project> --decision '<what was chosen>' \
-            --why '<the reason>' --session <local_ id>`; `board -C <board> plans open` lists \
-            the questions still waiting for an answer. SKILL.md and README.md in the plugin's directory say more.",
+        "description": "Records a session's decisions, each question for the owner, and the \
+            owner's answers. Use it when you choose between options a later session needs to know \
+            about, or when work waits on the owner.",
         "metadata": {"area": "planning"},
         "types": record_schemas().map(|(name, _)| name),
         "capabilities": [
@@ -150,7 +151,8 @@ fn manifest() -> Value {
             capability::<answer::Input, answer::Output>(
                 "answer",
                 "Record the owner's answer to an open question. The answer is what marks the \
-                 question answered; the question's content is left unchanged.",
+                 question answered; the question's content is left unchanged. The same option \
+                 and words again succeed with outcome already_answered and write nothing.",
                 Effect::AddsOnce,
             ),
             capability::<withdraw::Input, withdraw::Output>(

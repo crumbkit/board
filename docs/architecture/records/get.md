@@ -26,5 +26,29 @@ paths in `left_out`, to ask for in another run. So a run holds at most
 library's `Board.get` does that. `rules.check` reads every
 file its measured rules reach this way.
 
+## Notes beside a record
+
+A built-in plugin declares, with `Plugin::get_notes`, a `GetNote` for a
+record type: a function that gives the one path to read beside such a
+record, and one that turns the record and what is there into a line or
+nothing. After the files are read, `get` reads every path beside the
+records asked for in one more read, in the working tree or at the same
+commit for `--at`, and prints each line on stderr in text and in `--json`.
+stdout keeps the file's bytes, and `board/get-report/v2` gains no field. A
+read beside a record that fails other than by finding nothing gives a line
+that names its code, and the file and exit code are kept.
+
+The plans plugin declares one for `plans/question/v1`. Beside an open
+question at `/…/questions/<id>` it reads `/…/answers/<id>`, under the same
+mount. An answer there that names the question, by the path the reader
+asked or by its path in the board that holds both, prints
+`<question>: answered by <answer> (<answered>): <choice>, "<words>"`, with
+the first 80 characters of the words and `none` for no choice. Anything
+else prints `<question>: no answer at <answer path>; run board refs
+<question> to find an answer at another path`. Board looks no further,
+because an indexed lookup costs about 250 ms and would put `get` past its
+25 ms budget. A question's stored `status` stays `open` once it is
+answered, so this line is how a reader of `get` learns of the answer.
+
 [history.md](history.md) says how `get --at` reads every path at one commit,
 and how `board log` lists the commits that changed a path.

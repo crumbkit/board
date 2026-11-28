@@ -26,7 +26,7 @@ use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
 use records::{FORMER_SCHEMAS, GroupRecord, RENAMED, RuleRecord, SourceRecord};
-use report::ReportRecord;
+use report::{REPORT_V1, REPORT_V1_SCHEMA, ReportRecord};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Rules;
@@ -53,6 +53,12 @@ impl Plugin for Rules {
             schema(
                 ReportRecord::TYPE,
                 schema_of::<ReportRecord>(settings().for_serialize()),
+            ),
+            // The report Board 0.1.3 printed, kept for readers of old reports.
+            schema(
+                REPORT_V1,
+                serde_json::from_str(REPORT_V1_SCHEMA)
+                    .expect("a committed schema; a test reads it"),
             ),
         ];
         let former = (RENAMED.iter().zip(FORMER_SCHEMAS)).map(|((old, _), text)| {
@@ -115,18 +121,19 @@ const CHECK: &str = "Check the rules under a path, `/` when left out, measuring 
 
 /// The record types the plugin ships: its own, then those before the
 /// rename.
-const TYPES: [&str; 6] = [
+const TYPES: [&str; 7] = [
     RuleRecord::TYPE,
     SourceRecord::TYPE,
     GroupRecord::TYPE,
     ReportRecord::TYPE,
+    REPORT_V1,
     RENAMED[0].0,
     RENAMED[1].0,
 ];
 
 /// What the `report` capability does, as its manifest describes it, with
 /// the commands help shows at its top.
-const REPORT: &str = "Print one rules/report/v1 document of every rule, group and compliance \
+const REPORT: &str = "Print one rules/report/v2 document of every rule, group and compliance \
     suite that reaches a repository: each rule's result, each group's rolled-up state, each \
     suite's newest clean full run and the commits since it, where the repository's own rules \
     differ from the imposed set, every refusal, and the GitHub Actions run that made it, null \
@@ -136,7 +143,7 @@ const REPORT: &str = "Print one rules/report/v1 document of every rule, group an
     board rules report --path /repos/app --repository owner/app   # clone without origin\n\
     board rules report --path /repos/app --imposed /rules/imposed # set not at /rules\n\
     board rules report --path /                                   # repository is its own board\n\
-    board schemas show rules/report/v1";
+    board schemas show rules/report/v2";
 
 fn manifest() -> Value {
     let settings = || SchemaSettings::draft2020_12().for_serialize();
@@ -145,13 +152,9 @@ fn manifest() -> Value {
         "name": "rules",
         "former_names": ["controls"],
         "version": "0.1.0",
-        "description": "The rules plugin, formerly controls, keeps requirements on files as records in \
-            the board that holds the files. Use it when you start work in a board or a repository it \
-            mounts, and before you edit a file a rule may govern. Start with `board -C <board> rules \
-            check --path /<directory>`, which lists the budgets it measures and the written requirements \
-            under that path. `board -C <board> rules for-path --path /<file>` lists the rules on one \
-            file. `board -C <board> rules evaluate` checks text, such as a draft, against the checkers \
-            of the rules it names before the text is written. SKILL.md and README.md in the plugin's directory say more.",
+        "description": "The plugin formerly called controls, which keeps requirements on files as \
+            records in the board. Use it when you start work in a board or a mounted repository, \
+            and before you edit a governed file.",
         "metadata": {"area": "governance"},
         "types": TYPES,
         "capabilities": [{

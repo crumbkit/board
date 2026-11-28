@@ -68,7 +68,8 @@ const CAPABILITIES: [(&str, &str); 11] = [
     ),
     (
         "done",
-        "Mark a task done, or defer a repeating one to its next occurrence. It syncs the task's \
+        "Mark a task done, or defer a repeating one to its next occurrence; a task done already \
+         is left as it is, with outcome already_done. It syncs the task's \
          repo first and pushes after, unless --push false makes it commit in the clone alone, and \
          sets reviewed.",
     ),
@@ -291,15 +292,9 @@ fn manifest() -> Value {
         "name": PLUGIN,
         "version": "0.5.0",
         // SKILL.md's description, the callout an agent sees first.
-        "description": "Before you fix a bug or build a feature, use it to check whether an open \
-            task already covers the work, and claim that task and finish it with tasks.done \
-            instead of adding a new one. \
-            Also use it to sweep the person's tasks one at a time, marking each done, deferring, \
-            dropping or editing it, when the person asks to sweep, review or go through their \
-            tasks or to-do list, and to add a task to their own list. Start with `board -C \
-            <board> tasks available`, run in the repository you work in, which syncs the \
-            notes repos that repository's git remote routes to and lists the tasks to sweep. \
-            SKILL.md and README.md in the plugin's directory say more.",
+        "description": "Checks for an open task that covers a bug or feature, then claims and \
+            closes it. Use it before that work, to add a task, or when the person asks to sweep \
+            or go through their tasks or to-do list.",
         "metadata": {"area": "planning"},
         "types": records::TASK_TYPES,
         "capabilities": capabilities,

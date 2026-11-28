@@ -25,3 +25,9 @@ and it removes a root that no board holds.
 The entry is keyed by root, not by the board's commit, because a busy board
 commits about once a minute. No answer depends on it: every session's own
 check replaces it.
+
+The block and a later hidden row also print each warning `rules.check`
+gives, one line each with its code, such as `board::ref::unreadable` for a
+rule that names a file Board could not read through a mount. An entry does
+not keep the warnings, since they come from a failed read, so a start with a
+remembered entry gives them only when the fresh check answers.

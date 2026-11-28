@@ -1,6 +1,6 @@
 ---
 name: rules
-description: 'The rules plugin, formerly controls, keeps requirements on files as records in the board that holds the files. Use it when you start work in a board or a repository it mounts, and before you edit a file a rule may govern. Start with `board -C <board> rules check --path /<directory>`, which lists the budgets it measures and the written requirements under that path. `board -C <board> rules for-path --path /<file>` lists the rules on one file. `board -C <board> rules evaluate` checks text, such as a draft, against the checkers of the rules it names before the text is written. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'The plugin formerly called controls, which keeps requirements on files as records in the board. Use it when you start work in a board or a mounted repository, and before you edit a governed file.'
 ---
 
 # rules
@@ -36,6 +36,12 @@ To run a command in a board other than the one you are in, add `-C <path>`.
    lists a file in `unreadable` or a zero rule's `state` is not `zero`; the call still exits 0. It exits 1 when a
    rule is degraded or a version rule's capture is invalid, and the error
    names each rule.
+
+   A rule that names a file Board could not read through a mount is
+   listed in `warnings` with code `board::ref::unreadable`, and `passed`
+   is false. That rule is still owed: never delete it. Run the check
+   again, and if the warning stays, run `board check` on the mount it
+   names and repair the mount as its hint says.
 
    A mount is read at the commit its pointer pins, which follows the
    repository's main branch. On a branch, commit your edits and run the
@@ -84,7 +90,7 @@ To run a command in a board other than the one you are in, add `-C <path>`.
 
        board --checkout rules report --path /repos/<name> > rules-report.json
 
-   It prints one `rules/report/v1` document of every rule, group and
+   It prints one `rules/report/v2` document of every rule, group and
    compliance suite that reaches the repository and exits 0 whatever they
    found. Pass `--repository owner/name` when the clone has no origin.
 

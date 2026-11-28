@@ -1,6 +1,6 @@
 ---
 name: changes
-description: 'Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it to start, resume or list work on a repository the board mounts. Start a change with `board -C <board> changes start --mount /repos/<name> --title ''<title>''`, then run `board changes next --path /changes/<name>` for the next step. `board changes open` lists the changes in progress. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Walks one change to a repository from its plan to its pull request and gathers every record it produces. Use it to start, resume or list work on a repository the board mounts.'
 ---
 
 # changes
@@ -22,8 +22,13 @@ blocks is missing.
    discharge that obligation once its work is committed. Treat each `ask_first` pattern as a file to ask
    about before changing.
 2. Run `board -C <board> changes next --path /changes/<name>`
-   whenever you start a phase or lose context. Do what `instruction` says
-   and fix each check whose `status` is `missing`, following its `remedy`.
+   whenever you start a phase or lose context;
+   `board -C <board> changes open` lists the changes in progress when you
+   need one to resume. Do what `instruction` says and fix each check whose `status` is `missing`, following its `remedy`.
+   Once the plan is written, run `board -C <board> changes next --path
+   /changes/<name> --through land` once: its `ahead` lists every later
+   check, and fix now each one whose `status` is `missing`, such as the
+   test sections the land gate reads.
    When `ask` is set, only the owner or a reviewer can pass the checks
    left: put `ask` to them. Stop where the change's `stop` says, or the
    flow's when it has none, unless told otherwise; once `next` returns

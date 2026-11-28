@@ -41,6 +41,9 @@ pub(crate) use inputs::{
 /// The refusal of a write that found the task busy: edited in its clone
 /// and not committed, or changing.
 const BUSY: &str = "tasks::task::busy";
+/// The refusal of a call that changes an open task, given a done or
+/// dropped one.
+const FINISHED: &str = "tasks::task::finished";
 /// How many names a new task tries, `<slug>.md`, then `<slug>-2.md` and on.
 const NAMES: usize = 10;
 
@@ -53,10 +56,14 @@ const NAMES: usize = 10;
 /// it; both are `tasks::repo::not_synced` for the board's own tree, which
 /// is never synced. `conflicts` lists the paths of the `board/conflict/v1`
 /// records, from the sync after the write, that name the task: its merge kept one side's text of it,
-/// which may not be this call's.
+/// which may not be this call's. `outcome` is `already_done` and `line`
+/// says so when `done` found the task done already and wrote nothing; both
+/// are left out when the call wrote.
 #[derive(Debug, Serialize, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub(crate) struct Written {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) outcome: Option<Outcome>,
     pub(crate) repo: String,
     pub(crate) path: String,
     pub(crate) status: String,
@@ -67,6 +74,16 @@ pub(crate) struct Written {
     pub(crate) unsynced: Option<String>,
     pub(crate) unpushed: Option<String>,
     pub(crate) conflicts: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) line: Option<String>,
+}
+
+/// What a write call that wrote nothing found.
+#[derive(Clone, Copy, Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Outcome {
+    /// `done` found the task done already.
+    AlreadyDone,
 }
 
 /// The task as `move` left it: `parent` as given, or null once cleared.
@@ -244,15 +261,36 @@ fn json_values(values: Vec<(&'static str, Option<String>)>) -> Values {
 /// Marks the task done, or defers a repeating one to its next occurrence.
 pub(crate) fn done(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let given: DoneInput = PluginError::read_input(PLUGIN, "done", input)?;
-    stamped(
-        host,
-        &given.path,
-        &|record, day| Ok(json_values(completed(record, day))),
-        Landing {
-            finished: false,
-            push: given.push != Some(false),
-        },
-    )
+    let repo = held(&listed(host, PLUGIN)?, &given.path);
+    let landing = Landing {
+        finished: false,
+        push: given.push != Some(false),
+    };
+    let change = |record: &Map<String, Value>, day| Ok(json_values(completed(record, day)));
+    match stamped_in(host, &repo, &given.path, (&|_| Ok(()), &change), landing) {
+        Err(error)
+            if error.code == FINISHED && error.fields.get("status") == Some(&json!("done")) =>
+        {
+            already_done(host, &repo, &given.path)
+        }
+        done => done,
+    }
+}
+
+/// The task at `logical` in `repo`, which `done` found done already, as it
+/// is stored, with the line that says so. A repeat of `done`, as after a
+/// retry, writes nothing.
+fn already_done(host: &dyn Host, repo: &Repo, logical: &str) -> Result<Value, PluginError> {
+    let path = repo.repo_path(logical).trim_start_matches('/').to_owned();
+    let task = repo.read(host, PLUGIN, &path)?;
+    let record = match task.record {
+        Some(Value::Object(record)) => record,
+        _ => Map::new(),
+    };
+    let mut done = written(repo, &path, &record, (None, None, None), Vec::new());
+    done.outcome = Some(Outcome::AlreadyDone);
+    done.line = Some(format!("already done: {} is done", done.path));
+    Ok(json!(done))
 }
 
 /// Defers the task until a date, writing a horizon as the date it ends on.
@@ -630,7 +668,7 @@ fn checked(
              first"
         );
         return Err(refusal(
-            "tasks::task::finished",
+            FINISHED,
             why,
             [("path", json!(logical)), ("status", status)],
         ));
@@ -741,6 +779,7 @@ fn written(
             })
     };
     Written {
+        outcome: None,
         repo: repo.root.clone(),
         path: repo.logical(path),
         status: text("status").unwrap_or_default(),
@@ -751,6 +790,7 @@ fn written(
         unsynced: synced,
         unpushed,
         conflicts,
+        line: None,
     }
 }
 

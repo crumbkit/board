@@ -7,6 +7,127 @@
   the index already knows holds no pointer. Every command that reads the
   board, such as `search`, `query`, `check` and each plugin call, spends
   less time on its snapshot. Output is unchanged.
+
+- Three commands that refused a repeat of something already done now
+  succeed and write nothing, so an agent that retries after a timeout, or
+  two sessions acting on one message, no longer need a second call to learn
+  whether the first one took. Each success has an `outcome` field and a
+  `line` field holding one sentence such as
+  `already done: /changes/x is done (merged as 5d8fcd9c)`.
+  - `board plans answer` on a question already answered with exactly the
+    same option and words returns the stored answer with
+    `outcome: already_answered`. A different option or different words are
+    still refused with `plans::answer::already_answered`.
+  - `board tasks done` on a task already done returns the task as stored
+    with `outcome: already_done`. `done` on a dropped task, and `drop` on a
+    done task, are still refused with `tasks::task::finished`.
+  - `board changes advance` on a change already done returns
+    `outcome: already_done`, `from` and `to` both `done`, and the
+    `merge_commit_url` the change records. `advance` on a dropped change,
+    and `reopen`, `plan`, `lifecycle`, `reflow` and `run` on any done or
+    dropped change, are still refused with `changes::phase::final`.
+
+- A reference that Board cannot follow because a mounted repository or its
+  pinned commit could not be read is now `board::ref::unreadable`, a new
+  code, where it was `board::ref::dangling`. Board does not know whether
+  such a target exists. `board::ref::dangling` now means Board read where
+  the target would be and found nothing there. `put` and `check` give the
+  same code. The detail's `at` names the path Board could not read, and
+  the hint says the record is not known to be broken, names
+  `board check` on that path, and says not to delete the record. A record
+  with an unreadable reference and a dangling one is coded dangling, with
+  both counted. A script that looks for `board::ref::dangling` to find
+  broken records no longer sees failed reads.
+
+- `rules.check` no longer fails with `rules::rule::degraded` for a rule
+  whose only fault is an unreadable reference. It checks the rule as a
+  live rule, names it in `warnings` with code `board::ref::unreadable` and
+  each reference it could not read, and sets `passed` to false. A rule
+  degraded for any other reason still fails the call. Plugins that read a
+  record degraded only by a reference, such as `tasks` and `boundary`,
+  read one degraded by `board::ref::unreadable` the same way.
+
+- `board changes next` takes `--through <phase>`, a phase of the change's
+  flow such as `land`. Its output then adds `ahead`, which lists each phase
+  after the current one up to that phase, with each check's id, whether it
+  blocks, and whether it applies under the plan's answers. A check that
+  reads only the plan or the change record, such as `test-sections`, is
+  judged now as `pass` or `missing` with its remedy. A check that needs
+  later work, such as a suite run, a review, the head or the pull request,
+  is `later`, with its remedy, and a value not known yet, such as the head,
+  appears there as `<head>`. A check whose `when` reads an answer the plan
+  leaves out is `missing`, as the gate in its phase would report it.
+  A `--through` that names no phase of the flow is refused with
+  `changes::next::bad_through`, which names the flow's phases. Without
+  `--through`, `next` prints what it printed before. The changes skill says
+  to run `changes next --through land` once when the plan is written.
+
+- A query that a Board command runs for itself may take 5 seconds before
+  it is stopped. That covers every query a plugin runs through the host,
+  so a slow query inside a command such as `board changes next` or
+  `board tasks available` finishes where it used to fail the whole
+  command, and the query `board enable` runs to find the records that use
+  a removed type. A statement an agent types with `board query`, and a
+  `board search`, keep their 1-second limit. The `board::query::timeout`
+  refusal names the limit that applied, as in "the query ran longer than
+  5s". Its hint no longer names a fixed time. When the query was one a
+  Board command ran for itself, the hint says there is no SQL to change
+  and to run the command again or report it. The timing log records a
+  plugin's query through the host that finished after more than 1 second
+  as the phase `query.slow`.
+
+- `board get` of an open `plans/question/v1` prints one line on stderr, in
+  text and in `--json`, that names the answer at the question's id under
+  `answers/` with its time, choice and first 80 characters of words. When
+  no answer to the question is there, the line says so and names
+  `board refs <question>` to find one at another path. stdout keeps the
+  file's bytes, `board/get-report/v2` gains no field, and the question's
+  stored status stays `open`. A built-in plugin declares such a line with
+  the new `Plugin::get_notes`.
+
+- The development flow's suite-run remedy names only commands that exist.
+  When the change names no suite, it says to name one with `board changes
+  attach --suite`, or to write a `runs/suite/v1` with `board put
+  /suites/<name>` and then name it with `board changes attach --suite`, or
+  to ask the owner to waive the check. Otherwise it says to record CI's
+  run with `board github ci --change`, or to write the run with `board put
+  --new --var suite=<name>`, where `<name>` is the last segment of the
+  suite's path, and attach it with `board changes attach --ref`. It no
+  longer names `board runs define` or `board runs run`, which the runs
+  plugin does not offer. A test fails when an instruction or remedy in a
+  shipped flow names a `board` command, or a dotted capability such as
+  `changes.attach`, that no built-in plugin offers and Board does not
+  have, or follows a Board word such as `plugin` or `mount` with a
+  subcommand it does not have. A change already on an older
+  stored flow version prints the old remedy until `board changes reflow
+  --path <change>` moves it to the shipped one.
+- `board rules report` prints `rules/report/v2`. Each rule row gains
+  `pins`, every version a version rule found with its file and line, behind
+  or not; `targets`, `file` and `body`, where `body` means a boundary that
+  reaches the repository checks the rule; `judged_by`, the suite a rule's
+  new optional `judged_by` names; and `owed_by`, an obligation's record
+  with a pull request's number and URL. A rule only a boundary reaches is
+  now a `written` row and leaves `drift.not_reached`. Each `refused` entry
+  gains `severity`, `warning` or `refusal`, and the new codes are
+  `rules::report::boundary_unreadable`,
+  `rules::report::judged_by_unreadable` and
+  `rules::report::owed_by_unreadable`. A rule whose `judged_by` or
+  `owed_by` reaches nothing is still measured, with one warning. Board still ships the
+  `rules/report/v1` schema. A board refuses rules calls with
+  `board::plugin::schema_differs` until `board plugin enable rules` writes
+  the new schemas.
+- Each skill that ships with Board has a description of at most 200
+  characters that says what the skill is for and when to use it. Claude
+  Code and Codex list every installed skill's description in each
+  session's context, and 22 of Board's were longer, the longest 644
+  characters. The example commands and the closing "SKILL.md and README.md
+  ... say more" sentence left the descriptions; each command is in its
+  skill's steps, which load when the skill is called. Each plugin's
+  description in `board plugin list --long` is the same shorter text. A
+  test fails when a shipped skill's description passes 200 characters,
+  naming the skill and its length. Run `board skills install` to update
+  the installed copies.
+
 ## 0.1.6 (2026-11-28)
 
 - The plans and effects Claude Code mods run `board` on their minute's tick

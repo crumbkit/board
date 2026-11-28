@@ -1035,6 +1035,7 @@ mod decide;
 mod memo;
 mod order;
 mod put;
+mod query;
 mod run;
 mod sync;
 

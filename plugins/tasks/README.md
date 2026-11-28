@@ -257,7 +257,11 @@ kept.
 `defer --until` takes a date or a horizon, and writes a horizon as the date it
 ends, counted from today. `drop` sets `status: dropped`. `claim`, `done`,
 `defer` and `drop` refuse a task that is not open with
-`tasks::task::finished`; `reviewed` marks any task. `claim` with `--session`,
+`tasks::task::finished`; `reviewed` marks any task. The one exception is
+`done` on a task already done, as when an agent retries after a timeout: it
+succeeds, writes nothing, and returns the task as stored with
+`outcome: already_done` and a `line` that says so. `done` on a dropped task
+is still refused. `claim` with `--session`,
 `--program`, `--person` or `--agent` sets `owner` to the actor they name,
 refusing `tasks::claim::no_owner` when they name nobody. `--owner`, the
 one flag a released Board took, names the owner in a single text, read as
