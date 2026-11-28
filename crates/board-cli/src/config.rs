@@ -148,8 +148,20 @@ impl Context {
         start: &Path,
         at: MountsAt,
     ) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
+        self.open_through(start, at, None)
+    }
+
+    /// [`Self::open`], reading only through the board whose root is
+    /// `through` when one is named (`board --board`).
+    pub(crate) fn open_through(
+        &self,
+        start: &Path,
+        at: MountsAt,
+        through: Option<&Path>,
+    ) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
         let (home, cache) = (self.home.as_deref(), self.cache.as_deref());
-        let (mut board, prefix) = board_ops::open_at(start, home, cache, || self.known(), at)?;
+        let known = || self.known();
+        let (mut board, prefix) = board_ops::open_at(start, home, cache, known, at, through)?;
         board.built_by(crate::timing::DECIDER);
         Ok((board, prefix))
     }

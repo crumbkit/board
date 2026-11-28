@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- `board rules report` prints `rules/report/v2`. Each rule row gains
+  `pins`, every version a version rule found with its file and line, behind
+  or not; `targets`, `file` and `body`, where `body` means a boundary that
+  reaches the repository checks the rule; `judged_by`, the suite a rule's
+  new optional `judged_by` names; and `owed_by`, an obligation's record
+  with a pull request's number and URL. A rule only a boundary reaches is
+  now a `written` row and leaves `drift.not_reached`. Each `refused` entry
+  gains `severity`, `warning` or `refusal`, and the new codes are
+  `rules::report::boundary_unreadable`,
+  `rules::report::judged_by_unreadable` and
+  `rules::report::owed_by_unreadable`. A rule whose `judged_by` or
+  `owed_by` reaches nothing is still measured, with one warning. Board still ships the
+  `rules/report/v1` schema. A board refuses rules calls with
+  `board::plugin::schema_differs` until `board plugin enable rules` writes
+  the new schemas.
 - Each skill that ships with Board has a description of at most 200
   characters that says what the skill is for and when to use it. Claude
   Code and Codex list every installed skill's description in each

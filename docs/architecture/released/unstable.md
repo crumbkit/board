@@ -49,6 +49,19 @@ types. The change that lands increment 4 removes that entry and lists the
 type. `map.check` and the `map::` codes are listed as released, because the
 increments only add capabilities and codes beside them.
 
+After 0.1.5, `rules/rule/v1` gained an optional `judged_by` in place,
+because the release had few users, and released.json's entry for it is
+rewritten for the new shape. The `rules.report` capability prints
+`rules/report/v2` in place of `rules/report/v1`, so its released entry is
+rewritten too. Board still ships the `rules/report/v1` schema, unchanged,
+for readers that hold a report an earlier Board printed, and released.json
+keeps listing it. A board whose `.board/types/` holds the older copies
+refuses rules calls with `board::plugin::schema_differs` until `board
+plugin enable rules` replaces them. A Board older than this change refuses
+a rule that names `judged_by`, because `rules/rule/v1` admits no field it
+does not list, so no rule should name `judged_by` until every machine that
+reads the board runs a Board with this change.
+
 The `--json` report of `board timing check`, `board/timing-check-report/v2`,
 changes in place while the command timing budgets run silently in their first
 week, because what that week shows may change the report's fields. The

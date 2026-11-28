@@ -80,3 +80,14 @@ fn every_version_a_capture_finds_is_counted_older_or_not_and_a_capture_that_is_n
     assert_eq!(super::found(&expression, text), 2);
     assert_eq!(super::found(&expression, "rust:latest\n"), 0);
 }
+
+#[test]
+fn every_pin_is_listed_whether_or_not_it_is_behind() {
+    let expression = compile("/rules/rust", &rule(r"rust:([0-9.]+)")).unwrap();
+    let text = "FROM rust:1.97.1 AS build\nFROM rust:stable\nFROM rust:1.100.0\n";
+    let pins: Vec<(usize, String)> = (every(&expression, text).into_iter())
+        .map(|pin| (pin.line, pin.found))
+        .collect();
+    assert_eq!(pins, [(1, "1.97.1".to_owned()), (3, "1.100.0".to_owned())]);
+    assert_eq!(found(r"rust:([0-9.]+)", text), [(1, "1.97.1".to_owned())]);
+}

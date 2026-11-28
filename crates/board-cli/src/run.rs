@@ -84,9 +84,14 @@ pub(crate) struct Cli {
     personal: bool,
     /// Read the mount holding this directory at its checkout's HEAD commit, not the commit it pins.
     ///
-    /// Board then reads, for this run, the branch committed in the checkout of a repository a known board mounts, a linked worktree included, while the pointer keeps its pin. Uncommitted edits are not read. Refused from the board's own tree, from another clone, for any write, which compares against the pin, and for init, answer, serve, ui and process plugins. Off by default.
+    /// Board then reads, for this run, the branch committed in the checkout of a repository a known board mounts, a linked worktree included, while the pointer keeps its pin. Uncommitted edits are not read. A board's own tree is read through the known board that mounts it. Refused from a board's own tree no known board mounts, from another clone, for any write, which compares against the pin, and for init, answer, serve, ui and process plugins. Off by default.
     #[arg(long, conflicts_with = "personal", hide_short_help = true)]
     checkout: bool,
+    /// Read through the board whose root is this directory, when more than one known board mounts the repository.
+    ///
+    /// Board then reads only that board's mounts and repo records, so two known boards that mount one clone are no longer ambiguous, while the run keeps the directory it started in. The directory must be a board's root, the one that holds .board/board.json; a relative one is read from the directory Board started in. Works with and without --checkout; refused for init and answer.
+    #[arg(long = "board", value_name = "DIR", conflicts_with = "personal", hide_short_help = true, value_hint = clap::ValueHint::DirPath, value_parser = clap::builder::OsStringValueParser::new())]
+    through: Option<OsString>,
     #[command(flatten)]
     view: crumbkit::ViewFlags,
     /// Fail instead of asking. Only `answer approve` asks, for Touch ID.
@@ -97,9 +102,9 @@ pub(crate) struct Cli {
 }
 
 impl Cli {
-    /// Whether `-C` or `--personal` chose a board, which `skills` refuses.
+    /// Whether `-C`, `--personal` or `--board` chose a board, which `skills` refuses.
     fn chooses_board(&self) -> bool {
-        self.personal || !self.directories.is_empty()
+        self.personal || self.through.is_some() || !self.directories.is_empty()
     }
 }
 
@@ -477,7 +482,8 @@ fn run_command(
         return effects::answer(context, printer, answering, no_input, stdin);
     }
     let opening = Instant::now();
-    let opened = context.open(&start, at);
+    let through = (cli.through.as_ref()).map(|root| context.start.join(root));
+    let opened = context.open_through(&start, at, through.as_deref());
     ran.trace.add("open", opening);
     let (mut board, prefix) = match opened {
         Ok(opened) => opened,
