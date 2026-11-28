@@ -48,9 +48,12 @@ impl Worktree {
         }
     }
 
-    /// A board that mounts A at `/repos/a` and enables each of `plugins`.
+    /// A board that mounts A at `/repos/a` and enables each of `plugins`. It
+    /// does not commit, so enabling needs no git identity.
     fn mounting(&self, plugins: &[&str]) -> Scenario {
-        let board = Scenario::board();
+        let board = Scenario::new();
+        let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
+        board.write(".board/board.json", Item::File(config));
         let commit = self.own.commit(&[("x.json", "1")]);
         board.write(
             "repos/a.json",
