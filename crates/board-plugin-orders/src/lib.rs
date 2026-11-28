@@ -101,11 +101,8 @@ fn manifest() -> Value {
         "former_names": ["attention"],
         // SKILL.md's description, the callout an agent sees first.
         "description": "Orders the owner signed with Touch ID, which bind an agent until they \
-            expire. Pinned orders normally arrive in your context when a session starts. Only \
-            when that section is missing, read them with `board --personal \
-            orders pinned`. Use when you need to check one: `board --personal \
-            orders verify --path /orders/<name>`. Use also when you have drafted an order for \
-            the owner to sign. SKILL.md and README.md in the plugin's directory say more.",
+            expire. Use it to check an order, to read the pinned orders when your context lacks \
+            them, or to have the owner sign one.",
         "metadata": {"area": "authority"},
         "types": [ORDER_TYPE],
         "capabilities": [{

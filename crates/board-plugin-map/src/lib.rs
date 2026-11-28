@@ -55,11 +55,9 @@ fn manifest() -> Value {
         "$type": "board/plugin-manifest/v1",
         "name": "map",
         "version": "0.1.0",
-        "description": "Maps of items, regions, typed lines and notes, each one map/layout/v1 \
-            record at /maps/<name>. Use it when you build or change a map, before you publish it. \
-            Run `board map check --path /maps/<name>`, which lists what a reader would see as \
-            broken, such as overlapping labels and lines through labels, with the box it \
-            estimated for each text. SKILL.md and README.md in the plugin's directory say more.",
+        "description": "Maps of items, regions, typed lines and notes, each one record at \
+            /maps/<name>. Use it when you build or change a map, and check the map before you \
+            publish it.",
         "metadata": {"area": "planning"},
         "types": [LayoutRecord::TYPE],
         "capabilities": [{

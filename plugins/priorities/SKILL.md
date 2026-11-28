@@ -1,6 +1,6 @@
 ---
 name: priorities
-description: 'The owner''s priorities, ranked in a short and a long horizon, in one record at /priorities. Use it to say what the owner''s priorities are, and to keep them current. Start with `board priorities list`, which gives each entry''s rank, what it covers and whether the owner must confirm it. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'The owner''s priorities, ranked in a short and a long horizon, in one record at /priorities. Use it to say what the owner''s priorities are and to keep them current.'
 ---
 
 # priorities

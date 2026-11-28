@@ -4,9 +4,9 @@
 
 - `board changes next` and `board changes advance` record the HEAD of the
   caller's checkout as the head of a change that has none, when the
-  checkout is of the change's mount and on a branch other than the one the
-  mount follows, and record the route `unowned` for a change that has
-  none. Each prints what it recorded in `filled`, such as `head filled
+  checkout is of the change's mount, on a branch other than the one the
+  mount follows, and holds a commit that branch lacks, and record the
+  route `unowned` for a change that has none. Each prints what it recorded in `filled`, such as `head filled
   from <checkout> at <sha>`; `changes attach` sets another value. A change
   with no task is not filled, but when exactly one open task has the
   change's title, the `task` check's remedy names the `changes attach
@@ -15,6 +15,22 @@
   from the mount's clone; an abbreviation that names several commits is
   refused with `changes::attach::head_ambiguous` and the matches, and one
   that names none with `changes::attach::head_unknown`.
+- The development flow's suite-run remedy names only commands that exist.
+  When the change names no suite, it says to name one with `board changes
+  attach --suite`, or to write a `runs/suite/v1` with `board put
+  /suites/<name>` and then name it with `board changes attach --suite`, or
+  to ask the owner to waive the check. Otherwise it says to record CI's
+  run with `board github ci --change`, or to write the run with `board put
+  --new --var suite=<name>`, where `<name>` is the last segment of the
+  suite's path, and attach it with `board changes attach --ref`. It no
+  longer names `board runs define` or `board runs run`, which the runs
+  plugin does not offer. A test fails when an instruction or remedy in a
+  shipped flow names a `board` command, or a dotted capability such as
+  `changes.attach`, that no built-in plugin offers and Board does not
+  have, or follows a Board word such as `plugin` or `mount` with a
+  subcommand it does not have. A change already on an older
+  stored flow version prints the old remedy until `board changes reflow
+  --path <change>` moves it to the shipped one.
 - `board rules report` prints `rules/report/v2`. Each rule row gains
   `pins`, every version a version rule found with its file and line, behind
   or not; `targets`, `file` and `body`, where `body` means a boundary that
@@ -30,6 +46,17 @@
   `rules/report/v1` schema. A board refuses rules calls with
   `board::plugin::schema_differs` until `board plugin enable rules` writes
   the new schemas.
+- Each skill that ships with Board has a description of at most 200
+  characters that says what the skill is for and when to use it. Claude
+  Code and Codex list every installed skill's description in each
+  session's context, and 22 of Board's were longer, the longest 644
+  characters. The example commands and the closing "SKILL.md and README.md
+  ... say more" sentence left the descriptions; each command is in its
+  skill's steps, which load when the skill is called. Each plugin's
+  description in `board plugin list --long` is the same shorter text. A
+  test fails when a shipped skill's description passes 200 characters,
+  naming the skill and its length. Run `board skills install` to update
+  the installed copies.
 
 ## 0.1.6 (2026-11-28)
 
