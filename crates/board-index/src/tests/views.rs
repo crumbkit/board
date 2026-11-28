@@ -120,7 +120,7 @@ fn unreached(writer: &Writer, body: &Canonical, valid: &ValidationFact) {
 
 /// Every row `sql` returns, in a fixed order.
 fn sorted(view: &View, sql: &str) -> Vec<Vec<Value>> {
-    let mut rows = view.query(sql, 1000, None).unwrap().rows;
+    let mut rows = view.query(sql, 1000, None, LIMIT).unwrap().rows;
     rows.sort_by_key(|row| format!("{row:?}"));
     rows
 }
@@ -128,7 +128,7 @@ fn sorted(view: &View, sql: &str) -> Vec<Vec<Value>> {
 /// The lines of the plan SQLite chooses for `sql`.
 fn plan(view: &View, sql: &str) -> Vec<String> {
     let explained = format!("EXPLAIN QUERY PLAN {sql}");
-    let rows = view.query(&explained, 1000, None).unwrap().rows;
+    let rows = view.query(&explained, 1000, None, LIMIT).unwrap().rows;
     (rows.into_iter())
         .map(|row| row[3].as_str().unwrap().to_owned())
         .collect()

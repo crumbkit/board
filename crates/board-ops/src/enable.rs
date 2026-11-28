@@ -15,6 +15,7 @@ use crate::Board;
 use crate::board::config_file;
 use crate::check::CheckError;
 use crate::put::{Expect, Failure, PutError, PutReport, Removal, Schemas};
+use crate::query::INNER_QUERY_TIME;
 use crate::snapshot::Need;
 use crate::types::{Held, schema_at};
 
@@ -256,7 +257,7 @@ impl Board {
         );
         let index = self.index(cache).map_err(CheckError::from)?;
         let view = self.view(self.snapshot(index, None, Need::View)?.decided);
-        let rows = (view.and_then(|view| view.query(&sql, orphans.len(), None)))
+        let rows = (view.and_then(|view| view.query(&sql, orphans.len(), None, INNER_QUERY_TIME)))
             .map_err(CheckError::from)?
             .rows;
         let used: HashMap<&str, u64> = (rows.iter())

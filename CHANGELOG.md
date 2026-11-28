@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- A query that a Board command runs for itself may take 5 seconds before
+  it is stopped. That covers every query a plugin runs through the host,
+  so a slow query inside a command such as `board changes next` or
+  `board tasks available` finishes where it used to fail the whole
+  command, and the query `board enable` runs to find the records that use
+  a removed type. A statement an agent types with `board query`, and a
+  `board search`, keep their 1-second limit. The `board::query::timeout`
+  refusal names the limit that applied, as in "the query ran longer than
+  5s". The timing log records an inner query that took longer than 1
+  second as the phase `query.slow`.
+
 - `board get` of an open `plans/question/v1` prints one line on stderr, in
   text and in `--json`, that names the answer at the question's id under
   `answers/` with its time, choice and first 80 characters of words. When

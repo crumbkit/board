@@ -2,6 +2,7 @@
 //! (docs/architecture/index.md).
 
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use board_index::{Budget, Fallback, IndexError, View};
 use board_model::{Code, Fields, Known, Refusal};
@@ -16,6 +17,16 @@ use crate::snapshot::Need;
 pub const DEFAULT_LIMIT: usize = 100;
 /// The most rows `query` returns to a limit, and the largest `--limit`.
 pub const MAX_LIMIT: usize = 10_000;
+
+/// How long a statement an agent types, with `board query`, may run before
+/// it is stopped. It bounds how long an agent waits for an answer.
+pub(crate) const TYPED_QUERY_TIME: Duration = Duration::from_secs(1);
+/// How long a statement a Board command runs for itself, such as a plugin's
+/// query through the host, may run. It matches the time the board-changes
+/// mod waits for a lookup, so an inner query never outlasts what waits on
+/// it. A statement past [`TYPED_QUERY_TIME`] still shows in the trace as
+/// `query.slow`.
+pub(crate) const INNER_QUERY_TIME: Duration = Duration::from_secs(5);
 
 /// How many times a query runs while other processes prune under it.
 const TRIES: usize = 3;
@@ -37,9 +48,10 @@ pub struct QueryReport {
 impl Board {
     /// Refreshes the index kept under `cache` and decides every entry, as an
     /// unscoped check does, then runs `sql`, returning at most `limit` rows,
-    /// within `budget` when there is one. When another process prunes what
-    /// the views show before `sql` runs, it all runs again, three times in
-    /// all.
+    /// within `budget` when there is one, and stopping it past 1 second, the
+    /// limit for a statement an agent types. When another process prunes
+    /// what the views show before `sql` runs, it all runs again, three times
+    /// in all.
     pub fn query(
         &self,
         sql: &str,
@@ -66,7 +78,7 @@ impl Board {
     }
 
     /// Runs `sql` over `view`, returning at most `limit` rows, within `budget`
-    /// when there is one.
+    /// when there is one, and stopping it past [`TYPED_QUERY_TIME`].
     pub(crate) fn run(
         &self,
         view: &View,
@@ -75,10 +87,28 @@ impl Board {
         limit: usize,
         budget: Option<Budget>,
     ) -> Result<QueryReport, QueryError> {
+        self.run_within(view, memory, sql, limit, budget, TYPED_QUERY_TIME)
+    }
+
+    /// Runs `sql` as [`Board::run`] does, but stopping it past `time`. A
+    /// statement given more than [`TYPED_QUERY_TIME`] that runs longer than
+    /// that is also timed as `query.slow`.
+    pub(crate) fn run_within(
+        &self,
+        view: &View,
+        memory: Option<Fallback>,
+        sql: &str,
+        limit: usize,
+        budget: Option<Budget>,
+        time: Duration,
+    ) -> Result<QueryReport, QueryError> {
         let timed = self.timed("query.sql");
-        let rows = view
-            .query(sql, limit, budget)
-            .map_err(|error| unknown(view, sql, error))?;
+        let started = Instant::now();
+        let rows = view.query(sql, limit, budget, time);
+        if time > TYPED_QUERY_TIME && started.elapsed() > TYPED_QUERY_TIME {
+            self.trace.borrow_mut().add("query.slow", started);
+        }
+        let rows = rows.map_err(|error| unknown(view, sql, error))?;
         drop(timed);
         self.trace.borrow_mut().count("rows", rows.rows.len());
         Ok(QueryReport {
@@ -155,15 +185,16 @@ const TABLES: &str = "\
 fn unknown(view: &View, sql: &str, error: IndexError) -> QueryError {
     let message = error.to_string();
     let names = |sql: &str| -> Vec<String> {
-        view.query(sql, MAX_LIMIT, None).map_or_else(
-            |_| Vec::new(),
-            |rows| {
-                rows.rows
-                    .into_iter()
-                    .filter_map(|row| row.first()?.as_str().map(str::to_owned))
-                    .collect()
-            },
-        )
+        view.query(sql, MAX_LIMIT, None, INNER_QUERY_TIME)
+            .map_or_else(
+                |_| Vec::new(),
+                |rows| {
+                    rows.rows
+                        .into_iter()
+                        .filter_map(|row| row.first()?.as_str().map(str::to_owned))
+                        .collect()
+                },
+            )
     };
     let known = if message.contains("no such table: ") {
         Known::Tables(names(TABLES))
