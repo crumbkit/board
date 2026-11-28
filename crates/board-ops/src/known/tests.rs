@@ -945,3 +945,114 @@ fn without_checkout_a_boards_own_tree_chosen_as_itself_opens_as_itself_and_throu
     let mounted = through(start, &xdg, MountsAt::Pins, Some(outer.workdir())).unwrap();
     assert_eq!(mounted, (root(&outer), "/repos/lib".to_owned()));
 }
+
+/// A board that mounts `library` at `/repos/lib` and enables `plans`.
+fn enabling_plans(library: &Scenario) -> Scenario {
+    let board = mounting(library);
+    let config = r#"{"$type": "board/config/v1", "plugins": ["plans"]}"#;
+    board.write(".board/board.json", Item::File(config));
+    board
+}
+
+/// A linked worktree of `repository`, as `git worktree add --detach` lays
+/// it out, holding the board's own `.board/board.json`.
+fn linked_board(repository: &Scenario) -> PathBuf {
+    let head = repository.commit(&[("x.json", "1")]);
+    let linked = format!("{}/linked", repository.path());
+    let git_dir = format!("{}/.git/worktrees/linked", repository.path());
+    repository
+        .write(
+            ".git/worktrees/linked/HEAD",
+            Item::File(&format!("{head}\n")),
+        )
+        .write(".git/worktrees/linked/commondir", Item::File("../..\n"))
+        .write(
+            ".git/worktrees/linked/gitdir",
+            Item::File(&format!("{linked}/.git\n")),
+        )
+        .write("linked/.git", Item::File(&format!("gitdir: {git_dir}\n")))
+        .write(
+            "linked/.board/board.json",
+            Item::File(r#"{"$type": "board/config/v1"}"#),
+        );
+    PathBuf::from(linked).canonicalize().unwrap()
+}
+
+/// The known boards in `xdg` other than the one at `opened` that hold
+/// `start` and enable plans.
+fn plans_enabled_elsewhere(xdg: &Scenario, opened: &Path, start: &Path) -> Vec<PathBuf> {
+    let plans: PluginName = "plans".parse().unwrap();
+    enabling(&known(xdg).unwrap(), opened, start, &plans, None, None)
+}
+
+#[test]
+fn the_known_board_that_mounts_a_linked_worktree_of_a_boards_own_tree_and_enables_the_plugin_is_found()
+ {
+    let own = board();
+    let linked = linked_board(&own);
+    let mounts = enabling_plans(&own);
+    let (opened, _) = open(&linked, None, None, || known(&listing(&[&mounts]))).unwrap();
+    let opened = opened.repository().path().to_path_buf();
+    assert_eq!(opened, linked);
+    let xdg = listing(&[&mounts]);
+    assert_eq!(
+        plans_enabled_elsewhere(&xdg, &opened, &linked),
+        vec![mounts.workdir().to_path_buf()]
+    );
+    // A board that mounts the repository but does not enable the plugin, and
+    // one that enables it but does not mount the repository, are left out.
+    let (disabled, unmounting) = (mounting(&own), board());
+    let config = r#"{"$type": "board/config/v1", "plugins": ["plans"]}"#;
+    unmounting.write(".board/board.json", Item::File(config));
+    let others = listing(&[&disabled, &unmounting]);
+    assert_eq!(
+        plans_enabled_elsewhere(&others, &opened, &linked),
+        Vec::<PathBuf>::new()
+    );
+}
+
+#[test]
+fn the_opened_board_and_boards_that_cannot_be_opened_or_are_no_board_are_left_out() {
+    let own = board();
+    let linked = linked_board(&own);
+    let mounts = enabling_plans(&own);
+    // The opened board itself, though it were listed and enabled the plugin.
+    let config = r#"{"$type": "board/config/v1", "plugins": ["plans"]}"#;
+    own.write("linked/.board/board.json", Item::File(config));
+    let broken = Scenario::new();
+    broken.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "later_field": 1}"#),
+    );
+    let gone = Scenario::new();
+    let nowhere = own.workdir().join("nowhere");
+    let xdg = config_listing(&[
+        linked.clone(),
+        broken.workdir().to_path_buf(),
+        gone.workdir().to_path_buf(),
+        nowhere,
+        mounts.workdir().to_path_buf(),
+    ]);
+    assert_eq!(
+        plans_enabled_elsewhere(&xdg, &linked, &linked),
+        vec![mounts.workdir().to_path_buf()]
+    );
+}
+
+#[test]
+fn outside_a_git_repository_no_known_board_is_found() {
+    let own = board();
+    let mounts = enabling_plans(&own);
+    let outside = tempfile::tempdir().unwrap();
+    let outside = outside.path().canonicalize().unwrap();
+    let xdg = listing(&[&mounts]);
+    assert_eq!(
+        plans_enabled_elsewhere(&xdg, &root(&own), &outside),
+        Vec::<PathBuf>::new()
+    );
+}
+
+/// The known boards file listing `roots`.
+fn config_listing(roots: &[PathBuf]) -> Scenario {
+    config(Some(&json!({"boards": roots}).to_string()))
+}

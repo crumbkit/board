@@ -106,6 +106,12 @@ impl Cli {
     fn chooses_board(&self) -> bool {
         self.personal || self.through.is_some() || !self.directories.is_empty()
     }
+
+    /// `start` when no flag chose the board, so that a call refused as not
+    /// enabled there may name the other known boards that could run it.
+    fn unchosen<'a>(&self, start: &'a std::path::Path) -> Option<&'a std::path::Path> {
+        (!self.chooses_board()).then_some(start)
+    }
 }
 
 /// How many entries a listing shows (STANDARDS.md 23).
@@ -499,18 +505,17 @@ fn run_command(
         Err(PathError::Malformed { path, .. }) => path.clone(),
     });
     let prefix = prefix.as_ref();
+    let from = (clone.as_deref(), cli.unchosen(&start));
     let output = match grafted {
         Some((target, mut flags)) => {
             graft::resolve(found.as_ref(), &mut flags, prefix);
             let input = graft::input(found.as_ref(), &flags, stdin);
-            call(&board, context, printer, &target, Some(flags), input)
+            let calling = (&target, from.1);
+            call(&board, context, printer, calling, Some(flags), input)
         }
         None => match cli.command {
             Command::Decide(deciding) => effects::decide(&board, printer, prefix, &deciding, stdin),
-            command => {
-                let clone = clone.as_deref();
-                self::command(command, &board, context, printer, prefix, clone, stdin)
-            }
+            command => self::command(command, &board, context, printer, prefix, from, stdin),
         },
     };
     ran.trace.extend(board.take_trace());
@@ -564,16 +569,18 @@ fn describe(
 
 /// Runs `command` against `board`, reading each path it is given from
 /// `prefix`, or refuses a path that does not read as a logical path there.
-/// `clone` is the clone the run's `board://` URIs chose, if any.
+/// `from` is the clone the run's `board://` URIs chose, if any, and the
+/// directory the run started in when no flag chose the board.
 fn command(
     command: Command,
     board: &Board,
     context: &Context,
     printer: Printer,
     prefix: Option<&Prefix>,
-    clone: Option<&std::path::Path>,
+    from: (Option<&std::path::Path>, Option<&std::path::Path>),
     stdin: &mut dyn Stdin,
 ) -> Output {
+    let (clone, unchosen) = from;
     let behind = |refusal| uri::behind(refusal, clone);
     let cache = context.cache.as_deref();
     let at = |given: &[Given], name| -> Result<Vec<_>, _> {
@@ -652,7 +659,8 @@ fn command(
                 (None, Some(capability)) => Target::Capability(capability),
                 (None, None) => unreachable!("clap requires a target or a capability"),
             };
-            call(board, context, printer, &target, None, Input::Stdin(stdin))
+            let calling = (&target, unchosen);
+            call(board, context, printer, calling, None, Input::Stdin(stdin))
         }
         Command::Serve { idle } => crate::ui::serve(board, context, printer, idle),
         Command::Ui(command) => crate::ui::ui(command, board, context, printer, prefix),
