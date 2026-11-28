@@ -489,13 +489,6 @@ fn advance_from_land_is_refused_while_the_pull_request_is_open_and_moves_to_done
         format!("https://github.com/o/r/commit/{MERGED}")
     );
     assert_eq!(board.gh_calls(), ["api repos/o/r/pulls/1"; 2]);
-    let refused = board.refusal("advance", &path());
-    assert_eq!(
-        (&refused["code"], &refused["fields"]["phase"]),
-        (&json!("changes::phase::final"), &json!("done"))
-    );
-    let message = refused["message"].as_str().unwrap();
-    assert!(message.contains("`board changes open`"), "{message}");
 }
 
 #[test]
@@ -2135,5 +2128,58 @@ fn next_through_land_marks_a_later_check_missing_when_its_when_reads_an_answer_t
     assert!(
         remedy.starts_with("Write the plan again with `board changes plan --path /changes/t`"),
         "{remedy}"
+    );
+}
+
+/// `advance` on a change already done, as an agent sends it again after a
+/// timeout, succeeds with `already_done` and the merge commit, reads no
+/// pull request and writes nothing; one done with no merge commit says so
+/// without one. The twin is a dropped change, which is refused as final.
+#[test]
+fn advance_on_a_done_change_succeeds_with_already_done_and_on_a_dropped_change_is_refused() {
+    let board = landing(&json!({"pull_request": PULL}));
+    board.answers(
+        1,
+        &json!({"state": "closed", "merged": true, "merge_commit_sha": MERGED}),
+    );
+    assert_eq!(advanced(&board), "done");
+    let stored = board.read("changes/t.json");
+    let again = board.call("advance", &path());
+    assert_eq!(
+        again,
+        json!({
+            "outcome": "already_done",
+            "path": CHANGE,
+            "from": "done",
+            "to": "done",
+            "merge_commit_url": format!("https://github.com/o/r/commit/{MERGED}"),
+            "line": "already done: /changes/t is done (merged as 01234567)",
+        })
+    );
+    assert_eq!(
+        board.read("changes/t.json"),
+        stored,
+        "a repeat writes nothing"
+    );
+    assert_eq!(board.gh_calls(), ["api repos/o/r/pulls/1"]);
+    let board = migrated("done", &json!({}));
+    let again = board.call("advance", &path());
+    assert_eq!(
+        (
+            &again["outcome"],
+            &again["line"],
+            again.get("merge_commit_url")
+        ),
+        (
+            &json!("already_done"),
+            &json!("already done: /changes/t is done"),
+            None
+        )
+    );
+    move_to(&board, "dropped");
+    let refused = board.refusal("advance", &path());
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["phase"]),
+        (&json!("changes::phase::final"), &json!("dropped"))
     );
 }

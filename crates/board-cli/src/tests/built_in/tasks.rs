@@ -450,3 +450,52 @@ fn board_lists_tasks_as_built_in_enabled_and_working_and_enabling_wrote_the_sche
             .exists()
     );
 }
+
+/// `done` on a task already done, as an agent sends it again after a
+/// timeout, succeeds with `already_done` and makes no second commit. The
+/// twin is `done` on a dropped task, which is refused as finished.
+#[test]
+fn done_twice_succeeds_both_times_with_one_commit_and_done_on_a_dropped_task_is_refused() {
+    let tasks = Tasks::new();
+    let clone = tasks.mounted();
+    let remote = tasks.beside.path().join("work.git");
+    let count = || git(&remote, &["rev-list", "--count", "main"]);
+    let before: u32 = count().parse().unwrap();
+    let path = "/repos/work/tasks/report.md";
+    let first = tasks.call("done", &["--path", path]).unwrap();
+    assert_eq!(
+        (&first["status"], first.get("outcome")),
+        (&json!("done"), None),
+        "{first}"
+    );
+    let committed = git(&clone, &["rev-parse", "HEAD"]);
+    let again = tasks.call("done", &["--path", path]).unwrap();
+    assert_eq!(
+        (
+            &again["outcome"],
+            &again["path"],
+            &again["status"],
+            &again["commit"]
+        ),
+        (
+            &json!("already_done"),
+            &json!(path),
+            &json!("done"),
+            &Value::Null
+        ),
+        "{again}"
+    );
+    assert_eq!(again["reviewed"], first["reviewed"]);
+    assert_eq!(
+        again["line"],
+        "already done: /repos/work/tasks/report.md is done"
+    );
+    assert_eq!(git(&clone, &["rev-parse", "HEAD"]), committed);
+    assert_eq!(count().parse::<u32>().unwrap(), before + 1, "one commit");
+    tasks.write("tasks/old.md", &task("Old", "dropped", &json!({}), ""));
+    let refused = tasks.refused("done", &["--path", "/tasks/old.md"]);
+    assert_eq!(
+        (&refused["code"], &refused["fields"]["status"]),
+        (&json!("tasks::task::finished"), &json!("dropped"))
+    );
+}

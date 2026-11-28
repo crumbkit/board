@@ -182,14 +182,11 @@ fn done_defers_a_repeating_task_to_its_next_occurrence_and_it_stays_open() {
 }
 
 #[test]
-fn a_finished_task_is_refused_by_done_defer_and_drop_and_admitted_by_reviewed() {
+fn a_finished_task_is_refused_by_defer_and_drop_and_admitted_by_reviewed() {
     let tasks = Tasks::new();
     tasks.write("tasks/old.md", &task("Old", "done", &json!({}), ""));
-    let cases: [(&str, &[&str]); 3] = [
-        ("done", &[]),
-        ("drop", &[]),
-        ("defer", &["--until", "soon"]),
-    ];
+    // `done` on a done task succeeds as a repeat, which tasks.rs tests.
+    let cases: [(&str, &[&str]); 2] = [("drop", &[]), ("defer", &["--until", "soon"])];
     for (capability, flags) in cases {
         let mut every = vec!["--path", "/tasks/old.md"];
         every.extend(flags);

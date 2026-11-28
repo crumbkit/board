@@ -33,7 +33,12 @@ so it is written at its path. Its schema declares its folder too, so
   and to run `board refs <question>` for an answer at another path
   (docs/architecture/records/get.md, Notes beside a record). A reference is read from the root of the board it is in, so an
   answer in a mounted board names its question by the question's path in
-  that board.
+  that board. `plans.answer` on a question that already has an answer
+  succeeds when the stored answer has exactly the same option and words,
+  as when an agent retries after a timeout: it writes nothing and returns
+  the stored answer with `outcome: already_answered` and a `line` that says
+  so. Any other answer to an answered question is refused with
+  `plans::answer::already_answered`, which names the stored answer.
 - `plans/answer/v1` at `/projects/<project>/answers/<id>`, with its question's
   id. `question` references the question; `choice` names an option's `id`, and
   is left out when the owner's words choose no option; `words` holds the owner's words verbatim; `answered` is when.
