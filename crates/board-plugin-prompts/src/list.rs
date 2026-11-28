@@ -52,9 +52,9 @@ pub(crate) struct ListedPrompt {
 /// At most 100 prompts, by repo then title, and how many there are.
 ///
 /// `degraded` counts the Markdown files under a `prompts/` directory in scope
-/// that `board check` marks degraded for any code but a broken link, as
-/// `TREE_CODES` lists them, such as `board::ref::dangling` or
-/// `board::ref::unreadable`: an invalid prompt, or
+/// that `board check` marks degraded for any code but a broken link
+/// (`board::ref::dangling`, `board::ref::unreadable`, `board::ref::wrong_type`
+/// or `board::ref::through_mount`): an invalid prompt, or
 /// frontmatter that does not parse or names an unknown type. Plain Markdown,
 /// such as an eval's evidence, is not counted. `repos` are the repos read. `origin_unread`
 /// says why the caller's git repository gave no origin, when it did not, so
