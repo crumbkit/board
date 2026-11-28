@@ -840,6 +840,7 @@ mod github;
 mod init;
 mod jira;
 mod map;
+mod not_enabled;
 mod notes;
 mod params;
 mod places;

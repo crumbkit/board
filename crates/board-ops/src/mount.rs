@@ -221,7 +221,7 @@ fn pointing(pointer: &Pointer) -> String {
 
 /// `word` as a shell reads it back: as it is when it holds only characters
 /// a shell leaves alone, else in single quotes, so `~/` stays unexpanded.
-fn quoted(word: &str) -> String {
+pub fn quoted(word: &str) -> String {
     let plain = |c: char| c.is_ascii_alphanumeric() || "/._-+,:@=".contains(c);
     if word.chars().all(plain) {
         word.to_owned()
