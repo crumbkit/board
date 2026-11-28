@@ -61,6 +61,9 @@ pub struct Refreshed {
 #[derive(Default)]
 pub(crate) struct Kept {
     facts: HashMap<(ObjectId, Role), BlobFact>,
+    /// The facts the index held for the working tree's stored rows, loaded
+    /// before the walk, so a blob among them is not looked up again.
+    stored: HashMap<(ObjectId, Role), BlobFact>,
     /// Each record's parsed value.
     values: HashMap<ObjectId, Value>,
     /// Each schema compiled, or `None` when validation could not read it.
@@ -103,6 +106,16 @@ pub(crate) fn plain<'f>(
             board_model::holds_no_pointer(indexed.role, *kind, *code)
         })
         .map(|indexed| indexed.blob)
+        .collect()
+}
+
+/// The blobs whose `stored` facts say they hold no pointer, so a walk need
+/// not read them to learn whether they hide a directory.
+fn plain_stored(stored: &HashMap<(ObjectId, Role), BlobFact>) -> HashSet<ObjectId> {
+    stored
+        .iter()
+        .filter(|((_, role), fact)| board_model::holds_no_pointer(*role, fact.kind, fact.code))
+        .map(|((blob, _), _)| *blob)
         .collect()
 }
 
@@ -202,11 +215,17 @@ impl Board {
     ) -> Result<(Vec<Entry>, Listings), RefreshError> {
         let timed = self.timed("index.refresh.load");
         let mut worktree = writer.worktree()?;
+        kept.stored = worktree.take_facts();
+        let plain = plain_stored(&kept.stored);
         let directories = writer.directories()?;
         drop(timed);
         let timed = self.timed("index.refresh.walk");
         let (entries, listings) = self.repository().walk_working_tree(
-            (&mut |path, stat| worktree.known(path, stat), &directories),
+            (
+                &mut |path, stat| worktree.known(path, stat),
+                &directories,
+                &plain,
+            ),
             &|path, contents| {
                 Role::of(path).map(|role| parse(contents.blob, role, Some(&contents.bytes)))
             },
@@ -341,7 +360,7 @@ impl Kept {
         if self.facts.contains_key(&key) {
             return Ok(());
         }
-        let Some(fact) = writer.blob(parsed.blob, parsed.role)? else {
+        let Some(fact) = self.indexed(writer, key)? else {
             self.store(writer, parsed)?;
             return Ok(());
         };
@@ -350,6 +369,19 @@ impl Kept {
             self.values.insert(parsed.blob, value);
         }
         Ok(())
+    }
+
+    /// The index's fact for `key`, a blob and its role: from the facts
+    /// loaded with the working tree, else looked up.
+    fn indexed(
+        &self,
+        writer: &Writer,
+        (blob, role): (ObjectId, Role),
+    ) -> Result<Option<BlobFact>, IndexError> {
+        match self.stored.get(&(blob, role)) {
+            Some(fact) => Ok(Some(fact.clone())),
+            None => writer.blob(blob, role),
+        }
     }
 
     /// Classifies and judges the `bytes` of `blob` in `role`, or a blob too
@@ -411,7 +443,8 @@ impl Kept {
 
 /// What the index holds about each entry of `source` in `repository`,
 /// parsing each blob it does not hold yet. An entry that changed after the
-/// walk is left out. What the walk `kept` is not read again.
+/// walk is left out. What the walk `kept`, and the facts it loaded with the
+/// working tree, are not read again.
 pub(crate) fn facts(
     writer: &Writer,
     repository: &Repository,
@@ -431,7 +464,7 @@ pub(crate) fn facts(
         };
         let fact = if let Some(fact) = kept.facts.get(&(blob, role)) {
             fact.clone()
-        } else if let Some(fact) = writer.blob(blob, role)? {
+        } else if let Some(fact) = kept.indexed(writer, (blob, role))? {
             fact
         } else {
             // A blob that cannot be read has no content fact to store. Only a

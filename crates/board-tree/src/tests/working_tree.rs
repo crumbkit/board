@@ -280,6 +280,7 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
                     (path == "known.json").then_some(stand_in)
                 },
                 &crate::Directories::new(),
+                &HashSet::new(),
             ),
             &|path, contents| (path.to_owned(), contents),
             &mut |kept_one| {
@@ -330,7 +331,11 @@ fn walked_on(scenario: &Scenario, threads: usize) -> (Vec<Entry>, Vec<(String, C
     let mut kept = Vec::new();
     let (entries, _) = repository
         .walk_working_tree(
-            (&mut |_, _| None, &crate::Directories::new()),
+            (
+                &mut |_, _| None,
+                &crate::Directories::new(),
+                &HashSet::new(),
+            ),
             &|path, contents| (path.to_owned(), contents),
             &mut |kept_one| {
                 kept.push(kept_one);
@@ -401,7 +406,11 @@ fn an_ignored_directory_is_never_listed_however_many_threads_list() {
         repository.set_threads(std::num::NonZeroUsize::new(threads).unwrap());
         let (entries, _) = repository
             .walk_working_tree(
-                (&mut |_, _| None, &crate::Directories::new()),
+                (
+                    &mut |_, _| None,
+                    &crate::Directories::new(),
+                    &HashSet::new(),
+                ),
                 &|_, _| {},
                 &mut |()| Ok::<(), GitError>(()),
             )
@@ -1044,9 +1053,11 @@ fn walked_after(scenario: &Scenario, moved_ns: i64) -> (Vec<String>, usize) {
     let repository = scenario.open();
     let walk = |earlier: &crate::Directories| {
         repository
-            .walk_working_tree((&mut |_, _| None, earlier), &|_, _| {}, &mut |()| {
-                Ok::<(), GitError>(())
-            })
+            .walk_working_tree(
+                (&mut |_, _| None, earlier, &HashSet::new()),
+                &|_, _| {},
+                &mut |()| Ok::<(), GitError>(()),
+            )
             .unwrap()
     };
     let (_, listings) = walk(&crate::Directories::new());

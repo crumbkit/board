@@ -128,7 +128,11 @@ fn restage(board: &Board, cache: &std::path::Path, path: &str, change: impl Fn(&
         let mut worktree = writer.worktree()?;
         let known = &mut |path: &str, stat: &_| worktree.known(path, stat);
         let (mut entries, _) = board.repository().walk_working_tree(
-            (known, &board_tree::Directories::new()),
+            (
+                known,
+                &board_tree::Directories::new(),
+                &std::collections::HashSet::new(),
+            ),
             &|_, _| {},
             &mut |()| Ok::<(), board_tree::GitError>(()),
         )?;

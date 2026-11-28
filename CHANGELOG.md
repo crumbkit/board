@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- A warm board run reads what the index knows about the working tree in
+  one pass, and no longer opens a record beside its directory whose blob
+  the index already knows holds no pointer. Every command that reads the
+  board, such as `search`, `query`, `check` and each plugin call, spends
+  less time on its snapshot. Output is unchanged.
 - The `board-changes` mod's edit guard remembers the last verdict on each
   agent's edits of each repository, counting an edit that needed no advice.
   A later edit by the same agent whose line would say what that verdict

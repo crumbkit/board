@@ -5,7 +5,7 @@ use board_tree::{Entry, Status};
 use proptest::prelude::*;
 
 use super::*;
-use crate::store::trusted;
+use crate::worktree::trusted;
 
 const SECOND: i64 = 1_000_000_000;
 
@@ -279,6 +279,46 @@ fn a_sync_that_only_forgets_a_deleted_file_records_when_the_refresh_began() {
     assert!(synced.wrote);
     assert_eq!(synced.rows, [("a.md".to_owned(), blob(1).to_string())]);
     assert_ne!(synced.refreshed, "0");
+}
+
+/// The load gives each stored row's blob the fact `Writer::blob` gives it
+/// in the role its path has: a Markdown blob with its links in order, and
+/// a record. A blob with no fact, and a path with no role, give none, and a
+/// fact stored for a blob only in another role is not given.
+#[test]
+fn the_working_tree_load_gives_each_stored_row_the_fact_and_links_a_blob_lookup_gives() {
+    let writer = Index::open(None, Path::new(ROOT)).unwrap().write().unwrap();
+    writer
+        .put_blob(blob(1), Role::Markdown, &markdown())
+        .unwrap();
+    writer.put_blob(blob(2), Role::Json, &record()).unwrap();
+    writer.put_blob(blob(5), Role::Schema, &record()).unwrap();
+    let entries = [
+        file("notes/a.md", 1, 0),
+        file("tasks/a.json", 2, 0),
+        file("tasks/again.json", 2, 0),
+        file("tasks/unknown.json", 3, 0),
+        file("README", 4, 0),
+        file("tasks/schema-bytes.json", 5, 0),
+    ];
+    let worktree = writer.worktree().unwrap();
+    writer.sync_worktree(worktree, &entries).unwrap();
+    let blobs_read = writer.blobs_read();
+    let mut worktree = writer.worktree().unwrap();
+    let loaded = worktree.take_facts();
+    assert_eq!(writer.blobs_read(), blobs_read, "the load looks up no blob");
+    let mut expected = std::collections::HashMap::new();
+    for entry in &entries {
+        let (Some(blob), Some(role)) = (entry.blob, Role::of(&entry.path)) else {
+            continue;
+        };
+        if let Some(fact) = writer.blob(blob, role).unwrap() {
+            expected.insert((blob, role), fact);
+        }
+    }
+    assert_eq!(loaded, expected);
+    assert_eq!(loaded.len(), 2, "{loaded:?}");
+    assert_eq!(loaded[&(blob(1), Role::Markdown)].links, markdown().links);
 }
 
 #[test]

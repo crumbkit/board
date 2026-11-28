@@ -1,6 +1,7 @@
 //! Walking every entry of a source without following pointers
 //! (docs/architecture.md, Boards and entries).
 
+use std::collections::HashSet;
 use std::fmt;
 
 use board_model::{Code, LogicalPath, ObjectId, Source, Stat};
@@ -121,10 +122,12 @@ impl Repository {
     /// [`Resolver`](crate::Resolver) of the same snapshot to start from. A
     /// directory that has not changed since `earlier` listed it is read
     /// from there, not listed again; [`Listings::directories`] says how the
-    /// walk listed each, for the next walk.
+    /// walk listed each, for the next walk. A record beside its directory
+    /// whose blob is in `plain`, blobs known to hold no pointer, is not read
+    /// to learn whether it hides the directory.
     pub fn walk_working_tree<T: Send, E: From<GitError>>(
         &self,
-        (known, earlier): (Known<'_>, &Directories),
+        (known, earlier, plain): (Known<'_>, &Directories, &HashSet<ObjectId>),
         prepare: Prepare<'_, T>,
         keep: &mut dyn FnMut(T) -> Result<(), E>,
     ) -> Result<(Vec<Entry>, Listings), E> {
@@ -132,7 +135,8 @@ impl Repository {
         let mut keep = |prepared| keep(prepared).map_err(|error| failed = Some(error)).is_ok();
         let mut tree = (self.working_tree_after(Some(known), earlier)?)
             .keeping(prepare, &mut keep)
-            .on_demand();
+            .on_demand()
+            .knowing(plain);
         let walked = walk_in(&mut tree);
         let listings = tree.listings();
         // A walk that `keep` ended has incomplete entries.

@@ -48,6 +48,18 @@ alter, and the states of each.
   directory is listed.
 - A warm walk of an unchanged board lists no directory.
 
+## The working tree's facts
+
+- Before the walk, one statement reads each stored working-tree row with
+  its blob's fact in the role its path gives it, and one reads those
+  blobs' links.
+- The walk reads a record beside its directory, to learn whether it hides
+  the directory, only when its blob has no fact or its fact says it may
+  hold a pointer. A file whose stat changed is hashed first, so the blob
+  checked is the file's current one.
+- A blob the load did not find is looked up on its own. A warm run of an
+  unchanged board looks up no blob and reads no record.
+
 ## Mount probes
 
 - A mounted repository's stamp holds:

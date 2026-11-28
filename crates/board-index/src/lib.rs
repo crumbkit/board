@@ -17,6 +17,7 @@ mod state;
 mod store;
 mod timing;
 mod values;
+mod worktree;
 
 pub use crate::decisions::KeptRow;
 pub use crate::mark::{Unmarked, take_unmarked};
@@ -34,12 +35,13 @@ pub use crate::state::{
     write_state,
 };
 pub use crate::store::{
-    BlobFact, Decided, RefFact, Resolved, ValidationFact, View, Worktree, Writer, source_name,
+    BlobFact, Decided, RefFact, Resolved, ValidationFact, View, Writer, source_name,
 };
 pub use crate::timing::{
     Summarise, Timings, append_timing, read_timings, stamp_timing, timing_stamped,
 };
 pub use crate::values::{cache, cached};
+pub use crate::worktree::Worktree;
 
 #[cfg(test)]
 mod tests;
