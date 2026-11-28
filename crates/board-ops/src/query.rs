@@ -24,9 +24,15 @@ pub(crate) const TYPED_QUERY_TIME: Duration = Duration::from_secs(1);
 /// How long a statement a Board command runs for itself, such as a plugin's
 /// query through the host, may run. It matches the time the board-changes
 /// mod waits for a lookup, so an inner query never outlasts what waits on
-/// it. A statement past [`TYPED_QUERY_TIME`] still shows in the trace as
-/// `query.slow`.
+/// it. A statement that finishes after more than [`TYPED_QUERY_TIME`] shows
+/// in the trace as `query.slow`.
 pub(crate) const INNER_QUERY_TIME: Duration = Duration::from_secs(5);
+
+/// The hint of a statement a Board command ran for itself that ran past
+/// [`INNER_QUERY_TIME`]. The agent wrote no SQL, so there is none to narrow.
+pub(crate) const INNER_TIMEOUT_HINT: &str = "Board ran this query for the command itself, so \
+    there is no SQL to change; run the command again, and if it fails the same way, report the \
+    command and this message to Board's developers";
 
 /// How many times a query runs while other processes prune under it.
 const TRIES: usize = 3;
@@ -91,8 +97,7 @@ impl Board {
     }
 
     /// Runs `sql` as [`Board::run`] does, but stopping it past `time`. A
-    /// statement given more than [`TYPED_QUERY_TIME`] that runs longer than
-    /// that is also timed as `query.slow`.
+    /// statement that is [`slow`] is also timed as `query.slow`.
     pub(crate) fn run_within(
         &self,
         view: &View,
@@ -105,10 +110,11 @@ impl Board {
         let timed = self.timed("query.sql");
         let started = Instant::now();
         let rows = view.query(sql, limit, budget, time);
-        if time > TYPED_QUERY_TIME && started.elapsed() > TYPED_QUERY_TIME {
+        let timed_out = matches!(rows, Err(IndexError::Timeout { .. }));
+        if slow(time, started.elapsed(), timed_out) {
             self.trace.borrow_mut().add("query.slow", started);
         }
-        let rows = rows.map_err(|error| unknown(view, sql, error))?;
+        let rows = rows.map_err(|error| unknown(view, sql, error, time))?;
         drop(timed);
         self.trace.borrow_mut().count("rows", rows.rows.len());
         Ok(QueryReport {
@@ -119,6 +125,13 @@ impl Board {
             memory,
         })
     }
+}
+
+/// Whether a statement allowed `time` that took `took` finished slowly: it
+/// was allowed more than [`TYPED_QUERY_TIME`], ran longer than that, and was
+/// not stopped at its limit.
+pub(crate) fn slow(time: Duration, took: Duration, timed_out: bool) -> bool {
+    time > TYPED_QUERY_TIME && took > TYPED_QUERY_TIME && !timed_out
 }
 
 /// Runs `once` again while another process prunes what its views show
@@ -169,7 +182,13 @@ impl QueryError {
             },
             ..Fields::default()
         };
-        Refusal::new(self.code(), self, &fields)
+        let refusal = Refusal::new(self.code(), self, &fields);
+        match self {
+            Self::Index {
+                source: IndexError::Timeout { limit },
+            } if *limit > TYPED_QUERY_TIME => refusal.with_hint(INNER_TIMEOUT_HINT),
+            _ => refusal,
+        }
     }
 }
 
@@ -181,20 +200,20 @@ const TABLES: &str = "\
     ORDER BY name";
 
 /// `error`, with the names there are when `SQLite` says the statement names a
-/// table or column that is not there.
-fn unknown(view: &View, sql: &str, error: IndexError) -> QueryError {
+/// table or column that is not there, each lookup stopped past `time`, the
+/// statement's own limit.
+fn unknown(view: &View, sql: &str, error: IndexError, time: Duration) -> QueryError {
     let message = error.to_string();
     let names = |sql: &str| -> Vec<String> {
-        view.query(sql, MAX_LIMIT, None, INNER_QUERY_TIME)
-            .map_or_else(
-                |_| Vec::new(),
-                |rows| {
-                    rows.rows
-                        .into_iter()
-                        .filter_map(|row| row.first()?.as_str().map(str::to_owned))
-                        .collect()
-                },
-            )
+        view.query(sql, MAX_LIMIT, None, time).map_or_else(
+            |_| Vec::new(),
+            |rows| {
+                rows.rows
+                    .into_iter()
+                    .filter_map(|row| row.first()?.as_str().map(str::to_owned))
+                    .collect()
+            },
+        )
     };
     let known = if message.contains("no such table: ") {
         Known::Tables(names(TABLES))

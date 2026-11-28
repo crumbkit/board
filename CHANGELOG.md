@@ -10,8 +10,11 @@
   a removed type. A statement an agent types with `board query`, and a
   `board search`, keep their 1-second limit. The `board::query::timeout`
   refusal names the limit that applied, as in "the query ran longer than
-  5s". The timing log records an inner query that took longer than 1
-  second as the phase `query.slow`.
+  5s". Its hint no longer names a fixed time. When the query was one a
+  Board command ran for itself, the hint says there is no SQL to change
+  and to run the command again or report it. The timing log records a
+  plugin's query through the host that finished after more than 1 second
+  as the phase `query.slow`.
 
 - `board get` of an open `plans/question/v1` prints one line on stderr, in
   text and in `--json`, that names the answer at the question's id under

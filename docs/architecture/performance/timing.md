@@ -68,7 +68,7 @@ changes.
 | `snapshot.commit` | committing the index |
 | `view` | filling the views with what the snapshot decided, for `query` |
 | `query.sql` | running the SQL statement |
-| `query.slow` | running a statement a Board command ran for itself, such as a plugin's query through the host, when it took longer than the 1 second an agent's `board query` may take; such a statement may take 5 seconds |
+| `query.slow` | running a plugin's query through the host that finished after more than the 1 second an agent's `board query` may take; such a query may take 5 seconds, and one stopped at that limit is not counted here |
 | `plugin.call` | running a capability |
 | `plugin.reply` | from starting a plugin process to the first byte of its reply, once for each process that replied |
 | `put.validate` | checking a record before it is written |
