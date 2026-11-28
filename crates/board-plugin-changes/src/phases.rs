@@ -584,6 +584,24 @@ pub(crate) fn final_phase(path: &str, phase: &str, why: String) -> PluginError {
 pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let AdvanceInput { path, over_limit } = PluginError::read_input(PLUGIN, "advance", input)?;
     let filled = crate::fill::missing(host, &path)?;
+    // Each refusal after the fill says what the fill wrote, since that
+    // write stays.
+    advance_filled(host, &path, over_limit.as_deref(), &filled).map_err(|mut error| {
+        if !filled.is_empty() {
+            error.fields.insert("filled".to_owned(), json!(filled));
+        }
+        error
+    })
+}
+
+/// What `advance` does once the fill has run, which `filled` names.
+fn advance_filled(
+    host: &dyn Host,
+    path: &str,
+    over_limit: Option<&str>,
+    filled: &[String],
+) -> Result<Value, PluginError> {
+    let path = path.to_owned();
     let (mut change, blob) = read(host, &path)?;
     let phase = change.phase.clone();
     if is_final(&phase) {
@@ -612,9 +630,10 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     {
         return Err(stop_reached(&path, &phase, stop));
     }
-    let missing: Vec<Check> = (gate(&observed).into_iter())
+    let mut missing: Vec<Check> = (gate(&observed).into_iter())
         .filter(Check::blocking)
         .collect();
+    crate::fill::name_task(host, &observed, &mut missing)?;
     if let Some(first) = missing.first() {
         let said: Vec<String> = (missing.iter())
             .map(|found| {
@@ -638,7 +657,6 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
                 ("phase", json!(phase)),
                 ("missing", json!(names)),
                 ("remedies", json!(remedies)),
-                ("filled", json!(filled)),
             ],
         ));
     }
@@ -670,7 +688,7 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
     if to == BUILD {
         let moving = Move {
             over: over_command("advance", &path),
-            reason: over_limit.as_deref(),
+            reason: over_limit,
             days: active_days(host)?,
         };
         limit = admit(host, &path, &mut change, kind_of(host, &path)?, &moving)?;
@@ -682,7 +700,7 @@ pub(crate) fn advance(host: &dyn Host, input: &Value) -> Result<Value, PluginErr
         from: phase,
         to,
         warning: limit,
-        filled,
+        filled: filled.to_vec(),
     }))
 }
 

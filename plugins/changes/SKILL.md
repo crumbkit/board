@@ -92,11 +92,14 @@ blocks is missing.
    head of 7 or more hex digits is stored as the full commit it names in
    the mount's clone; `changes::attach::head_ambiguous` lists the commits
    it could name, so give more digits. `next` and `advance` record the
-   route `unowned` for a change with none, and, run from a checkout of the
-   mount on a branch other than the one the mount follows that holds a
+   route CODEOWNERS gives a change with none, and, run from a checkout of
+   the mount on a branch other than the one the mount follows that holds a
    commit of its own, record that checkout's HEAD for a change with no
-   head. `filled` names each value
-   recorded; attach another to replace it.
+   head. `filled` names each value recorded; attach another to replace it.
+   A `filled` line that starts `head not filled:` only suggests the HEAD,
+   because another open change records that line of work or its commits
+   touch none of the plan's paths; attach it yourself when it is this
+   change's work.
    `board github pr-create --change /changes/<name>`, run from the checkout
    as the github skill says, opens the pull request and attaches it. When
    its output has `change_note`, run the command the note gives. Record

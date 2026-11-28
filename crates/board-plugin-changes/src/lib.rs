@@ -135,7 +135,10 @@ const CAPABILITIES: [Capability; 25] = [
     Capability {
         name: "next",
         description: "The change's flow and phase, each check of its gate as pass or missing with \
-            who can pass it and the remedy, whom it waits on, and what to do now.",
+            who can pass it and the remedy, whom it waits on, and what to do now. It first \
+            records a route the change lacks from CODEOWNERS, and a head it lacks from the \
+            caller's checkout of the mount on a branch of its own, and lists them in filled; it \
+            writes nothing else.",
         run: phases::next,
         input: input::<phases::PathInput>,
         output: output::<phases::NextOutput>,

@@ -2242,6 +2242,148 @@ fn the_task_remedy_names_the_one_open_task_titled_as_the_change_and_none_when_tw
         remedy(&board.call("next", &path())),
         "Set the change's task with `board changes attach --path /changes/t --task /tasks/one.md`."
     );
+    let refused = board.refusal("advance", &path());
+    assert!(
+        (refused["fields"]["remedies"].as_array().unwrap().iter()).any(|each| each
+            == "Set the change's task with `board changes attach --path /changes/t --task \
+                /tasks/one.md`."),
+        "{refused}"
+    );
     board.write("tasks/two.md", titled);
     assert!(remedy(&board.call("next", &path())).starts_with("Add a task with `board tasks add`"),);
+}
+
+#[test]
+fn next_fills_no_head_from_a_checkout_on_another_changes_line_of_work_and_suggests_it() {
+    let board = Changes::new();
+    let (_, theirs) = board.edited(&[("src/a.rs", "a\n")]);
+    board.change_at(
+        "changes/a.json",
+        "build",
+        &json!({"route": "owner", "head": theirs}),
+    );
+    board.change_at("changes/t.json", "build", &json!({"route": "owner"}));
+    let checkout = checkout_of_x(&board);
+    // The clone's own `main` judges a commit the mount's clone lacks.
+    git(&checkout, &["branch", "-q", "main", "origin/main"]);
+    let said = filled(&board.call_from(&checkout, "next", &path()));
+    assert_eq!(board.read("changes/t.json").get("head"), None);
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert!(
+        said[0].starts_with(&format!("head not filled: /changes/a records {theirs}")),
+        "{said:?}"
+    );
+    assert!(
+        said[0].ends_with(&format!(
+            "`board changes attach --path /changes/t --head {theirs}`"
+        )),
+        "{said:?}"
+    );
+
+    write_file(&checkout.join("src/b.rs"), "b\n");
+    git(&checkout, &["add", "."]);
+    git(&checkout, &["commit", "-qm", "more"]);
+    let said = filled(&board.call_from(&checkout, "next", &path()));
+    assert_eq!(board.read("changes/t.json").get("head"), None);
+    assert!(
+        said[0].starts_with(&format!("head not filled: /changes/a records {theirs}")),
+        "{said:?}"
+    );
+
+    board.change_at(
+        "changes/a.json",
+        "done",
+        &json!({"route": "owner", "head": theirs}),
+    );
+    board.call_from(&checkout, "next", &path());
+    let head = git(&checkout, &["rev-parse", "HEAD"]);
+    assert_eq!(board.read("changes/t.json")["head"], json!(head));
+}
+
+#[test]
+fn next_fills_the_head_only_when_the_branch_touches_a_planned_path() {
+    let board = Changes::new();
+    let (_, head) = board.edited(&[("src/a.rs", "a\n")]);
+    board.change_at("changes/t.json", "build", &json!({"route": "owner"}));
+    board.call_stdin("plan", &planning(&["/repos/x/docs/**"]));
+    let checkout = checkout_of_x(&board);
+    let said = filled(&board.call_from(&checkout, "next", &path()));
+    assert_eq!(board.read("changes/t.json").get("head"), None);
+    assert!(
+        said.iter().any(|line| line.starts_with("head not filled: ")
+            && line.contains("touch none of the plan's paths")),
+        "{said:?}"
+    );
+    board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
+    board.call_from(&checkout, "next", &path());
+    assert_eq!(board.read("changes/t.json")["head"], json!(head));
+}
+
+#[test]
+fn next_fills_a_commit_only_a_separate_clone_holds_and_not_a_newer_followed_commit_the_mount_lacks()
+{
+    let board = Changes::new();
+    board.edited(&[("src/a.rs", "a\n")]);
+    board.change_at("changes/t.json", "build", &json!({"route": "owner"}));
+    let checkout = checkout_of_x(&board);
+    git(&checkout, &["checkout", "-q", "main"]);
+    write_file(&checkout.join("README.md"), "newer\n");
+    git(&checkout, &["commit", "-qam", "newer main"]);
+    git(&checkout, &["checkout", "-qb", "fresh"]);
+    let said = filled(&board.call_from(&checkout, "next", &path()));
+    assert_eq!(said, Vec::<String>::new());
+    assert_eq!(board.read("changes/t.json").get("head"), None);
+
+    write_file(&checkout.join("src/b.rs"), "b\n");
+    git(&checkout, &["add", "."]);
+    git(&checkout, &["commit", "-qm", "mine"]);
+    let head = git(&checkout, &["rev-parse", "HEAD"]);
+    board.call_from(&checkout, "next", &path());
+    assert_eq!(board.read("changes/t.json")["head"], json!(head));
+}
+
+#[test]
+fn advance_names_what_it_filled_in_a_refusal_that_is_not_the_gates_and_one_that_fills_nothing_does_not()
+ {
+    let board = Changes::new();
+    board.mount_x(&[("README.md", "x\n")]);
+    let fields = json!({"plan": "/changes/t/plan.md", "records": [board.approved()]});
+    board.change_at("changes/t.json", "plan", &fields);
+    board.write("changes/t/plan.md", PLAN);
+    board.call("migrate", &json!({"apply": true}));
+    let mut change = board.read("changes/t.json");
+    change["stop"] = json!({"through": "plan"});
+    board.write("changes/t.json", &change.to_string());
+    let refused = board.refusal("advance", &path());
+    assert_ne!(refused["code"], "changes::gate::unmet", "{refused}");
+    assert_eq!(
+        refused["fields"]["filled"],
+        json!([
+            "route filled as unowned; set another with `board changes attach --path \
+                /changes/t --route <route>`"
+        ]),
+        "{refused}"
+    );
+    let refused = board.refusal("advance", &path());
+    assert_eq!(refused["fields"].get("filled"), None, "{refused}");
+}
+
+#[test]
+fn a_change_with_no_route_takes_the_route_codeowners_gives_and_unowned_when_it_names_nobody() {
+    let board = Changes::new();
+    board.mount_repo(&[(".github/CODEOWNERS", "* @ana\n")], "repos/x", "main");
+    board.change_at("changes/t.json", "plan", &json!({}));
+    let next = board.call("next", &path());
+    assert_eq!(next["route"], "ask-first", "{next}");
+    assert_eq!(
+        filled(&next),
+        [
+            "route filled as ask-first; set another with `board changes attach --path /changes/t \
+          --route <route>`"
+        ]
+    );
+    let twin = Changes::new();
+    twin.mount_repo(&[(".github/CODEOWNERS", "# nobody\n")], "repos/x", "main");
+    twin.change_at("changes/t.json", "plan", &json!({}));
+    assert_eq!(twin.call("next", &path())["route"], "unowned");
 }

@@ -3,6 +3,7 @@
 //! writes the check runs as a run of the change's suite and attaches the
 //! run to the change.
 
+use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use board_ops::{Host, PluginError};
@@ -143,15 +144,21 @@ pub(crate) fn ci(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let top = git::top(host)?;
     let (owner, repo) = remote::repository(host, &top)?;
     let board = own(host)?;
-    let (head, _, _, suite) = recorded_change(&*board, &change)?;
-    let head = match head {
-        Some(short) if !is_full_commit(&short) => full_head(&*board, &change, &short)?,
-        head => head,
-    };
+    let (recorded, _, _, suite) = recorded_change(&*board, &change)?;
+    // A short head is read as the one commit it names in the checkout; the
+    // change records the full commit only with the run, so a refusal
+    // writes nothing.
+    let expanded = (recorded.as_deref())
+        .filter(|head| !is_full_commit(head))
+        .and_then(|short| full_commit(host, &top, short));
+    let head = expanded.clone().or(recorded);
     let (Some(head), Some(suite)) = (head.filter(|head| is_full_commit(head)), suite) else {
         return Err(PluginError {
             code: "github::ci::change".to_owned(),
-            message: format!("the change at {change} records no full 40-hex head or no suite"),
+            message: format!(
+                "the change at {change} records no suite, or no head that is a full 40-hex \
+                 commit or names one commit in this checkout"
+            ),
             fields: Map::new(),
             hint: Some(format!(
                 "attach what it lacks with `board changes attach --path {change} --head <sha>` \
@@ -210,8 +217,12 @@ pub(crate) fn ci(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let target: Target = "changes.attach"
         .parse()
         .expect("changes.attach is <plugin>.<capability>");
-    // Only the run, so a newer head attached meanwhile stays.
-    let attach = json!({"path": change, "ref": path});
+    // Only the run, so a newer head attached meanwhile stays, and the full
+    // commit of a short head the change recorded.
+    let mut attach = json!({"path": change, "ref": path});
+    if expanded.is_some() {
+        attach["head"] = json!(head);
+    }
     board.call(&target, &attach).map_err(|refusal| {
         let mut error = PluginError::board_refused("github", "call", &refusal);
         error.message = format!(
@@ -230,18 +241,23 @@ pub(crate) fn ci(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     }))
 }
 
-/// The full commit the change at `change` names by its short head `short`,
-/// which `changes.attach` resolves in the mount's clone and records on the
-/// change, or its refusal, whose code, such as
-/// `changes::attach::head_ambiguous`, is in `fields.code`.
-fn full_head(board: &dyn Host, change: &str, short: &str) -> Result<Option<String>, PluginError> {
-    let target: Target = "changes.attach"
-        .parse()
-        .expect("changes.attach is <plugin>.<capability>");
-    let attach = json!({"path": change, "head": short});
-    (board.call(&target, &attach))
-        .map_err(|refusal| PluginError::board_refused("github", "changes attach", &refusal))?;
-    Ok(recorded_change(board, change)?.0)
+/// The one commit the short head `short` names in the checkout at `top`,
+/// or none when it names none or several, or is not 7 or more hex digits.
+fn full_commit(host: &dyn Host, top: &Path, short: &str) -> Option<String> {
+    let hex = short.len() >= 7 && short.bytes().all(|byte| byte.is_ascii_hexdigit());
+    if !hex {
+        return None;
+    }
+    let named = format!("{short}^{{commit}}");
+    let arguments = [
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "--end-of-options",
+        &named,
+    ];
+    let full = git::git(host, top, &arguments, "").ok()?;
+    Some(full.trim().to_owned()).filter(|full| is_full_commit(full))
 }
 
 /// `github::gh::failed` for the endpoint `what` under `commit`, which

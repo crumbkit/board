@@ -5,16 +5,23 @@
 - `board changes next` and `board changes advance` record the HEAD of the
   caller's checkout as the head of a change that has none, when the
   checkout is of the change's mount, on a branch other than the one the
-  mount follows, and holds a commit that branch lacks, and record the
-  route `unowned` for a change that has none. Each prints what it recorded in `filled`, such as `head filled
-  from <checkout> at <sha>`; `changes attach` sets another value. A change
-  with no task is not filled, but when exactly one open task has the
-  change's title, the `task` check's remedy names the `changes attach
-  --task` command for it. `changes attach --head` and `github ci` accept a
-  unique abbreviation of 7 or more hex digits and store the full commit
-  from the mount's clone; an abbreviation that names several commits is
-  refused with `changes::attach::head_ambiguous` and the matches, and one
-  that names none with `changes::attach::head_unknown`.
+  mount follows, and holds a commit that branch lacks. When another open
+  change on the mount records that commit or one on its line of work, or
+  the change's plan has paths its commits touch none of, they only suggest
+  it. A change with no route takes the route its mount's CODEOWNERS gives,
+  as `changes start` derives it, and `unowned` when CODEOWNERS names no
+  owners. Each prints what it recorded or suggests in `filled`, and each
+  refusal of `advance` after a fill carries `filled` too; `changes attach`
+  sets another value. A change with no task is not filled, but when
+  exactly one open task has the change's title, the `task` check's remedy
+  in `next` and `advance` names the `changes attach --task` command for
+  it. `changes attach --head` accepts a unique abbreviation of 7 or more
+  hex digits and stores the full commit from the mount's clone; an
+  abbreviation that names several commits is refused with
+  `changes::attach::head_ambiguous` and the matches, and one that names
+  none with `changes::attach::head_unknown`. `github ci` reads a short
+  head as the one commit it names in the checkout, and records that full
+  commit on the change only with the run it writes.
 - The development flow's suite-run remedy names only commands that exist.
   When the change names no suite, it says to name one with `board changes
   attach --suite`, or to write a `runs/suite/v1` with `board put
