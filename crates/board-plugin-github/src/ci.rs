@@ -151,6 +151,7 @@ pub(crate) fn ci(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let expanded = (recorded.as_deref())
         .filter(|head| !is_full_commit(head))
         .and_then(|short| full_commit(host, &top, short));
+    let short = recorded.clone();
     let head = expanded.clone().or(recorded);
     let (Some(head), Some(suite)) = (head.filter(|head| is_full_commit(head)), suite) else {
         return Err(PluginError {
@@ -218,9 +219,9 @@ pub(crate) fn ci(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
         .parse()
         .expect("changes.attach is <plugin>.<capability>");
     // Only the run, so a newer head attached meanwhile stays, and the full
-    // commit of a short head the change recorded.
+    // commit of a short head while the change still records that short head.
     let mut attach = json!({"path": change, "ref": path});
-    if expanded.is_some() {
+    if expanded.is_some() && recorded_change(&*board, &change)?.0 == short {
         attach["head"] = json!(head);
     }
     board.call(&target, &attach).map_err(|refusal| {

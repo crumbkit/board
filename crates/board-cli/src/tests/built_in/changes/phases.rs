@@ -2017,12 +2017,19 @@ fn status_of(next: &Value, id: &str) -> Value {
         .map_or(Value::Null, |each| each["status"].clone())
 }
 
+/// /changes/t in build, routed, with a plan whose paths cover the files
+/// [`Changes::edited`] and the tests' checkouts commit under `src/`.
+fn building_planned(board: &Changes) {
+    board.change_at("changes/t.json", "build", &json!({"route": "owner"}));
+    board.call_stdin("plan", &planning(&["/repos/x/src/**"]));
+}
+
 #[test]
 fn next_from_a_feature_branch_checkout_of_the_mount_fills_the_head_and_from_the_default_branch_or_a_branch_with_no_commit_of_its_own_does_not()
  {
     let board = Changes::new();
     let (_, head) = board.edited(&[("src/a.rs", "a\n")]);
-    board.change_at("changes/t.json", "build", &json!({"route": "owner"}));
+    building_planned(&board);
     let checkout = checkout_of_x(&board);
     git(&checkout, &["checkout", "-q", "main"]);
     let next = board.call_from(&checkout, "next", &path());
@@ -2052,7 +2059,7 @@ fn next_from_a_feature_branch_checkout_of_the_mount_fills_the_head_and_from_the_
 fn next_from_a_directory_that_is_no_checkout_of_the_mount_fills_no_head_and_from_a_checkout_does() {
     let board = Changes::new();
     let (_, head) = board.edited(&[("src/a.rs", "a\n")]);
-    board.change_at("changes/t.json", "build", &json!({"route": "owner"}));
+    building_planned(&board);
     let other = board.beside.join("other");
     make_dir(&other);
     git(&other, &["init", "-q"]);
@@ -2074,7 +2081,7 @@ fn next_from_a_directory_that_is_no_checkout_of_the_mount_fills_no_head_and_from
 fn advance_from_a_feature_branch_checkout_fills_the_head_and_names_it() {
     let board = Changes::new();
     let (_, head) = board.edited(&[("src/a.rs", "a\n")]);
-    board.change_at("changes/t.json", "build", &json!({"route": "owner"}));
+    building_planned(&board);
     let checkout = checkout_of_x(&board);
     let target = "changes.advance";
     let (output, _) = board.run_called(
@@ -2186,7 +2193,7 @@ fn colliding(repository: &Path) -> (String, String) {
 fn attach_stores_a_unique_short_head_in_full_and_refuses_an_ambiguous_one_with_the_matches() {
     let board = Changes::new();
     let (_, head) = board.edited(&[("src/a.rs", "a\n")]);
-    board.change_at("changes/t.json", "build", &json!({"route": "owner"}));
+    building_planned(&board);
     board.call("attach", &at(&json!({"head": &head[..7]})));
     assert_eq!(board.read("changes/t.json")["head"], json!(head));
 
@@ -2207,7 +2214,7 @@ fn attach_stores_a_unique_short_head_in_full_and_refuses_an_ambiguous_one_with_t
 fn attach_refuses_a_short_head_the_mounted_repository_lacks_and_stores_a_full_one_as_given() {
     let board = Changes::new();
     board.edited(&[("src/a.rs", "a\n")]);
-    board.change_at("changes/t.json", "build", &json!({"route": "owner"}));
+    building_planned(&board);
     let refused = board.refusal("attach", &at(&json!({"head": "eeeeeee"})));
     assert_eq!(
         refused["code"], "changes::attach::head_unknown",
@@ -2262,7 +2269,7 @@ fn next_fills_no_head_from_a_checkout_on_another_changes_line_of_work_and_sugges
         "build",
         &json!({"route": "owner", "head": theirs}),
     );
-    board.change_at("changes/t.json", "build", &json!({"route": "owner"}));
+    building_planned(&board);
     let checkout = checkout_of_x(&board);
     // The clone's own `main` judges a commit the mount's clone lacks.
     git(&checkout, &["branch", "-q", "main", "origin/main"]);
@@ -2301,12 +2308,19 @@ fn next_fills_no_head_from_a_checkout_on_another_changes_line_of_work_and_sugges
 }
 
 #[test]
-fn next_fills_the_head_only_when_the_branch_touches_a_planned_path() {
+fn next_fills_the_head_only_when_the_plan_has_paths_and_the_branch_touches_one() {
     let board = Changes::new();
     let (_, head) = board.edited(&[("src/a.rs", "a\n")]);
     board.change_at("changes/t.json", "build", &json!({"route": "owner"}));
-    board.call_stdin("plan", &planning(&["/repos/x/docs/**"]));
     let checkout = checkout_of_x(&board);
+    let said = filled(&board.call_from(&checkout, "next", &path()));
+    assert_eq!(board.read("changes/t.json").get("head"), None);
+    assert!(
+        said.iter().any(|line| line.starts_with("head not filled: ")
+            && line.contains("the change's plan names no paths")),
+        "{said:?}"
+    );
+    board.call_stdin("plan", &planning(&["/repos/x/docs/**"]));
     let said = filled(&board.call_from(&checkout, "next", &path()));
     assert_eq!(board.read("changes/t.json").get("head"), None);
     assert!(
@@ -2324,7 +2338,7 @@ fn next_fills_a_commit_only_a_separate_clone_holds_and_not_a_newer_followed_comm
 {
     let board = Changes::new();
     board.edited(&[("src/a.rs", "a\n")]);
-    board.change_at("changes/t.json", "build", &json!({"route": "owner"}));
+    building_planned(&board);
     let checkout = checkout_of_x(&board);
     git(&checkout, &["checkout", "-q", "main"]);
     write_file(&checkout.join("README.md"), "newer\n");
@@ -2386,4 +2400,62 @@ fn a_change_with_no_route_takes_the_route_codeowners_gives_and_unowned_when_it_n
     twin.mount_repo(&[(".github/CODEOWNERS", "# nobody\n")], "repos/x", "main");
     twin.change_at("changes/t.json", "plan", &json!({}));
     assert_eq!(twin.call("next", &path())["route"], "unowned");
+}
+
+#[test]
+fn next_suggests_the_head_while_another_headless_change_plans_paths_its_commits_touch_and_fills_once_none_does()
+ {
+    let board = Changes::new();
+    let (_, head) = board.edited(&[("src/a.rs", "a\n")]);
+    board.change_at("changes/a.json", "build", &json!({"route": "owner"}));
+    board.call_stdin("plan", &plan_input("/changes/a", &["/repos/x/src/**"]));
+    building_planned(&board);
+    let checkout = checkout_of_x(&board);
+    for (change, other) in [(CHANGE, "/changes/a"), ("/changes/a", CHANGE)] {
+        let said = filled(&board.call_from(&checkout, "next", &json!({"path": change})));
+        let expected = format!("head not filled: {other}, which records no head, plans paths");
+        assert!(
+            said.iter().any(|line| line.starts_with(&expected)),
+            "{change}: {said:?}"
+        );
+    }
+    assert_eq!(board.read("changes/t.json").get("head"), None);
+    assert_eq!(board.read("changes/a.json").get("head"), None);
+
+    board.call_stdin("plan", &plan_input("/changes/a", &["/repos/x/docs/**"]));
+    board.call_from(&checkout, "next", &path());
+    assert_eq!(board.read("changes/t.json")["head"], json!(head));
+}
+
+#[test]
+fn a_change_whose_head_is_on_the_followed_branch_blocks_no_fill_and_one_whose_head_builds_on_the_checkout_suggests()
+ {
+    let board = Changes::new();
+    let (base, head) = board.edited(&[("src/a.rs", "a\n")]);
+    board.change_at(
+        "changes/a.json",
+        "land",
+        &json!({"route": "owner", "head": base}),
+    );
+    building_planned(&board);
+    let checkout = checkout_of_x(&board);
+    board.call_from(&checkout, "next", &path());
+    assert_eq!(board.read("changes/t.json")["head"], json!(head));
+
+    building_planned(&board);
+    let later = board.commit(&[("src/c.rs", "c\n")], None);
+    git(&checkout, &["fetch", "-q", "origin"]);
+    board.change_at(
+        "changes/a.json",
+        "build",
+        &json!({"route": "owner", "head": later}),
+    );
+    let said = filled(&board.call_from(&checkout, "next", &path()));
+    assert_eq!(board.read("changes/t.json").get("head"), None);
+    assert!(
+        said.iter().any(|line| line.starts_with(&format!(
+            "head not filled: /changes/a records {later}, on the same line of work as {head}"
+        ))),
+        "{said:?}"
+    );
 }

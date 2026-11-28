@@ -5,10 +5,12 @@
 - `board changes next` and `board changes advance` record the HEAD of the
   caller's checkout as the head of a change that has none, when the
   checkout is of the change's mount, on a branch other than the one the
-  mount follows, and holds a commit that branch lacks. When another open
-  change on the mount records that commit or one on its line of work, or
-  the change's plan has paths its commits touch none of, they only suggest
-  it. A change with no route takes the route its mount's CODEOWNERS gives,
+  mount follows, and holds a commit that branch lacks, and when the
+  change's plan has paths that the commits since that branch touch. When
+  the plan has no paths or they are untouched, or another open change on
+  the mount records that commit or one on its line of work, or another
+  open change with no head plans paths those commits touch, they only
+  suggest it. A change with no route takes the route its mount's CODEOWNERS gives,
   as `changes start` derives it, and `unowned` when CODEOWNERS names no
   owners. Each prints what it recorded or suggests in `filled`, and each
   refusal of `advance` after a fill carries `filled` too; `changes attach`

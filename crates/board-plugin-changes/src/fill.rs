@@ -5,9 +5,9 @@
 //! none, as `changes start` derives it, and the HEAD of the caller's
 //! checkout as the head of a change that has none. The checkout must be of
 //! the change's mount, on a branch other than the one the mount follows,
-//! and hold a commit that branch lacks. When that commit may be another
-//! change's work, or touches none of the plan's paths, they only suggest
-//! it. `attach` stores the full commit a short head names in the mount's
+//! and hold a commit that branch lacks, and its commits since that branch
+//! must touch the change's planned paths. When that commit may be another
+//! change's work, they only suggest it. `attach` stores the full commit a short head names in the mount's
 //! clone. A change with no task is not filled: the task remedy names the
 //! one open task whose title is the change's.
 
@@ -137,10 +137,13 @@ fn checkout(host: &dyn Host, path: &str, change: &ChangeRecord) -> Result<Found,
         return Ok(Found::Nothing);
     }
     let head = head.to_owned();
-    if let Some(why) = another_changes(host, path, change, (&top, &at.follow), &head)? {
-        return Ok(Found::Suggest { head, why });
-    }
-    if let Some(why) = off_plan(host, change, &at, &top, &head)? {
+    let tie = Tie {
+        host,
+        at: &at,
+        top: &top,
+        head: &head,
+    };
+    if let Some(why) = tie.unproven(path, change)? {
         return Ok(Found::Suggest { head, why });
     }
     Ok(Found::Fill { top, head })
@@ -172,104 +175,207 @@ fn beyond_followed(host: &dyn Host, at: &Mounted, top: &Path, head: &str) -> boo
     }
 }
 
-/// Why `head` may be another open change's work: another open change on
-/// the same mount records it, or records a commit beyond `follow`, the
-/// branch the mount follows, that `head` builds on or that builds on
-/// `head`; else none. The checkout at `top` judges the commits.
-fn another_changes(
-    host: &dyn Host,
-    path: &str,
-    change: &ChangeRecord,
-    (top, follow): (&Path, &str),
-    head: &str,
-) -> Result<Option<String>, PluginError> {
-    let sql = format!(
-        "SELECT logical, json_extract(body, '$.head') FROM records WHERE type IN ({}) AND code IS \
-         NULL AND json_extract(body, '$.mount') = {} AND logical <> {} AND json_extract(body, \
-         '$.head') IS NOT NULL AND coalesce(json_extract(body, '$.phase'), '') NOT IN ('done', \
-         'dropped') ORDER BY logical",
-        change_types(),
-        literal(&change.mount),
-        literal(path)
-    );
-    let ancestor = |older: &str, newer: &str| {
-        let arguments = [
-            "merge-base",
-            "--is-ancestor",
-            "--end-of-options",
-            older,
-            newer,
-        ];
-        exited(host, top, &arguments, DEADLINE, &[0, 1, 128])
-            .ok()
-            .map(|(code, _)| code)
-            == Some(0)
-    };
-    for row in rows(host, &sql)? {
-        let (Some(other), Some(theirs)) = (text(row.first()), text(row.get(1))) else {
-            continue;
-        };
-        if head.starts_with(theirs) || theirs.starts_with(head) {
-            return Ok(Some(format!("{other} records {theirs}")));
-        }
-        let built_on = ancestor(theirs, head) && !ancestor(theirs, follow);
-        if built_on || ancestor(head, theirs) {
-            return Ok(Some(format!(
-                "{other} records {theirs}, on the same line of work as {head}"
-            )));
-        }
-    }
-    Ok(None)
+/// Another open change on the same mount: its path, its head when it
+/// records one, and its plan's paths.
+struct Other {
+    path: String,
+    head: Option<String>,
+    paths: Vec<String>,
 }
 
-/// Why `head` may not be the change's work: the change's plan has paths,
-/// and the commits from where `head` left the branch the mount follows
-/// touch none of them, or git cannot list those commits' files in the
-/// checkout at `top`; else none.
-fn off_plan(
-    host: &dyn Host,
-    change: &ChangeRecord,
-    at: &Mounted,
-    top: &Path,
-    head: &str,
-) -> Result<Option<String>, PluginError> {
-    let planned = match &change.plan {
-        Some(plan) => plan_at(host, plan)?.and_then(|(record, _)| record.paths),
-        None => None,
-    };
-    let Some(planned) = planned.filter(|paths| !paths.is_empty()) else {
-        return Ok(None);
-    };
-    // The checkout may have no ref of the followed branch's name, as a
-    // fresh clone has none for `main`, so the diff starts from the commit
-    // that branch names in the mount's clone.
-    let follow_commit = format!("{}^{{commit}}", at.follow);
-    let verify = ["rev-parse", "--verify", "--end-of-options", &follow_commit];
-    let base = match git(host, &at.repository, &verify, DEADLINE) {
-        Ok(base) => base.trim().to_owned(),
-        Err(failed) => return Ok(Some(failed.why)),
-    };
-    let range = format!("{base}...{head}");
-    let arguments = [
-        "diff",
-        "--name-only",
-        "-z",
-        "--no-renames",
-        "--end-of-options",
-        &range,
-    ];
-    let names = match git(host, top, &arguments, DEADLINE) {
-        Ok(names) => names,
-        Err(failed) => return Ok(Some(failed.why)),
-    };
-    let files = at.logical(&names);
-    if outside(host, &files, &planned)?.len() < files.len() {
-        return Ok(None);
+/// What ties the checkout's `head` at `top` to a change on the mount `at`
+/// reads.
+struct Tie<'a> {
+    host: &'a dyn Host,
+    at: &'a Mounted,
+    top: &'a Path,
+    head: &'a str,
+}
+
+impl Tie<'_> {
+    /// Why `head` may not be the work of the change at `path`, so Board
+    /// only suggests it; none when it is tied to the change.
+    ///
+    /// Another open change on the mount records `head`. The change's plan
+    /// names no paths, or the commits from where `head` left the followed
+    /// branch touch none of them. Another open change with no head plans
+    /// paths those commits touch. Or another open change records a commit
+    /// beyond the followed branch that `head` builds on, or that builds on
+    /// `head`. Strings are compared before git runs, and the ancestry of
+    /// every recorded head takes two git processes in all.
+    fn unproven(&self, path: &str, change: &ChangeRecord) -> Result<Option<String>, PluginError> {
+        let others = self.others(path, &change.mount)?;
+        let head = self.head;
+        for other in &others {
+            if let Some(theirs) = other.head.as_deref()
+                && (head.starts_with(theirs) || theirs.starts_with(head))
+            {
+                return Ok(Some(format!("{} records {theirs}", other.path)));
+            }
+        }
+        let base = match self.followed_commit() {
+            Ok(base) => base,
+            Err(why) => return Ok(Some(why)),
+        };
+        let files = match self.touched(&base) {
+            Ok(files) => files,
+            Err(why) => return Ok(Some(why)),
+        };
+        let planned = match &change.plan {
+            Some(plan) => plan_at(self.host, plan)?.and_then(|(record, _)| record.paths),
+            None => None,
+        };
+        let Some(planned) = planned.filter(|paths| !paths.is_empty()) else {
+            return Ok(Some(
+                "the change's plan names no paths, so Board cannot tell that these commits are \
+                 its work"
+                    .to_owned(),
+            ));
+        };
+        if !self.touches(&files, &planned)? {
+            return Ok(Some(format!(
+                "its commits since {} touch none of the plan's paths",
+                self.at.follow
+            )));
+        }
+        for other in others.iter().filter(|other| other.head.is_none()) {
+            if self.touches(&files, &other.paths)? {
+                return Ok(Some(format!(
+                    "{}, which records no head, plans paths these commits touch too",
+                    other.path
+                )));
+            }
+        }
+        self.same_line(&base, &others)
     }
-    Ok(Some(format!(
-        "its commits since {} touch none of the plan's paths",
-        at.follow
-    )))
+
+    /// The other open changes on `mount` than the one at `path`, each
+    /// with its head and its plan's paths, read in one query.
+    fn others(&self, path: &str, mount: &str) -> Result<Vec<Other>, PluginError> {
+        let sql = format!(
+            "SELECT c.logical, json_extract(c.body, '$.head'), json_extract(p.body, '$.paths') \
+             FROM records AS c LEFT JOIN records AS p ON p.logical = json_extract(c.body, \
+             '$.plan') WHERE c.type IN ({}) AND c.code IS NULL AND json_extract(c.body, \
+             '$.mount') = {} AND c.logical <> {} AND coalesce(json_extract(c.body, '$.phase'), \
+             '') NOT IN ('done', 'dropped') ORDER BY c.logical",
+            change_types(),
+            literal(mount),
+            literal(path)
+        );
+        Ok((rows(self.host, &sql)?.iter())
+            .filter_map(|row| {
+                let paths = text(row.get(2))
+                    .and_then(|paths| serde_json::from_str(paths).ok())
+                    .unwrap_or_default();
+                Some(Other {
+                    path: text(row.first())?.to_owned(),
+                    head: text(row.get(1)).map(str::to_owned),
+                    paths,
+                })
+            })
+            .collect())
+    }
+
+    /// The commit the followed branch names in the mount's clone, which the
+    /// checkout may name otherwise or not at all, as a fresh clone has no
+    /// `main`; or why git cannot say.
+    fn followed_commit(&self) -> Result<String, String> {
+        let named = format!("{}^{{commit}}", self.at.follow);
+        let arguments = ["rev-parse", "--verify", "--end-of-options", &named];
+        git(self.host, &self.at.repository, &arguments, DEADLINE)
+            .map(|base| base.trim().to_owned())
+            .map_err(|failed| failed.why)
+    }
+
+    /// The files the commits from where `head` left `base` edit, by
+    /// logical path, read in the checkout; or why git cannot list them.
+    fn touched(&self, base: &str) -> Result<Vec<String>, String> {
+        let range = format!("{base}...{}", self.head);
+        let arguments = [
+            "diff",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            "--end-of-options",
+            &range,
+        ];
+        git(self.host, self.top, &arguments, DEADLINE)
+            .map(|names| self.at.logical(&names))
+            .map_err(|failed| failed.why)
+    }
+
+    /// Whether any of `files` matches one of `planned`.
+    fn touches(&self, files: &[String], planned: &[String]) -> Result<bool, PluginError> {
+        if files.is_empty() || planned.is_empty() {
+            return Ok(false);
+        }
+        Ok(outside(self.host, files, planned)?.len() < files.len())
+    }
+
+    /// Why `head` may be on another change's line of work beyond `base`:
+    /// a commit another change records is among `head`'s own commits, or
+    /// `head` is among the commits of one of their heads. One git process
+    /// lists `head`'s commits and one lists theirs, each tagged with the
+    /// head it was reached from; git leaves out a head the checkout lacks.
+    fn same_line(&self, base: &str, others: &[Other]) -> Result<Option<String>, PluginError> {
+        let recorded: Vec<(&str, &str)> = (others.iter())
+            .filter_map(|other| Some((other.path.as_str(), other.head.as_deref()?)))
+            .filter(|(_, theirs)| {
+                theirs.len() >= 7 && theirs.bytes().all(|b| b.is_ascii_hexdigit())
+            })
+            .collect();
+        if recorded.is_empty() {
+            return Ok(None);
+        }
+        let head = self.head;
+        let line = |other: &str, theirs: &str| {
+            Some(format!(
+                "{other} records {theirs}, on the same line of work as {head}"
+            ))
+        };
+        let unknown = |why: String| {
+            Ok(Some(format!(
+                "git cannot compare it with the heads other changes record: {why}"
+            )))
+        };
+        let own_range = format!("{base}..{head}");
+        let own = match git(
+            self.host,
+            self.top,
+            &["rev-list", "--end-of-options", &own_range],
+            DEADLINE,
+        ) {
+            Ok(own) => own,
+            Err(failed) => return unknown(failed.why),
+        };
+        for commit in own.lines().map(str::trim) {
+            if let Some((other, theirs)) = recorded
+                .iter()
+                .find(|(_, theirs)| commit.starts_with(theirs))
+            {
+                return Ok(line(other, theirs));
+            }
+        }
+        let mut arguments = vec!["log", "--ignore-missing", "--source", "--format=%H %S"];
+        arguments.extend(recorded.iter().map(|(_, theirs)| *theirs));
+        arguments.extend(["--not", base]);
+        let theirs_listed = match git(self.host, self.top, &arguments, DEADLINE) {
+            Ok(listed) => listed,
+            Err(failed) => return unknown(failed.why),
+        };
+        for listed in theirs_listed.lines() {
+            let Some((commit, from)) = listed.trim().split_once(' ') else {
+                continue;
+            };
+            if commit != head {
+                continue;
+            }
+            if let Some((other, theirs)) = recorded.iter().find(|(_, theirs)| *theirs == from) {
+                return Ok(line(other, theirs));
+            }
+        }
+        Ok(None)
+    }
 }
 
 /// The name of the branch the mount follows, such as `main` for a mount

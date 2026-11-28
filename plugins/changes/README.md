@@ -374,9 +374,10 @@ of `changes` still fails `review`.
   call writes a new record.
 - `next --path /changes/<name>`: reads the gate, and first writes the
   change's missing route and head as "Filling" below says; it writes
-  nothing else. The change's `flow` (its name and phases), its phase, each gate check as `pass` or `missing` with a
-  `detail`, its `actor`, whether it `blocks`, and when missing its
-  `remedy`; the instruction, with its placeholders filled; and `sync`.
+  nothing else. The change's `flow` (its name and phases), its phase,
+  each gate check as `pass` or `missing` with a `detail`, its `actor`,
+  whether it `blocks`, and when missing its `remedy`; the instruction,
+  with its placeholders filled; and `sync`.
   An instruction that names `changes plan` or `changes.plan` ends with how
   to give its input, JSON on stdin with the fields `path`, `text`, `uses`
   and `paths`, plus `considered` and `owed` when the plan has them, and a
@@ -410,12 +411,14 @@ of `changes` still fails `review`.
   when the checkout is of the repository the mount reads, has a branch
   checked out other than the one the mount follows, and holds a commit
   that branch lacks. When the mount's clone lacks that commit, the
-  checkout's own ref of the followed branch decides. The head is only
-  suggested, in a `filled` line that starts `head not filled:`, when
-  another open change on the mount records that commit, or a commit
-  beyond the followed branch that it builds on or that builds on it, and
-  when the change's plan has paths that the checkout's commits since the
-  followed branch do not touch. Board never fills a task.
+  checkout's own ref of the followed branch decides. The head is filled
+  only when the change's plan has paths and the checkout's commits since
+  the followed branch touch one of them. Otherwise it is only suggested,
+  in a `filled` line that starts `head not filled:`, and so it is when
+  another open change on the mount records that commit, or when another
+  open change records a commit beyond the followed branch that it builds
+  on or that builds on it, or when another open change with no head plans
+  paths those commits touch. Board never fills a task.
 - `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--task <path>] [--route <route>] [--head <sha>] [--suite <path>]`
   adds a reference once or sets the fields. `--head` takes a full commit as
   given, and stores the full commit that 7 or more hex digits name in the
