@@ -215,34 +215,71 @@ pub fn open(
     cache: Option<&Path>,
     known: impl FnOnce() -> Result<KnownBoards, Box<Refusal>>,
 ) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
-    open_at(start, home, cache, known, MountsAt::Pins)
+    open_at(start, home, cache, known, MountsAt::Pins, None)
 }
 
-/// [`open`], reading the mount holding `start` at `at`. At
-/// [`MountsAt::Checkout`], the known board must mount the repository
+/// [`open`], reading the mount holding `start` at `at`, through the board
+/// whose root is `through` when one is named (`board --board`).
+///
+/// At [`MountsAt::Checkout`], the known board must mount the repository
 /// holding `start`, linked worktrees included, and the run reads that mount
-/// at the commit HEAD names in `start`'s working tree and writes nothing. A
-/// board holding `start` itself, a mount only of another clone or a repo
-/// record, and a HEAD with no commit are refused with `board::cli::usage`.
+/// at the commit HEAD names in `start`'s working tree and writes nothing.
+/// A board's own tree is read through the known board that mounts its
+/// repository. A board's own tree no known board mounts, a mount only of
+/// another clone or a repo record, and a HEAD with no commit are refused
+/// with `board::cli::usage`.
+///
+/// `through` must be a board's root, or the run is refused with
+/// `board::config::not_found`. It is then the only board read, so two
+/// known boards that mount one repository are not ambiguous; without
+/// `--checkout`, a board's own tree still opens as itself when `through`
+/// names that board.
 pub fn open_at(
     start: &Path,
     home: Option<&Path>,
     cache: Option<&Path>,
     known: impl FnOnce() -> Result<KnownBoards, Box<Refusal>>,
     at: MountsAt,
+    through: Option<&Path>,
 ) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
     let checkout = at == MountsAt::Checkout;
-    let error = match Board::open(start, home.map(Path::to_path_buf)) {
-        Ok(_) if checkout => return Err(Refused::OwnTree(start).refusal()),
-        Ok(board) => return Ok((board, board_tree::within(start))),
-        Err(error) => error,
+    // The chosen board's root as an opened board names it, and as given.
+    let chosen =
+        (through.map(|given| root_of(given, home).map(|root| (root, given)))).transpose()?;
+    // `lost` is the refusal when no board holds `start`; `None` means a
+    // board's own tree holds it.
+    let lost = match Board::open(start, home.map(Path::to_path_buf)) {
+        Ok(board)
+            if !checkout
+                && (chosen.as_ref()).is_none_or(|(root, _)| root == board.repository().path()) =>
+        {
+            return Ok((board, board_tree::within(start)));
+        }
+        Ok(_) => None,
+        Err(error) => {
+            let outside = matches!(error, OpenError::NoRepository { .. });
+            let refusal = unopened(error.code(), &error, &error.fields(), outside);
+            if !matches!(error, OpenError::NotFound { .. }) {
+                return Err(Box::new(refusal));
+            }
+            Some(refusal)
+        }
     };
-    let outside = matches!(error, OpenError::NoRepository { .. });
-    let refusal = unopened(error.code(), &error, &error.fields(), outside);
-    if !matches!(error, OpenError::NotFound { .. }) {
-        return Err(Box::new(refusal));
-    }
-    let (mut board, place) = find(&known()?, start, home, cache, refusal)?;
+    let found = if let Some((root, given)) = chosen {
+        find(&[root], None, start, home, cache)?.map_err(|_| not_through(start, given))
+    } else {
+        let known = known()?;
+        let file = known.file.as_deref();
+        match (find(&known.boards(), file, start, home, cache)?, lost) {
+            (Ok(found), _) => Ok(found),
+            (Err(_), None) => return Err(Refused::OwnTree(start).refusal()),
+            (Err(skipped), Some(lost)) => {
+                let none = known.known.boards.is_empty();
+                Err(unmounted(lost, &shown(file), none, &skipped))
+            }
+        }
+    };
+    let (mut board, place) = found.map_err(Box::new)?;
     if checkout {
         if place.matched != Matched::Mount {
             return Err(Refused::NotMounted(start).refusal());
@@ -256,6 +293,45 @@ pub fn open_at(
         board.started_from(place.mount.clone(), start.to_path_buf());
     }
     Ok((board, Some(place.prefix())))
+}
+
+/// The root of the board at `root`, as an opened board names it, or the
+/// refusal when `root` is not a board's root, which names `root` and
+/// `--board`.
+fn root_of(root: &Path, home: Option<&Path>) -> Result<PathBuf, Box<Refusal>> {
+    let canonical = root.canonicalize().ok();
+    let found = match Board::open(root, home.map(Path::to_path_buf)) {
+        Ok(board) => Some(board.repository().path().to_path_buf()),
+        Err(OpenError::NotFound { .. } | OpenError::NoRepository { .. }) => None,
+        Err(error) => {
+            let refusal = Refusal::new(error.code(), &error, &Fields::default());
+            return Err(Box::new(refusal));
+        }
+    };
+    match (canonical, found) {
+        (Some(canonical), Some(found)) if canonical == found => Ok(found),
+        _ => {
+            let message = format!(
+                "--board names {}, which is not the root of a board",
+                lexical(root).display()
+            );
+            let hint = "give --board the root of a board, the directory that holds .board/board.json, such as one of the boards in the known boards file";
+            let refusal = Refusal::new(Code::ConfigNotFound, message, &Fields::default());
+            Err(Box::new(refusal.with_hint(hint)))
+        }
+    }
+}
+
+/// The refusal when `root`, the board `--board` names, has no mount or repo
+/// record for the repository holding `start`.
+fn not_through(start: &Path, root: &Path) -> Refusal {
+    let message = format!(
+        "{} is in a repository that {}, the board --board names, has no mount or repo record for",
+        start.display(),
+        root.display()
+    );
+    let hint = "name with --board a board that mounts this repository, or leave --board out to read through the known boards";
+    Refusal::new(Code::ConfigNotFound, message, &Fields::default()).with_hint(hint)
 }
 
 /// The refusal when a board cannot be opened or made. `outside` a git
@@ -352,25 +428,29 @@ fn shown(file: Option<&Path>) -> String {
     })
 }
 
-/// The one known board with a mount whose repository holds `start`, or
-/// else a repo record for it, and where `start` is in it. Otherwise `lost`, the refusal when no board
-/// holds `start`, says which known boards were read and which were passed
-/// over because they could not be opened or refreshed. A board listed under
-/// several spellings counts once.
+/// What [`find`] found among the boards it read: the one board with a
+/// place for `start` and that place, or, when none has one, the boards that
+/// could not be opened or refreshed.
+type Found = Result<(Board, Place), Vec<String>>;
+
+/// The one board of `roots` with a mount whose repository holds `start`, or
+/// else a repo record for it, and where `start` is in it, or that none has
+/// one. `file` is the known boards file that lists `roots`, if any. Two
+/// places of the best rank are refused as ambiguous, and a board that is
+/// there but cannot be opened is refused when no other board matches. A
+/// board listed under several spellings counts once.
 fn find(
-    known: &KnownBoards,
+    roots: &[PathBuf],
+    file: Option<&Path>,
     start: &Path,
     home: Option<&Path>,
     cache: Option<&Path>,
-    lost: Refusal,
-) -> Result<(Board, Place), Box<Refusal>> {
-    let file = known.file.as_deref();
-    let listed = &known.known.boards;
+) -> Result<Found, Box<Refusal>> {
     let shown = shown(file);
     let (mut seen, mut skipped, mut matches) = (HashSet::new(), vec![], vec![]);
     let mut unopenable = None;
-    for root in listed.iter().map(|root| against(file, root)) {
-        let board = match Board::open(&root, home.map(Path::to_path_buf)) {
+    for root in roots {
+        let board = match Board::open(root, home.map(Path::to_path_buf)) {
             Ok(board) => board,
             // A listed directory that is no board any more is passed over.
             Err(OpenError::NotFound { .. } | OpenError::NoRepository { .. }) => {
@@ -403,11 +483,13 @@ fn find(
         .flat_map(|(_, _, places)| places.iter().map(Place::rank))
         .min();
     let mut named = Vec::new();
+    let mut boards = 0;
     let mut chosen = None;
     for (root, board, places) in matches {
         let places: Vec<Place> = (places.into_iter())
             .filter(|place| Some(place.rank()) == best)
             .collect();
+        boards += usize::from(!places.is_empty());
         named.extend(places.iter().map(|place| match place.prefix() {
             Ok(prefix) => format!("{} at {prefix}", root.display()),
             Err(error) => format!("{} at a mount where {error}", root.display()),
@@ -422,18 +504,22 @@ fn find(
             start.display(),
             named.join(", ")
         );
-        let hint = format!(
-            "choose a board with `board -C <dir> check`, naming one of the boards listed, or leave one mount or repo record of this repository among the boards in `{shown}`"
-        );
+        // `--board` chooses among boards, not among one board's mounts.
+        let hint = if boards > 1 {
+            format!(
+                "choose the board to read through with `board --board <dir> <command>`, naming one of the boards listed, or leave one mount or repo record of this repository among the boards in `{shown}`"
+            )
+        } else {
+            "leave one mount or repo record of this repository in the board listed".to_owned()
+        };
         let refusal = Refusal::new(Code::ConfigAmbiguous, message, &Fields::default());
         return Err(Box::new(refusal.with_hint(hint)));
     }
-    if chosen.is_none()
-        && let Some(refusal) = unopenable
-    {
-        return Err(Box::new(refusal));
+    match (chosen, unopenable) {
+        (Some(found), _) => Ok(Ok(found)),
+        (None, Some(refusal)) => Err(Box::new(refusal)),
+        (None, None) => Ok(Err(skipped)),
     }
-    chosen.ok_or_else(|| Box::new(unmounted(lost, &shown, listed.is_empty(), &skipped)))
 }
 
 /// `lost`, saying that the known boards in `shown` were read and none mounts
