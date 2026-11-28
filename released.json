@@ -3771,6 +3771,24 @@
           "string"
         ]
       },
+      "output.line": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.merge_commit_url": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.outcome": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "already_done"
+        ]
+      },
       "output.path": {
         "type": [
           "string"
@@ -4915,6 +4933,11 @@
           "string"
         ]
       },
+      "input.through": {
+        "type": [
+          "string"
+        ]
+      },
       "output": {
         "type": [
           "object"
@@ -4929,6 +4952,79 @@
             "route",
             "sync"
           ]
+        ]
+      },
+      "output.ahead": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.ahead[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "checks",
+            "phase"
+          ]
+        ]
+      },
+      "output.ahead[].checks": {
+        "type": [
+          "array"
+        ]
+      },
+      "output.ahead[].checks[]": {
+        "type": [
+          "object"
+        ],
+        "requires": [
+          [
+            "applies",
+            "blocks",
+            "check"
+          ]
+        ]
+      },
+      "output.ahead[].checks[].applies": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.ahead[].checks[].blocks": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "output.ahead[].checks[].check": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.ahead[].checks[].detail": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.ahead[].checks[].remedy": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.ahead[].checks[].status": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "pass",
+          "missing",
+          "later"
+        ]
+      },
+      "output.ahead[].phase": {
+        "type": [
+          "string"
         ]
       },
       "output.amended": {
@@ -11017,6 +11113,19 @@
           "string"
         ]
       },
+      "output.line": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.outcome": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "already_answered"
+        ]
+      },
       "output.question": {
         "type": [
           "string"
@@ -16252,6 +16361,19 @@
           "boolean"
         ]
       },
+      "output.line": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.outcome": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "already_done"
+        ]
+      },
       "output.owner": {
         "type": [
           "null",
@@ -17250,6 +17372,19 @@
           "string"
         ]
       },
+      "output.line": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.outcome": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "already_done"
+        ]
+      },
       "output.owner": {
         "type": [
           "null",
@@ -17370,6 +17505,19 @@
         "type": [
           "null",
           "string"
+        ]
+      },
+      "output.line": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.outcome": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "already_done"
         ]
       },
       "output.owner": {
@@ -17493,6 +17641,19 @@
           "string"
         ]
       },
+      "output.line": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.outcome": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "already_done"
+        ]
+      },
       "output.owner": {
         "type": [
           "null",
@@ -17607,6 +17768,19 @@
         "type": [
           "null",
           "string"
+        ]
+      },
+      "output.line": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.outcome": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "already_done"
         ]
       },
       "output.owner": {
@@ -18080,6 +18254,19 @@
         "type": [
           "null",
           "string"
+        ]
+      },
+      "output.line": {
+        "type": [
+          "string"
+        ]
+      },
+      "output.outcome": {
+        "type": [
+          "string"
+        ],
+        "enum": [
+          "already_done"
         ]
       },
       "output.owner": {
@@ -18731,6 +18918,7 @@
     "changes::migrate::unread",
     "changes::mount::needs_repository",
     "changes::mount::not_found",
+    "changes::next::bad_through",
     "changes::owed::rechecks",
     "changes::paths::outside_plan",
     "changes::pause::not_building",
