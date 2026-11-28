@@ -1,6 +1,6 @@
 ---
 name: flow
-description: 'Turn a request such as "/flow plan this and stop" into one changes.run call on the current repository, and follow the brief it returns. Use it when the person types /flow or asks to run a change through its flow up to a phase.'
+description: 'Turns a request such as "/flow plan this and stop" into one changes.run call and follows the brief it returns. Use it when the person types /flow or asks to run a change up to a phase.'
 ---
 
 # flow

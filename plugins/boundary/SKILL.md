@@ -1,6 +1,6 @@
 ---
 name: boundary
-description: 'The boundary plugin checks content, such as a pull request body, before it leaves a checkout, against the rules that boundaries in the personal board name for its destination. Use it before you send anything a boundary may cover. Run `board --personal boundary check` with the action, destination, checkout and parts on stdin; on `boundary::check::failed`, change what it names and check again. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Checks content, such as a pull request body, against the boundary rules for its destination before it leaves a checkout. Use it before you send anything a boundary may cover.'
 ---
 
 # boundary

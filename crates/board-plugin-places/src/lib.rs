@@ -157,11 +157,8 @@ fn manifest() -> Value {
         "name": "places",
         "version": "0.1.0",
         // SKILL.md's description, the callout an agent sees first.
-        "description": "Join an mxv workspace on this machine to the Board change it works on, \
-            and list every machine's joins with each change's phase and the workspace's status. \
-            Use it when a workspace starts work on a change. Run `board --personal places attach \
-            --change /changes/<name>` from inside the workspace. SKILL.md and README.md in the \
-            plugin's directory say more.",
+        "description": "Joins an mxv workspace on this machine to the Board change it works on, \
+            and lists every machine's joins. Use it when a workspace starts work on a change.",
         "metadata": {"area": "delivery"},
         "types": [WorkspaceChange::TYPE],
         "capabilities": capabilities,

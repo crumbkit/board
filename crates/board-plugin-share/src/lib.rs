@@ -49,13 +49,9 @@ fn manifest() -> Value {
         "name": "share",
         "version": "0.1.0",
         // SKILL.md's description, the callout an agent sees first.
-        "description": "Copy a record from this board into a mounted board, such as a team's, with \
-            its children, the records and files it references or links to, the records that \
-            reference it and the schemas of their types, so a reader there can open it. Use it \
-            when someone else needs to read a record you wrote. Start with `board -C <board> \
-            share to --path /<record> --to /<mount>`, which lists what would be copied and \
-            prints the command that writes it. SKILL.md and README.md in the plugin's directory \
-            say more.",
+        "description": "Copies a record into a mounted board, such as a team's, with what it \
+            references and the schemas of its types, so a reader there can open it. Use it when \
+            someone else needs to read your record.",
         "metadata": {"area": "sharing"},
         "capabilities": [{
             "name": "to",
