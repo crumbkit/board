@@ -148,6 +148,30 @@ fn the_author_lists_and_review_are_kept_and_review_false_leaves_it_out() {
     assert_eq!(stored(&scenario, &path).get("review"), None);
 }
 
+/// `decides` is written as the entry the decision decides, and a call
+/// without it writes none; a `decides` that is no board path is refused by
+/// the input schema.
+#[test]
+fn decides_is_written_when_given_and_a_value_that_is_no_board_path_is_refused() {
+    let (scenario, board) = with_project_a();
+    let mut input = deciding();
+    input["decides"] = json!("/projects/a/questions/q");
+    let path = decide(&board, &input)["path"].as_str().unwrap().to_owned();
+    let record = stored(&scenario, &path);
+    assert_eq!(record["decides"], json!("/projects/a/questions/q"));
+    let scope: board_model::LogicalPath = path.parse().unwrap();
+    let checked = board.check(Some(&scope), None).unwrap();
+    assert!(!checked.degraded(), "{:?}", checked.entries);
+    let path = decide(&board, &deciding())["path"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(stored(&scenario, &path).get("decides"), None);
+    input["decides"] = json!("not a path");
+    let refusal = refused(&board, &input);
+    assert_eq!(refusal.code.as_str(), "board::plugin::bad_input");
+}
+
 /// A call that names neither a session nor a person is refused with the
 /// decide's own code, whose hint names both flags, and nothing is written.
 /// The twin that names only a person is written.

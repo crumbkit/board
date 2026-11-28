@@ -12,6 +12,7 @@ use serde_json::{Map, Value, json};
 use crate::board::call;
 use crate::change::{attached, read, referenced};
 use crate::gates::design::versioned;
+use crate::gates::revision::APPROVE;
 use crate::gates::{UNDERSTANDING_TYPE, mockups, sections};
 use crate::phases::{attach, plan_text};
 use crate::{PLUGIN, refusal, to_value};
@@ -122,7 +123,7 @@ pub(crate) fn ask(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
     );
     let question = json!({
         "question": text,
-        "options": [{"id": "approve", "text": approve}, {"id": "revise", "text": revise}],
+        "options": [{"id": APPROVE, "text": approve}, {"id": "revise", "text": revise}],
         "recommendation": "approve",
         "blocks": path,
         "mount": change.mount,

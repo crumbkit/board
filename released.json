@@ -92,7 +92,7 @@
       "shape": "1995b417c841e8596b4a07f4a98aa6a09de5ec03"
     },
     "crates/board-plugin-plans/types/plans/decision/v1.schema.json": {
-      "shape": "9eb1f61239c159427108a8387886a77a719a3c05",
+      "shape": "e1be30485e1f1d785e13cc37ea35800acf85a6c9",
       "enums": {
         "/properties/review/enum": [
           "wanted"
@@ -11058,6 +11058,11 @@
         ]
       },
       "input.alternatives[]": {
+        "type": [
+          "string"
+        ]
+      },
+      "input.decides": {
         "type": [
           "string"
         ]
