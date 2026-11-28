@@ -160,6 +160,11 @@ Built-in plugins generate schemas from structs with schemars, through
   without a new type version. Git's own ids, such as commit ids, stay as
   git prints them. `shape::registry()` lists every
   shared shape by name, and `crates/board-plugin/shapes.json` is its golden.
+- `BoardPath` is a logical path that a plugin's input takes, such as a
+  change's `path`: a string that starts with `/`, with the `board-path`
+  format that tells `board call` to read a flag without a leading `/` from
+  the current directory. It is an input shape, so the registry does not
+  hold it.
 - A reader wraps a stored enum field in `Open<E>`: `Known(E)` for a value
   `E` reads, or `Other` holding a value this Board does not know, such as
   one an edited copy of the schema admits, as written. It writes back what

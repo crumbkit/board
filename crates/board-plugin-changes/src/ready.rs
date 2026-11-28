@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use board_ops::{Host, PluginError, literal};
-use board_plugin::shape::Record;
+use board_plugin::shape::{BoardPath, Record};
 use board_repos::Date;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -60,7 +60,7 @@ pub(crate) struct Input {
     )]
     failing: bool,
     #[schemars(
-        extend("items" = {"type": "string", "pattern": "^/", "format": "board-path"}),
+        with = "Option<Vec<BoardPath>>",
         description = "Only the changes these open questions block, by the questions' logical \
                        paths; every change when left out."
     )]
