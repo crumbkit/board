@@ -51,8 +51,8 @@ alter, and the states of each.
 ## The working tree's facts
 
 - Before the walk, one statement reads each stored working-tree row with
-  its blob's fact in the role its path gives it, and one reads those
-  blobs' links.
+  its blob's fact in the role its path gives it, and one reads the links
+  table in blob order, keeping the links of those blobs.
 - The walk reads a record beside its directory, to learn whether it hides
   the directory, only when its blob has no fact or its fact says it may
   hold a pointer. A file whose stat changed is hashed first, so the blob

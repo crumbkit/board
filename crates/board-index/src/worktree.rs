@@ -3,6 +3,7 @@
 //! changed (docs/architecture/performance/warm/index.md).
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry as MapEntry;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use board_model::{Code, LogicalPath, ObjectId, Role, Stat};
@@ -68,8 +69,8 @@ pub(crate) fn trusted(stored: Option<&Stat>, seen: &Stat, refreshed_ns: Option<i
 impl Writer {
     /// The working tree as the last refresh saw it, with the fact of each
     /// row's blob in the role its path gives it. One statement reads the
-    /// rows with their blobs' facts, and one the links of those blobs, so
-    /// the load looks up no blob on its own. The refresh that walks it
+    /// rows with their blobs' facts, and one the links, so the load looks
+    /// up no blob on its own. The refresh that walks it
     /// begins now.
     pub fn worktree(&self) -> Result<Worktree, IndexError> {
         let refreshed_ns: Option<String> = self
@@ -84,25 +85,26 @@ impl Writer {
                     w.inode, w.mode, b.role, b.kind, b.type, b.code, b.reason
              FROM main.worktree AS w LEFT JOIN main.blobs AS b ON b.blob = w.blob",
         )?;
-        let mut rows = HashMap::new();
+        let mut rows: HashMap<String, WorktreeRow> = HashMap::new();
         let mut facts = HashMap::new();
         let mut query = statement.query([])?;
         while let Some(row) = query.next()? {
             let path: String = row.get(0)?;
             let role = Role::of(&path);
             let stored = (row.get_ref(9)?.as_str_or_null()).map_err(rusqlite::Error::from)?;
-            if let Some(role) = role.filter(|role| stored == Some(role.as_str()))
-                && let Some(blob) = row.get::<_, Option<String>>(3)?
-                && let Some(blob) = ObjectId::from_hex(&blob)
+            let role = role.filter(|role| stored == Some(role.as_str()));
+            let blob = match rows.entry(path) {
+                MapEntry::Occupied(occupied) => occupied.get().blob,
+                MapEntry::Vacant(vacant) => vacant.insert(worktree_row(row)?).blob,
+            };
+            if let (Some(role), Some(blob)) = (role, blob)
+                && let MapEntry::Vacant(vacant) = facts.entry((blob, role))
                 && let Some(fact) = fact(
                     (row.get(10)?, row.get(11)?, row.get(12)?, row.get(13)?),
                     Vec::new(),
                 )
             {
-                facts.insert((blob, role), fact);
-            }
-            if let std::collections::hash_map::Entry::Vacant(vacant) = rows.entry(path) {
-                vacant.insert(worktree_row(row)?);
+                vacant.insert(fact);
             }
         }
         drop(query);
@@ -121,15 +123,15 @@ impl Writer {
     }
 
     /// Gives each Markdown fact in `facts` the links its blob holds, in
-    /// order, read for every blob of the working tree in one statement.
+    /// order. One statement reads the whole table in blob and ordinal
+    /// order, which costs less than finding the working tree's blobs in it.
     fn links_into(
         &self,
         facts: &mut HashMap<(ObjectId, Role), BlobFact>,
     ) -> Result<(), IndexError> {
-        let mut statement = self.connection().prepare_cached(
-            "SELECT blob, destination FROM main.links
-             WHERE blob IN (SELECT blob FROM main.worktree) ORDER BY blob, ordinal",
-        )?;
+        let mut statement = self
+            .connection()
+            .prepare_cached("SELECT blob, destination FROM main.links ORDER BY blob, ordinal")?;
         let mut query = statement.query([])?;
         let mut current: Option<(String, Option<ObjectId>)> = None;
         while let Some(row) = query.next()? {
