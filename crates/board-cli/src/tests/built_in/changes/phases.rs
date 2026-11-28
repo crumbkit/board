@@ -2052,10 +2052,23 @@ fn next_through_land_lists_each_later_phase_and_judges_what_the_plan_settles() {
     );
     let run = ahead_check(&board, "suite-run");
     assert_eq!(run["status"], "later", "{run}");
-    assert!(
-        run["remedy"].as_str().is_some_and(|said| !said.is_empty()),
-        "{run}"
-    );
+    // The head is not known yet, so the remedy names it as a placeholder.
+    let remedy = run["remedy"].as_str().unwrap();
+    assert!(remedy.contains("once CI has passed on <head>"), "{remedy}");
+    let review = ahead_check(&board, "review");
+    let remedy = review["remedy"].as_str().unwrap();
+    assert!(remedy.contains("a checkout of <head>,"), "{remedy}");
+    // A head, a pull request and a diff come only from later work, so the
+    // checks that read them wait for it.
+    for later in [
+        "head",
+        "pull-request",
+        "ui-paths",
+        "lifecycle-paths-at-land",
+    ] {
+        let each = ahead_check(&board, later);
+        assert_eq!(each["status"], "later", "{each}");
+    }
     // The plan answers ux none, so the design-conformance check does not
     // apply and is not judged.
     let design = ahead_check(&board, "design-conformance");
@@ -2102,4 +2115,25 @@ fn next_through_a_phase_the_flow_lacks_is_refused_naming_the_phases() {
     // Through the change's own phase there is nothing ahead.
     let next = board.call("next", &at(&json!({"through": "plan"})));
     assert_eq!(next["ahead"], json!([]), "{next}");
+}
+
+#[test]
+fn next_through_land_marks_a_later_check_missing_when_its_when_reads_an_answer_the_plan_lacks() {
+    let board = planned_with(PLAN);
+    let mut plan = board.read("changes/t/plans/1.json");
+    plan["answers"] = json!({"ux": "none", "lifecycle": "none"});
+    board.write("changes/t/plans/1.json", &plan.to_string());
+    let rechecks = ahead_check(&board, "rechecks");
+    assert_eq!(
+        (&rechecks["status"], &rechecks["applies"]),
+        (&json!("missing"), &json!(true)),
+        "{rechecks}"
+    );
+    let detail = rechecks["detail"].as_str().unwrap();
+    assert!(detail.contains("no typed answer for data"), "{detail}");
+    let remedy = rechecks["remedy"].as_str().unwrap();
+    assert!(
+        remedy.starts_with("Write the plan again with `board changes plan --path /changes/t`"),
+        "{remedy}"
+    );
 }

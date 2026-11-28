@@ -7,6 +7,8 @@
 //! `exists`, `rule-paths` and `planned-rule-paths`. Every other kind needs
 //! work that has not happened yet, so it is `later`.
 
+use std::collections::BTreeMap;
+
 use board_ops::{Host, PluginError};
 use board_plugin::shape::Open;
 use schemars::JsonSchema;
@@ -14,8 +16,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::change::read;
-use crate::flow::{self, Kind, of_change};
-use crate::gates::{self, Observed, interpret, not_required, remedy};
+use crate::flow::{self, Field, Kind, of_change};
+use crate::gates::{self, Observed, applies, interpret, left_out, not_required, remedy, sections};
 use crate::records::ChangeRecord;
 use crate::repo::check_suite;
 use crate::{refusal, to_value};
@@ -239,8 +241,9 @@ fn judge_phase(
     }
     let gate = interpret(&observed, &judged);
     let skipped = not_required(&observed, &phase.checks);
+    let plan = sections(observed.plan.as_deref().unwrap_or_default());
     let checks = (phase.checks.iter())
-        .map(|each| judge(&observed, &gate, &skipped, each))
+        .map(|each| judge(&observed, &plan, &gate, &skipped, each))
         .collect();
     Ok(Ahead {
         phase: phase.name.clone(),
@@ -248,50 +251,92 @@ fn judge_phase(
     })
 }
 
-/// `each` as `ahead` lists it: from `gate`, the checks judged ahead, or
-/// `later`, or with no status when `skipped` names it.
+/// `each` as `ahead` lists it, in this order: with no status when
+/// `skipped` names it; `missing` when its `when` reads an answer the plan
+/// leaves out or a section pattern that cannot be read, as the gate in its
+/// phase would say; `later` when it reads a head, a pull request or a diff
+/// the change does not have yet; else from `gate`, the checks judged
+/// ahead; and `later` for every other kind.
 fn judge(
     observed: &Observed,
+    plan: &BTreeMap<String, String>,
     gate: &[gates::Check],
     skipped: &[String],
     each: &flow::Check,
 ) -> Judged {
-    let blocks = each.blocks.unwrap_or(true);
-    if skipped.contains(&each.id) {
-        return Judged {
-            check: each.id.clone(),
-            blocks,
-            applies: false,
-            status: None,
-            detail: None,
-            remedy: None,
-        };
-    }
-    if let Some(found) = gate.iter().find(|found| found.check == each.id) {
-        return Judged {
-            check: each.id.clone(),
-            blocks,
-            applies: true,
-            status: Some(match found.status {
-                gates::Status::Pass => Status::Pass,
-                gates::Status::Missing => Status::Missing,
-            }),
-            detail: Some(found.detail.clone()).filter(|said| !said.is_empty()),
-            remedy: found.remedy.clone(),
-        };
-    }
-    Judged {
+    let judged = |status: Option<Status>, detail: Option<String>, remedy| Judged {
         check: each.id.clone(),
-        blocks,
-        applies: true,
-        status: Some(Status::Later),
-        detail: Some(format!(
-            "it needs work that has not happened yet, so the gate judges it once the change is in \
-             {}",
-            observed.change.phase
-        )),
-        remedy: Some(remedy::of(each, &remedy::values(observed))),
+        blocks: each.blocks.unwrap_or(true),
+        applies: status.is_some(),
+        status,
+        detail: detail.filter(|said| !said.is_empty()),
+        remedy,
+    };
+    if skipped.contains(&each.id) {
+        return judged(None, None, None);
     }
+    if !left_out(observed, each).is_empty() {
+        // The gate reports a left-out answer before it reads the check's
+        // kind, so the `when` alone gives what it would say.
+        let found = interpret(observed, &[when_only(each)]);
+        let found = found.first();
+        return judged(
+            Some(Status::Missing),
+            found.map(|found| found.detail.clone()),
+            found.and_then(|found| found.remedy.clone()),
+        );
+    }
+    if let Err(detail) = applies(observed, plan, each) {
+        let remedy = remedy::of(each, &placeholders(observed));
+        return judged(Some(Status::Missing), Some(detail), Some(remedy));
+    }
+    let found = gate.iter().find(|found| found.check == each.id);
+    if let Some(found) = found.filter(|_| settled(observed, each)) {
+        let status = match found.status {
+            gates::Status::Pass => Status::Pass,
+            gates::Status::Missing => Status::Missing,
+        };
+        return judged(
+            Some(status),
+            Some(found.detail.clone()),
+            found.remedy.clone(),
+        );
+    }
+    let detail = format!(
+        "it needs work that has not happened yet, so the gate judges it once the change is in {}",
+        observed.change.phase
+    );
+    let remedy = remedy::of(each, &placeholders(observed));
+    judged(Some(Status::Later), Some(detail), Some(remedy))
+}
+
+/// Whether what `each` reads is already settled: false for a `field`
+/// check on the head or the pull requests while the change has none, and
+/// for a `rule-paths` check, which reads the diff, while it has no head.
+fn settled(observed: &Observed, each: &flow::Check) -> bool {
+    let change = &observed.change;
+    match each.kind.known() {
+        Some(Kind::Field) => match each.field {
+            Some(Field::Head) => change.head.is_some(),
+            Some(Field::Pulls) => !change.pulls().is_empty(),
+            _ => true,
+        },
+        Some(Kind::RulePaths) => change.head.is_some(),
+        _ => true,
+    }
+}
+
+/// The placeholders' values for `observed`, each one with no value yet
+/// written as itself in angle brackets, such as `<head>`, so a remedy for
+/// later work reads whole.
+fn placeholders(observed: &Observed) -> remedy::Values {
+    let mut values = remedy::values(observed);
+    for (name, value) in &mut values {
+        if value.is_none() {
+            *value = Some(format!("<{name}>"));
+        }
+    }
+    values
 }
 
 #[cfg(test)]

@@ -399,7 +399,13 @@ of `changes` still fails `review`.
   check reads only the plan or the change record, so it is judged now as
   `pass` or `missing`, with its `detail` and, when missing, its `remedy`.
   Every other kind needs work that has not happened yet, such as a run or
-  a review, so its status is `later`, with its `remedy`. A check judged
+  a review, so its status is `later`, with its `remedy`. So is a `field`
+  check on `head` or `pulls` while the change has none, and a `rule-paths`
+  check, which reads the diff, while the change records no head. A `later`
+  remedy names a value that is not known yet as a placeholder, such as
+  `<head>` or `<suite>`. A check whose `when` reads an answer the plan
+  leaves out, or a section pattern that cannot be read, is `missing` with
+  the detail and remedy the gate in its phase would give. A check judged
   `pass` ahead can still fail when its phase comes, after a later edit.
   Without `--through` there is no `ahead`, and the output is unchanged. A
   `--through` that names no phase of the flow is refused with
