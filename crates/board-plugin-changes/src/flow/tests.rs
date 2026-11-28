@@ -711,3 +711,130 @@ fn the_small_flow_passes_a_lifecycle_diff_with_a_record_and_refuses_one_without(
     let not_small = built.iter().find(|each| each.check == "not-small").unwrap();
     assert_eq!(not_small.status, Status::Pass);
 }
+
+/// Each built-in plugin's name and its capabilities' names, read from the
+/// `board plugin list --json` golden that board-cli's help test checks
+/// against the built binary.
+fn built_in_capabilities() -> Vec<(String, Vec<String>)> {
+    let listed: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../board-cli/src/tests/help/examples/board-plugin-list-json.txt"
+    ))
+    .unwrap();
+    let names = |values: &serde_json::Value| -> Vec<String> {
+        (values.as_array().unwrap().iter())
+            .map(|each| each["name"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    (listed["data"].as_array().unwrap().iter())
+        .map(|plugin| {
+            let name = plugin["name"].as_str().unwrap().to_owned();
+            (name, names(&plugin["capabilities"]))
+        })
+        .collect()
+}
+
+/// Board's own top-level words, read from the `GOALS` table that orders
+/// `board -h`, whose test fails when a root command is missing from it.
+fn board_words() -> Vec<String> {
+    let render = include_str!("../../../board-cli/src/render.rs");
+    let start = render.find("pub(crate) const GOALS").unwrap();
+    let goals = &render[start..];
+    let goals = &goals[..goals.find("\n);").unwrap()];
+    let lists = regex::Regex::new(r"&\[([^\]]*)\]").unwrap();
+    let word = regex::Regex::new(r#""([a-z-]+)""#).unwrap();
+    (lists.captures_iter(goals))
+        .flat_map(|list| {
+            (word.captures_iter(&list[1]))
+                .map(|each| each[1].to_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Each command in backticks in `text` that starts with `board` and names
+/// a word no built-in plugin offers or a Board word that does not exist.
+fn unknown_commands(
+    text: &str,
+    plugins: &[(String, Vec<String>)],
+    words: &[String],
+) -> Vec<String> {
+    let spans = regex::Regex::new(r"`(board(?: [^`]*)?)`").unwrap();
+    let offers = |plugin: &str, capability: &str| {
+        (plugins.iter())
+            .any(|(name, offered)| name == plugin && offered.iter().any(|each| each == capability))
+    };
+    let known = |command: &str| {
+        let mut tokens = command.split_whitespace().skip(1).peekable();
+        while let Some(flag) = tokens.next_if(|token| token.starts_with('-')) {
+            if flag == "-C" {
+                tokens.next();
+            }
+        }
+        let Some(first) = tokens.next() else {
+            return true;
+        };
+        if first == "call" {
+            let target = tokens.next().unwrap_or_default();
+            return (target.split_once('.'))
+                .is_some_and(|(plugin, capability)| offers(plugin, capability));
+        }
+        if words.iter().any(|word| word == first) {
+            return true;
+        }
+        match tokens.next() {
+            Some(capability) => offers(first, capability),
+            None => plugins.iter().any(|(name, _)| name == first),
+        }
+    };
+    (spans.captures_iter(text))
+        .map(|span| span[1].to_owned())
+        .filter(|command| !known(command))
+        .collect()
+}
+
+/// A remedy naming `board runs run`, which no plugin offers, is caught, and
+/// its twin naming `board changes attach` and Board's own `put` is not.
+#[test]
+fn a_command_no_plugin_offers_is_caught_and_its_twin_that_exists_is_not() {
+    let (plugins, words) = (built_in_capabilities(), board_words());
+    assert!(plugins.iter().any(|(name, _)| name == "runs"));
+    assert!(words.iter().any(|word| word == "put"));
+    let caught = unknown_commands(
+        "Run {suite} with `board runs run` and attach it.",
+        &plugins,
+        &words,
+    );
+    assert_eq!(caught, ["board runs run"]);
+    let twin = "Write it with `board put --new --var suite=<name>`, attach it with `board changes \
+        attach --path {change} --ref <run>`, or call `board --personal call changes.next`.";
+    assert_eq!(
+        unknown_commands(twin, &plugins, &words),
+        Vec::<String>::new()
+    );
+}
+
+/// Every command in backticks that starts with `board`, in every shipped
+/// flow's instructions and in the remedy each check prints, its flow's own
+/// or its kind's, names a capability a built-in plugin offers or one of
+/// Board's own words.
+#[test]
+fn every_board_command_in_a_shipped_flow_names_a_command_that_exists() {
+    let (plugins, words) = (built_in_capabilities(), board_words());
+    let values = crate::gates::remedy::PLACEHOLDERS.map(|name| (name, None));
+    let mut unknown = Vec::new();
+    for (name, _) in SHIPPED {
+        let flow = shipped(name).unwrap();
+        for phase in &flow.phases {
+            for command in unknown_commands(&phase.instruction, &plugins, &words) {
+                unknown.push(format!("{name} {} instruction: {command}", phase.name));
+            }
+            for check in &phase.checks {
+                let remedy = crate::gates::remedy::of(check, &values);
+                for command in unknown_commands(&remedy, &plugins, &words) {
+                    unknown.push(format!("{name} {} {}: {command}", phase.name, check.id));
+                }
+            }
+        }
+    }
+    assert_eq!(unknown, Vec::<String>::new());
+}

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- The development flow's suite-run remedy names only commands that exist.
+  When the change names no suite, it says to name one with `board changes
+  attach --suite`, write a `runs/suite/v1` with `board put /suites/<name>`,
+  or ask the owner to waive the check. Otherwise it says to record CI's
+  run with `board github ci --change`, or to write the run with `board put
+  --new --var suite=<name>` and attach it with `board changes attach
+  --ref`. It no longer names `board runs define` or `board runs run`,
+  which the runs plugin does not offer. A test fails when an instruction
+  or remedy in a shipped flow names a `board` command that no built-in
+  plugin offers and Board does not have. A change already on an older
+  stored flow version prints the old remedy until `board changes reflow
+  --path <change>` moves it to the shipped one.
+
 ## 0.1.6 (2026-11-28)
 
 - The plans and effects Claude Code mods run `board` on their minute's tick
