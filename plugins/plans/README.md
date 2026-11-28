@@ -27,7 +27,11 @@ so it is written at its path. Its schema declares its folder too, so
   `blocked_work` says what cannot proceed in words, when no change names it
   or the change needs more detail. A question is answered when a
   `plans/answer/v1` names it in `question`; answering leaves its status
-  `open`. A reference is read from the root of the board it is in, so an
+  `open`. `board get` of an open question prints one line on stderr that
+  names the answer at the question's id under `answers/`, with its time,
+  choice and first 80 characters of words, or says that nothing is there
+  and to run `board refs <question>` for an answer at another path
+  (docs/architecture/records/get.md, Notes beside a record). A reference is read from the root of the board it is in, so an
   answer in a mounted board names its question by the question's path in
   that board.
 - `plans/answer/v1` at `/projects/<project>/answers/<id>`, with its question's

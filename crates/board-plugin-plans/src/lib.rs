@@ -4,6 +4,7 @@ mod answer;
 mod ask;
 mod decide;
 mod fill;
+mod get_note;
 mod migrate;
 mod open;
 mod question;
@@ -46,6 +47,10 @@ impl Plugin for Plans {
 
     fn fills(&self) -> &'static [board_ops::Fill] {
         &fill::FILLS
+    }
+
+    fn get_notes(&self) -> &'static [board_ops::GetNote] {
+        &get_note::GET_NOTES
     }
 
     fn call(

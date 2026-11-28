@@ -11,6 +11,7 @@ mod check;
 mod checkout;
 mod effects;
 mod enable;
+mod get_note;
 mod history;
 mod host;
 mod index;
@@ -46,6 +47,7 @@ pub use crate::effects::{
     Signing, VerifyOrderError, answer,
 };
 pub use crate::enable::{EnableError, EnableReport, Kept};
+pub use crate::get_note::{Asked, Beside, GetNote};
 pub use crate::history::{At, LogReport};
 pub use crate::host::{
     BuiltIn, Elsewhere, Host, Limit, Origin, Plugin, PluginError, Run, Settings, Variables, literal,

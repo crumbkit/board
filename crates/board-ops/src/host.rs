@@ -71,6 +71,12 @@ pub trait Plugin: Sync {
     fn fills(&self) -> &'static [crate::Fill] {
         &[]
     }
+    /// The lines `board get` prints on stderr beside a record of its types,
+    /// each from the one path it reads beside the record
+    /// (docs/architecture/records/get.md, Notes beside a record).
+    fn get_notes(&self) -> &'static [crate::GetNote] {
+        &[]
+    }
 }
 
 /// What Board offers a built-in plugin while it runs a capability.
