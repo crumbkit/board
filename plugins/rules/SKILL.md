@@ -1,6 +1,6 @@
 ---
 name: rules
-description: 'The rules plugin, formerly controls, keeps requirements on files as records in the board that holds the files. Use it when you start work in a board or a repository it mounts, and before you edit a file a rule may govern. Start with `board -C <board> rules check --path /<directory>`, which lists the budgets it measures and the written requirements under that path. `board -C <board> rules for-path --path /<file>` lists the rules on one file. `board -C <board> rules evaluate` checks text, such as a draft, against the checkers of the rules it names before the text is written. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Keeps requirements on files, formerly called controls, as records in the board that holds the files. Use it when you start work in a board or a mounted repository, and before you edit a governed file.'
 ---
 
 # rules

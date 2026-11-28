@@ -336,11 +336,10 @@ fn decide_adds_a_decision_on_each_call_and_the_description_names_it() {
         assert!(description.ends_with('.'), "{name}: {description}");
     }
     let description = manifest["description"].as_str().unwrap();
-    assert!(
-        description.contains("plans decide --project"),
-        "{description}"
-    );
+    assert!(description.contains("decisions"), "{description}");
     assert!(!description.contains("put --new"), "{description}");
+    let skill = include_str!("../../../plugins/plans/SKILL.md");
+    assert!(skill.contains("board -C <board> plans decide --project"));
 }
 
 /// A question's status is open or withdrawn; answered is refused with the

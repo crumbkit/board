@@ -1,6 +1,6 @@
 ---
 name: apply-standard
-description: 'Audit a repository checkout against a written standard, a Markdown file whose tables list rules by ID, and record the result as a run of a suite in a board. Use it when the person asks to check, audit or review a repository against a standard, or to apply a standard to a repository. sample-standard.md in this skill is a standard to copy and edit.'
+description: 'Audits a repository checkout against a written standard whose tables list rules by ID, and records a suite run. Use it when the person asks to check, audit or review a repository against a standard.'
 ---
 
 # Apply a standard
